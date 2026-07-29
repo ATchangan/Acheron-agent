@@ -9,8 +9,10 @@ files:
   - resources/icon.png
 win:
   target:
-    - nsis
+    - portable
   icon: resources/icon.png
+  sign: null
+  signAndEditExecutable: false
 mac:
   target:
     - dmg
