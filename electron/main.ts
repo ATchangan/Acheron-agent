@@ -22,7 +22,11 @@ const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
 
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
-  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
+  try {
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
+  } catch (e: any) {
+    console.error('[黄泉Agent] mkdir failed for', d, e.message)
+  }
 }
 
 // ─── HTTP 服务器 ──────────────────────────────────
