@@ -14,15 +14,20 @@ let serverPort = 0
 const ROOT = join(__dirname, '..')
 const resourcesDir = join(ROOT, 'resources')
 const distDir = join(ROOT, 'dist')
-const skillsDir = join(ROOT, 'skills')
 const userDataPath = app.getPath('userData')
+const skillsDir = join(userDataPath, 'skills')
 const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
 const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
 
-for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
-  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
+for (const d of [sessionsDir, workspaceDir, skillsDir]) {
+  try {
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
+  } catch (e: any) {
+    // portable 模式可能路径冲突，静默跳过
+    console.error('[黄泉Agent] mkdir failed for', d, e.message)
+  }
 }
 
 // 启动时初始向量记忆
@@ -459,9 +464,9 @@ ipcMain.handle('skills:delete', (_e, name: string) => {
       fs.rmSync(dir, { recursive: true, force: true })
       return true
     }
-    // 也尝试删除 resources/skills 下的
+    // 内建技能在 ASAR 内只读，跳过删除
     const altDir = join(resourcesDir, 'skills', name)
-    if (fs.existsSync(altDir)) {
+    if (!app.isPackaged && fs.existsSync(altDir)) {
       fs.rmSync(altDir, { recursive: true, force: true })
       return true
     }
