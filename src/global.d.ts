@@ -7,6 +7,7 @@ declare global {
         minimize: () => Promise<void>
         maximize: () => Promise<void>
         close: () => Promise<void>
+        setOpacity: (opacity: number) => Promise<void>
       }
       settings: {
         load: () => Promise<SettingsData>
@@ -22,11 +23,34 @@ declare global {
       skills: {
         list: () => Promise<SkillMeta[]>
         load: (path: string) => Promise<string>
+        create: (name: string, content: string) => Promise<boolean | string>
+        install: (url: string) => Promise<string>
+        delete: (name: string) => Promise<boolean | string>
       }
       memory: {
         load: () => Promise<MemoryData>
         save: (m: MemoryData) => Promise<boolean>
+        search: (query: string) => Promise<SearchResult[]>
+        addVector: (content: string) => Promise<boolean>
+        importFile: (path: string) => Promise<boolean>
+        clearVector: () => Promise<boolean>
       }
+      cron: {
+        add: (expr: string, prompt: string) => Promise<any>
+        list: () => Promise<CronJob[]>
+        remove: (id: string) => Promise<any>
+        toggle: (id: string) => Promise<any>
+      }
+      plugins: {
+        scan: () => Promise<any>
+        tools: () => Promise<any>
+        install: (url: string) => Promise<string>
+        delete: (name: string) => Promise<boolean | string>
+      }
+      mcpConnect: (name: string, cmd: string, args: string[]) => Promise<any>
+      mcpCall: (server: string, tool: string, args: any) => Promise<any>
+      mcpList: () => Promise<any[]>
+      getPaths: () => Promise<{ skillsDir: string; pluginsDir: string; workDir: string }>
       computer: {
         exec: (cmd: string) => Promise<string>
         readFile: (path: string) => Promise<string>
@@ -40,10 +64,17 @@ declare global {
         grep: (dir: string, pattern: string) => Promise<string>
         find: (dir: string, glob: string) => Promise<string>
         screenshot: () => Promise<string>
+    clipboardRead: () => Promise<string>
+    clipboardWrite: (text: string) => Promise<boolean>
+    processList: () => Promise<string>
+    killProcess: (pid: string) => Promise<string>
+    codebox: (lang: string, code: string) => Promise<string>
       }
       web: {
         fetch: (url: string) => Promise<string>
         search: (query: string) => Promise<string>
+        browse: (url: string) => Promise<string>
+        browseScreenshot: (url: string) => Promise<string>
       }
       models: {
         detect: (baseUrl: string, apiKey: string) => Promise<string[]>
@@ -60,7 +91,7 @@ declare global {
   }
 }
 
-export interface SettingsData { providers: ProviderConfig[]; general: { theme: string; language?: string; mode?: string } }
+export interface SettingsData { providers: ProviderConfig[]; general: { theme: string; language?: string; mode?: string; workDir?: string } }
 export interface ProviderConfig {
   id: string
   name: string
@@ -129,3 +160,5 @@ export interface ToolCallDelta {
   type?: string
   function?: { name?: string; arguments?: string }
 }
+export interface SearchResult { content: string; score: number }
+export interface CronJob { id: string; expression: string; prompt: string; enabled: boolean; lastRun?: string; nextRun?: string }

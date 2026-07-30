@@ -14,20 +14,33 @@ let serverPort = 0
 const ROOT = join(__dirname, '..')
 const resourcesDir = join(ROOT, 'resources')
 const distDir = join(ROOT, 'dist')
-const skillsDir = join(ROOT, 'skills')
 const userDataPath = app.getPath('userData')
+const skillsDir = join(userDataPath, 'skills')
 const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
 const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
 
-for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
+for (const d of [sessionsDir, workspaceDir, skillsDir]) {
   try {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
   } catch (e: any) {
+    // portable 模式可能路径冲突，静默跳过
     console.error('[黄泉Agent] mkdir failed for', d, e.message)
   }
 }
+
+// 启动时初始向量记忆
+import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-vector.json')); m.startAutoSave() }).catch(() => {})
+// 启动定时任务
+import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
+  mainWindow?.webContents.send('cron:trigger', prompt)
+})).catch(() => {})
+// v0.2: 初始化多Agent系统
+import('./agent').then(m => { m.initAgentSystemSync() }).catch(() => {})
+// v0.2: 启动时加载MCP SSE
+import('./mcp/sse-transport').catch(() => {})
+import('./cache/tool-cache').catch(() => {})
 
 // ─── HTTP 服务器 ──────────────────────────────────
 function startServer(): Promise<number> {
@@ -106,6 +119,9 @@ function createTray() {
 }
 
 // ─── 窗口控制 IPC ─────────────────────────────────
+ipcMain.handle('window:setOpacity', (_e, opacity: number) => {
+  if (mainWindow) mainWindow.setOpacity(Math.max(0.3, Math.min(1, opacity)))
+})
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())
 ipcMain.handle('window:maximize', () => {
   if (mainWindow?.isMaximized()) mainWindow.unmaximize()
@@ -118,7 +134,7 @@ ipcMain.handle('settings:load', () => {
   try {
     if (fs.existsSync(settingsPath)) {
       const raw = fs.readFileSync(settingsPath, 'utf-8')
-      if (raw.trim()) return JSON.parse(raw)
+      if (raw.trim()) { const data = JSON.parse(raw); console.log('[SETTINGS] loaded providers:', data?.providers?.length); return data }
     }
   } catch (e) { console.error('settings load error:', e) }
   return { providers: [], general: { theme: 'dark' } }
@@ -127,8 +143,9 @@ ipcMain.handle('settings:save', (_e, s) => {
   try {
     fs.mkdirSync(userDataPath, { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2), 'utf-8')
+    console.log('[SETTINGS] saved to', settingsPath, 'providers:', s?.providers?.length)
     return true
-  } catch (e) { console.error('settings save error:', e); return false }
+  } catch (e) { console.error('[SETTINGS] save error:', e); return false }
 })
 
 ipcMain.handle('sessions:list', () => {
@@ -189,14 +206,56 @@ ipcMain.handle('memory:save', (_e, memory) => {
   return true
 })
 
+// ─── 语义记忆 ───────────────────────────────────
+let _vm: any = null
+function getVM() {
+  if (!_vm) {
+    const m = require('./memory/vector')
+    m.initMemory(join(userDataPath, 'memory-vector.json'))
+    _vm = m
+  }
+  return _vm
+}
+ipcMain.handle('memory:search', async (_e, query: string) => {
+  try { return getVM().searchMemory(query, 5) } catch { return [] }
+})
+ipcMain.handle('memory:addVector', async (_e, content: string) => {
+  try { getVM().addMemory(content); getVM().saveMemory(); return true } catch { return false }
+})
+ipcMain.handle('memory:importFile', async (_e, filePath: string) => {
+  try {
+    if (!fs.existsSync(filePath)) return false
+    const content = fs.readFileSync(filePath, 'utf-8')
+    for (const chunk of content.split('\n\n').filter((c:string) => c.trim().length > 50).slice(0, 20)) {
+      getVM().addMemory(chunk.trim())
+    }
+    getVM().saveMemory()
+    return true
+  } catch { return false }
+})
+ipcMain.handle('memory:clearVector', async () => {
+  try { getVM().clearMemory(); getVM().saveMemory(); return true } catch { return false }
+})
+
 // ─── 电脑控制 ──────────────────────────────────────
 ipcMain.handle('computer:exec', async (_e, cmd: string) => {
   return new Promise<string>((resolve) => {
-    exec(cmd, { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-      resolve(err ? (stderr || err.message) : stdout)
+    // 智能检测 PowerShell vs cmd
+    const isPS = /^(powershell|pwsh)\b/i.test(cmd.trim()) || cmd.includes('$') || cmd.includes('Invoke-WebRequest') || cmd.includes('try {')
+    let finalCmd
+    if (isPS) {
+      finalCmd = `powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${cmd.replace(/"/g, '\\"')}"`
+    } else {
+      finalCmd = `cmd /c "${cmd.replace(/"/g, '\\"')}"`
+    }
+    exec(finalCmd, { timeout: 300000, maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' }, (err, stdout, stderr) => {
+      const out = err ? (stderr || err.message) : (stdout || '')
+      const truncated = out.length > 8000 ? out.slice(0, 8000) + '\n...(已截断，共' + out.length + '字符)' : out
+      resolve(truncated)
     })
   })
 })
+
 ipcMain.handle('computer:readFile', async (_e, filePath: string) => {
   if (!fs.existsSync(filePath)) throw new Error('文件不存在')
   const stat = fs.statSync(filePath)
@@ -266,7 +325,39 @@ ipcMain.handle('computer:find', async (_e, dirPath: string, glob: string) => {
   return results.slice(0, 200).join('\n')
 })
 
-// ─── 截图 ─────────────────────────────────────────
+// ─── 浏览器自动化 ───────────────────────────────
+ipcMain.handle('browser:open', async (_e, url: string) => {
+  return new Promise<string>(resolve => {
+    const bw = new BrowserWindow({ width: 1280, height: 800, show: false, webPreferences: { sandbox: true } })
+    bw.loadURL(url)
+    bw.webContents.on('did-finish-load', async () => {
+      try {
+        const title = await bw.webContents.executeJavaScript('document.title')
+        const text = await bw.webContents.executeJavaScript('document.body.innerText')
+        bw.close()
+        resolve(`${title}
+
+${text.slice(0, 10000)}`)
+      } catch { bw.close(); resolve('(load error)') }
+    })
+    bw.webContents.on('did-fail-load', () => { bw.close(); resolve('(failed)') })
+    setTimeout(() => { try { bw.close() } catch {}; resolve('(timeout)') }, 15000)
+  })
+})
+ipcMain.handle('browser:screenshot', async (_e, url: string) => {
+  return new Promise<string>(resolve => {
+    const bw = new BrowserWindow({ width: 1280, height: 800, show: false, webPreferences: { sandbox: true } })
+    bw.loadURL(url)
+    bw.webContents.on('did-finish-load', async () => {
+      try {
+        const img = await bw.webContents.capturePage()
+        bw.close()
+        resolve(img.toDataURL())
+      } catch { bw.close(); resolve('') }
+    })
+    setTimeout(() => { try { bw.close() } catch {}; resolve('') }, 15000)
+  })
+})
 ipcMain.handle('computer:screenshot', async () => {
   try {
     const img = await mainWindow?.webContents.capturePage()
@@ -275,6 +366,32 @@ ipcMain.handle('computer:screenshot', async () => {
   } catch (err: unknown) {
     throw new Error(err instanceof Error ? err.message : '截图失败')
   }
+})
+
+// ─── 剪贴板 ─────────────────────────────────────
+ipcMain.handle('computer:clipboardRead', () => { try{return require('electron').clipboard.readText()}catch{return''} })
+ipcMain.handle('computer:clipboardWrite', (_e,text:string) => { try{require('electron').clipboard.writeText(text);return true}catch{return false} })
+
+// ─── 代码沙箱 ───────────────────────────────────
+ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
+  return new Promise<string>(resolve => {
+    const tmpDir = join(userDataPath, 'codebox')
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+    const ext = lang === 'python' ? '.py' : lang === 'node' ? '.js' : '.txt'
+    const fp = join(tmpDir, 'codebox_' + Date.now() + ext)
+    fs.writeFileSync(fp, code, 'utf-8')
+    const cmd = lang === 'python' ? `python "${fp}"` : lang === 'node' ? `node "${fp}"` : `echo "unsupported: ${lang}"`
+    exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve(err ? (stderr || err.message) : stdout)
+      try { fs.unlinkSync(fp) } catch {}
+    })
+  })
+})
+ipcMain.handle('computer:processList', async () => {
+  return new Promise<string>(resolve=>{ exec('tasklist /FO CSV /NH',{timeout:5000},(e,o)=>resolve(o||'')) })
+})
+ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
+  return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
 })
 
 // ─── 浏览器 / 搜索 / 模型探测 ──────────────────────
@@ -308,14 +425,87 @@ ipcMain.handle('web:fetch', async (_e, url: string) => {
   }
 })
 
-// ─── LLM ───────────────────────────────────────────
+// ─── 定时任务 ───────────────────────────────────
+ipcMain.handle('cron:add', async (_e, expr:string, prompt:string) => {
+  try { return require('./scheduler/cron').addJob(expr, prompt) } catch(e:any) { return 'Error: ' + e.message }
+})
+ipcMain.handle('cron:list', () => { try { return require('./scheduler/cron').listJobs() } catch { return [] } })
+ipcMain.handle('cron:remove', (_e, id:string) => { try { require('./scheduler/cron').removeJob(id); return true } catch { return false } })
+
+ipcMain.handle('mcp:connect', async (_e, name, cmd, args) => {
+  try { return await require('./mcp/client').connectServer(name, cmd, args||[]) } catch(e:any) { return { error: e.message } }
+})
+ipcMain.handle('mcp:call', async (_e, server, tool, a) => {
+  try { return await require('./mcp/client').callMCPTool(server, tool, a) } catch(e:any) { return 'Error: ' + e.message }
+})
+ipcMain.handle('mcp:list', () => { try { return require('./mcp/client').listServers() } catch { return [] } })
+ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
+ipcMain.handle('skills:create', (_e, name: string, content: string) => {
+  try {
+    const dir = join(skillsDir, name)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(join(dir, 'SKILL.md'), content, 'utf-8')
+    return true
+  } catch (e: any) { return 'Error: ' + e.message }
+})
+ipcMain.handle('skills:install', (_e, url: string) => {
+  return new Promise<string>(resolve => {
+    const name = url.split('/').pop()?.replace('.git','') || 'skill'
+    const dir = join(skillsDir, name)
+    exec('git clone ' + url + ' "' + dir + '"', { timeout: 30000 }, (err, stdout, stderr) => {
+      resolve(err ? ('Error: ' + (stderr || err.message)) : 'ok')
+    })
+  })
+})
+ipcMain.handle('skills:delete', (_e, name: string) => {
+  try {
+    const dir = join(skillsDir, name)
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true })
+      return true
+    }
+    // 内建技能在 ASAR 内只读，跳过删除
+    const altDir = join(resourcesDir, 'skills', name)
+    if (!app.isPackaged && fs.existsSync(altDir)) {
+      fs.rmSync(altDir, { recursive: true, force: true })
+      return true
+    }
+    return 'Error: skill not found'
+  } catch (e: any) { return 'Error: ' + e.message }
+})
+ipcMain.handle('plugins:install', (_e, url: string) => {
+  return new Promise<string>(resolve => {
+    const dir = join(userDataPath, 'plugins')
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const name = url.split('/').pop() || 'plugin'
+    exec('git clone ' + url + ' "' + join(dir, name) + '"', { timeout: 30000 }, (err, stdout, stderr) => {
+      resolve(err ? ('Error: ' + (stderr || err.message)) : 'ok')
+    })
+  })
+})
+ipcMain.handle('plugins:scan', () => { try { return require('./plugins/loader').scanPlugins(join(userDataPath, 'plugins')) } catch { return [] } })
+ipcMain.handle('plugins:tools', () => { try { return require('./plugins/loader').getPluginTools() } catch { return [] } })
+ipcMain.handle('plugins:delete', (_e, name: string) => {
+  try {
+    const dir = join(userDataPath, 'plugins', name)
+    if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); return true }
+    return 'Error: plugin not found'
+  } catch (e: any) { return 'Error: ' + e.message }
+})
+ipcMain.handle('cron:toggle', (_e, id:string) => { try { require('./scheduler/cron').toggleJob(id); return true } catch { return false } })
 let abortFlag = false
 ipcMain.handle('llm:abort', () => { abortFlag = true })
 ipcMain.handle('llm:chat', async (event, params: any) => {
-  const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools } = params
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }
+  const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders } = params
+  const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }
+  // 合并自定义 Headers（JSON 或 key=value 多行格式）
+  if (customHeaders) {
+    try { const extra = JSON.parse(customHeaders); Object.assign(reqHeaders, extra) } catch {
+      customHeaders.split('\n').forEach((line: string) => { const idx = line.indexOf('='); if (idx > 0) reqHeaders[line.slice(0, idx).trim()] = line.slice(idx + 1).trim() })
+    }
+  }
   const body: any = { model, messages, temperature, stream: true }
-  if (tools?.length) body.tools = tools
+  if (tools?.length) { body.tools = tools }
 
   let url: string
   switch (provider) {
@@ -327,8 +517,10 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
 
   try {
     abortFlag = false
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
-    if (!res.ok) { const e = await res.text().catch(() => ''); event.sender.send('llm:error', `API ${res.status}: ${e.slice(0, 300)}`); return }
+    console.log('[LLM]', provider, model, url, 'msgs:', messages?.length, 'tools:', tools?.length || 0)
+    const res = await fetch(url, { method: 'POST', headers: reqHeaders, body: JSON.stringify(body) })
+    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); event.sender.send('llm:error', `API ${res.status}: ${e.slice(0, 400)}`); return }
+    console.log('[LLM] stream ok')
     const reader = res.body?.getReader(); if (!reader) { event.sender.send('llm:error', '无流'); return }
 
     const dec = new TextDecoder(); let buf = ''
@@ -364,6 +556,37 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
       }
     }
   } catch (err: unknown) { event.sender.send('llm:error', err instanceof Error ? err.message : String(err)) }
+})
+
+// ─── v0.2: MCP SSE 传输 ─────────────────────────────
+ipcMain.handle('mcp:sse:connect', async (_e, name: string, url: string, headers?: Record<string,string>) => {
+  try { const tools = await require('./mcp/sse-transport').connectSSE({ name, type:'sse', url, headers }); return tools }
+  catch(e:any) { return { error: e.message } }
+})
+ipcMain.handle('mcp:sse:call', async (_e, server:string, tool:string, args:any) => {
+  try { return await require('./mcp/sse-transport').callSSETool(server, tool, args) }
+  catch(e:any) { return 'Error: ' + e.message }
+})
+ipcMain.handle('mcp:sse:list', () => { try { return require('./mcp/sse-transport').listSSEServers() } catch { return [] } })
+
+// ─── v0.2: Agent 系统 ──────────────────────────────
+ipcMain.handle('agent:list', () => {
+  try { return require('./agent').BUILTIN_AGENTS.map((a:any) => ({ name:a.name, role:a.role, icon:a.icon, tools:a.tools, handoff_to:a.handoff_to })) }
+  catch { return [] }
+})
+ipcMain.handle('agent:route', (_e, msg:string) => {
+  try { return require('./agent').routeIntent(msg)?.name || '阎罗王' }
+  catch { return '阎罗王' }
+})
+
+// ─── v0.2: 工具缓存 ────────────────────────────────
+ipcMain.handle('cache:stats', () => {
+  try { return require('./cache/tool-cache').getCacheStats() }
+  catch { return { size:0, hits:0, misses:0, hit_rate:'0%' } }
+})
+ipcMain.handle('cache:clear', () => {
+  try { return require('./cache/tool-cache').invalidateCache() }
+  catch { return 0 }
 })
 
 // ─── 启动 ──────────────────────────────────────────

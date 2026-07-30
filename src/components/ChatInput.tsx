@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { useChatStore } from '../store/chat'
+import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
@@ -37,6 +37,8 @@ export default function ChatInput() {
     const ta = taRef.current
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px' }
   }, [text])
+  // 模型切换时实时更新上下文窗口大小
+  useEffect(() => { if (currentModel && currentModel !== '未配置') updateContextLimit(currentModel) }, [currentModel])
 
   const closeAll = () => { setCmdOpen(false); setMemOpen(false); setPermOpen(false); setThinkOpen(false) }
 
@@ -145,9 +147,22 @@ export default function ChatInput() {
               </div>
             )}
           </div>
+          <button className="upload-btn" title="语音输入 (实验性)" onClick={() => { try { const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition; if(SR){ const r=new SR(); r.lang='zh-CN'; r.onresult=(e:any)=>setText(t=>t+e.results[0][0].transcript); r.start() } } catch {} }}>🎤</button>
         </div>
 
-        <div className="input-right">
+        <div className="input-right" style={{ gap: 6 }}>
+          {/* Agent 选择器 */}
+          <select className="model-select" style={{ fontSize: 10, padding: '4px 6px', maxWidth: 80 }}
+            onChange={e => { (window as any).__huangquan_agent = e.target.value }}
+            defaultValue="">
+            <option value="">自动</option>
+            <option value="阎罗王">👑 主控</option>
+            <option value="判官">📜 文档</option>
+            <option value="钟馗">⚔️ 安全</option>
+            <option value="无常">🔔 通知</option>
+            <option value="孟婆">🌸 陪伴</option>
+          </select>
+
           <label className="upload-btn" title={supportsVision ? '上传图片' : '当前模型不支持视觉'}>
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={handleImagePick} />
             <span style={{ opacity: supportsVision ? 1 : 0.3 }}>📷</span>
@@ -160,7 +175,7 @@ export default function ChatInput() {
             }}>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
           ) : <span className="model-tag">{currentModel}</span>}
 
-          <svg width="20" height="20"><title>{contextUsed}/{contextLimit} tokens</title>
+          <svg width="20" height="20"><title>{(contextUsed/1024).toFixed(1)}K/{(contextLimit/1024).toFixed(0)}K tokens</title>
             <circle cx="10" cy="10" r="8" fill="none" stroke="var(--bg-hover)" strokeWidth="2" />
             <circle cx="10" cy="10" r="8" fill="none" stroke={ctxColor} strokeWidth="2"
               strokeDasharray={`${ctxRatio * 50} 50`} transform="rotate(-90 10 10)" strokeLinecap="round" />

@@ -1,0 +1,67 @@
+// electron/mcp/client.ts — MCP 协议客户端 (stdio transport)
+// 支持连接本地 MCP 服务器，发现和调用工具
+
+import { spawn, ChildProcess } from 'child_process'
+import { join } from 'path'
+import { createInterface } from 'readline'
+
+interface MCPServer { name: string; command: string; args: string[]; process?: ChildProcess; tools: MCPTool[]; reqId: number }
+
+interface MCPTool { name: string; description: string; inputSchema: any }
+
+const servers: Map<string, MCPServer> = new Map()
+
+function sendRPC(server: MCPServer, method: string, params: any): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const id = ++server.reqId
+    const msg = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'
+    const proc = server.process!
+    if (!proc.stdin || proc.stdin.destroyed) { reject(new Error('Process not running')); return }
+    
+    const timeout = setTimeout(() => reject(new Error('MCP timeout')), 10000)
+    const onLine = (line: string) => {
+      try {
+        const res = JSON.parse(line)
+        if (res.id === id) { clearTimeout(timeout); proc.stdout?.removeListener('line', onLine); resolve(res.result || res) }
+      } catch {}
+    }
+    proc.stdout?.on('line', onLine)
+    proc.stdin.write(msg)
+  })
+}
+
+export async function connectServer(name: string, command: string, args: string[] = []): Promise<MCPTool[]> {
+  try {
+    const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity })
+    const server: MCPServer = { name, command, args, process: proc, tools: [], reqId: 0 }
+    
+    const initResult = await new Promise<any>((resolve, reject) => {
+      const id = ++server.reqId
+      proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {} } }) + '\n')
+      const timer = setTimeout(() => { proc.kill(); reject(new Error('Init timeout')) }, 15000)
+      rl.once('line', line => { clearTimeout(timer); resolve(JSON.parse(line)) })
+    })
+    
+    // List tools
+    const toolsResult = await sendRPC(server, 'tools/list', {})
+    server.tools = (toolsResult?.tools || []).map((t: any) => ({ name: t.name, description: t.description || '', inputSchema: t.inputSchema || {} }))
+    server.process = proc
+    
+    servers.set(name, server)
+    return server.tools
+  } catch (e: any) { throw new Error('MCP connect failed: ' + e.message) }
+}
+
+export async function callMCPTool(serverName: string, toolName: string, args: any): Promise<string> {
+  const server = servers.get(serverName)
+  if (!server) throw new Error('Server not connected: ' + serverName)
+  const result = await sendRPC(server, 'tools/call', { name: toolName, arguments: args })
+  return JSON.stringify(result?.content || result)
+}
+
+export function listServers(): { name: string; tools: MCPTool[] }[] {
+  return [...servers.entries()].map(([name, s]) => ({ name, tools: s.tools }))
+}
+
+export function disconnectAll() { for (const [_, s] of servers) { try { s.process?.kill() } catch {} }; servers.clear() }

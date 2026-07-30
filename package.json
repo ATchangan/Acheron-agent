@@ -1,10 +1,10 @@
 {
   "name": "huangquan-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "黄泉Agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"tsx watch electron/main.ts\"",
+    "dev": "vite build && tsc -p electron/tsconfig.json && concurrently -k \"vite --watch\" \"electron .\"",
     "build": "vite build && tsc -p electron/tsconfig.json",
     "preview": "vite preview",
     "start": "electron .",

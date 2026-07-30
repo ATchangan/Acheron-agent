@@ -17,7 +17,6 @@ export default function MessageItem({ message, streaming }: Props) {
   const [copied, setCopied] = useState(false)
   const regen = useChatStore(s => s.regen)
   const [selected, setSelected] = useState(false)
-  const [thinkOpen, setThinkOpen] = useState(true)
   const isUser = message.role === 'user'
   const timeText = new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   const handleCopy = () => { navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 2000) }
@@ -37,37 +36,30 @@ export default function MessageItem({ message, streaming }: Props) {
     }
   }, [])
 
-  if (message.role === 'tool') return null
-
-  // 解析沉思块和正文
-  const renderAssistantContent = (text: string) => {
-    const reflectMatch = text.match(/<reflect>([\s\S]*?)<\/reflect>/)
-    const hasReflect = !!reflectMatch
-
-    if (!hasReflect) {
-      return (
-        <div className="markdown-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text || (streaming ? '' : '...')}</ReactMarkdown>
-        </div>
-      )
-    }
-
-    const reflectContent = reflectMatch![1]
-    const afterReflect = text.slice(reflectMatch!.index! + reflectMatch![0].length)
-
+  if (message.role === 'tool') {
+    const truncated = message.content.length > 300 ? message.content.slice(0, 300) + '...' : message.content
+    const isError = message.content.startsWith('E:')
+    const toolId = (message as any).tool_call_id || ''
     return (
-      <>
-        <details className="thinking-block" open={thinkOpen} onToggle={e => setThinkOpen((e.target as HTMLDetailsElement).open)}>
-          <summary className="thinking-summary">
-            <span className="thinking-arrow">{thinkOpen ? '▼' : '▶'}</span>
-            {' '}{streaming ? <span>思考中<span className="thinking-dots" /></span> : '沉思'}
-          </summary>
-          <pre className="thinking-content">{reflectContent.trim()}</pre>
-        </details>
-        <div className="markdown-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{afterReflect.trim() || ''}</ReactMarkdown>
+      <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
+        <div className="message-body">
+          <div className="tool-call-block" style={{ borderColor: isError ? '#ff4466' : 'var(--accent-green)', background: isError ? 'rgba(255,68,102,.05)' : 'rgba(72,201,138,.05)' }}>
+            <div className="tool-call-header" style={{ color: isError ? '#ff4466' : 'var(--accent-green)' }}>{isError ? '✗ Error' : '✓ ' + toolId.replace('call_','').slice(0,8)}</div>
+            <pre className="tool-call-output">{truncated}</pre>
+          </div>
         </div>
-      </>
+      </div>
+    )
+  }
+
+  // 渲染助手回复
+  const renderAssistantContent = (text: string) => {
+    // Strip legacy <reflect> tags if model still emits them
+    const clean = text.replace(/<reflect>[\s\S]*?<\/reflect>/g, '').trim()
+    return (
+      <div className="markdown-body">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{clean || (streaming ? '' : '...')}</ReactMarkdown>
+      </div>
     )
   }
 
