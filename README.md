@@ -2,13 +2,13 @@
 
 > 「在褪色成无的世界里，轻轻挥出一刀，将整片梦境带走。」
 >
-> 基于 [HanaAgent](https://github.com/liliMozi/openhanako) 构建的黄泉主题桌面 AI 助手。Electron + React + TypeScript。
+> 黄泉主题桌面 AI 助手。Electron + React + TypeScript。
 
 ---
 
 ## 🎭 这是什么
 
-Acheron-agent 是一个有人格、有记忆、会自主行动的 Windows 桌面 AI 助手。它以《崩坏：星穹铁道》角色「黄泉」为灵魂，在 HanaAgent 的 Agent 框架之上重建了交互体验。
+Acheron-agent 是一个有人格、有记忆、会自主行动的 Windows 桌面 AI 助手。它以《崩坏：星穹铁道》角色「黄泉」为灵魂，融合多 Agent 协作、语义记忆、任务规划、定时调度等能力。
 
 **你和黄泉之间不只是问答**——她会记住你说过的话，拆解复杂任务，调度专业子 Agent 编队协作，在你不注意的时候按计划自主工作。
 
@@ -144,9 +144,9 @@ npm run package:win   # 打包为 portable exe
 
 ---
 
-## 📄 致谢
+## 📄 关于
 
-本项目基于 [liliMozi/HanaAgent](https://github.com/liliMozi/openhanako)（Apache-2.0）构建。人格定义取材于《崩坏：星穹铁道》角色「黄泉」（Acheron / 雷电 忘川守 芽衣）。
+人格定义取材于《崩坏：星穹铁道》角色「黄泉」（Acheron / 雷电 忘川守 芽衣）。
 
 ---
 
