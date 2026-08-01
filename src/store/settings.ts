@@ -164,7 +164,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   return {
   providers: [],
   general: {
-    theme: 'dark', mode: 'work',
+    theme: 'dark', themePreset: 'dark-tech', mode: 'work',   // 默认外观: 暗色科技(dark-tech)
     // v0.2.5: 无头浏览器网页解析工具配置
     webReadEnabled: true,        // 总开关: 关闭后 Agent 无法调用 web_read
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
