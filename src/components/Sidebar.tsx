@@ -11,8 +11,11 @@ const AgentIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="no
 const MemoryIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
 const SettingsIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
 
+const BrowserIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>
+
 const NAV_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
   { id: 'chat', icon: <ChatIcon />, label: '对话' },
+  { id: 'browser', icon: <BrowserIcon />, label: '浏览器' },
   { id: 'settings', icon: <SettingsIcon />, label: '设置' },
 ]
 
@@ -54,7 +57,11 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
           <div
             key={item.id}
             className={`menu-item ${currentView === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
+            onClick={() => {
+              // v0.2.3: 浏览器导航 -> 打开独立浏览器窗口
+              if (item.id === 'browser') { try { (window as any).huangquan?.web.showPanel() } catch {} return }
+              onNavigate(item.id)
+            }}
             role="button"
             tabIndex={0}
             onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onNavigate(item.id)}
@@ -80,6 +87,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleSwitch(s.id)}
               >
                 <span className="session-title" title={s.title}>{s.title}</span>
+                {(s as any).busy && <span className="session-busy" title="该会话正在工作中，可切换到其他会话独立使用">● 工作中</span>}
                 <button className="session-delete" onClick={e => { e.stopPropagation(); del(s.id) }}
                   title="删除会话" aria-label="删除会话"
                   style={{ width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>

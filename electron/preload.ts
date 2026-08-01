@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // ─── v0.2.1: 安全参数清洗——消除 Proxy、循环引用等不可序列化对象导致的 IPC 报错 ──
 function safeArg(obj: any): any {
@@ -29,6 +29,8 @@ function safeArg(obj: any): any {
 }
 
 contextBridge.exposeInMainWorld('huangquan', {
+  // v0.2.2-fix: Electron 32 移除了 File.path，必须用 webUtils.getPathForFile 获取真实路径
+  getPathForFile: (f: File) => webUtils.getPathForFile(f),
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
@@ -89,6 +91,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     readFile: (path: string, offset?: number, limit?: number) => ipcRenderer.invoke('computer:readFile', path, offset, limit),
     writeFile: (path: string, content: string) => ipcRenderer.invoke('computer:writeFile', path, content),
     readDir: (path: string) => ipcRenderer.invoke('computer:readDir', path),
+    mkdir: (path: string) => ipcRenderer.invoke('computer:mkdir', path),
+    remove: (path: string) => ipcRenderer.invoke('computer:remove', path),
+    rename: (oldPath: string, newName: string) => ipcRenderer.invoke('computer:rename', oldPath, newName),
+    createFile: (filePath: string, content?: string) => ipcRenderer.invoke('computer:createFile', filePath, content),
+    contextMenu: (opts: { path: string; isDir: boolean; isWorkDir?: boolean }) => ipcRenderer.invoke('computer:contextMenu', opts),
     systemInfo: () => ipcRenderer.invoke('computer:systemInfo'),
     openFile: (path: string) => ipcRenderer.invoke('computer:openFile', path),
     selectFile: () => ipcRenderer.invoke('computer:selectFile'),
@@ -107,11 +114,34 @@ contextBridge.exposeInMainWorld('huangquan', {
   web: {
     fetch: (url: string) => ipcRenderer.invoke('web:fetch', url),
     search: (query: string) => ipcRenderer.invoke('web:search', query),
+    // v0.2.5: 无头浏览器网页解析工具（Playwright 内核, 返回 JSON 字符串）
+    read: (url: string, mode?: string) => ipcRenderer.invoke('web:read', url, mode),
     browse: (url: string) => ipcRenderer.invoke('browser:open', url),
     browseScreenshot: (url: string) => ipcRenderer.invoke('browser:screenshot', url),
+    // v0.2.3: 实时浏览器面板
+    navigate: (url: string) => ipcRenderer.invoke('browser:navigate', url),
+    back: () => ipcRenderer.invoke('browser:back'),
+    forward: () => ipcRenderer.invoke('browser:forward'),
+    reload: () => ipcRenderer.invoke('browser:reload'),
+    current: () => ipcRenderer.invoke('browser:current'),
+    snapshot: () => ipcRenderer.invoke('browser:snapshot'),
+    // v0.2.3: 独立浏览器窗口 + 悬浮窗
+    showPanel: () => ipcRenderer.invoke('browser:showPanel'),
+    showFloat: () => ipcRenderer.invoke('browser:showFloat'),
+    hideFloat: () => ipcRenderer.invoke('browser:hideFloat'),
+    debug: () => ipcRenderer.invoke('browser:debug'),
+    // v0.2.6: 渲染加速状态
+    rendererStatus: () => ipcRenderer.invoke('renderer:status'),
+    // v0.2.4: 主窗口内"正在使用浏览器"横幅事件
+    onFloat: (cb: (d: { show: boolean }) => void) => {
+      const h = (_: unknown, d: { show: boolean }) => cb(d)
+      ipcRenderer.on('browser:float', h); return () => ipcRenderer.removeListener('browser:float', h)
+    },
   },
   models: {
-    detect: (baseUrl: string, apiKey: string) => ipcRenderer.invoke('models:detect', baseUrl, apiKey),
+    detect: (baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => ipcRenderer.invoke('models:detect', baseUrl, apiKey, opts),
+    // v0.2.2: 测试连接
+    test: (baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => ipcRenderer.invoke('models:test', baseUrl, apiKey, opts),
   },
   cacheStats: () => ipcRenderer.invoke('cache:stats'),
   cacheClear: () => ipcRenderer.invoke('cache:clear'),
@@ -121,12 +151,13 @@ contextBridge.exposeInMainWorld('huangquan', {
     chatOnce: (params: unknown) => ipcRenderer.invoke('llm:chatOnce', params),
     vision: (params: unknown) => ipcRenderer.invoke('llm:vision', params),
     abort: () => ipcRenderer.invoke('llm:abort'),
-    onChunk: (cb: (d: { content: string; done: boolean }) => void) => {
-      const h = (_: unknown, d: { content: string; done: boolean }) => cb(d)
+    // v0.2.3: 多会话并发 —— 回调均带 requestId，由调用方过滤只收自己的流
+    onChunk: (cb: (d: { content: string; done: boolean; requestId?: string }) => void) => {
+      const h = (_: unknown, d: { content: string; done: boolean; requestId?: string }) => cb(d)
       ipcRenderer.on('llm:chunk', h); return () => ipcRenderer.removeListener('llm:chunk', h)
     },
-    onError: (cb: (e: string) => void) => {
-      const h = (_: unknown, e: string) => cb(e)
+    onError: (cb: (e: any) => void) => {
+      const h = (_: unknown, e: any) => cb(e)
       ipcRenderer.on('llm:error', h); return () => ipcRenderer.removeListener('llm:error', h)
     },
     onToolCall: (cb: (tc: any) => void) => {

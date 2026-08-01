@@ -55,6 +55,30 @@ function adjustColor(r: number, g: number, b: number, lightnessFactor: number): 
   return `rgb(${lr},${lg},${lb})`
 }
 
+// v0.2.2-fix: 背景图压缩 —— Chromium 对 CSS 自定义属性值有大小限制（~1MB 量级），
+// 超长 dataURL 写入 --bg-image 会静默失败导致背景图不显示；同时压缩避免 settings.json 膨胀
+export function compressImage(dataUrl: string, maxSide = 1920, quality = 0.82): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        if (dataUrl.length < 400 * 1024 || img.width <= 0) { resolve(dataUrl); return }
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { resolve(dataUrl); return }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const out = canvas.toDataURL('image/jpeg', quality)
+        resolve(out.length < dataUrl.length ? out : dataUrl)
+      } catch { resolve(dataUrl) }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
 function applySkin(dataUrl: string | null) {
   const r = document.documentElement
   if (dataUrl) {
@@ -139,7 +163,19 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   }
   return {
   providers: [],
-  general: { theme: 'dark', mode: 'work' },
+  general: {
+    theme: 'dark', mode: 'work',
+    // v0.2.5: 无头浏览器网页解析工具配置
+    webReadEnabled: true,        // 总开关: 关闭后 Agent 无法调用 web_read
+    webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
+    webReadTimeout: 15000,       // 页面加载超时(ms)
+    webReadUA: '',               // 自定义浏览器 User-Agent(空=默认)
+    webReadProxy: '',            // HTTP 代理地址(空=不使用)
+    webReadAutoClose: true,      // 任务完成自动关闭浏览器进程
+    webReadCleanAds: true,       // 网页读取完成自动清洗冗余广告内容
+    webReadCookies: '',          // 网页解析登录 Cookie(JSON 数组或 "k=v; k2=v2")
+    rendererMode: 'auto',        // 渲染加速: auto(GPU优先,无GPU回退CPU) / gpu(强制GPU) / cpu(CPU软件渲染)
+  },
   loaded: false,
 
   load: async () => {
@@ -153,7 +189,15 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       set({ ...data, loaded: true })
       if (filled) { window.huangquan.settings.save(data as SettingsData).catch(() => {}) }
       const g = data.general as any
-      if (g.bgImage) applySkin(g.bgImage)
+      if (g.bgImage) {
+        // v0.2.2-fix: 旧版可能存了超大图（CSS 变量写入失败），加载时压缩迁移
+        const compressed = await compressImage(g.bgImage)
+        if (compressed !== g.bgImage) {
+          set((s) => ({ general: { ...s.general, bgImage: compressed } }))
+          window.huangquan.settings.save({ ...get(), general: { ...get().general, bgImage: compressed } } as any).catch(() => {})
+        }
+        applySkin(compressed)
+      }
       if (g.skinColors) {
         const sc = g.skinColors
         document.documentElement.style.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
@@ -184,10 +228,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   },
   setAnimation: (on) => { set((s) => ({ general: { ...s.general, animation: on } })); debouncedSave(); document.documentElement.style.setProperty('--anim-duration', on ? '0.2s' : '0s') },
   setBgImage: async (dataUrl) => {
-    set((s) => ({ general: { ...s.general, bgImage: dataUrl || undefined } })); debouncedSave()
-    if (dataUrl) {
-      applySkin(dataUrl)
-      const c = await extractDominantColor(dataUrl)
+    // v0.2.2-fix: 先压缩再保存/应用（大图否则 CSS 变量写入失败 + 设置文件膨胀）
+    const finalUrl = dataUrl ? await compressImage(dataUrl) : null
+    set((s) => ({ general: { ...s.general, bgImage: finalUrl || undefined } })); debouncedSave()
+    if (finalUrl) {
+      applySkin(finalUrl)
+      const c = await extractDominantColor(finalUrl)
       // 直接应用提取结果，避免重复提取
       const r = document.documentElement
       r.style.setProperty('--skin-accent', `${c.r},${c.g},${c.b}`)
@@ -200,7 +246,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       set((s) => ({ general: { ...s.general, skinColors: undefined } })); debouncedSave()
     }
   },
-  setBgOpacity: (v) => { set((s) => ({ general: { ...s.general, bgOpacity: v } })); debouncedSave() },
+  setBgOpacity: (v) => {
+    set((s) => ({ general: { ...s.general, bgOpacity: v } })); debouncedSave()
+    // v0.2.2-fix: 同步写 CSS 变量 —— 蒙版不透明度 = 1 - 背景透明度
+    document.documentElement.style.setProperty('--bg-mask-opacity', String(1 - v))
+  },
   updateGeneral: (patch: Partial<Record<string, any>>) => { set((s) => ({ general: { ...s.general, ...patch } })); debouncedSave() },
   // v0.2.1: 多媒体供应商
   addMediaProvider: (p) => { set((s) => ({ mediaProviders: [...(s.mediaProviders || []), p] })); debouncedSave() },

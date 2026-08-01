@@ -7,8 +7,10 @@ import RightPanel from './components/RightPanel'
 import SettingsView from './components/SettingsView'
 import AgentsView from './components/AgentsView'
 import MemoryView from './components/MemoryView'
+import BrowserView from './components/BrowserView'
+import FloatBadge from './components/FloatBadge'
 
-export type View = 'chat' | 'settings' | 'agents' | 'memory'
+export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser'
 
 // 窗口控制按钮
 const WinBtn: React.FC<{ onClick: () => void; danger?: boolean; children: React.ReactNode }> = ({ onClick, danger, children }) => (
@@ -47,11 +49,21 @@ function applyAppearance(g: any) {
     document.documentElement.setAttribute('data-theme', g.themePreset)
   }
   // Custom theme colors override (from settings)
-  if (g.customTheme) {
-    const ct = g.customTheme
+  const customTheme = g.customColors || g.customTheme
+  if (customTheme) {
+    const ct = customTheme
     if (ct.bg) r.setProperty('--bg-root', ct.bg)
     if (ct.surface) r.setProperty('--bg-surface', ct.surface)
     if (ct.accent) r.setProperty('--accent', ct.accent)
+  }
+  // v0.2.2-fix: 背景图主色调统一应用（与 settings.load 恢复逻辑一致，避免切换预设后 accent 残留漂移）
+  if (g.bgImage && g.skinColors) {
+    const sc = g.skinColors
+    const adj = (f: number) => { const lr = Math.min(255, Math.max(0, Math.round(sc.r * f))); const lg = Math.min(255, Math.max(0, Math.round(sc.g * f))); const lb = Math.min(255, Math.max(0, Math.round(sc.b * f))); return `rgb(${lr},${lg},${lb})` }
+    r.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
+    r.setProperty('--accent', adj(1))
+    r.setProperty('--accent-dim', adj(0.8))
+    r.setProperty('--border-glow', adj(0.4))
   }
   // Typography: override CSS variables
   if (g.uiFontSize) r.setProperty('--ui-font-size', g.uiFontSize + 'px')
@@ -69,6 +81,15 @@ function applyAppearance(g: any) {
 
 export default function App() {
   const [view, setView] = useState<View>('chat')
+
+  // v0.2.3: hash 路由 —— #browser = 独立无头浏览器窗口; #float = 悬浮窗; 其余 = 主窗口
+  const [routeHash, setRouteHash] = useState<string>(window.location.hash || '')
+  useEffect(() => {
+    const onHash = () => setRouteHash(window.location.hash || '')
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  if (routeHash === '#browser') return <BrowserView />
 
   useEffect(() => {
     useSettingsStore.getState().load()
@@ -114,6 +135,7 @@ export default function App() {
       case 'settings': return <SettingsView onNavigate={setView} />
       case 'agents':   return <AgentsView />
       case 'memory':   return <MemoryView />
+      case 'browser':  return <div style={{ padding: 40, color: '#78789A', fontSize: 13 }}>无头浏览器已在独立窗口打开 ↗</div>
       default:         return <ChatView onNavigate={setView} />
     }
   }
@@ -142,6 +164,8 @@ export default function App() {
         {renderView()}
       </div>
       {view === 'chat' && <RightPanel />}
+      {/* v0.2.4: agent 使用浏览器时的主窗口内横幅提示 */}
+      <FloatBadge />
     </div>
   )
 }

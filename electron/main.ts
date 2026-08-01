@@ -1,9 +1,13 @@
-﻿import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell } from 'electron'
+﻿import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net } from 'electron'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
 import { exec } from 'child_process'
 import * as os from 'os'
+
+// v0.2.2-fix: 使用 Electron net.fetch（Chromium 网络栈，自动跟随 Windows 系统代理）——
+// Node 全局 fetch(undici) 不读系统代理，导致浏览器能访问的 API 在应用内超时
+const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch(args[0] as any, args[1] as any)) as any
 
 // v0.2.1: 全局崩溃捕获
 process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
@@ -40,15 +44,39 @@ function safeClone(obj: any, seen = new WeakSet()): any {
   return result
 }
 
-// v0.2.1: 禁用 GPU 硬件加速，防止 GPU 进程崩溃导致窗口渲染异常
-app.disableHardwareAcceleration()
-app.commandLine.appendSwitch('disable-gpu')
-app.commandLine.appendSwitch('disable-gpu-sandbox')
+// ─── v0.2.6: 渲染加速 —— GPU 优先, 无 GPU 自动回退 CPU ─────────
+// 模式(settings.general.rendererMode): auto(默认, GPU可用则GPU) / gpu(强制GPU) / cpu(强制CPU软件渲染)
+let rendererMode = 'auto'
+try {
+  const raw0 = fs.readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf-8')
+  rendererMode = JSON.parse(raw0)?.general?.rendererMode || 'auto'
+} catch { /* 首次运行无设置文件 */ }
+if (rendererMode === 'cpu') {
+  // 兼容模式: 关闭 GPU, 全 CPU 软件渲染
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+} else {
+  // v0.2.6-fix: GPU 模式(auto/gpu) —— 完全自动识别。
+  // 不强制指定/不无视黑名单(移除 ignore-gpu-blocklist), 由 Chromium 自动探测 GPU 并决定是否硬件加速:
+  //   检测到可用 GPU → 自动启用硬件加速; 无 GPU / 驱动有问题的 GPU → 自动降级软件渲染。
+  app.commandLine.appendSwitch('enable-gpu-rasterization')  // 尽力而为: GPU 可用时栅格化走 GPU
+  app.commandLine.appendSwitch('enable-zero-copy')          // 尽力而为: 零拷贝合成
+  app.commandLine.appendSwitch('enable-accelerated-2d-canvas') // Canvas 2D 加速(可用时)
+  app.commandLine.appendSwitch('enable-accelerated-video-decode') // 视频硬解(可用时)
+}
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let serverPort = 0
+
+// ─── v0.2.3-fix: 单实例锁 —— 防止多实例并行导致悬浮窗/窗口互相干扰 ──
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+  throw new Error('Another instance is running')
+}
+app.on('second-instance', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus() } })
 
 // ─── 路径 ───────────────────────────────────────────
 const ROOT = join(__dirname, '..')
@@ -62,12 +90,7 @@ const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
 
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
-  try {
-    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
-  } catch (e: any) {
-    // portable 模式可能路径冲突，静默跳过
-    console.error('[黄泉Agent] mkdir failed for', d, e.message)
-  }
+  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
 }
 
 // 启动时初始向量记忆
@@ -143,11 +166,82 @@ function trayEnabled(): boolean {
   } catch { /* ignore */ }
   return false
 }
+// ─── v0.2.3: 独立浏览器窗口 + 使用中悬浮窗 ─────────────────
+let browserPanelWin: BrowserWindow | null = null
+let floatHideTimer: any = null
+
+function showBrowserPanel() {
+  if (browserPanelWin && !browserPanelWin.isDestroyed()) { browserPanelWin.show(); browserPanelWin.focus(); return }
+  // v0.2.3-fix: 若无头浏览器从未导航过, 先加载默认页, 避免面板一直空白/加载
+  try {
+    // v0.2.4: 默认主页从设置读取（设置 → 工具 → 浏览器设置 → 默认主页）
+    let homeUrl = 'https://example.com'
+    try {
+      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+      const hu = s?.general?.browserHomeUrl
+      if (typeof hu === 'string' && hu.trim()) homeUrl = /^https?:\/\//i.test(hu.trim()) ? hu.trim() : 'https://' + hu.trim()
+    } catch { /* 忽略 */ }
+    const bw = getBrowserWin()
+    const wc = bw.webContents
+    if (!wc.getURL() || wc.getURL() === 'about:blank' || wc.isLoading()) {
+      browserCurUrl = homeUrl
+      wc.loadURL(homeUrl).catch(() => {})
+    }
+  } catch { /* 忽略 */ }
+  // v0.2.5: 窗口尺寸从设置读取(浏览器设置 → 实时面板 → 窗口尺寸)
+  let winW = 1280, winH = 860
+  try {
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    const w = parseInt(s?.general?.browserWinW), h = parseInt(s?.general?.browserWinH)
+    if (!isNaN(w) && w >= 600) winW = w
+    if (!isNaN(h) && h >= 400) winH = h
+  } catch { /* 忽略 */ }
+  browserPanelWin = new BrowserWindow({
+    width: winW, height: winH, minWidth: 800, minHeight: 500,
+    title: '黄泉Agent · 无头浏览器',
+    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
+    backgroundColor: '#08080f', show: false,
+  })
+  browserPanelWin.loadURL('http://127.0.0.1:' + serverPort + '/index.html#browser')
+  browserPanelWin.once('ready-to-show', () => browserPanelWin?.show())
+  browserPanelWin.on('closed', () => { browserPanelWin = null })
+}
+function hideBrowserFloat() {
+  if (floatHideTimer) { clearTimeout(floatHideTimer); floatHideTimer = null }
+  try { mainWindow?.webContents.send('browser:float', { show: false }) } catch { /* 忽略 */ }
+}
+// v0.2.4: 悬浮提示改为"主窗口内横幅" —— 通过事件推送到主窗口渲染, 不再创建系统悬浮窗
+function showBrowserFloat() {
+  // 提示时长从设置读取（browserFloatTimeout, 默认 30s）
+  let timeoutMs = 30000
+  try {
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    const tv = parseInt(s?.general?.browserFloatTimeout)
+    if (!isNaN(tv) && tv > 0) timeoutMs = tv * 1000
+  } catch { /* 忽略 */ }
+  try { mainWindow?.webContents.send('browser:float', { show: true }) } catch { /* 忽略 */ }
+  if (floatHideTimer) clearTimeout(floatHideTimer)
+  floatHideTimer = setTimeout(hideBrowserFloat, timeoutMs)
+}
+ipcMain.handle('browser:showPanel', () => { showBrowserPanel(); hideBrowserFloat(); return true })
+// v0.2.3-debug: 窗口诊断
+ipcMain.handle('browser:debug', () => {
+  const out: any = {}
+  const bwAll = BrowserWindow.getAllWindows()
+  out.all = bwAll.map((w: any) => {
+    const p = w.getParentWindow()
+    return { id: w.id, title: w.getTitle(), visible: w.isVisible(), bounds: w.getBounds(), parent: p ? p.id : null, alwaysOnTop: w.isAlwaysOnTop() }
+  })
+  return out
+})
+ipcMain.handle('browser:showFloat', () => { showBrowserFloat(); return true })
+ipcMain.handle('browser:hideFloat', () => { hideBrowserFloat(); return true })
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 900, minHeight: 600,
     title: '黄泉Agent', icon: join(resourcesDir, 'icon.png'),
-    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
+    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false },
     backgroundColor: '#08080f', show: false, frame: false,
   })
   mainWindow = win
@@ -174,6 +268,18 @@ function createTray() {
 }
 
 // ─── 窗口控制 IPC ─────────────────────────────────
+// v0.2.6: 渲染状态查询(设置 → 引擎 → 渲染加速)
+ipcMain.handle('renderer:status', () => {
+  try {
+    const st: any = app.getGPUFeatureStatus()
+    return {
+      mode: rendererMode,
+      gpuAcceleration: st?.gpuAcceleration || (st?.webgl === 'enabled' ? 'hardware_accelerated' : 'software_only'),
+      webgl: st?.webgl || 'unknown',
+      canvas2d: st?.['2d_canvas'] || 'unknown',
+    }
+  } catch { return { mode: rendererMode, gpuAcceleration: 'unknown', webgl: 'unknown', canvas2d: 'unknown' } }
+})
 ipcMain.handle('window:setOpacity', (_e, opacity: number) => {
   if (mainWindow) mainWindow.setOpacity(Math.max(0.3, Math.min(1, opacity)))
 })
@@ -189,7 +295,20 @@ ipcMain.handle('settings:load', () => {
   try {
     if (fs.existsSync(settingsPath)) {
       const raw = fs.readFileSync(settingsPath, 'utf-8')
-      if (raw.trim()) { const data = JSON.parse(raw); console.log('[SETTINGS] loaded providers:', data?.providers?.length); return data }
+      if (raw.trim()) {
+        const data = JSON.parse(raw)
+        // v0.2.5-opt: 从独立文件读回大字段
+        const g: any = data?.general || {}
+        for (const [key, file] of [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']] as [string, string][]) {
+          const v = g[key]
+          if (typeof v === 'string' && v.startsWith('__FILE__')) {
+            try { const fv = fs.readFileSync(join(userDataPath, file), 'utf-8'); g[key] = fv } catch { delete g[key] }
+          }
+        }
+        if (g !== data?.general) data.general = g
+        console.log('[SETTINGS] loaded providers:', data?.providers?.length)
+        return data
+      }
     }
   } catch (e) { console.error('settings load error:', e) }
   return { providers: [], general: { theme: 'dark' } }
@@ -197,8 +316,21 @@ ipcMain.handle('settings:load', () => {
 ipcMain.handle('settings:save', (_e, s) => {
   try {
     fs.mkdirSync(userDataPath, { recursive: true })
-    fs.writeFileSync(settingsPath, JSON.stringify(s, null, 2), 'utf-8')
-    console.log('[SETTINGS] saved to', settingsPath, 'providers:', s?.providers?.length)
+    // v0.2.5-opt: 大字段(头像/背景图 base64)剥离到独立文件, 避免每次保存全量写 2.8MB 阻塞
+    const g = s?.general || {}
+    const bigKeys: [string, string][] = [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']]
+    const g2: any = { ...g }
+    for (const [key, file] of bigKeys) {
+      const v = (g2 as any)[key]
+      if (typeof v === 'string' && v.length > 1024) {
+        try { fs.writeFileSync(join(userDataPath, file), v, 'utf-8') } catch { /* 忽略 */ }
+        ;(g2 as any)[key] = '__FILE__' + file
+      } else if (v === undefined || v === null) {
+        try { fs.rmSync(join(userDataPath, file), { force: true }) } catch { /* 忽略 */ }
+      }
+    }
+    const slim = { ...s, general: g2 }
+    fs.writeFileSync(settingsPath, JSON.stringify(slim), 'utf-8')
     return true
   } catch (e) { console.error('[SETTINGS] save error:', e); return false }
 })
@@ -250,8 +382,10 @@ ipcMain.handle('sessions:load', (_e, id: string) => {
 })
 ipcMain.handle('sessions:save', (_e, s) => {
   // v0.2.1: 安全序列化防止循环引用导致 IPC 克隆报错
+  // v0.2.5-opt: 异步写盘避免阻塞主进程(大会话含图片 base64 可达数 MB)
   const safe = safeClone(s)
-  fs.writeFileSync(join(sessionsDir, safe.id + '.json'), JSON.stringify({ ...safe, updatedAt: new Date().toISOString() }, null, 2), 'utf-8')
+  const content = JSON.stringify({ ...safe, updatedAt: new Date().toISOString() })
+  fs.promises.writeFile(join(sessionsDir, safe.id + '.json'), content, 'utf-8').catch((e: any) => console.error('[SESSIONS] save error:', e?.message))
   return true
 })
 ipcMain.handle('sessions:delete', (_e, id: string) => { try { fs.unlinkSync(join(sessionsDir, id + '.json')) } catch { /* ok */ }; return true })
@@ -449,6 +583,77 @@ ipcMain.handle('computer:readDir', async (_e, dirPath: string) => {
   const items = fs.readdirSync(dirPath, { withFileTypes: true })
   return items.map(item => ({ name: item.name, isDirectory: item.isDirectory(), size: item.isFile() ? fs.statSync(join(dirPath, item.name)).size : 0 }))
 })
+// ─── v0.2.6: 文件浏览器操作(写操作限定工作目录内, 防误删) ──
+function assertInsideWorkDir(p: string): boolean {
+  try {
+    const wd = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general?.workDir
+    if (!wd) return false
+    const rp = require('path').resolve(p)
+    const rw = require('path').resolve(wd)
+    return rp === rw || rp.startsWith(rw + require('path').sep)
+  } catch { return false }
+}
+ipcMain.handle('computer:mkdir', async (_e, dirPath: string) => {
+  try {
+    if (!assertInsideWorkDir(dirPath)) return { ok: false, error: '仅允许在工作目录内创建' }
+    fs.mkdirSync(dirPath, { recursive: true })
+    return { ok: true }
+  } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+})
+ipcMain.handle('computer:remove', async (_e, targetPath: string) => {
+  try {
+    if (!assertInsideWorkDir(targetPath)) return { ok: false, error: '仅允许删除工作目录内的文件' }
+    const st = fs.statSync(targetPath)
+    if (st.isDirectory()) fs.rmSync(targetPath, { recursive: true, force: true })
+    else fs.unlinkSync(targetPath)
+    return { ok: true }
+  } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+})
+ipcMain.handle('computer:rename', async (_e, oldPath: string, newName: string) => {
+  try {
+    if (!assertInsideWorkDir(oldPath)) return { ok: false, error: '仅允许重命名工作目录内的文件' }
+    if (!newName || newName.includes('/') || newName.includes('\\') || newName.includes(':')) return { ok: false, error: '名称不合法' }
+    const newPath = join(dirname(oldPath), newName)
+    fs.renameSync(oldPath, newPath)
+    return { ok: true }
+  } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+})
+ipcMain.handle('computer:createFile', async (_e, filePath: string, content?: string) => {
+  try {
+    if (!assertInsideWorkDir(filePath)) return { ok: false, error: '仅允许在工作目录内创建' }
+    if (fs.existsSync(filePath)) return { ok: false, error: '文件已存在' }
+    fs.writeFileSync(filePath, content || '', 'utf-8')
+    return { ok: true }
+  } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+})
+// ─── v0.2.6: 原生右键菜单(文件浏览器) ──
+ipcMain.handle('computer:contextMenu', (_e, opts: { path: string; isDir: boolean; isWorkDir?: boolean }) => {
+  return new Promise<string>((resolve) => {
+    try {
+      const { Menu, clipboard } = require('electron')
+      const { path, isDir, isWorkDir } = opts
+      let done = false
+      const pick = (a: string) => { if (!done) { done = true; resolve(a) } }
+      const template: any[] = [
+        { label: isDir ? '打开文件夹' : '打开文件', click: () => pick('open') },
+        { label: '复制路径', click: () => { clipboard.writeText('"' + path + '"'); pick('copy') } },
+        { type: 'separator' },
+        { label: '重命名', click: () => pick('rename') },
+        { label: '删除', click: () => pick('delete') },
+      ]
+      if (isWorkDir) {
+        template.push({ type: 'separator' })
+        template.push({ label: '新建文件夹', click: () => pick('mkdir') })
+        template.push({ label: '新建文件', click: () => pick('createFile') })
+      }
+      template.push({ type: 'separator' })
+      template.push({ label: '刷新', click: () => pick('refresh') })
+      const menu = Menu.buildFromTemplate(template)
+      menu.on('menu-will-close', () => setTimeout(() => pick('none'), 200))
+      menu.popup({ window: BrowserWindow.getFocusedWindow() || undefined })
+    } catch { resolve('none') }
+  })
+})
 ipcMain.handle('computer:systemInfo', () => ({
   platform: os.platform(), arch: os.arch(), hostname: os.hostname(),
   cpus: os.cpus().length, totalMemory: os.totalmem(), freeMemory: os.freemem(),
@@ -516,48 +721,103 @@ ipcMain.handle('computer:find', async (_e, dirPath: string, glob: string) => {
 })
 
 // ─── 浏览器自动化 ───────────────────────────────
-ipcMain.handle('browser:open', async (_e, url: string) => {
-  return new Promise<string>(resolve => {
-    const bw = new BrowserWindow({ width: 1280, height: 800, show: false, webPreferences: { sandbox: true } })
-    bw.loadURL(url)
-    bw.webContents.on('did-finish-load', async () => {
-      try {
-        const title = await bw.webContents.executeJavaScript('document.title')
-        const text = await bw.webContents.executeJavaScript('document.body.innerText')
-        bw.close()
-        resolve(`${title}
+// v0.2.3: 常驻无头浏览器 —— agent 浏览时页面保持打开，前端可实时截图查看
+let browserWin: BrowserWindow | null = null
+let browserCurUrl = 'about:blank'
+function getBrowserWin(): BrowserWindow {
+  if (browserWin && !browserWin.isDestroyed()) return browserWin
+  browserWin = new BrowserWindow({
+    width: 1280, height: 800, show: false,
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+  })
+  browserWin.on('closed', () => { browserWin = null })
+  return browserWin
+}
+const waitLoad = (wc: Electron.WebContents, ms = 15000): Promise<void> =>
+  new Promise(resolve => {
+    const to = setTimeout(() => { cleanup(); resolve() }, ms)
+    const cleanup = () => { clearTimeout(to); wc.removeListener('did-finish-load', onLoad); wc.removeListener('did-fail-load', onFail) }
+    const onLoad = () => { cleanup(); resolve() }
+    const onFail = () => { cleanup(); resolve() }
+    wc.once('did-finish-load', onLoad)
+    wc.once('did-fail-load', onFail)
+  })
 
-${text.slice(0, 10000)}`)
-      } catch { bw.close(); resolve('(load error)') }
-    })
-    bw.webContents.on('did-fail-load', () => { bw.close(); resolve('(failed)') })
-    setTimeout(() => { try { bw.close() } catch {}; resolve('(timeout)') }, 15000)
-  })
-})
-ipcMain.handle('browser:screenshot', async (_e, url: string) => {
-  return new Promise<string>(resolve => {
-    const bw = new BrowserWindow({ width: 1280, height: 800, show: false, webPreferences: { sandbox: true } })
-    bw.loadURL(url)
-    bw.webContents.on('did-finish-load', async () => {
-      try {
-        const img = await bw.webContents.capturePage()
-        bw.close()
-        resolve(img.toDataURL())
-      } catch { bw.close(); resolve('') }
-    })
-    setTimeout(() => { try { bw.close() } catch {}; resolve('') }, 15000)
-  })
-})
-ipcMain.handle('computer:screenshot', async () => {
+ipcMain.handle('browser:navigate', async (_e, url: string) => {
+  const bw = getBrowserWin(); const wc = bw.webContents
   try {
-    const img = await mainWindow?.webContents.capturePage()
-    if (!img) throw new Error('截图失败')
-    return img.toDataURL()
-  } catch (err: unknown) {
-    throw new Error(err instanceof Error ? err.message : '截图失败')
-  }
+    if (wc.getURL() === url) return 'ok'
+    ;(wc as any).__loadStart = Date.now()
+    await wc.loadURL(url)
+  } catch { /* 继续 */ }
+  browserCurUrl = wc.getURL() || url
+  return 'ok'
 })
-
+ipcMain.handle('browser:back', async () => {
+  const bw = getBrowserWin(); const wc = bw.webContents
+  if (wc.canGoBack()) wc.goBack()
+  browserCurUrl = wc.getURL() || browserCurUrl
+  return browserCurUrl
+})
+ipcMain.handle('browser:forward', async () => {
+  const bw = getBrowserWin(); const wc = bw.webContents
+  if (wc.canGoForward()) wc.goForward()
+  browserCurUrl = wc.getURL() || browserCurUrl
+  return browserCurUrl
+})
+ipcMain.handle('browser:reload', async () => {
+  const bw = getBrowserWin(); const wc = bw.webContents
+  wc.reload()
+  return wc.getURL() || browserCurUrl
+})
+ipcMain.handle('browser:current', () => {
+  const bw = getBrowserWin()
+  if (bw && !bw.isDestroyed()) browserCurUrl = bw.webContents.getURL() || browserCurUrl
+  return browserCurUrl
+})
+// v0.2.3: 实时快照 —— 前端轮询此接口显示 agent 正在看的页面
+// v0.2.3-fix: Windows 上隐藏窗口 capturePage 返回空 —— 截图时临时显示窗口再隐藏
+ipcMain.handle('browser:snapshot', async () => {
+  let bw: BrowserWindow | null = null
+  try {
+    bw = getBrowserWin(); const wc = bw.webContents
+    if (!wc || wc.isDestroyed()) return { url: browserCurUrl, img: '', loading: false }
+    const curUrl = wc.getURL() || browserCurUrl
+    if (wc.isLoading() && Date.now() - (wc as any).__loadStart < 15000) return { url: curUrl, img: '', loading: true }
+    if (wc.isLoading()) return { url: curUrl, img: '', loading: false }
+    const wasVisible = bw.isVisible()
+    if (!wasVisible) { bw.showInactive(); await new Promise(r => setTimeout(r, 120)) }
+    const img = await wc.capturePage()
+    if (!wasVisible) bw.hide()
+    let title = ''
+    try { title = await wc.executeJavaScript('document.title') } catch { /* 忽略 */ }
+    return { url: curUrl, img: img.toDataURL(), loading: false, title: title || '' }
+  } catch { if (bw && !bw.isDestroyed()) bw.hide(); return { url: browserCurUrl, img: '', loading: false, title: '' } }
+})
+// v0.2.3: agent 工具调用 —— 打开页面并返回文本内容（保持旧 browse 语义）
+ipcMain.handle('browser:open', async (_e, url: string) => {
+  showBrowserFloat() // v0.2.3: agent 使用浏览器时弹出悬浮提示
+  const bw = getBrowserWin(); const wc = bw.webContents
+  try { await wc.loadURL(url) } catch { /* 继续 */ }
+  await waitLoad(wc)
+  browserCurUrl = wc.getURL() || url
+  try {
+    const title = await wc.executeJavaScript('document.title')
+    const text = await wc.executeJavaScript('document.body.innerText')
+    return `${title}\n\n${String(text || '').slice(0, 10000)}`
+  } catch { return '(load error)' }
+})
+// v0.2.3: agent 工具调用 —— 截取当前页面（保持旧 browse_screenshot 语义）
+ipcMain.handle('browser:screenshot', async (_e, url?: string) => {
+  showBrowserFloat() // v0.2.3: agent 使用浏览器时弹出悬浮提示
+  const bw = getBrowserWin(); const wc = bw.webContents
+  if (url && url !== 'about:blank') { try { await wc.loadURL(url) } catch { /* 继续 */ } await waitLoad(wc) }
+  browserCurUrl = wc.getURL() || url || browserCurUrl
+  try {
+    const img = await wc.capturePage()
+    return img.toDataURL()
+  } catch { return '' }
+})
 // ─── 剪贴板 ─────────────────────────────────────
 ipcMain.handle('computer:clipboardRead', () => { try{return require('electron').clipboard.readText()}catch{return''} })
 ipcMain.handle('computer:clipboardWrite', (_e,text:string) => { try{require('electron').clipboard.writeText(text);return true}catch{return false} })
@@ -585,21 +845,86 @@ ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
 })
 
 // ─── 浏览器 / 搜索 / 模型探测 ──────────────────────
-ipcMain.handle('models:detect', async (_e, baseUrl: string, apiKey: string) => {
+ipcMain.handle('models:detect', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => {
   try {
-    // v0.2.1: 兼容 baseUrl 已含 /v1 或 /v4 等情况，避免 /v1/v1/models
     let base = (baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
-    const url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
-    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + apiKey }, signal: AbortSignal.timeout(10000) })
-    const data: any = await res.json()
-    return (data.data || []).map((m: any) => m.id).filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
-  } catch { return [] }
+    // v0.2.2-fix: Anthropic(Claude) 鉴权是 x-api-key 而非 Bearer —— 按 baseUrl / key 前缀自动识别
+    const isAnthropic = !!(opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
+    let url: string
+    const headers: Record<string, string> = {}
+    if (isAnthropic) {
+      url = base.replace(/\/v\d+$/i, '') + '/v1/models'
+      headers['x-api-key'] = apiKey || ''
+      headers['anthropic-version'] = '2023-06-01'
+    } else {
+      url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
+      headers['Authorization'] = 'Bearer ' + (apiKey || '')
+    }
+    const res = await netFetch(url, { headers, signal: AbortSignal.timeout(15000) })
+    if (!res.ok) {
+      const hint = res.status === 401 ? 'API Key 无效或未授权'
+        : res.status === 403 ? '禁止访问（Key 无权限或地区限制）'
+        : res.status === 404 ? '接口路径不存在，请检查 Base URL'
+        : res.status === 410 ? '接口已废弃，请更新 Base URL'
+        : ''
+      return { ok: false, error: 'HTTP ' + res.status + (hint ? '：' + hint : '') }
+    }
+    const data: any = JSON.parse(await res.text())
+    const ids = (data.data || []).map((m: any) => m.id).filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
+    return { ok: true, models: ids }
+  } catch (e: any) {
+    const msg = String(e?.message || e)
+    const hint = /getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(msg) ? '域名无法解析，请检查 Base URL 是否填写正确'
+      : /timeout|abort/i.test(msg) ? '请求超时（网络不通或需要代理）'
+      : /ECONNREFUSED/i.test(msg) ? '连接被拒绝（地址或端口错误）'
+      : /fetch failed/i.test(msg) ? '网络请求失败'
+      : ''
+    return { ok: false, error: (hint || msg).slice(0, 200) }
+  }
+})
+
+// v0.2.2: 测试连接 —— 轻量探测 baseUrl + apiKey 是否可用（不拉全量模型）
+ipcMain.handle('models:test', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => {
+  const t0 = Date.now()
+  try {
+    let base = (baseUrl || '').replace(/\/+$/, '')
+    if (!base) return { ok: false, status: 0, latency: 0, message: '请先填写 Base URL' }
+    const isAnthropic = !!(opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
+    let url: string
+    const headers: Record<string, string> = {}
+    if (isAnthropic) {
+      url = base.replace(/\/v\d+$/i, '') + '/v1/models'
+      headers['x-api-key'] = apiKey || ''
+      headers['anthropic-version'] = '2023-06-01'
+    } else {
+      url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
+      headers['Authorization'] = 'Bearer ' + (apiKey || '')
+    }
+    const res = await netFetch(url, { headers, signal: AbortSignal.timeout(10000) })
+    const latency = Date.now() - t0
+    if (res.status === 200) {
+      return { ok: true, status: 200, latency, message: '连接成功，API Key 有效' }
+    }
+    if (res.status === 401) return { ok: false, status: 401, latency, message: '已连接，但 API Key 无效或未授权 (401)' }
+    if (res.status === 403) return { ok: false, status: 403, latency, message: '已连接，但无权限 (403)，请检查 Key 或地区限制' }
+    if (res.status === 404 || res.status === 410) return { ok: false, status: res.status, latency, message: '服务器可达，但该接口不存在 (' + res.status + ')，此平台可能不支持模型列表接口' }
+    return { ok: false, status: res.status, latency, message: '服务器响应异常 (HTTP ' + res.status + ')' }
+  } catch (e: any) {
+    const latency = Date.now() - t0
+    const msg = String(e?.message || e)
+    const hint = /getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(msg) ? '域名无法解析，请检查 Base URL 是否填写正确'
+      : /timeout|abort/i.test(msg) ? '连接超时（网络不通或需要代理）'
+      : /ECONNREFUSED/i.test(msg) ? '连接被拒绝（地址或端口错误）'
+      : /fetch failed/i.test(msg) ? '网络请求失败'
+      : msg.slice(0, 120)
+    return { ok: false, status: 0, latency, message: hint }
+  }
 })
 
 ipcMain.handle('web:search', async (_e, query: string) => {
   try {
     const u = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query)
-    const r = await fetch(u, { signal: AbortSignal.timeout(10000) })
+    const r = await netFetch(u, { signal: AbortSignal.timeout(10000) })
     const h = await r.text()
     // v0.2.1: 多层正则 fallback 以应对 DDG 页面结构变化
     let out: string[] = []
@@ -626,10 +951,40 @@ ipcMain.handle('web:search', async (_e, query: string) => {
 
 ipcMain.handle('web:fetch', async (_e, url: string) => {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    const res = await netFetch(url, { signal: AbortSignal.timeout(15000) })
     return await res.text().then(t => t.slice(0, 50000))
   } catch (err: unknown) {
     return 'Error: ' + (err instanceof Error ? err.message : String(err))
+  }
+})
+
+// ─── v0.2.5: 无头浏览器网页解析工具 web_read (Playwright + 系统 Edge/Chrome) ──
+ipcMain.handle('web:read', async (_e, url: string, mode?: string) => {
+  try {
+    const { webRead } = require('./webtools')
+    // 读取设置中的浏览器解析配置(双向绑定全局配置文件)
+    let cfg: any = {}
+    try { cfg = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch { /* 忽略 */ }
+    // 总开关: 关闭后 Agent 无法调用 web_read
+    if (cfg.webReadEnabled === false) {
+      return JSON.stringify({ ok: false, error: 'web_read 已被禁用', advice: '请在 设置 → 工具 → 无头浏览器网页解析工具 中开启总开关' })
+    }
+    const timeoutMs = parseInt(cfg.webReadTimeout) || 15000
+    const result = await webRead({
+      url,
+      mode: (mode as any) || 'text',
+      headless: cfg.webReadHeadless !== false,
+      timeoutMs,
+      userAgent: cfg.webReadUA || '',
+      proxy: cfg.webReadProxy || '',
+      ignoreHTTPSErrors: true,
+      cleanAds: cfg.webReadCleanAds !== false,
+      autoClose: cfg.webReadAutoClose !== false,
+      cookies: cfg.webReadCookies || '',
+    })
+    return JSON.stringify(result)
+  } catch (e: any) {
+    return JSON.stringify({ ok: false, error: 'web_read 调用异常: ' + String(e?.message || e), advice: '请查看应用日志或稍后重试' })
   }
 })
 
@@ -716,8 +1071,13 @@ ipcMain.handle('cron:toggle', (_e, id:string) => { try { require('./scheduler/cr
 // ─── v0.2.1: 使用 AbortController 替代全局标志位，支持并发请求 ──────
 const activeRequests = new Map<string, AbortController>()
 
-ipcMain.handle('llm:abort', () => {
-  // 中止所有活跃请求
+ipcMain.handle('llm:abort', (_e, requestId?: string) => {
+  // v0.2.3: 多会话并发 —— 传入 requestId 只中止该请求；不传则中止全部
+  if (requestId) {
+    const ctrl = activeRequests.get(requestId)
+    if (ctrl) { try { ctrl.abort() } catch { /* ok */ } activeRequests.delete(requestId) }
+    return
+  }
   for (const [rid, ctrl] of activeRequests) {
     try { ctrl.abort() } catch { /* ok */ }
   }
@@ -725,6 +1085,7 @@ ipcMain.handle('llm:abort', () => {
 })
 
 ipcMain.handle('llm:chat', async (event, params: any) => {
+  // v0.2.3: 多会话并发 —— requestId 由调用方传入，用于把流式事件路由回对应会话
   const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders } = params
   const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }
   // 合并自定义 Headers（JSON 或 key=value 多行格式）
@@ -751,21 +1112,24 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
     default: event.sender.send('llm:error', '不支持的 Provider: ' + provider + '（请在设置中将类型改为 OpenAI Compatible）'); return
   }
 
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const requestId = (params as any).requestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const abortCtrl = new AbortController()
   activeRequests.set(requestId, abortCtrl)
+  // v0.2.3: 请求结束后自动从活跃表移除（防止泄漏 + 精确中止）
+  const removeReq = () => activeRequests.delete(requestId)
+  event.sender.once('destroyed', removeReq)
 
   try {
     console.log('[LLM]', provider, model, url, 'msgs:', messages?.length, 'tools:', tools?.length || 0)
-    const res = await fetch(url, {
+    const res = await netFetch(url, {
       method: 'POST',
       headers: reqHeaders,
       body: JSON.stringify(body),
       signal: abortCtrl.signal,
     })
-    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); event.sender.send('llm:error', `API ${res.status}: ${e.slice(0, 400)}`); return }
+    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); event.sender.send('llm:error', { requestId, error: `API ${res.status}: ${e.slice(0, 400)}` }); return }
     console.log('[LLM] stream ok')
-    const reader = res.body?.getReader(); if (!reader) { event.sender.send('llm:error', '无流'); return }
+    const reader = res.body?.getReader(); if (!reader) { event.sender.send('llm:error', { requestId, error: '无流' }); return }
 
     const dec = new TextDecoder(); let buf = ''
     let streamEnded = false // 防止重复发送 done
@@ -774,7 +1138,7 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
 
     const flushToolCalls = () => {
       for (const [idx, tc] of tcAccum) {
-        event.sender.send('llm:toolCall', { index: idx, id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args } })
+        event.sender.send('llm:toolCall', { requestId, index: idx, id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args } })
       }
       tcAccum.clear()
     }
@@ -783,7 +1147,8 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
       if (streamEnded) return
       streamEnded = true
       flushToolCalls()
-      event.sender.send('llm:chunk', { content: '', done: true })
+      event.sender.send('llm:chunk', { requestId, content: '', done: true })
+      removeReq()
     }
 
     while (true) {
@@ -821,19 +1186,20 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
           if (choice?.finish_reason) {
             // 仅刷新 tool calls + usage，done 由 sendDone() 统一处理（外层 done 或 [DONE] 触发）
             flushToolCalls()
-            if (p.usage) event.sender.send('llm:usage', p.usage)
+            if (p.usage) event.sender.send('llm:usage', { requestId, ...p.usage })
             continue
           }
           const c = choice?.delta?.content || ''
-          if (c) event.sender.send('llm:chunk', { content: c, done: false })
+          if (c) event.sender.send('llm:chunk', { requestId, content: c, done: false })
         } catch { /* ignore malformed JSON lines */ }
       }
     }
   } catch (err: unknown) {
+    removeReq()
     if (err instanceof Error && (err.name === 'AbortError' || abortCtrl.signal.aborted)) {
       // 用户主动取消，不报错
     } else {
-      event.sender.send('llm:error', err instanceof Error ? err.message : String(err))
+      event.sender.send('llm:error', { requestId, error: err instanceof Error ? err.message : String(err) })
     }
   } finally {
     // 确保 reader 被释放
@@ -847,7 +1213,7 @@ ipcMain.handle('llm:chatOnce', async (_e, params: any) => {
   try {
     let base = (baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
     const url = base.endsWith('/v1') ? base + '/chat/completions' : base + '/v1/chat/completions'
-    const res = await fetch(url, {
+    const res = await netFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
       body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 4096 }),
@@ -873,11 +1239,11 @@ ipcMain.handle('llm:vision', async (_e, params: any) => {
         { type: 'image_url', image_url: { url: imageDataUrl } },
       ] }],
     }
-    const res = await fetch(url, {
+    const res = await netFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(120000),
     })
     if (!res.ok) { const e = await res.text().catch(() => ''); return 'E:视觉API ' + res.status + ' ' + e.slice(0, 200) }
     const data: any = await res.json()
@@ -894,7 +1260,7 @@ ipcMain.handle('media:describe', async (_e, opts?: { local?: boolean }) => {
   // 本地视觉模型探测
   try {
     const url = ((opts as any)?.localUrl || 'http://localhost:1234') + '/v1/models'
-    const r = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    const r = await netFetch(url, { signal: AbortSignal.timeout(5000) })
     if (r.ok) {
       const d: any = await r.json()
       const ids = (d.data || []).map((m: any) => m.id)
@@ -964,6 +1330,18 @@ ipcMain.handle('cache:invalidate:write', () => {
 
 // ─── 启动 ──────────────────────────────────────────
 app.whenReady().then(async () => {
+  // v0.2.6-fix: GPU 状态检测(仅日志/状态查询, 不做运行时禁用)。
+  // auto 模式下 GPU 不可用时 Chromium 原生自动降级为软件渲染, 无需手动调用
+  // disableHardwareAcceleration(该 API 只能在 app ready 之前调用)。
+  try {
+    // v0.2.6-fix: 延迟 3s 等 GPU 进程完成初始化后再读取(立即读取会得到 disabled_off 等不准确初始值)
+    setTimeout(() => {
+      try {
+        const gst: any = app.getGPUFeatureStatus()
+        console.log('[RENDER] mode=' + rendererMode + ' gpuAcceleration=' + (gst?.gpuAcceleration || 'unknown') + ' webgl=' + gst?.webgl)
+      } catch (e2: any) { console.error('[RENDER] gpu detect error:', e2?.message) }
+    }, 3000)
+  } catch (e: any) { console.error('[RENDER] gpu detect error:', e?.message) }
   serverPort = await startServer()
   createAppMenu()
   createWindow()

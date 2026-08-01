@@ -164,6 +164,7 @@ export interface SessionData {
   messages: Message[]
   updatedAt?: string
   mode?: string
+  busy?: boolean // v0.2.3: 该会话是否正在工作中（独立于其他会话）
 }
 export interface Message {
   id: string
@@ -171,7 +172,11 @@ export interface Message {
   content: string
   timestamp: number
   images?: string[]
+  // v0.2.2: 拖拽/上传的附件（视频/音频/文档等非图片文件）
+  attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  // v0.2.2: 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
+  meta?: { ttft?: number; duration?: number }
   _toolLog?: { name: string; args: any; result: string; error: boolean; ms: number }[]
 }
 export interface SkillMeta { name: string; path: string; description: string }

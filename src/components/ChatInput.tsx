@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
-import { useSettingsStore } from '../store/settings'
+import { useSettingsStore, compressImage } from '../store/settings'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
 type ThinkLevel = 'off' | 'medium' | 'deep' | 'extreme'
@@ -25,6 +25,11 @@ const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.R
 export default function ChatInput() {
   const [text, setText] = useState('')
   const [images, setImages] = useState<string[]>([])
+  // v0.2.2: 拖拽附件（视频/音频/文档等非图片）
+  const [attachments, setAttachments] = useState<{ name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  // v0.2.2: 引用内容（显示在输入框上方，像图片预览）
+  const [quote, setQuote] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [memOpen, setMemOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
@@ -54,6 +59,12 @@ export default function ChatInput() {
     const ta = taRef.current
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px' }
   }, [text])
+  // v0.2.2: 接收消息引用（全选引入 / 右键选中文字引入）
+  useEffect(() => {
+    const h = (e: Event) => { const d = (e as CustomEvent).detail; if (typeof d === 'string' && d.trim()) setQuote(d.trim()) }
+    window.addEventListener('huangquan-quote', h)
+    return () => window.removeEventListener('huangquan-quote', h)
+  }, [])
   useEffect(() => { if (currentModel && currentModel !== '未配置') updateContextLimit(currentModel) }, [currentModel])
 
   const closeAll = () => { setCmdOpen(false); setMemOpen(false); setPermOpen(false); setThinkOpen(false) }
@@ -70,18 +81,59 @@ export default function ChatInput() {
     }
     setText('')
     const imgs = images.length ? [...images] : undefined
-    setImages([])
-    await send(t || '分析图片', imgs)
+    const atts = attachments.length ? [...attachments] : undefined
+    // v0.2.2: 引用内容拼入消息
+    const quoted = quote ? `> ${quote.replace(/\n/g, '\n> ')}\n\n` : ''
+    setImages([]); setAttachments([]); setQuote(null)
+    await send((quoted + t).trim() || (imgs?.length ? '分析图片' : '请处理我拖入的文件'), imgs, atts)
   }
 
   const handleImagePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files; if (!files) return
     const imgs: string[] = []
     for (let i = 0; i < files.length; i++) {
-      try { const b = await window.huangquan.computer.readImageBase64((files[i] as any).path); if (b) imgs.push(b) } catch {}
+      try {
+        // v0.2.2-fix: Electron 32 移除了 File.path，改用 webUtils.getPathForFile
+        const p = (window as any).huangquan?.getPathForFile?.(files[i]) || (files[i] as any).path
+        let b = p ? await window.huangquan.computer.readImageBase64(p) : null
+        // v0.2.3-fix: 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
+        if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
+        if (b) imgs.push(b)
+      } catch (e) { console.warn('[ChatInput] 图片读取失败:', e) }
     }
     setImages(p => [...p, ...imgs])
     if (fileRef.current) fileRef.current.value = ''
+  }
+
+  // v0.2.2: 拖拽上传 —— 图片走 base64 通道，视频/音频/文档走附件通道
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    const files = e.dataTransfer.files
+    if (!files || !files.length) return
+    const newImgs: string[] = []
+    const newAtts: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[] = []
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      const ext = (f.name.split('.').pop() || '').toLowerCase()
+      const isImg = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'].includes(ext)
+      const isVid = ['mp4', 'webm', 'mov', 'mkv', 'avi', 'flv', 'wmv', 'm4v'].includes(ext)
+      const isAud = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)
+      try {
+        if (isImg) {
+          const p = (window as any).huangquan?.getPathForFile?.(f) || (f as any).path
+          let b = p ? await window.huangquan.computer.readImageBase64(p) : null
+          // v0.2.3-fix: 拖入的图片同样压缩
+          if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
+          if (b) newImgs.push(b)
+        } else {
+          const p = (window as any).huangquan?.getPathForFile?.(f) || (f as any).path
+          if (p) newAtts.push({ name: f.name, path: p, size: f.size, kind: isVid ? 'video' : isAud ? 'audio' : 'file' })
+        }
+      } catch (err) { console.warn('[ChatInput] 拖入文件处理失败:', f.name, err) }
+    }
+    if (newImgs.length) setImages(p => [...p, ...newImgs])
+    if (newAtts.length) setAttachments(p => [...p, ...newAtts])
   }
 
   const saveMemory = async () => {
@@ -94,10 +146,20 @@ export default function ChatInput() {
 
   const handleStop = () => { useChatStore.getState().stop() }
 
-  const canSend = !!text.trim() || !!images.length
+  const canSend = !!text.trim() || !!images.length || !!attachments.length || !!quote
 
   return (
-    <div className="chat-input-area">
+    <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
+      {/* v0.2.2: 拖拽遮罩 */}
+      {dragOver && <div style={{ position: 'absolute', inset: 0, zIndex: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,92,191,0.18)', border: '2px dashed var(--accent)', borderRadius: 10, pointerEvents: 'none', fontSize: 15, fontWeight: 600, color: 'var(--accent)' }}>松开鼠标 · 添加图片 / 视频 / 文件</div>}
+      {/* v0.2.2: 引用内容（显示在输入框上方，类似图片预览） */}
+      {quote && (
+        <div className="quote-preview" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, padding: '8px 12px', borderRadius: 8, borderLeft: '3px solid var(--accent)', background: 'var(--bg-card)', fontSize: 12, color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto' }}>
+          <span style={{ flexShrink: 0, fontSize: 10, color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>引用</span>
+          <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{quote}</span>
+          <button className="image-attach-remove" onClick={() => setQuote(null)} style={{ position: 'static', flexShrink: 0 }}>×</button>
+        </div>
+      )}
       {!!images.length && (
         <div className="image-attach-preview">
           {images.map((img, i) => (
@@ -109,8 +171,22 @@ export default function ChatInput() {
         </div>
       )}
 
+      {/* v0.2.2: 附件（视频/音频/文档）预览 */}
+      {!!attachments.length && (
+        <div className="image-attach-preview">
+          {attachments.map((a, i) => (
+            <div key={i} className="attach-item" title={a.path} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', fontSize: 11, color: 'var(--text-secondary)', maxWidth: 240 }}>
+              <span>{a.kind === 'video' ? '🎬' : a.kind === 'audio' ? '🎵' : '📄'}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{(a.size / 1024).toFixed(0)}KB</span>
+              <button className="image-attach-remove" onClick={() => setAttachments(p => p.filter((_, j) => j !== i))}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <textarea ref={taRef} className="chat-textarea" rows={1}
-        placeholder={images.length ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...') : '输入消息，Enter 发送，Shift+Enter 换行'}
+        placeholder={images.length ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...') : attachments.length ? '描述或说明这些文件...' : '输入消息，Enter 发送，Shift+Enter 换行（可拖入图片/视频/文件）'}
         value={text} onChange={e => setText(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} />
 

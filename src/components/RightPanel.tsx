@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
+import FileTree from './FileTree'
 
 function platformName(p: string): string {
   const map: Record<string, string> = { win32: 'Windows', darwin: 'macOS', linux: 'Linux', freebsd: 'FreeBSD' }
@@ -25,9 +26,25 @@ export default function RightPanel() {
     } catch { /* ignore */ }
   }
 
+  // v0.2.6: 文件浏览器状态
+  const [treeKey, setTreeKey] = useState(0)
+  const [creating, setCreating] = useState<'dir' | 'file' | null>(null)
+  const [createName, setCreateName] = useState('')
+
+  const doCreate = async () => {
+    if (!creating || !createName.trim()) { setCreating(null); return }
+    const target = workDir + '\\' + createName.trim()
+    const r = creating === 'dir'
+      ? await window.huangquan.computer.mkdir(target)
+      : await window.huangquan.computer.createFile(target)
+    if (!r.ok) alert('创建失败: ' + r.error)
+    else { setCreating(null); setCreateName(''); setTreeKey(k => k + 1) }
+  }
+
   useEffect(() => {
     window.huangquan.computer.systemInfo().then(setSys).catch(() => {})
     loadMemCount()
+
   }, [])
 
   // 工具调用后刷新记忆计数
@@ -78,10 +95,26 @@ export default function RightPanel() {
         </div>
       )}
       {workDir && (
-        <div className="sys-bar" style={{ marginTop: 4 }}>
-          <div className="sys-item" style={{ flex: 1 }}>
-            <span className="sys-label">📁 工作目录</span>
-            <span style={{ fontSize: 10, color: '#9999AA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workDir}>{workDir}</span>
+        <div className="sys-bar" style={{ marginTop: 4, display: 'block' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <span className="sys-label" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workDir}>📁 工作目录</span>
+            <span style={{ fontSize: 10, color: '#6ba8ff', cursor: 'pointer' }} title="新建文件夹" onClick={() => { setCreating('dir'); setCreateName('') }}>📂+</span>
+            <span style={{ fontSize: 10, color: '#48c98a', cursor: 'pointer' }} title="新建文件" onClick={() => { setCreating('file'); setCreateName('') }}>📄+</span>
+            <span style={{ fontSize: 10, color: '#9999AA', cursor: 'pointer' }} title="刷新" onClick={() => setTreeKey(k => k + 1)}>⟳</span>
+          </div>
+          {creating && (
+            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+              <input autoFocus value={createName} placeholder={creating === 'dir' ? '文件夹名称' : '文件名.txt'} onChange={e => setCreateName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') doCreate(); if (e.key === 'Escape') setCreating(null) }}
+                style={{ flex: 1, fontSize: 10, background: '#0F0F22', border: '1px solid #2A2D48', color: '#E8E8F0', borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
+              <button onClick={doCreate} style={{ fontSize: 10, cursor: 'pointer', background: '#2A2D48', border: 'none', borderRadius: 4, color: '#E8E8F0' }}>✓</button>
+            </div>
+          )}
+          <div style={{ maxHeight: 200, overflowY: 'auto', borderTop: '1px solid #1A1A30', paddingTop: 4 }}
+            onContextMenu={(e) => { if ((e.target as HTMLElement) === e.currentTarget) { e.preventDefault(); window.huangquan.computer.contextMenu({ path: workDir, isDir: true, isWorkDir: true }).then((action: string) => { if (action === 'mkdir') { setCreating('dir'); setCreateName('') } else if (action === 'createFile') { setCreating('file'); setCreateName('') } else if (action === 'refresh') setTreeKey(k => k + 1) }) } }}>
+            <FileTree key={treeKey} root={workDir} onChanged={() => setTreeKey(k => k + 1)}
+              onNewDir={() => { setCreating('dir'); setCreateName('') }}
+              onNewFile={() => { setCreating('file'); setCreateName('') }} />
           </div>
         </div>
       )}

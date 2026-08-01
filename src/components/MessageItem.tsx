@@ -30,9 +30,20 @@ const FooterBtn: React.FC<{ title: string; onClick: () => void; active?: boolean
     </button>
   )
 
+// v0.2.2: 时长格式化（ms -> 1.2s / 850ms）
+const fmtTime = (ms?: number) => {
+  if (ms === undefined || ms === null) return ''
+  return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
+}
+
 export default function MessageItem({ message, streaming }: Props) {
   const [copied, setCopied] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
   const regen = useChatStore(s => s.regen)
+  const resendFrom = useChatStore(s => s.resendFrom)
+  const startEdit = () => { setEditText(message.content || ''); setEditing(true) }
+  const saveEdit = () => { const v = editText.trim(); if (v && v !== message.content) resendFrom(message.id, v); setEditing(false) }
   const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
   const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
   const cardMaxHeight = useSettingsStore(s => (s.general as any).cardMaxHeight || 500)
@@ -54,23 +65,19 @@ export default function MessageItem({ message, streaming }: Props) {
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
+  // v0.2.2: 引用内容 → 显示在输入框上方（类似图片预览），由 ChatInput 监听 huangquan-quote 事件接收
+  const sendQuote = useCallback((text: string) => {
+    window.dispatchEvent(new CustomEvent('huangquan-quote', { detail: text }))
+  }, [])
+
   // 右键引用选中文字
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     const selection = window.getSelection()?.toString().trim()
     if (selection) {
       e.preventDefault()
-      const input = document.querySelector('.chat-textarea') as HTMLTextAreaElement
-      if (input) {
-        const quoted = `> ${selection.replace(/\n/g, '\n> ')}\n\n`
-        const before = input.value.slice(0, input.selectionStart || 0)
-        const after = input.value.slice(input.selectionEnd || input.value.length)
-        input.value = before + quoted + after
-        input.focus()
-        const pos = input.value.length
-        input.setSelectionRange(pos, pos)
-      }
+      sendQuote(selection)
     }
-  }, [])
+  }, [sendQuote])
 
   if (message.role === 'tool') {
     const truncated = message.content.length > 300 ? message.content.slice(0, 300) + '...' : message.content
@@ -120,37 +127,54 @@ export default function MessageItem({ message, streaming }: Props) {
       <div className="message-body" onContextMenu={handleContextMenu}>
         <div className="message-sender">{isUser ? '你' : (agentAvatar || '黄泉')}</div>
         {message.images?.length ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>{message.images.map((img, i) => <img key={i} src={img} className="image-preview" alt="" />)}</div> : null}
-        {isUser ? <div className="message-text">{message.content}</div> : renderAssistantContent(message.content)}
+        {/* v0.2.2: 附件（视频/音频/文档）展示，点击用系统默认程序打开 */}
+        {message.attachments?.length ? (
+          <div className="message-attachments">
+            {message.attachments.map((a, i) => (
+              <span key={i} className="message-attachment" title={a.path} onClick={() => { try { window.huangquan.computer.openFile(a.path) } catch {} }}>
+                {a.kind === 'video' ? '🎬' : a.kind === 'audio' ? '🎵' : '📄'} {a.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {isUser ? (editing ? (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <textarea className="chat-textarea" style={{ flex: 1, minHeight: 48, background: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: 6, padding: 8, fontSize: 12 }} value={editText} onChange={e => setEditText(e.target.value)} autoFocus />
+            <button className="send-btn" onClick={saveEdit} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 13 }} title="保存修改">✓</button>
+            <button className="send-btn stop-btn" onClick={() => setEditing(false)} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 13 }} title="取消">✕</button>
+          </div>
+        ) : <div className="message-text">{message.content}</div>) : renderAssistantContent(message.content)}
         <div className={`message-footer ${isUser ? 'footer-right' : 'footer-left'}`}>
           {showTimestamps === 'always' && <span className="footer-time">{timeText}</span>}
           {!isUser && (
             <>
               <FooterBtn title="重新生成" onClick={regen}><RefreshIcon /></FooterBtn>
               <FooterBtn title={copied ? '已复制' : '复制内容'} onClick={handleCopy} active={copied}>{copied ? <CheckIcon /> : <CopyIcon />}</FooterBtn>
-              <FooterBtn title="引用到输入框" onClick={() => {
-                const text = message.content || ''
-                const input = document.querySelector('.chat-textarea') as HTMLTextAreaElement
-                if (input) {
-                  const quoted = `> ${text.slice(0, 500).replace(/\n/g, '\n> ')}\n\n`
-                  input.value = input.value ? input.value + '\n' + quoted : quoted
-                  input.focus()
-                  input.setSelectionRange(input.value.length, input.value.length)
-                }
-              }}><QuoteIcon /></FooterBtn>
+              <FooterBtn title="全选引入到输入框" onClick={() => { const text = message.content || ''; if (text) sendQuote(text) }}><QuoteIcon /></FooterBtn>
               <FooterBtn title={selected ? '取消选中' : '选中消息'} onClick={() => setSelected(!selected)} active={selected}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   {selected ? <><rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor" opacity="0.2" /><polyline points="9 12 11.5 14.5 16 9" /></> : <rect x="3" y="3" width="18" height="18" rx="2" />}
                 </svg>
               </FooterBtn>
-              {message.usage && (
-                <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 4 }}>
-                  {message.usage.prompt_tokens}↑{message.usage.completion_tokens}↓
+              {(message.meta?.ttft !== undefined || message.meta?.duration !== undefined || message.usage) && (
+                <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 4, display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
+                  {message.meta?.ttft !== undefined && <span title="首字延迟 (TTFT)">⚡{fmtTime(message.meta.ttft)}</span>}
+                  {message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
+                  {message.usage && (() => {
+                    const total = message.usage.total_tokens || (message.usage.prompt_tokens + message.usage.completion_tokens)
+                    const speed = message.meta?.duration ? Math.round(message.usage.completion_tokens / (message.meta.duration / 1000)) : 0
+                    return <span title="本次回复消耗 token 总数">{total} tok{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
+                  })()}
                 </span>
               )}
             </>
           )}
           {isUser && (
             <>
+              <FooterBtn title="重新发送" onClick={() => resendFrom(message.id)}><RefreshIcon /></FooterBtn>
+              <FooterBtn title="编辑并重新发送" onClick={startEdit}>
+                <SvgIcon><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></SvgIcon>
+              </FooterBtn>
               <FooterBtn title={copied ? '已复制' : '复制内容'} onClick={handleCopy} active={copied}>{copied ? <CheckIcon /> : <CopyIcon />}</FooterBtn>
             </>
           )}

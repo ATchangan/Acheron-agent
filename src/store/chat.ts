@@ -25,6 +25,8 @@ function safeIPC(obj: any): any {
 }
 
 // ─── v0.2: 渲染进程内置模块 ────────────────────────────
+// v0.2.3: 启动时预加载全局记忆
+if (typeof window !== 'undefined' && (window as any).huangquan?.memory) refreshMemoryCache().catch(() => {})
 
 // 简易工具缓存（避免 IPC 往返延迟）
 const toolCache = new Map<string, { result: string; ts: number }>()
@@ -140,7 +142,7 @@ function updateContextLimit(modelName: string) {
 export { updateContextLimit, getModelContextLimit }
 
 // v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时自动切换到视觉模型分析图片
-const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'glm-4v', 'minimax-vl', 'deepseek-vl', 'internvl', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision']
+const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'glm-4v', 'minimax-vl', 'deepseek-vl', 'internvl', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision', 'agnes-image', 'seedream', 'cogview', 'seedance', 'doubao-seedance', 'wanx', 'kling']
 function isVisionModel(m: string): boolean {
   const ml = (m || '').toLowerCase()
   return VISION_MODEL_HINTS.some(v => ml.includes(v))
@@ -149,37 +151,101 @@ async function analyzeWithVision(p: any, images: string[], text: string): Promis
   try {
     const g = useSettingsStore.getState().general as any
     const all = useSettingsStore.getState().providers
-    // 优先级：设置的视觉辅助模型（支持 ref:供应商 语法）→ 当前 provider 的视觉模型 → 其他 provider 的第一个视觉模型
+    const allMedia = useSettingsStore.getState().mediaProviders || []
+    // v0.2.2: 视觉模型池 = 文字供应商 + 多媒体供应商（多媒体也能作为"眼睛"）
+    const pool = [
+      ...all.map(pr => ({ p: pr, models: pr.models || [] })),
+      ...allMedia.map(mp => ({ p: { ...mp, type: 'OpenAI Compatible' }, models: [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])] })),
+    ]
+    // 优先级：设置的视觉辅助模型（支持 ref:供应商 语法）→ 当前 provider 的视觉模型 → 池中第一个视觉模型
     let vm = g.visionModel || ''
     let vp = p
     if (vm.startsWith('ref:')) {
-      // 参考某供应商：用该供应商的第一个视觉模型
+      // 参考某供应商/多媒体：用其第一个视觉模型
       const pid = vm.slice(4)
-      const pr = all.find(x => x.id === pid) || all.find(x => x.name === pid)
-      if (pr) { vp = pr; vm = (pr.models || []).find(isVisionModel) || (pr.models || [])[0] || '' }
+      const hit = pool.find(x => x.p.id === pid || x.p.name === pid)
+      if (hit) {
+        vp = hit.p
+        vm = hit.models.find(isVisionModel) || hit.models[0] || ''
+      }
     }
     if (!vm) {
       const inProv = (p.models || []).find(isVisionModel)
       if (inProv) vm = inProv
       else {
-        for (const pr of all) {
-          const m = (pr.models || []).find(isVisionModel)
-          if (m) { vp = pr; vm = m; break }
+        for (const item of pool) {
+          const m = item.models.find(isVisionModel)
+          if (m) { vp = item.p; vm = m; break }
         }
       }
     }
-    if (!vm) return ''
-    const descs: string[] = []
-    for (const img of images) {
-      const r = await window.huangquan.llm.vision({
-        provider: vp.type, model: vm, apiKey: vp.apiKey, baseUrl: vp.baseUrl,
-        imageDataUrl: img,
-        prompt: '请用中文详细描述这张图片的内容（包括其中的文字、图表、界面元素、关键细节等）。' + (text ? '用户的问题是：' + text : ''),
-      })
-      if (r && !r.startsWith('E:')) descs.push(r)
+    // v0.2.3: 优先级列表解析 —— visionModels 数组（ref:供应商 或 供应商名::模型名 或 模型名）
+    // 逐个尝试，失败自动切换下一个，全部失败返回详细错误
+    const candidateList: { vp: any; vm: string; label: string }[] = []
+    const visList = Array.isArray(g.visionModels) ? g.visionModels.filter(Boolean) : []
+    const pushCandidates = () => {
+      for (const item of visList) {
+        if (item.startsWith('ref:')) {
+          const pid = item.slice(4)
+          const hit = pool.find(x => x.p.id === pid || x.p.name === pid)
+          if (hit) {
+            const m = hit.models.find(isVisionModel) || hit.models[0]
+            if (m) candidateList.push({ vp: hit.p, vm: m, label: hit.p.name + '::' + m })
+          }
+        } else if (item.includes('::')) {
+          const [pname, mname] = item.split('::')
+          const hit = pool.find(x => x.p.name === pname)
+          if (hit && hit.models.includes(mname)) candidateList.push({ vp: hit.p, vm: mname, label: item })
+        } else {
+          // 模型名：在池中找包含该模型的供应商
+          const hit = pool.find(x => x.models.includes(item))
+          if (hit) candidateList.push({ vp: hit.p, vm: item, label: hit.p.name + '::' + item })
+        }
+      }
     }
-    return descs.join('\n')
-  } catch { return '' }
+    pushCandidates()
+    // 兼容旧的单值 visionModel（未在列表中的话追加到末尾）
+    if (g.visionModel && !visList.includes(g.visionModel)) {
+      if (g.visionModel.startsWith('ref:')) {
+        const pid = g.visionModel.slice(4)
+        const hit = pool.find(x => x.p.id === pid || x.p.name === pid)
+        if (hit) { const m = hit.models.find(isVisionModel) || hit.models[0]; if (m && !candidateList.some(c => c.label === hit.p.name + '::' + m)) candidateList.push({ vp: hit.p, vm: m, label: hit.p.name + '::' + m }) }
+      } else if (!g.visionModel.includes('::')) {
+        const hit = pool.find(x => x.models.includes(g.visionModel))
+        if (hit && !candidateList.some(c => c.vm === g.visionModel)) candidateList.push({ vp: hit.p, vm: g.visionModel, label: hit.p.name + '::' + g.visionModel })
+      }
+    }
+    // 自动查找兜底：当前 provider → 池中第一个视觉模型
+    if (!candidateList.length) {
+      const inProv = (p.models || []).find(isVisionModel)
+      if (inProv) candidateList.push({ vp: p, vm: inProv, label: p.name + '::' + inProv })
+      else {
+        for (const item of pool) {
+          const m = item.models.find(isVisionModel)
+          if (m) { candidateList.push({ vp: item.p, vm: m, label: item.p.name + '::' + m }); break }
+        }
+      }
+    }
+    if (!candidateList.length) return 'E:no-vision-model'
+    const errors: string[] = []
+    for (const cand of candidateList) {
+      const descs: string[] = []
+      let candErr = ''
+      for (const img of images) {
+        const r = await window.huangquan.llm.vision({
+          provider: cand.vp.type || 'OpenAI Compatible', model: cand.vm, apiKey: cand.vp.apiKey, baseUrl: cand.vp.baseUrl,
+          imageDataUrl: img,
+          prompt: '请用中文详细描述这张图片的内容（包括其中的文字、图表、界面元素、关键细节等）。' + (text ? '用户的问题是：' + text : ''),
+        })
+        if (r && !r.startsWith('E:')) descs.push(r)
+        else candErr = (r || '').replace(/^E:/, '') || '未知错误'
+      }
+      if (descs.length === images.length && descs.every(Boolean)) return descs.join('\n')
+      errors.push(cand.label + ': ' + (candErr || '分析失败'))
+    }
+    // 全部候选失败
+    return 'E:ALL_VISION_FAILED: ' + errors.join(' | ')
+  } catch (e: any) { return 'E:' + (e?.message || 'vision-error') }
 }
 
 // Agent 意图路由（v0.2.1: 扩展关键词覆盖 + 崩铁角色路由）
@@ -237,6 +303,7 @@ const TOOLS: any[] = [
   { type: 'function', function: { name: 'system_info', description: 'system_info() get CPU/RAM info', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'web_search', description: 'web_search(query) search the web', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'web_fetch', description: 'web_fetch(url) fetch webpage content', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'web_read', description: 'web_read(url, mode?) parse an online web page with headless browser: load JS-rendered page, extract title + clean main text (ads/nav removed). mode: text(default)|screenshot|pdf. ONLY use when you need to parse an online document/page content; NEVER use it to crawl or batch-fetch pages', parameters: { type: 'object', properties: { url: { type: 'string' }, mode: { type: 'string', enum: ['text', 'screenshot', 'pdf'] } }, required: ['url'] } } },
   { type: 'function', function: { name: 'browse', description: 'browse(url) open page in headless browser, get full text', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'browse_screenshot', description: 'browse_screenshot(url) take screenshot of webpage', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
   { type: 'function', function: { name: 'screenshot', description: 'screenshot() capture screen', parameters: { type: 'object', properties: {} } } },
@@ -287,10 +354,10 @@ async function runTool(name: string, a: any): Promise<string> {
     if (cached) return cached + ' [cache]'
     if (['write','edit','mkdir','exec_command'].includes(name)) onWriteOp()
     switch (name) {
-      case 'read': { if (!a.path) return 'E:need path'; const c = await window.huangquan.computer.readFile(a.path); return a.offset ? c.split('\n').slice(+a.offset - 1, (+a.offset - 1) + (+a.limit || 200)).join('\n') : c.slice(0, 50000) }
+      case 'read': { if (!a.path) return 'E:need path'; const c = await window.huangquan.computer.readFile(a.path); return a.offset ? c.split('\n').slice(+a.offset - 1, (+a.offset - 1) + (+a.limit || 200)).join('\n') : (c.length > 8000 ? c.slice(0, 8000) + '\n...[已截断, 共 ' + c.length + ' 字符, 如需后续内容用 read offset=' + (c.slice(0, 8000).split('\n').length + 1) + ' 续读]' : c) }
       case 'write': { if (!a.path || a.content === undefined) return 'E:need path+content'; await window.huangquan.computer.writeFile(a.path, a.content); return a.path + ' (' + a.content.length + ' chars)' }
       case 'edit': { if (!a.path || !a.oldText) return 'E:need path+oldText+newText'; const o = await window.huangquan.computer.readFile(a.path); if (!o.includes(a.oldText)) return 'E:text not found in ' + a.path; await window.huangquan.computer.writeFile(a.path, o.replace(a.oldText, a.newText || '')); return a.path + ' (edited)' }
-      case 'exec_command': { if (!a.cmd) return 'E:need cmd'; const r = await window.huangquan.computer.exec(a.cmd); return r || '(empty output)' }
+      case 'exec_command': { if (!a.cmd) return 'E:need cmd'; const r = await window.huangquan.computer.exec(a.cmd); const out = r || '(empty output)'; return out.length > 3000 ? out.slice(0, 1500) + '\n...[输出过长已截断, 共 ' + out.length + ' 字符, 头尾已保留]\n' + out.slice(-1500) : out }
       case 'mkdir': { if (!a.path) return 'E:need path'; await window.huangquan.computer.exec('mkdir "' + a.path.replace(/\\/g, '/') + '"'); return a.path + ' (created)' }
       case 'grep': { if (!a.dirPath || !a.pattern) return 'E:need dirPath+pattern'; return await window.huangquan.computer.grep(a.dirPath, a.pattern) || '(no matches)' }
       case 'find': { if (!a.dirPath || !a.glob) return 'E:need dirPath+glob'; return await window.huangquan.computer.find(a.dirPath, a.glob) || '(no files found)' }
@@ -298,6 +365,21 @@ async function runTool(name: string, a: any): Promise<string> {
       case 'system_info': return JSON.stringify(await window.huangquan.computer.systemInfo(), null, 2)
       case 'web_search': { if (!a.query) return 'E:need query'; return await window.huangquan.web.search(a.query) || '(none)' }
       case 'web_fetch': return await window.huangquan.web.fetch(a.url || 'about:blank')
+      case 'web_read': {
+        if (!a.url) return 'E:need url'
+        // v0.2.5: 总开关本地兜底(主进程也会校验)
+        const g = useSettingsStore.getState().general as any
+        if (g.webReadEnabled === false) return 'E:web_read 已被禁用, 请在 设置 → 工具 → 无头浏览器网页解析工具 中开启'
+        try {
+          const raw = await window.huangquan.web.read(a.url, a.mode || 'text')
+          const r = typeof raw === 'string' ? JSON.parse(raw) : raw
+          if (!r.ok) return 'E:' + (r.error || '读取失败') + (r.advice ? ' | 建议: ' + r.advice : '')
+          if (a.mode === 'screenshot' && r.screenshotBase64) return '截图完成(已保存到会话): ' + r.screenshotBase64
+          if (a.mode === 'pdf' && r.pdfBase64) return 'PDF 生成完成(base64, 长度 ' + r.pdfBase64.length + ')'
+          const body = r.text || '(空页面)'
+          return (r.title ? '标题: ' + r.title + '\n' : '') + '\n正文:\n' + (body.length > 6000 ? body.slice(0, 6000) + '\n...[正文过长已截断, 共 ' + body.length + ' 字符]' : body)
+        } catch (e: any) { return 'E:web_read 异常: ' + String(e?.message || e) }
+      }
       case 'browse': { if (!a.url) return 'E:need url'; return await window.huangquan.web.browse(a.url) }
       case 'browse_screenshot': { if (!a.url) return 'E:need url'; return await window.huangquan.web.browseScreenshot(a.url) }
       case 'screenshot': return await window.huangquan.computer.screenshot()
@@ -418,6 +500,29 @@ async function autoExtractMemory(sid: string) {
   } catch { /* 静默 */ }
 }
 
+// v0.2.3: 全局记忆缓存 —— 置顶记忆/长期记忆对所有会话共享（启动时加载,发送时刷新）
+let globalMemoryCache: { pinned: string[]; facts: string[]; summaries: string[] } = { pinned: [], facts: [], summaries: [] }
+async function refreshMemoryCache() {
+  try {
+    const mem = await window.huangquan.memory.load().catch(() => ({}))
+    globalMemoryCache = {
+      pinned: Array.isArray((mem as any).pinnedFacts) ? (mem as any).pinnedFacts : [],
+      facts: Array.isArray((mem as any).facts) ? (mem as any).facts : [],
+      summaries: Array.isArray((mem as any).summaries) ? (mem as any).summaries : [],
+    }
+  } catch { /* 静默 */ }
+}
+// v0.2.3: 记忆注入段 —— 置顶记忆(全量) + 长期记忆(最近20条) + 情景摘要(最近5条)
+function memoryBlock(): string {
+  const { pinned, facts, summaries } = globalMemoryCache
+  const parts: string[] = []
+  if (pinned.length) parts.push('## 置顶记忆（用户手动固定,跨会话长期生效）\n' + pinned.slice(-10).map((f, i) => `${i + 1}. ${String(f).slice(0, 300)}`).join('\n'))
+  if (facts.length) parts.push('## 长期记忆\n' + facts.slice(-10).map((f, i) => `${i + 1}. ${String(f).slice(0, 200)}`).join('\n'))
+  if (summaries.length) parts.push('## 近期情景摘要\n' + summaries.slice(-3).map((s: any, i: number) => `${i + 1}. ${(s.content || s || '').slice(0, 200)}`).join('\n'))
+  const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
+  return parts.length ? '\n' + parts.join('\n\n') + tail : ''
+}
+
 function buildPrompt(mode: string, ishiki: string): string {
   const tl = TOOLS.map(t => '- ' + t.function.name + '(' + Object.keys(t.function.parameters.properties || {}).join(',') + ')').join('\n')
   const wd = useSettingsStore.getState().general.workDir || 'C:\\Users\\Changan\\Desktop\\黄泉agent'
@@ -463,7 +568,14 @@ function buildPrompt(mode: string, ishiki: string): string {
   const g2 = useSettingsStore.getState().general as any
   const langMap: Record<string, string> = { zh: '始终使用简体中文回复', 'zh-tw': '始终使用繁体中文回复', en: 'always reply in English', ja: '常に日本語で回答してください', auto: '自动检测用户语言并以此回复', match: '始终使用与用户提问相同的语言回复' }
   const langInstr = langMap[g2?.language] ? '\n【语言要求】' + langMap[g2.language] : ''
-  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr
+  // v0.2.6: 信息调度纪律 —— 省钱不降智(分层读取/保真截断/可回溯/输出纪律)
+  const tokenDiscipline = '\n## 信息调度纪律（重要）\n' +
+    '- 大文件/长输出被截断是采样而非错误: 先 ls/grep/read+offset 定位关键段再精读, 需要细节用 read offset/limit 或 grep 从源头取回, 严禁凭记忆编造内容\n' +
+    '- 数字/代码/报错信息/用户约束必须逐字保真, 禁止约等于或转述\n' +
+    '- 回复结论前置, 不重复用户原话, 修改只贴改动部分, 输出用标题/列表/表格/代码块\n' +
+    '- 被截断的内容需要完整版时, 主动用工具按路径/行号/关键词取回\n'
+  // v0.2.3: 全局记忆注入（置顶/长期/情景摘要,所有会话共享）
+  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + memoryBlock()
   if (g2?.customSystemPrompt) {
     const inj = g2.customSystemPrompt
     const pos = g2.promptInjectPos || 'end'
@@ -486,6 +598,7 @@ interface S {
   switchS: (id: string) => void
   del: (id: string) => void
   send: (c: string, imgs?: string[]) => Promise<void>
+  resendFrom: (msgId: string, newContent?: string) => Promise<void>
   regen: () => Promise<void>
   stop: () => void
   cur: () => SessionData | undefined
@@ -547,20 +660,27 @@ export const useChatStore = create<S>((set, get) => ({
   create: () => {
     const m = useSettingsStore.getState().general.mode || 'work'
     const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode: m }
-    set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id }))
+    // v0.2.3: 新会话独立,不继承其他会话的流式/执行状态
+    set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [] }))
     window.huangquan.sessions.save(safeIPC(ns))
   },
-  switchS: (id) => set({ cid: id, error: null }),
+  switchS: (id) => set(s => {
+    // v0.2.3: 切换会话时,全局 streaming/executing 跟随目标会话的忙碌状态（每个会话独立）
+    const target = s.sessions.find(x => x.id === id)
+    const busy = !!(target as any)?.busy
+    return { cid: id, error: null, streaming: busy, executing: busy }
+  }),
   del: (id) => {
     window.huangquan.sessions.delete(id)
     set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal } })
   },
 
-  send: async (content, images) => {
+  send: async (content, images, attachments?) => {
     const st0 = get()
     let sid = st0.cid; if (!sid) { get().create(); sid = get().cid! }
-    // v0.2.1: 插话 = 给当前正在执行的任务补充指令（任务不中断，补充进入队列，下一轮执行时注入）
-    if (st0.streaming || st0.executing) {
+    // v0.2.3: 会话级忙碌判断 —— 仅当"本会话"正在工作时才走插话；其他会话在工作不影响本会话独立发送
+    const thisBusy = (get().sessions.find(x => x.id === sid) as any)?.busy
+    if (thisBusy) {
       // 探测当前工作状态
       const cur = get().sessions.find(x => x.id === sid)
       const recentMsgs = cur?.messages.slice(-6) || []
@@ -573,13 +693,15 @@ export const useChatStore = create<S>((set, get) => ({
         ? `（用户在工作执行中插话补充。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。请结合当前进度理解用户意图并调整后续操作。）\n`
         : `（用户在回复中插话补充。以下是补充指令。）\n`
       // 用户消息立即上屏
-      const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images }
+      const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, interjectMsg] } : x) }))
       // 补充指令进入队列，当前任务继续执行
       pendingInterject.push(prefix + content)
       return
     }
     const myGen = ++taskGen // 本任务持有新代号；旧任务代号已失效
+    // v0.2.3: 标记本会话为忙碌（侧栏"工作中"指示灯 + 独立并发）
+    set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: true } : x) }))
     // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
     const wasInterjecting = st0.streaming
 
@@ -592,6 +714,8 @@ export const useChatStore = create<S>((set, get) => ({
     // 1. 获取 provider 和模型
     const cfg = await window.huangquan.settings.load()
     const p = cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
+    // v0.2.3: 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
+    refreshMemoryCache().catch(() => {})
     // v0.2.1: 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
     const gNow = useSettingsStore.getState().general as any
     const resolveModel = (key: string): { p: any; model: string } | null => {
@@ -615,33 +739,67 @@ export const useChatStore = create<S>((set, get) => ({
     }
     if ((window as any).__huangquan_agent) recordAgent((window as any).__huangquan_agent)
 
-    // v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时，用视觉模型分析图片并转为文本描述
-    let finalImages = images
-    if (images && images.length && !isVisionModel(model)) {
-      set({ executing: true })
-      const visionDesc = await analyzeWithVision(p, images, content)
-      if (visionDesc) {
-        content = content + '\n\n[图片内容（视觉模型分析）]\n' + visionDesc
-        finalImages = undefined // 主模型不支持视觉，不向 API 传图
-      }
+    // v0.2.2: 附件（视频/音频/文档）描述拼入消息内容，agent 可用 read_file 等工具读取
+    if (attachments && attachments.length) {
+      const attachLines = attachments.map(a => `- [${a.kind}] ${a.name}（${(a.size / 1024).toFixed(0)} KB，路径: ${a.path}）`)
+      content = content + (content ? '\n\n' : '') + '【用户拖入的附件】\n' + attachLines.join('\n') + '\n如需查看内容，请用 read_file 等工具读取上述路径。'
     }
 
-    // 1. 追加用户消息到 store
-    const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images: finalImages }
+    // 1. 追加用户消息到 store —— v0.2.3-fix: 立即上屏（不再等视觉分析，避免界面停留初始状态）
+    // v0.2.3-fix: images 保留原始图片（聊天框 UI 显示）；finalImages 只影响 API 是否传图
+    const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
+    const userMsgId = userMsg.id
     set(s => {
       const session = s.sessions.find(x => x.id === sid)!
       // v0.2.1: 会话标题自动取第一条消息（避免一直显示 "New Chat"）
       const isNewChat = !session.title || session.title === 'New Chat' || session.title === 'Chat'
       const title = isNewChat ? content.replace(/\s+/g, ' ').trim().slice(0, 24) + (content.trim().length > 24 ? '…' : '') : session.title
-      return { sessions: s.sessions.map(x => x.id === sid ? { ...session, title, messages: [...session.messages, userMsg] } : x), streaming: true, executing: true, error: null }
+      return { sessions: s.sessions.map(x => x.id === sid ? { ...session, title, messages: [...session.messages, userMsg] } : x), streaming: s.cid === sid ? true : s.streaming, executing: s.cid === sid ? true : s.executing, error: null }
     })
 
-    const buildMsg = (msgs: Message[]): LLMMessage[] => {
+    // v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时，用视觉模型分析图片并转为文本描述
+    // v0.2.2-fix: 无论视觉分析是否成功，主模型不支持视觉就不向 API 传图（否则 API 400: unknown variant image_url）
+    // v0.2.3-fix: 用户消息已先上屏，分析完成后更新该消息 content（追加分析结果）
+    let finalImages = images
+    if (images && images.length && !isVisionModel(model)) {
+      set(s => ({ executing: s.cid === sid ? true : s.executing }))
+      const visionDesc = await analyzeWithVision(p, images, content)
+      if (visionDesc && !visionDesc.startsWith('E:')) {
+        content = content + '\n\n[图片内容（视觉模型分析）]\n' + visionDesc
+      } else {
+        let why = ''
+        if (visionDesc === 'E:no-vision-model') why = '未配置可用的视觉辅助模型'
+        else if (visionDesc && visionDesc.startsWith('E:ALL_VISION_FAILED')) {
+          // v0.2.3: 全部视觉候选均失败 → 列出每个失败原因
+          const fails = visionDesc.replace(/^E:ALL_VISION_FAILED:\s*/, '').split(' | ')
+          why = '所有视觉辅助模型均无法连通：' + fails.join('；')
+        } else why = (visionDesc || '').replace(/^E:/, '') || '视觉分析失败'
+        content = content + '\n\n[图片未能分析：' + why + '。可在 设置→策略→👁️视觉理解 中配置视觉辅助模型优先级（如通义 qwen-vl、智谱 glm-4v、Kimi vision 等）。]'
+      }
+      finalImages = undefined // 主模型不支持视觉，不向 API 传图
+      // 同步更新已上屏的用户消息内容
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
+    }
+
+    const buildMsg = (msgs: Message[], withImages: boolean): LLMMessage[] => {
       const d: LLMMessage[] = []
-      for (const m of msgs) {
-        if (m.role === 'tool') d.push({ role: 'tool', content: m.content, tool_call_id: (m as any).tool_call_id || 'c_' + uuidv4().slice(0, 8) })
+      // v0.2.6: 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
+      const list = msgs.length > 40 ? msgs.slice(-40) : msgs
+      for (const m of list) {
+        if (m.role === 'tool') {
+          // v0.2.6: 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
+          const c = m.content || ''
+          let body = c
+          if (c.length > 3000) {
+            const mid = c.slice(1500, -800)
+            const keyLines = mid.split('\n').filter((l: string) => /error|exception|failed|warning|fatal|E:/.test(l)).slice(0, 15).join('\n')
+            body = c.slice(0, 1500) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-800)
+          }
+          d.push({ role: 'tool', content: body, tool_call_id: (m as any).tool_call_id || 'c_' + uuidv4().slice(0, 8) })
+        }
         else if (m.role === 'assistant' && (m as any).tool_calls) d.push({ role: 'assistant', content: null, tool_calls: (m as any).tool_calls })
-        else if (m.role === 'user' && m.images?.length) { const parts: any[] = [{ type: 'text', text: m.content }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
+        // v0.2.3-fix: 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
+        else if (m.role === 'user' && m.images?.length && withImages) { const parts: any[] = [{ type: 'text', text: m.content }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
         else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
       }
       // 每次发送时根据当前模式重建系统提示词
@@ -700,19 +858,45 @@ export const useChatStore = create<S>((set, get) => ({
     const callLLM = (aid: string): Promise<CallResult> =>
       new Promise((resolve, reject) => {
         const cbs: (() => void)[] = []; let text = ''; const tcs: any[] = []
+        // v0.2.3: 多会话并发 —— 每次调用独立 requestId，只收自己的流式事件
+        const rid = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+        // v0.2.2: 记录 TTFT(首字延迟) / 总时长 / token 用量
+        const t0 = Date.now(); let firstChunkAt = 0; let usage: any = null
+        cbs.push(window.huangquan.llm.onUsage(u => { if (u && u.requestId && u.requestId !== rid) return; usage = u }))
+        // v0.2.5-opt: 流式渲染节流 —— 40ms 内合并多次 chunk 再 set, 避免每个 token 全量重渲染
+        let flushTimer: any = null
+        const flushText = () => {
+          flushTimer = null
+          const cur = text
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: cur } : m) } : x), streaming: s.cid === sid ? true : s.streaming }))
+        }
         cbs.push(window.huangquan.llm.onChunk(d => {
+          if (d.requestId && d.requestId !== rid) return // 其他会话的流，忽略
+          if (!firstChunkAt && d.content) firstChunkAt = Date.now()
           text += d.content
-          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: text } : m) } : x), streaming: !d.done }))
-          if (d.done) { cbs.forEach(f => f()); if (!text && !tcs.length) { reject(new Error('模型返回空响应，请检查 API 配置或切换模型')); return } resolve({ text, tcs }) }
+          if (!flushTimer) flushTimer = setTimeout(flushText, 40)
+          if (d.done) {
+            if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+            set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: text } : m) } : x), streaming: s.cid === sid ? false : s.streaming }))
+            cbs.forEach(f => f())
+            const ttft = firstChunkAt ? firstChunkAt - t0 : (Date.now() - t0)
+            const duration = Date.now() - t0
+            set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: text, usage: usage || m.usage, meta: { ttft, duration } } : m) } : x) }))
+            if (!text && !tcs.length) { reject(new Error('模型返回空响应，请检查 API 配置或切换模型')); return } resolve({ text, tcs })
+          }
         }))
-        cbs.push(window.huangquan.llm.onError(e => { cbs.forEach(f => f()); reject(new Error(e)) }))
-        cbs.push(window.huangquan.llm.onToolCall((tc: any) => { try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { /* JSON parse failed, skip */ } }))
+        cbs.push(window.huangquan.llm.onError((e: any) => {
+          const errMsg = typeof e === 'string' ? e : (e?.error || String(e))
+          if (e && e.requestId && e.requestId !== rid) return // 其他会话的错误，忽略
+          cbs.forEach(f => f()); reject(new Error(errMsg))
+        }))
+        cbs.push(window.huangquan.llm.onToolCall((tc: any) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { /* JSON parse failed, skip */ } }))
         const cur = get().sessions.find(x => x.id === sid)!
-        const msgs = buildMsg(cur.messages)
+        const msgs = buildMsg(cur.messages, isVisionModel(model))
         // v0.2: 更新上下文用量
         const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as any[]).reduce((t:number,p:any) => t + (p.text?.length || 0), 0) : 0), 0)
         set({ cu: estCu })
-        window.huangquan.llm.chat({ provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs as any, temperature: (useSettingsStore.getState().general as any).temperature ?? 0.7, max_tokens: (useSettingsStore.getState().general as any).maxTokens || undefined, tools: getActiveTools(), headers: (curP as any).headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
+        window.huangquan.llm.chat({ requestId: rid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs as any, temperature: (useSettingsStore.getState().general as any).temperature ?? 0.7, max_tokens: (useSettingsStore.getState().general as any).maxTokens || undefined, tools: getActiveTools(), headers: (curP as any).headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
       })
 
     try {
@@ -803,7 +987,8 @@ export const useChatStore = create<S>((set, get) => ({
           const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
           const llmText = res.text || ''; const hasTools = toolLog.length > 0
           let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
-          if (hasTools) {
+          // v0.2.2: 隐藏工具日志（✅ ls ... / ✅ N ops | M failed 摘要）—— 不再拼进消息正文
+          if (false && hasTools) {
             const failCount = toolLog.filter(t => t.error).length; const totalMs = toolLog.reduce((s, t) => s + t.ms, 0)
             const totalTime = totalMs >= 1000 ? (totalMs / 1000).toFixed(1) + 's' : totalMs + 'ms'
             const lines = ['', '---']
@@ -812,28 +997,59 @@ export const useChatStore = create<S>((set, get) => ({
             finalContent = finalContent.trim() ? finalContent + '\n' + lines.join('\n') : lines.join('\n')
           }
           // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）
-          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.role === 'assistant' && m.content && m.id !== aid ? { ...m, content: '' } : (m.id === aid ? { ...m, content: finalContent, _toolLog: toolLog } : m)) } : x) }))
+          // v0.2.2-fix: 只清空【本轮内】的中间 assistant 消息 —— 之前遍历整个会话导致历史回复全部被清空
+          const roundIds = new Set(thisRound.map(m => m.id))
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => (roundIds.has(m.id) && m.role === 'assistant' && m.content && m.id !== aid) ? { ...m, content: '' } : (m.id === aid ? { ...m, content: finalContent, _toolLog: toolLog } : m)) } : x) }))
         }
 
         // v0.2.1: 有插话补充且未被终止 → 继续下一轮（任务不中断）
         if (myGen !== taskGen || pendingInterject.length === 0) break
       }
 
-      set({ streaming: false, executing: false, error: null, activeAgents: [] })
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
+      set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
       const toSave = get().sessions.find(x => x.id === sid)
       if (toSave) { window.huangquan.sessions.save(safeIPC(toSave)); autoExtractMemory(sid).catch(() => {}) }
     } catch (e) {
+      const errMsg = e?.message || String(e)
+      // v0.2.2-fix: API 不接受 image_url 时（模型实际不支持视觉），移除图片后自动重试一次纯文本
+      if (images?.length && /image_url|image url|image data/i.test(errMsg)) {
+        console.warn('[黄泉Agent] 模型不支持图片，自动降级为纯文本重试:', errMsg.slice(0, 120))
+        try {
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.filter(m => m.id !== (x.messages.find(mm => mm.id === userMsg?.id)?.id)) } : x) }))
+        } catch { /* 忽略 */ }
+        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
+        set({ streaming: false, executing: false, error: null, activeAgents: [] })
+        return get().send(content, undefined, attachments)
+      }
       console.error('[黄泉Agent] send error:', e)
       // v0.2.1: 异常/插话中止时清理当前流式 assistant 残留（避免多气泡）
       try {
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid && !m.content ? { ...m, content: '' } : m) } : x) }))
       } catch { /* 会话可能已删除 */ }
-      set({ streaming: false, executing: false, error: e.message || String(e), activeAgents: [] })
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
+      set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: s.cid === sid ? errMsg : s.error, activeAgents: s.cid === sid ? [] : s.activeAgents }))
     }
   },
 
-  stop: () => { taskGen++; window.huangquan.llm.abort(); set({ streaming: false, executing: false, error: null }) },
+  stop: () => {
+    taskGen++; window.huangquan.llm.abort()
+    // v0.2.3: 停止时也清除当前会话忙碌标记
+    const curId = get().cid
+    if (curId) set(s => ({ sessions: s.sessions.map(x => x.id === curId ? { ...x, busy: false } : x) }))
+    set({ streaming: false, executing: false, error: null })
+  },
 
+  // v0.2.2: 从指定用户消息重新发送（编辑后重发 / 刷新重发）
+  resendFrom: async (msgId: string, newContent?: string) => {
+    const s = get().cur(); if (!s || get().streaming) return
+    const idx = s.messages.findIndex(m => m.id === msgId)
+    if (idx < 0 || s.messages[idx].role !== 'user') return
+    const lu = s.messages[idx]
+    const msgs = s.messages.slice(0, idx)
+    set(st => ({ sessions: st.sessions.map(x => x.id === s.id ? { ...x, messages: msgs } : x) }))
+    await get().send(newContent !== undefined ? newContent : lu.content, lu.images, lu.attachments)
+  },
   regen: async () => {
     const s = get().cur(); if (!s || get().streaming) return
     // 找到最后一条用户消息的位置

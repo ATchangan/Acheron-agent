@@ -45,6 +45,8 @@
 .session-item{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:var(--radius);cursor:pointer;transition:background .12s;gap:6px}
 .session-item:hover{background:var(--bg-hover)}
 .session-item.active{background:var(--bg-hover);border-left:2px solid var(--accent)}
+.session-busy{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 6px;border-radius:8px;background:rgba(124,92,191,0.16);color:#b39ddb;font-size:10px;font-weight:600;white-space:nowrap;animation:sessionBusyPulse 1.6s ease-in-out infinite}
+@keyframes sessionBusyPulse{0%,100%{opacity:1}50%{opacity:0.45}}
 .session-title{flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-secondary)}
 .session-item.active .session-title{color:var(--accent)}
 .session-delete{opacity:0;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:1px 4px;font-size:14px}
@@ -112,7 +114,13 @@
 .footer-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;transition:all .12s;width:28px;height:28px}
 .footer-btn:hover{color:var(--accent);background:var(--bg-hover)}
 .footer-btn.active{color:var(--accent)}
-.chat-input-area{padding:12px 48px;border-top:1px solid var(--border);flex-shrink:0}
+.chat-input-area{position:relative;padding:12px 48px;border-top:1px solid var(--border);flex-shrink:0}
+/* v0.2.2: 拖拽附件样式 */
+.attach-item{position:relative}
+.attach-item .image-attach-remove{position:static;margin-left:4px;display:inline-flex}
+.message-attachments{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.message-attachment{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);font-size:11px;color:var(--text-secondary);max-width:260px;cursor:pointer}
+.message-attachment:hover{border-color:var(--accent);color:var(--accent)}
 .chat-textarea::placeholder{color:var(--text-muted)}
 .input-wrapper{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:5px 10px;margin-top:4px}
 .input-left-icons{display:flex;align-items:center;gap:4px}
@@ -212,3 +220,5 @@
 .content-placeholder p{font-size:14px;color:var(--text-secondary);margin-bottom:24px}
 .content-placeholder .line{width:60px;height:2px;background:var(--accent);margin-bottom:24px}
 .content-placeholder .tag{font-size:13px;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:8px 24px}
+
+@keyframes floatSpin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
