@@ -47,6 +47,16 @@ export default function MessageItem({ message, streaming }: Props) {
   const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
   const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
   const cardMaxHeight = useSettingsStore(s => (s.general as any).cardMaxHeight || 500)
+  // v0.2.3: TTS 语音朗读(Windows SAPI)
+  const ttsEnabled = useSettingsStore(s => (s.general as any).ttsEnabled !== false)
+  const ttsRate = useSettingsStore(s => (s.general as any).ttsRate || 1)
+  const [ttsBusy, setTtsBusy] = useState(false)
+  const speakText = async () => {
+    if (ttsBusy || !message.content) return
+    setTtsBusy(true)
+    try { await window.huangquan.tts.speak(message.content.replace(/[#*`>|\-\[\](){}]/g, '').slice(0, 300), ttsRate) } catch { /* 忽略 */ }
+    setTtsBusy(false)
+  }
   const showTimestamps = useSettingsStore(s => (s.general as any).showTimestamps || 'hover')
   const [selected, setSelected] = useState(false)
   const isUser = message.role === 'user'
@@ -84,11 +94,13 @@ export default function MessageItem({ message, streaming }: Props) {
     const isError = message.content.startsWith('E:')
     const toolId = (message as any).tool_call_id || ''
     const shortId = toolId.replace(/^(call_|c_)/, '').slice(0, 8) || 'tool'
+    // v0.2.3-fix: 显示关联工具名(如 ✓ write), 不再只显示 call id 缩写
+    const toolName = message.toolName || shortId
     return (
       <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
         <div className="message-body">
           <div className="tool-call-block" style={{ borderColor: isError ? '#ff4466' : 'var(--accent-green)', background: isError ? 'rgba(255,68,102,.05)' : 'rgba(72,201,138,.05)' }}>
-            <div className="tool-call-header" style={{ color: isError ? '#ff4466' : 'var(--accent-green)' }}>{isError ? '✗ Error' : '✓ ' + shortId}</div>
+            <div className="tool-call-header" style={{ color: isError ? '#ff4466' : 'var(--accent-green)' }}>{isError ? '✗ Error(' + toolName + ')' : '✓ ' + toolName}</div>
             <pre className="tool-call-output">{truncated}</pre>
           </div>
         </div>
@@ -96,17 +108,62 @@ export default function MessageItem({ message, streaming }: Props) {
     )
   }
 
+  // v0.2.3-fix: 工具调用卡片 —— 内嵌紧凑风格(与工具结果块一致: 无头像无sender)
+  // header 只显示工具名, 参数为灰色单行摘要, 完整参数可展开
+  const toolCalls = message.tool_calls
+  if (toolCalls?.length) {
+    return (
+      <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
+        <div className="message-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {toolCalls.map((tc: any, i: number) => {
+            const fn = tc.function
+            let args = ''
+            try { args = JSON.stringify(JSON.parse(fn.arguments || '{}'), null, 2) } catch { args = fn.arguments || '' }
+            const inline = args.replace(/\n/g, ' ').trim()
+            return (
+              <details key={i} className="tool-call-block" style={{ borderColor: 'var(--accent-green)', background: 'rgba(72,201,138,.05)' }} open={args.length <= 60}>
+                <summary className="tool-call-header" style={{ color: 'var(--accent-green)', cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ whiteSpace: 'nowrap' }}>🔧 {fn.name}</span>
+                  {inline && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{inline.length > 50 ? inline.slice(0, 50) + '…' : inline}</span>}
+                  <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{args.length > 60 ? '展开' : ''}</span>
+                </summary>
+                {args.length > 60 && <pre className="tool-call-output">{args}</pre>}
+              </details>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   const renderAssistantContent = (text: string | null) => {
-    if (!text) return streaming ? <span className="thinking-dots" /> : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>调用工具中...</span>
+    if (!text) return (
+      <span className="thinking-bubble">
+        {streaming ? <>🤔 思考中<span className="thinking-dots" /></> : '调用工具中...'}
+      </span>
+    )
     // v0.2.1: 解析交互卡片 <!--CARD:title-->html<!--/CARD-->
+    // v0.2.3-fix(Q9): matchAll 一次性提取卡片, 避免 exec+replace 混用导致相同卡片错位
     const cardRe = /<!--CARD(?::([^>]*))?-->([\s\S]*?)<!--\/CARD-->/g
     const cards: { title: string; html: string }[] = []
-    let clean = text; let m
-    while ((m = cardRe.exec(text))) { cards.push({ title: m[1] || '', html: m[2] }); clean = clean.replace(m[0], '') }
-    clean = clean.replace(/<reflect>[\s\S]*?<\/reflect>/g, '').trim()
+    let reflect = ''
+    let clean = text
+    for (const m of text.matchAll(cardRe)) { cards.push({ title: m[1] || '', html: m[2] }) }
+    if (cards.length) clean = text.replace(cardRe, '')
+    // v0.2.3: 反思内容不再静默丢弃 —— 提取为可折叠「💭 反思」块
+    // v0.2.3-fix(Q8): 多段反思内容拼接保留, 不再只留最后一段
+    clean = clean.replace(/<reflect>([\s\S]*?)<\/reflect>/g, (_s: string, body: string) => { const b = body.trim(); reflect = reflect ? reflect + '\n' + b : b; return '' }).trim()
     return (
       <div className="markdown-body">
         {clean && <ReactMarkdown remarkPlugins={[remarkGfm]}>{clean || (streaming ? '' : '...')}</ReactMarkdown>}
+        {reflect && (
+          <details style={{ margin: '8px 0', fontSize: 12 }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', userSelect: 'none' }}>
+              💭 {streaming ? '反思中…' : '反思内容(点击展开)'}
+            </summary>
+            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,92,191,.08)', border: '1px solid rgba(124,92,191,.25)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{reflect}</div>
+          </details>
+        )}
         {cards.map((card, i) => (
           <div key={i} className="card-container" style={{ margin: '12px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-color)', background: '#fff' }}>
             {card.title && <div style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#555', borderBottom: '1px solid #eee', background: '#fafafa' }}>{card.title}</div>}
@@ -148,6 +205,7 @@ export default function MessageItem({ message, streaming }: Props) {
           {showTimestamps === 'always' && <span className="footer-time">{timeText}</span>}
           {!isUser && (
             <>
+              {ttsEnabled && <FooterBtn title={ttsBusy ? '朗读中…' : '语音朗读'} onClick={speakText}>{ttsBusy ? '🔊…' : '🔊'}</FooterBtn>}
               <FooterBtn title="重新生成" onClick={regen}><RefreshIcon /></FooterBtn>
               <FooterBtn title={copied ? '已复制' : '复制内容'} onClick={handleCopy} active={copied}>{copied ? <CheckIcon /> : <CopyIcon />}</FooterBtn>
               <FooterBtn title="全选引入到输入框" onClick={() => { const text = message.content || ''; if (text) sendQuote(text) }}><QuoteIcon /></FooterBtn>

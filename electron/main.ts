@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net } from 'electron'
+﻿import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net, safeStorage } from 'electron'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -10,8 +10,10 @@ import * as os from 'os'
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch(args[0] as any, args[1] as any)) as any
 
 // v0.2.1: 全局崩溃捕获
-process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
-process.on('unhandledRejection', (reason) => { console.error('[FATAL] unhandledRejection:', reason); fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), new Date().toISOString() + ' unhandledRejection: ' + reason + '\n') })
+// v0.2.3-fix(P22): 崩溃日志异步追加, 不再同步阻塞主进程
+function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch { /* 忽略 */ } }
+process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
+process.on('unhandledRejection', (reason) => { console.error('[FATAL] unhandledRejection:', reason); appendCrashLog(new Date().toISOString() + ' unhandledRejection: ' + reason + '\n') })
 
 // ─── v0.2.1: 安全序列化——消除循环引用和不可序列化对象导致的 IPC 报错 ──
 function safeClone(obj: any, seen = new WeakSet()): any {
@@ -44,6 +46,35 @@ function safeClone(obj: any, seen = new WeakSet()): any {
   return result
 }
 
+// ─── v0.2.3: API Key 加密存储(Windows DPAPI via safeStorage) ──
+// 加密不可用(如无 keyring 的环境)时自动回退明文, 旧明文数据兼容读取
+function encKey(v: string): string {
+  if (!v || v.startsWith('__ENC__')) return v
+  try { if (safeStorage.isEncryptionAvailable()) return '__ENC__' + safeStorage.encryptString(v).toString('base64') } catch { /* 忽略 */ }
+  return v
+}
+function decKey(v: string): string {
+  if (!v || !v.startsWith('__ENC__')) return v
+  try { return safeStorage.decryptString(Buffer.from(v.slice(7), 'base64')) } catch { return v }
+}
+// v0.2.3-fix(N27): 敏感字段全覆盖 —— apiKey + customHeaders(可含 Authorization) + webReadCookies(登录态)
+function encProviders(data: any): any {
+  if (!data || typeof data !== 'object') return data
+  const out = { ...data, general: data.general ? { ...data.general } : data.general }
+  if (Array.isArray(out.providers)) out.providers = out.providers.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: encKey(p.apiKey), customHeaders: p.customHeaders ? encKey(String(p.customHeaders)) : p.customHeaders } : p)
+  if (Array.isArray((out as any).mediaProviders)) (out as any).mediaProviders = (out as any).mediaProviders.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: encKey(p.apiKey) } : p)
+  if (out.general && typeof out.general.webReadCookies === 'string' && out.general.webReadCookies.trim()) out.general.webReadCookies = encKey(out.general.webReadCookies)
+  return out
+}
+function decProviders(data: any): any {
+  if (!data || typeof data !== 'object') return data
+  const out = { ...data, general: data.general ? { ...data.general } : data.general }
+  if (Array.isArray(out.providers)) out.providers = out.providers.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: decKey(p.apiKey), customHeaders: p.customHeaders ? decKey(String(p.customHeaders)) : p.customHeaders } : p)
+  if (Array.isArray((out as any).mediaProviders)) (out as any).mediaProviders = (out as any).mediaProviders.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: decKey(p.apiKey) } : p)
+  if (out.general && typeof out.general.webReadCookies === 'string' && out.general.webReadCookies.startsWith('__ENC__')) out.general.webReadCookies = decKey(out.general.webReadCookies)
+  return out
+}
+
 // ─── v0.2.6: 渲染加速 —— GPU 优先, 无 GPU 自动回退 CPU ─────────
 // 模式(settings.general.rendererMode): auto(默认, GPU可用则GPU) / gpu(强制GPU) / cpu(强制CPU软件渲染)
 let rendererMode = 'auto'
@@ -73,8 +104,9 @@ let serverPort = 0
 // ─── v0.2.3-fix: 单实例锁 —— 防止多实例并行导致悬浮窗/窗口互相干扰 ──
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
+  // v0.2.3: 直接退出, 不再 throw(避免触发 uncaughtException 写 crash.log 噪音)
   app.quit()
-  throw new Error('Another instance is running')
+  process.exit(0)
 }
 app.on('second-instance', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus() } })
 
@@ -82,15 +114,17 @@ app.on('second-instance', () => { if (mainWindow) { mainWindow.show(); mainWindo
 const ROOT = join(__dirname, '..')
 const resourcesDir = join(ROOT, 'resources')
 const distDir = join(ROOT, 'dist')
-const skillsDir = join(ROOT, 'skills')
 const userDataPath = app.getPath('userData')
 const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
 const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
+// v0.2.3-fix: 用户技能目录移到 userData —— 打包版 ROOT 在 app.asar 内只读,
+// 原 join(ROOT,'skills') 在安装版中 mkdir 抛 ENOTDIR 导致启动中断(主窗口不创建)
+const skillsDir = join(userDataPath, 'skills')
 
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
-  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true })
+  try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }) } catch { /* 只读环境跳过 */ }
 }
 
 // 启动时初始向量记忆
@@ -99,8 +133,7 @@ import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-ve
 import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
   mainWindow?.webContents.send('cron:trigger', prompt)
 })).catch(() => {})
-// v0.2: 初始化多Agent系统
-import('./agent').then(m => { m.initAgentSystemSync() }).catch(() => {})
+// v0.2.3: 多Agent体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
 import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})
@@ -119,7 +152,12 @@ function startServer(): Promise<number> {
       if (!fp.startsWith(distDir)) { res.writeHead(403); res.end('403'); return }
       fs.readFile(fp, (err, data) => {
         if (err) { res.writeHead(404); res.end('404'); return }
-        res.writeHead(200, { 'Content-Type': mime[extname(fp)] || 'application/octet-stream' })
+        // v0.2.3-fix(P23): 静态资源缓存头(HTML 不缓存, 其余资源 1h)
+        const isHtml = reqPath.endsWith('.html') || reqPath === '/'
+        res.writeHead(200, {
+          'Content-Type': mime[extname(fp)] || 'application/octet-stream',
+          'Cache-Control': isHtml ? 'no-cache' : 'public, max-age=3600',
+        })
         res.end(data)
       })
     })
@@ -297,6 +335,8 @@ ipcMain.handle('settings:load', () => {
       const raw = fs.readFileSync(settingsPath, 'utf-8')
       if (raw.trim()) {
         const data = JSON.parse(raw)
+        // v0.2.3: API Key 解密(DPAPI) —— 必须合并返回值(decProviders 返回新对象)
+        Object.assign(data, decProviders(data))
         // v0.2.5-opt: 从独立文件读回大字段
         const g: any = data?.general || {}
         for (const [key, file] of [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']] as [string, string][]) {
@@ -330,7 +370,8 @@ ipcMain.handle('settings:save', (_e, s) => {
       }
     }
     const slim = { ...s, general: g2 }
-    fs.writeFileSync(settingsPath, JSON.stringify(slim), 'utf-8')
+    // v0.2.3: API Key 加密落盘(DPAPI)
+    fs.writeFileSync(settingsPath, JSON.stringify(encProviders(slim)), 'utf-8')
     return true
   } catch (e) { console.error('[SETTINGS] save error:', e); return false }
 })
@@ -367,17 +408,30 @@ ipcMain.handle('storage:stats', () => {
   } catch { return { sessions: '0 B', memory: '0 B', plugins: '0 B', cache: '0 B', workspace: '0 B', settings: '0 B' } }
 })
 
+// v0.2.3: 会话元数据缓存 —— 避免 list 时全量解析大会话文件(大会话含图片可达数 MB)
+const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string }>()
+function buildSessionMeta() {
+  sessionMeta.clear()
+  if (!fs.existsSync(sessionsDir)) return
+  for (const f of fs.readdirSync(sessionsDir)) {
+    if (!f.endsWith('.json')) continue
+    try {
+      const d = JSON.parse(fs.readFileSync(join(sessionsDir, f), 'utf-8'))
+      sessionMeta.set(f.replace('.json', ''), { title: d.title || f, messageCount: d.messages?.length || 0, updatedAt: d.updatedAt || '' })
+    } catch { /* 损坏文件跳过 */ }
+  }
+}
 ipcMain.handle('sessions:list', () => {
   try {
-    if (!fs.existsSync(sessionsDir)) return []
-    return fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json')).map(f => {
-      const d = JSON.parse(fs.readFileSync(join(sessionsDir, f), 'utf-8'))
-      return { id: f.replace('.json', ''), title: d.title || f, messageCount: d.messages?.length || 0, updatedAt: d.updatedAt || '' }
-    }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    if (sessionMeta.size === 0 && fs.existsSync(sessionsDir)) buildSessionMeta()
+    return [...sessionMeta.entries()].map(([id, m]) => ({ id, title: m.title, messageCount: m.messageCount, updatedAt: m.updatedAt }))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   } catch { return [] }
 })
+// v0.2.3-security: 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
+const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
 ipcMain.handle('sessions:load', (_e, id: string) => {
-  try { const p = join(sessionsDir, id + '.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : { id, title: '新对话', messages: [] } }
+  try { if (!SAFE_ID.test(String(id || ''))) return { id, title: '新对话', messages: [] }; const p = join(sessionsDir, id + '.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : { id, title: '新对话', messages: [] } }
   catch { return { id, title: '新对话', messages: [] } }
 })
 ipcMain.handle('sessions:save', (_e, s) => {
@@ -386,14 +440,17 @@ ipcMain.handle('sessions:save', (_e, s) => {
   const safe = safeClone(s)
   const content = JSON.stringify({ ...safe, updatedAt: new Date().toISOString() })
   fs.promises.writeFile(join(sessionsDir, safe.id + '.json'), content, 'utf-8').catch((e: any) => console.error('[SESSIONS] save error:', e?.message))
+  // v0.2.3: 更新元数据缓存(避免下次 list 全量解析)
+  sessionMeta.set(String(safe.id || ''), { title: safe.title || '新对话', messageCount: safe.messages?.length || 0, updatedAt: new Date().toISOString() })
   return true
 })
-ipcMain.handle('sessions:delete', (_e, id: string) => { try { fs.unlinkSync(join(sessionsDir, id + '.json')) } catch { /* ok */ }; return true })
+ipcMain.handle('sessions:delete', (_e, id: string) => { try { if (!SAFE_ID.test(String(id || ''))) return false; fs.unlinkSync(join(sessionsDir, id + '.json')); sessionMeta.delete(id) } catch { /* ok */ }; return true })
 // v0.2.1: 清空全部对话历史
 ipcMain.handle('sessions:clearAll', () => {
   try {
     if (!fs.existsSync(sessionsDir)) return true
     for (const f of fs.readdirSync(sessionsDir)) { if (f.endsWith('.json')) fs.unlinkSync(join(sessionsDir, f)) }
+    sessionMeta.clear()
     return true
   } catch { return false }
 })
@@ -495,12 +552,31 @@ ipcMain.handle('memory:addVector', async (_e, content: string) => {
 ipcMain.handle('memory:importFile', async (_e, filePath: string) => {
   try {
     if (!fs.existsSync(filePath)) return false
+    // v0.2.3-fix(可用性): ragChunkSize/ragThreshold/ragAutoSave 设置接入
+    let g: any = {}
+    try { g = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch { /* 忽略 */ }
+    const chunkSize = Math.max(100, Number(g.ragChunkSize) || 600)
+    const threshold = Number(g.ragThreshold) || 0.35
+    const autoSave = g.ragAutoSave !== false
     const content = fs.readFileSync(filePath, 'utf-8')
-    for (const chunk of content.split('\n\n').filter((c:string) => c.trim().length > 50).slice(0, 20)) {
-      getVM().addMemory(chunk.trim())
+    const paras = content.split(/\n\s*\n/).filter((c: string) => c.trim().length > 20)
+    const chunks: string[] = []
+    for (const p of paras) {
+      if (p.length <= chunkSize) { chunks.push(p.trim()); continue }
+      for (let i = 0; i < p.length; i += chunkSize) chunks.push(p.slice(i, i + chunkSize).trim())
     }
-    getVM().saveMemory()
-    return true
+    let added = 0
+    for (const chunk of chunks.slice(0, 20)) {
+      // ragThreshold: 与现有记忆相似度过高则跳过(语义去重)
+      try {
+        const hits = getVM().searchMemory(chunk.slice(0, 120), 1)
+        if (hits.length && hits[0].score > threshold) continue
+      } catch { /* 忽略 */ }
+      getVM().addMemory(chunk)
+      added++
+    }
+    if (autoSave) getVM().saveMemory()
+    return added > 0
   } catch { return false }
 })
 ipcMain.handle('memory:clearVector', async () => {
@@ -678,45 +754,51 @@ ipcMain.handle('computer:readImageBase64', async (_e, filePath: string) => {
   return 'data:' + (mm[ext] || 'image/png') + ';base64,' + buf.toString('base64')
 })
 ipcMain.handle('computer:grep', async (_e, dirPath: string, pattern: string) => {
+  // v0.2.3: fs.promises 异步递归, 不再阻塞主进程
   const results: string[] = []
   let scanned = 0
-  // v0.2.1: 限制深度与扫描文件数，防止大目录阻塞主进程
-  function walk(dir: string, depth: number) {
+  async function walk(dir: string, depth: number): Promise<void> {
     if (depth > 8 || scanned > 5000 || results.length >= 100) return
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    let entries
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
       if (results.length >= 100) return
       const fp = join(dir, entry.name)
-      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') walk(fp, depth + 1)
-      else if (entry.isFile() && entry.name.match(/\.(ts|tsx|js|jsx|json|md|css|html|py|rs|go|java|c|cpp)$/)) {
+      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') await walk(fp, depth + 1)
+      else if (entry.isFile() && /\.(ts|tsx|js|jsx|json|md|css|html|py|rs|go|java|c|cpp)$/.test(entry.name)) {
         scanned++
         try {
-          const content = fs.readFileSync(fp, 'utf-8')
-          const lines = content.split('\n')
-          lines.forEach((line, idx) => {
-            if (line.includes(pattern)) results.push(`${fp}:${idx + 1}:${line.trim()}`)
-          })
+          const content = await fs.promises.readFile(fp, 'utf-8')
+          content.split('\n').forEach((line, idx) => { if (line.includes(pattern)) results.push(`${fp}:${idx + 1}:${line.trim()}`) })
         } catch { /* binary skip */ }
       }
     }
   }
-  try { walk(dirPath, 0) } catch { /* ok */ }
+  try { await walk(dirPath, 0) } catch { /* ok */ }
   return results.slice(0, 100).join('\n')
 })
 ipcMain.handle('computer:find', async (_e, dirPath: string, glob: string) => {
+  // v0.2.3: fs.promises 异步递归 + glob 转义修复(非正则元字符不再破坏表达式)
   const results: string[] = []
   let scanned = 0
-  const regex = new RegExp(glob.replace(/\*/g, '.*').replace(/\./g, '\\.'))
-  // v0.2.1: 限制深度与扫描文件数
-  function walk(dir: string, depth: number) {
+  let regex: RegExp
+  try {
+    // v0.2.3-fix: 分段转义 —— 先按 * 分割, 各段转义后以 .* 连接(避免把 * 生成的点再次转义成 \.*)
+    const escSeg = (s: string) => s.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    regex = new RegExp(String(glob || '').split('*').map(escSeg).join('.*'))
+  } catch { return '' }
+  async function walk(dir: string, depth: number): Promise<void> {
     if (depth > 8 || scanned > 5000 || results.length >= 200) return
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    let entries
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
       if (results.length >= 200) return
       const fp = join(dir, entry.name)
-      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') walk(fp, depth + 1)
+      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') await walk(fp, depth + 1)
       else if (entry.isFile()) { scanned++; if (regex.test(entry.name)) results.push(fp) }
     }
   }
-  try { walk(dirPath, 0) } catch { /* ok */ }
+  try { await walk(dirPath, 0) } catch { /* ok */ }
   return results.slice(0, 200).join('\n')
 })
 
@@ -828,7 +910,9 @@ ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
     const tmpDir = join(userDataPath, 'codebox')
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
     const ext = lang === 'python' ? '.py' : lang === 'node' ? '.js' : '.txt'
-    const fp = join(tmpDir, 'codebox_' + Date.now() + ext)
+    // v0.2.3-fix(P24): 随机后缀防并发冲突; 顺带清理 60s 前残留的临时文件
+    const fp = join(tmpDir, 'codebox_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + ext)
+    try { for (const f of fs.readdirSync(tmpDir)) { if (f.startsWith('codebox_') && Date.now() - fs.statSync(join(tmpDir, f)).mtimeMs > 60000) { try { fs.unlinkSync(join(tmpDir, f)) } catch {} } } } catch { /* 忽略 */ }
     fs.writeFileSync(fp, code, 'utf-8')
     const cmd = lang === 'python' ? `python "${fp}"` : lang === 'node' ? `node "${fp}"` : `echo "unsupported: ${lang}"`
     exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
@@ -842,6 +926,18 @@ ipcMain.handle('computer:processList', async () => {
 })
 ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
   return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
+})
+
+// ─── v0.2.3: TTS 语音合成(Windows SAPI 内置, 离线可用) ──
+ipcMain.handle('tts:speak', async (_e, text: string, rate?: number) => {
+  const t = String(text || '').trim().replace(/['"\\]/g, '').slice(0, 300)
+  if (!t) return false
+  const r = Math.max(0.5, Math.min(3, Number(rate) || 1))
+  const speed = Math.round((r - 1) * 10) // SAPI Rate: -10..10
+  const ps = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = ${speed}; $s.Speak('${t}'); $s.Dispose()`
+  return new Promise<boolean>(resolve => {
+    exec(`powershell -NoProfile -Command "${ps}"`, { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 64 }, (err) => resolve(!err))
+  })
 })
 
 // ─── 浏览器 / 搜索 / 模型探测 ──────────────────────
@@ -965,6 +1061,8 @@ ipcMain.handle('web:read', async (_e, url: string, mode?: string) => {
     // 读取设置中的浏览器解析配置(双向绑定全局配置文件)
     let cfg: any = {}
     try { cfg = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch { /* 忽略 */ }
+    // v0.2.3-fix(N27): 直接读文件时 cookie 是密文, 需解密后传给 web_read
+    if (typeof cfg.webReadCookies === 'string' && cfg.webReadCookies.startsWith('__ENC__')) cfg.webReadCookies = decKey(cfg.webReadCookies)
     // 总开关: 关闭后 Agent 无法调用 web_read
     if (cfg.webReadEnabled === false) {
       return JSON.stringify({ ok: false, error: 'web_read 已被禁用', advice: '请在 设置 → 工具 → 无头浏览器网页解析工具 中开启总开关' })
@@ -1012,12 +1110,18 @@ ipcMain.handle('skills:create', (_e, name: string, content: string) => {
   } catch (e: any) { return 'Error: ' + e.message }
 })
 ipcMain.handle('skills:install', (_e, url: string) => {
+  // v0.2.3-security: spawn 替代 exec 拼接 —— 修复命令注入(url 含 ; && 等可执行任意命令)
   return new Promise<string>(resolve => {
-    const name = url.split('/').pop()?.replace('.git','') || 'skill'
+    const name = String(url || '').split('/').pop()?.replace(/\.git$/, '') || 'skill'
+    if (!/^[\w\-.]{1,80}$/.test(name)) { resolve('Error: 无效的技能名称'); return }
+    if (!/^https?:\/\//i.test(String(url || ''))) { resolve('Error: 仅支持 http(s) 仓库地址'); return }
     const dir = join(skillsDir, name)
-    exec('git clone ' + url + ' "' + dir + '"', { timeout: 30000 }, (err, stdout, stderr) => {
-      resolve(err ? ('Error: ' + (stderr || err.message)) : 'ok')
-    })
+    const { spawn } = require('child_process')
+    const cp = spawn('git', ['clone', '--depth', '1', String(url), dir], { timeout: 30000, windowsHide: true })
+    let errOut = ''
+    cp.stderr?.on('data', (d: Buffer) => { errOut += d.toString(); if (errOut.length > 500) errOut = errOut.slice(-500) })
+    cp.on('error', (e: any) => resolve('Error: ' + (e?.message || 'git 启动失败')))
+    cp.on('close', (code: number) => resolve(code === 0 ? 'ok' : ('Error: ' + (errOut.trim() || 'git clone 失败, code ' + code))))
   })
 })
 ipcMain.handle('skills:delete', (_e, name: string) => {
@@ -1037,16 +1141,21 @@ ipcMain.handle('skills:delete', (_e, name: string) => {
   } catch (e: any) { return 'Error: ' + e.message }
 })
 ipcMain.handle('plugins:install', (_e, url: string) => {
+  // v0.2.3-security: spawn 替代 exec 拼接 —— 修复命令注入
   return new Promise<string>(resolve => {
     const dir = join(userDataPath, 'plugins')
     try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }) } catch (e: any) { resolve('Error: cannot create plugins dir: ' + e.message); return }
-    const name = (url.split('/').pop() || 'plugin').replace('.git', '')
+    const name = (String(url || '').split('/').pop() || 'plugin').replace(/\.git$/, '')
+    if (!/^[\w\-.]{1,80}$/.test(name)) { resolve('Error: 无效的插件名称'); return }
+    if (!/^https?:\/\//i.test(String(url || ''))) { resolve('Error: 仅支持 http(s) 仓库地址'); return }
     const target = join(dir, name)
     if (fs.existsSync(target)) { resolve('Error: plugin already exists: ' + name); return }
-    exec('git clone ' + url + ' "' + target + '"', { timeout: 30000 }, (err, _stdout, stderr) => {
-      if (err) { resolve('Error: ' + (stderr || err.message).slice(0, 200)) }
-      else { resolve('Plugin installed: ' + name) }
-    })
+    const { spawn } = require('child_process')
+    const cp = spawn('git', ['clone', '--depth', '1', String(url), target], { timeout: 30000, windowsHide: true })
+    let errOut = ''
+    cp.stderr?.on('data', (d: Buffer) => { errOut += d.toString(); if (errOut.length > 500) errOut = errOut.slice(-500) })
+    cp.on('error', (e: any) => resolve('Error: ' + (e?.message || 'git 启动失败')))
+    cp.on('close', (code: number) => resolve(code === 0 ? ('Plugin installed: ' + name) : ('Error: ' + (errOut.trim() || 'git clone 失败, code ' + code))))
   })
 })
 ipcMain.handle('plugins:scan', () => {
@@ -1300,16 +1409,18 @@ ipcMain.handle('mcp:sse:call', async (_e, server:string, tool:string, args:any) 
 ipcMain.handle('mcp:sse:list', () => { try { return require('./mcp/sse-transport').listSSEServers() } catch { return [] } })
 
 // ─── v0.2: Agent 系统 ──────────────────────────────
-ipcMain.handle('agent:list', () => {
-  try { return require('./agent').BUILTIN_AGENTS.map((a:any) => ({ name:a.name, role:a.role, icon:a.icon, tools:a.tools, handoff_to:a.handoff_to })) }
-  catch { return [] }
-})
-ipcMain.handle('agent:route', (_e, msg:string) => {
-  try { return require('./agent').routeIntent(msg)?.name || '阎罗王' }
-  catch { return '阎罗王' }
-})
+// v0.2.3: agent:list / agent:route 已由前端 AGENTS 实现接管(主进程不再维护第二套 Agent 体系)
 
 // ─── v0.2: 工具缓存 ────────────────────────────────
+// ─── v0.2.6: 按 会话×模型 的 TOKEN 缓存命中统计(持久化) ──
+ipcMain.handle('modelStats:recordRequest', (_e, sid: string, model: string, hit: boolean) => { try { require('./cache/model-cache-stats').recordRequest(sid, model, hit) } catch { /* 忽略 */ } return true })
+ipcMain.handle('modelStats:recordTokens', (_e, sid: string, model: string, hitT: number, missT: number, writeT: number) => { try { require('./cache/model-cache-stats').recordTokens(sid, model, hitT, missT, writeT) } catch { /* 忽略 */ } return true })
+ipcMain.handle('modelStats:deleteSession', (_e, sid: string) => { try { require('./cache/model-cache-stats').deleteSession(sid) } catch { /* 忽略 */ } return true })
+ipcMain.handle('modelStats:get', () => { try { return require('./cache/model-cache-stats').getAll() } catch { return { sessions: {}, models: {} } } })
+ipcMain.handle('modelStats:getSession', (_e, sid: string) => { try { return require('./cache/model-cache-stats').getSession(sid) } catch { return {} } })
+ipcMain.handle('modelStats:resetAll', () => { try { return { ok: true, cleared: require('./cache/model-cache-stats').resetAll() } } catch (e: any) { return { ok: false, error: String(e?.message || e) } } })
+ipcMain.handle('modelStats:resetOne', (_e, model: string) => { try { return { ok: require('./cache/model-cache-stats').resetOne(model) } } catch (e: any) { return { ok: false, error: String(e?.message || e) } } })
+
 ipcMain.handle('cache:stats', () => {
   try { return require('./cache/tool-cache').getCacheStats() }
   catch { return { size:0, hits:0, misses:0, hit_rate:'0%' } }

@@ -11,9 +11,8 @@ artifactName: Acheron-agent-${version}.exe
 win:
   target:
     - nsis
-  icon: resources/icon.png
+  icon: resources/icon.ico
   sign: null
-  signAndEditExecutable: false
 mac:
   target:
     - dmg

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 // v0.2.6: 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
 
@@ -28,6 +28,20 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
 
+  // v0.2.6: 工作目录实时刷新 —— 展开后每 5s 静默重读(不闪 loading, 保持展开状态), agent 写文件后自动可见
+  const hasLoaded = items !== null
+  useEffect(() => {
+    if (!expanded || !hasLoaded) return
+    const timer = setInterval(async () => {
+      try {
+        const list = await window.huangquan.computer.readDir(root)
+        list.sort((a: FsItem, b: FsItem) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
+        setItems(list)
+      } catch { /* 目录暂时不可读则静默跳过 */ }
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [expanded, hasLoaded, root])
+
   const load = async () => {
     setLoading(true); setErr('')
     try {
@@ -37,6 +51,12 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
     } catch (e: any) { setErr(String(e?.message || e)) }
     setLoading(false)
   }
+
+  // v0.2.6: 展开状态自动加载内容(初始展开的根目录直接显示内容, 无需点击)
+  useEffect(() => {
+    if (expanded && !items && !loading) load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, root])
 
   const toggle = async () => {
     const next = !expanded

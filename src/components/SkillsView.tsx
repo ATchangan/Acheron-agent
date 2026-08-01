@@ -44,31 +44,39 @@ function buildSkillPath(name: string, category: Category): string {
   return `skills/${dir}/${slug}.md`
 }
 
+// v0.2.3-security: 所有捕获组先 escapeHtml 再包标签 —— 修复 XSS(此前 heading/inline-code/link/img 原样注入)
 function renderMarkdown(src: string): string {
   let html = src
+  const esc = escapeHtml
   /* fenced code blocks */
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g,
     (_: string, lang: string, body: string) =>
-      `<pre><code class="language-${lang}">${escapeHtml(body.trimEnd())}</code></pre>`)
+      `<pre><code class="language-${esc(lang)}">${esc(body.trimEnd())}</code></pre>`)
   /* inline code */
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+  html = html.replace(/`([^`\n]+)`/g, (_m, c: string) => '<code>' + esc(c) + '</code>')
   /* headings */
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>')
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+  html = html.replace(/^#### (.+)$/gm, (_m, c: string) => '<h4>' + esc(c) + '</h4>')
+  html = html.replace(/^### (.+)$/gm, (_m, c: string) => '<h3>' + esc(c) + '</h3>')
+  html = html.replace(/^## (.+)$/gm, (_m, c: string) => '<h2>' + esc(c) + '</h2>')
+  html = html.replace(/^# (.+)$/gm, (_m, c: string) => '<h1>' + esc(c) + '</h1>')
   /* bold + italic */
-  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  /* images */
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2" />')
-  /* links */
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, (_m, c: string) => '<strong><em>' + esc(c) + '</em></strong>')
+  html = html.replace(/\*\*(.+?)\*\*/g, (_m, c: string) => '<strong>' + esc(c) + '</strong>')
+  html = html.replace(/\*(.+?)\*/g, (_m, c: string) => '<em>' + esc(c) + '</em>')
+  /* images —— 仅允许 http(s)/data: 协议, 其余丢弃 */
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src2: string) => {
+    const s = src2.trim()
+    return /^(https?:|data:image\/)/i.test(s) ? '<img alt="' + esc(alt) + '" src="' + esc(s) + '" />' : ''
+  })
+  /* links —— javascript:/data: 协议丢弃 */
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, txt: string, href: string) => {
+    const h = href.trim()
+    return /^(https?:|mailto:|#)/i.test(h) ? '<a href="' + esc(h) + '" target="_blank" rel="noopener noreferrer">' + esc(txt) + '</a>' : esc(txt)
+  })
   /* unordered lists */
-  html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>')
+  html = html.replace(/^[*-] (.+)$/gm, (_m, c: string) => '<li>' + esc(c) + '</li>')
   /* blockquote */
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+  html = html.replace(/^&gt; (.+)$/gm, (_m, c: string) => '<blockquote>' + esc(c) + '</blockquote>')
   /* horizontal rule */
   html = html.replace(/^---$/gm, '<hr />')
   /* paragraphs: double newline → <br/><br/> */
@@ -77,7 +85,7 @@ function renderMarkdown(src: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
 /* ─── 组件 ───────────────────────────────────────────── */

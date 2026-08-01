@@ -13,9 +13,14 @@ export default function RightPanel() {
   const streaming = useChatStore(s => s.streaming)
   const executing = useChatStore(s => s.executing)
   const activeAgents = useChatStore(s => s.activeAgents)
+  const curModel = useChatStore(s => s.curModel)
+  const cid = useChatStore(s => s.cid)
+  const sessCache = useChatStore(s => s.sessCache)
+  const sessTok = useChatStore(s => s.sessTok)
   const workDir = useSettingsStore(s => s.general.workDir)
   const [sys, setSys] = useState<any>(null)
   const [memCount, setMemCount] = useState(0)
+  const [cacheStats, setCacheStats] = useState<any>(null)
 
   const loadMemCount = async () => {
     try {
@@ -44,6 +49,7 @@ export default function RightPanel() {
   useEffect(() => {
     window.huangquan.computer.systemInfo().then(setSys).catch(() => {})
     loadMemCount()
+    window.huangquan.cacheStats().then(setCacheStats).catch(() => {})
 
   }, [])
 
@@ -129,6 +135,28 @@ export default function RightPanel() {
           <span className="sys-label">◆ 工具调用</span>
           <span style={{ color: 'var(--accent-green)' }}>{terminal.length} 次</span>
         </div>
+        <div className="sys-item">
+          <span className="sys-label">🤖 当前模型</span>
+          <span style={{ color: 'var(--accent-purple)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }} title={curModel}>{curModel || '—'}</span>
+        </div>
+        {/* v0.2.6: 本次会话的 TOKEN 缓存命中率(规格: readTokens÷inputTokens, 不钳制; 按模型独立) */}
+        {(() => {
+          const ss = cid ? sessTok[cid] : null
+          const models = ss ? Object.keys(ss) : []
+          if (!models.length) return <div className="sys-item"><span className="sys-label">🔧 缓存命中</span><span style={{ color: '#48c98a' }}>—</span></div>
+          const rows = models.map(m => {
+            const c = ss[m]
+            // token 口径命中率 = 缓存读取 ÷ 输入总(有区分度; 请求级在 DeepSeek 自动缓存下恒 100%)
+            const rate = (c.inputTokens || 0) > 0 ? ((c.readTokens || 0) / c.inputTokens * 100).toFixed(1) + '%' : '—'
+            return (
+              <div key={m} className="sys-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+                <span className="sys-label" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m}>{m}</span>
+                <span style={{ color: '#48c98a', fontSize: 11, fontWeight: 600 }}>🔧 {rate}</span>
+              </div>
+            )
+          })
+          return <>{rows}</>
+        })()}
       </div>
 
       {/* 工具调用日志 */}

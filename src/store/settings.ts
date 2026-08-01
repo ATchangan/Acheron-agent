@@ -206,6 +206,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
         document.documentElement.style.setProperty('--border-glow', adjustColor(sc.r, sc.g, sc.b, 0.4))
       }
     } catch { set({ loaded: true }) }
+    // v0.2.3-fix(可用性): logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
+    try {
+      const lv = (get().general as any)?.logLevel || 'info'
+      if (lv === 'silent') { console.log = () => {}; console.warn = () => {}; console.error = () => {} }
+      else if (lv === 'error') { console.log = () => {}; console.warn = () => {} }
+      else if (lv === 'warn') { console.log = () => {} }
+    } catch { /* 忽略 */ }
   },
 
   save: async () => {

@@ -42,5 +42,6 @@ try {
     </React.StrictMode>
   )
 } catch (e: any) {
-  document.body.innerHTML = `<div style="padding:40px;color:#ff4466;font-family:monospace;font-size:14px;background:#0D0D1A;min-height:100vh"><h1>React 渲染失败</h1><pre>${e.message}\n${e.stack || ''}</pre></div>`
+  // v0.2.3-fix(P28): 错误页提供重新加载按钮, 不再只能重启应用
+  document.body.innerHTML = `<div style="padding:40px;color:#ff4466;font-family:monospace;font-size:14px;background:#0D0D1A;min-height:100vh"><h1>React 渲染失败</h1><pre>${String(e.message)}\n${String(e.stack || '')}</pre><button onclick="location.reload()" style="margin-top:16px;padding:8px 20px;background:#6B4C9A;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">重新加载</button></div>`
 }

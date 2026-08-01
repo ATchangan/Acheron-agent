@@ -88,7 +88,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
               >
                 <span className="session-title" title={s.title}>{s.title}</span>
                 {(s as any).busy && <span className="session-busy" title="该会话正在工作中，可切换到其他会话独立使用">● 工作中</span>}
-                <button className="session-delete" onClick={e => { e.stopPropagation(); del(s.id) }}
+                <button className="session-delete" onClick={e => { e.stopPropagation(); if (confirm('确定删除会话「' + s.title + '」?此操作不可恢复')) del(s.id) }}
                   title="删除会话" aria-label="删除会话"
                   style={{ width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
                   ×

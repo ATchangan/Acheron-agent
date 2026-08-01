@@ -105,7 +105,11 @@ function cleanStale() {
 
 // ─── 公共 API ─────────────────────────────────────────
 
+let _inited = false
 export function initMemory(dataPath: string) {
+  // v0.2.3-fix(P14): 幂等 —— main.ts 启动预加载 + getVM 懒加载会重复调用, 避免重复读盘
+  if (_inited) return
+  _inited = true
   memPath = dataPath
   try {
     if (fs.existsSync(memPath)) {

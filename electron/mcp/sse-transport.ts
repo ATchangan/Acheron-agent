@@ -1,6 +1,16 @@
 // electron/mcp/sse-transport.ts — MCP SSE 传输层补充
 // 在现有 stdio 传输基础上增加 SSE/HTTP 传输支持
 // 灵感来源：Anthropic MCP Spec 2024-11-05 Transport Layer
+// v0.2.3-fix(N21): 用 Electron net.fetch(跟随系统代理), 不再用 Node 全局 fetch(undici 不读系统代理)
+
+const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => {
+  try {
+    const net = require('electron').net
+    return net.fetch(args[0] as any, args[1] as any)
+  } catch {
+    return fetch(args[0] as any, args[1] as any)
+  }
+}) as any
 
 interface MCPServerConfig {
   name: string
@@ -44,7 +54,7 @@ export async function connectSSE(config: MCPServerConfig): Promise<MCPTool[]> {
 
   try {
     // 1. 发送 initialize 请求
-    const initRes = await fetch(config.url, {
+    const initRes = await netFetch(config.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -72,7 +82,7 @@ export async function connectSSE(config: MCPServerConfig): Promise<MCPTool[]> {
     session.connected = true
 
     // 2. 获取工具列表
-    const toolsRes = await fetch(session.messageEndpoint!, {
+    const toolsRes = await netFetch(session.messageEndpoint!, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -114,7 +124,7 @@ export async function callSSETool(serverName: string, toolName: string, args: Re
   }
 
   const endpoint = session.messageEndpoint || session.url
-  const res = await fetch(endpoint, {
+  const res = await netFetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

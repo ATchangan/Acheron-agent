@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('huangquan', {
   mcpSSECall: (server: string, tool: string, args: any) => ipcRenderer.invoke('mcp:sse:call', server, tool, args),
   mcpSSEList: () => ipcRenderer.invoke('mcp:sse:list'),
   mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => ipcRenderer.invoke('media:describe', opts),
+  tts: { speak: (text: string, rate?: number) => ipcRenderer.invoke('tts:speak', text, rate) },
   getPaths: () => ipcRenderer.invoke('get:paths'),
   computer: {
     exec: (cmd: string) => ipcRenderer.invoke('computer:exec', cmd),
@@ -144,13 +145,22 @@ contextBridge.exposeInMainWorld('huangquan', {
     test: (baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => ipcRenderer.invoke('models:test', baseUrl, apiKey, opts),
   },
   cacheStats: () => ipcRenderer.invoke('cache:stats'),
+  modelStats: {
+    recordRequest: (sid: string, model: string, hit: boolean) => ipcRenderer.invoke('modelStats:recordRequest', sid, model, hit),
+    recordTokens: (sid: string, model: string, hitT: number, missT: number, writeT: number) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, hitT, missT, writeT),
+    deleteSession: (sid: string) => ipcRenderer.invoke('modelStats:deleteSession', sid),
+    get: () => ipcRenderer.invoke('modelStats:get'),
+    getSession: (sid: string) => ipcRenderer.invoke('modelStats:getSession', sid),
+    resetAll: () => ipcRenderer.invoke('modelStats:resetAll'),
+    resetOne: (model: string) => ipcRenderer.invoke('modelStats:resetOne', model),
+  },
   cacheClear: () => ipcRenderer.invoke('cache:clear'),
   storageStats: () => ipcRenderer.invoke('storage:stats'),
   llm: {
     chat: (params: unknown) => ipcRenderer.invoke('llm:chat', params),
     chatOnce: (params: unknown) => ipcRenderer.invoke('llm:chatOnce', params),
     vision: (params: unknown) => ipcRenderer.invoke('llm:vision', params),
-    abort: () => ipcRenderer.invoke('llm:abort'),
+    abort: (requestId?: string) => ipcRenderer.invoke('llm:abort', requestId),
     // v0.2.3: 多会话并发 —— 回调均带 requestId，由调用方过滤只收自己的流
     onChunk: (cb: (d: { content: string; done: boolean; requestId?: string }) => void) => {
       const h = (_: unknown, d: { content: string; done: boolean; requestId?: string }) => cb(d)

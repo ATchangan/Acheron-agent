@@ -54,6 +54,9 @@ declare global {
       mcpSSECall: (server: string, tool: string, args: any) => Promise<any>
       mcpSSEList: () => Promise<any[]>
       mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => Promise<string>
+      tts: {
+        speak: (text: string, rate?: number) => Promise<boolean>
+      }
       getPaths: () => Promise<{ skillsDir: string; pluginsDir: string; workDir: string }>
       computer: {
         exec: (cmd: string) => Promise<string>
@@ -88,7 +91,7 @@ declare global {
         chat: (params: LLMChatParams) => Promise<void>
         chatOnce: (params: { provider: string; model: string; apiKey: string; baseUrl?: string; messages: { role: string; content: string }[] }) => Promise<string>
         vision: (params: { provider: string; model: string; apiKey: string; baseUrl?: string; imageDataUrl: string; prompt?: string }) => Promise<string>
-        abort: () => Promise<boolean>
+        abort: (requestId?: string) => Promise<boolean>
         onChunk: (callback: (data: ChunkData) => void) => () => void
         onError: (callback: (error: string) => void) => () => void
         onToolCall: (callback: (tc: ToolCallDelta) => void) => () => void
@@ -138,7 +141,7 @@ export interface GeneralSettings {
   temperature?: number; maxTokens?: number
   filePermission?: string; logLevel?: string; devTools?: boolean
   ragChunkSize?: number; ragThreshold?: number; ragAutoSave?: boolean
-  ttsEnabled?: boolean; asrEnabled?: boolean; ttsRate?: number
+  ttsEnabled?: boolean; ttsRate?: number
 }
 export interface ProviderConfig {
   id: string
@@ -174,6 +177,9 @@ export interface Message {
   images?: string[]
   // v0.2.2: 拖拽/上传的附件（视频/音频/文档等非图片文件）
   attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]
+  // v0.2.3: 工具调用声明(工具卡片渲染用)与工具名(结果块关联用)
+  tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[]
+  toolName?: string
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
   // v0.2.2: 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
   meta?: { ttft?: number; duration?: number }

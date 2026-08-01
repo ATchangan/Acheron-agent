@@ -7,6 +7,30 @@
 //   - TTL 过期：文件系统 30s，Web 搜索 120s，系统信息 60s
 
 import * as crypto from 'crypto'
+import * as fs from 'fs'
+import { join } from 'path'
+
+// v0.2.6: 缓存统计持久化 —— 跨重启累计命中率
+const STATS_PATH = (() => {
+  try { return join(require('electron').app.getPath('userData'), 'cache-stats.json') } catch { return '' }
+})()
+let statsTimer: any = null
+function persistStats() {
+  if (!STATS_PATH || statsTimer) return
+  statsTimer = setTimeout(() => {
+    statsTimer = null
+    try { fs.writeFileSync(STATS_PATH, JSON.stringify({ hits, misses }, null, 2), 'utf-8') } catch { /* 忽略 */ }
+  }, 2000)
+}
+function loadStats() {
+  if (!STATS_PATH) return
+  try {
+    const d = JSON.parse(fs.readFileSync(STATS_PATH, 'utf-8'))
+    if (typeof d.hits === 'number') hits = d.hits
+    if (typeof d.misses === 'number') misses = d.misses
+  } catch { /* 忽略 */ }
+}
+loadStats()
 
 interface CacheEntry {
   tool: string
@@ -36,7 +60,8 @@ const CACHEABLE = new Set([
 const MAX_ENTRIES = 500
 
 function hashArgs(args: Record<string, unknown>): string {
-  const sorted = Object.keys(args).sort().map(k => `${k}=${args[k]}`).join('&')
+  // v0.2.3: JSON 序列化, 避免对象参数 [object Object] 碰撞
+  const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&')
   return crypto.createHash('md5').update(sorted).digest('hex').slice(0, 12)
 }
 
@@ -49,10 +74,10 @@ export function getCacheKey(toolName: string, args: Record<string, unknown>): st
 export function getCached(toolName: string, args: Record<string, unknown>): string | null {
   const key = getCacheKey(toolName, args)
   const entry = cache.get(key)
-  if (!entry) { misses++; return null }
+  if (!entry) { misses++; persistStats(); return null }
   const ttl = TTL[toolName] ?? TTL.default
-  if (ttl > 0 && Date.now() - entry.created_at > ttl) { cache.delete(key); misses++; return null }
-  entry.hit_count++; hits++
+  if (ttl > 0 && Date.now() - entry.created_at > ttl) { cache.delete(key); misses++; persistStats(); return null }
+  entry.hit_count++; hits++; persistStats()
   return entry.result
 }
 

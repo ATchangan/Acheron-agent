@@ -9,7 +9,11 @@ export default function FloatBadge() {
   const pos = g?.browserFloatPos || 'top-right'
 
   useEffect(() => {
-    const unsub = (window as any).huangquan?.web.onFloat?.((d: { show: boolean }) => setShow(!!d.show && g?.browserFloatEnabled !== false))
+    const unsub = (window as any).huangquan?.web.onFloat?.((d: { show: boolean }) => {
+      // v0.2.3-fix(N24): 实时读取开关设置, 不再闭包捕获初始快照
+      const enabled = useSettingsStore.getState().general?.browserFloatEnabled !== false
+      setShow(!!d.show && enabled)
+    })
     return () => { try { unsub?.() } catch { /* 忽略 */ } }
   }, [])
 
