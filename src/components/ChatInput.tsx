@@ -244,8 +244,7 @@ export default function ChatInput() {
             )}
           </div>
 
-          {/* 语音输入 */}
-          <IconBtn title="语音输入 (实验性)" onClick={() => { try { const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition; if (SR) { const r = new SR(); r.lang = 'zh-CN'; r.onresult = (e: any) => setText(t => t + e.results[0][0].transcript); r.start() } } catch {} }}>🎤</IconBtn>
+          {/* v0.2.3: 语音输入按钮已移除 —— Web Speech API 在 Electron 不可用 */}
 
           {/* 图片上传 */}
           <label title={supportsVision ? '上传图片' : (visionAssist ? '上传图片（自动用视觉辅助模型分析）' : '上传图片')} style={{

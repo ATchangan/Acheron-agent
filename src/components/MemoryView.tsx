@@ -15,19 +15,24 @@ export default function MemoryView() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  // v0.2.3-fix(N23): 记忆读写失败不再产生未处理 rejection
   const addPinned = async () => {
     if (!newPinned.trim()) return
-    const m = await window.huangquan.memory.load();
-    (m as any).pinnedFacts = [...((m as any).pinnedFacts || []), newPinned.trim()]
-    await window.huangquan.memory.save(m)
-    setPinnedFacts([...(m as any).pinnedFacts]); setNewPinned(''); showToast('已添加')
+    try {
+      const m = await window.huangquan.memory.load()
+      ;(m as any).pinnedFacts = [...((m as any).pinnedFacts || []), newPinned.trim()]
+      await window.huangquan.memory.save(m)
+      setPinnedFacts([...(m as any).pinnedFacts]); setNewPinned(''); showToast('已添加')
+    } catch { showToast('保存失败') }
   }
 
   const deletePinned = async (index: number) => {
-    const m = await window.huangquan.memory.load();
-    (m as any).pinnedFacts.splice(index, 1)
-    await window.huangquan.memory.save(m)
-    setPinnedFacts([...(m as any).pinnedFacts]); showToast('已删除')
+    try {
+      const m = await window.huangquan.memory.load()
+      ;(m as any).pinnedFacts.splice(index, 1)
+      await window.huangquan.memory.save(m)
+      setPinnedFacts([...(m as any).pinnedFacts]); showToast('已删除')
+    } catch { showToast('删除失败') }
   }
 
   const s = {

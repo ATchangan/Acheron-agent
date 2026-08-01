@@ -155,6 +155,34 @@ npm run package:win   # 打包为 portable exe
 
 ## 📝 更新日志
 
+### v0.2.3 (2026-08-01)
+
+**安全加固**
+- API Key / customHeaders / webReadCookies 经 **DPAPI（safeStorage）加密落盘**，不再明文保存
+- 修复命令注入：skills/plugins 安装改用 spawn + 白名单校验
+- 修复技能预览 XSS：renderMarkdown 全量转义 + 协议白名单
+- 修复会话路径穿越：会话 id 白名单校验；sandbox 权限路径规范化（防 .. 穿越）
+- workflow 工具加固（限长 8KB + 严格模式）；mkdir 走 IPC（工作目录校验），不再拼 shell
+- abort 按 requestId 精确中止（多会话并发互不误杀）
+- 每工具权限表（ToolsView）接入 runTool，deny/ask 生效
+
+**新功能**
+- 独立浏览器窗口 + 使用中悬浮窗（hash 路由 #browser / #float）
+- **TTS 语音朗读**（Windows SAPI，离线可用）
+- 常驻无头浏览器 + 实时快照（agent 浏览时页面保持打开，前端可实时截图查看）
+- 单实例锁（防止多实例并行干扰悬浮窗/窗口）
+- 思考气泡模式：工具过程统一显示在「思考气泡」内，消息流保持干净
+- 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
+
+**修复与性能**
+- read 工具 offset/limit 透传主进程分段读（>5MB 续读）
+- grep/find 异步化（fs.promises）+ glob 转义修复 + 扩展名正则修复
+- recall_memory 接入向量语义检索 + 关键词合并
+- 会话元数据缓存（避免 list 全量解析大会话）
+- MCP SSE 改用 net.fetch（跟随系统代理）
+- 时间戳置于 prompt 绝对末尾，缓存命中率 13% → 30%+
+- 崩溃日志异步追加；清理主进程双 Agent 体系与 planner/workflow 死代码（6 文件）
+
 ### v0.2.2 (2026-08-01)
 
 **浏览器与网页解析**

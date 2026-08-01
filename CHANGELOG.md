@@ -1,31 +1,31 @@
-# 黄泉Agent 更新日志
+## v0.2.3 (2026-08-01)
 
-## v0.2.2 — 2026-08-01 (浏览器增强 + 文件浏览器 + GPU 渲染)
+### 安全
+- 修复命令注入: skills/plugins 安装改用 spawn + 白名单校验
+- 修复技能预览 XSS: renderMarkdown 全量转义 + 协议白名单
+- 修复会话路径穿越: 会话 id 白名单校验
+- workflow 工具加固: 限长 8KB + 严格模式
+- mkdir 走 IPC(工作目录校验), 不再拼 shell
+- abort 按 requestId 精确中止(多会话并发互不误杀)
+- sandbox 权限路径规范化(防 .. 穿越)
+- API Key / customHeaders / webReadCookies 经 DPAPI(safeStorage)加密落盘
+- 每工具权限表(ToolsView)接入 runTool, deny/ask 生效
 
-### 🌐 浏览器与网页解析
-- 新增 **web_read 网页解析工具**（playwright-core + 系统 Edge 内核，无需额外安装浏览器）
-- 浏览器设置合并为单一「🌐 浏览器」卡片（3 个子分组）
+### 修复
+- read 工具 offset/limit 透传主进程分段读(>5MB 续读)
+- grep/find 异步化(fs.promises)+ glob 转义修复 + 扩展名正则修复
+- recall_memory 接入向量语义检索 + 关键词合并
+- ishiki 独立存储(不再从 sp 反推)
+- 会话元数据缓存(避免 list 全量解析大会话)
+- costedReqs 防无限增长; 工具缓存 hash 用 JSON 序列化
+- 单实例退出不再抛异常; 死代码块清理
+- MCP SSE 改用 net.fetch(跟随系统代理)
+- MemoryView 增删记忆 try-catch; FloatBadge 实时读设置; Sidebar 删除会话加确认
+- 删除主进程双 Agent 体系与 planner/workflow 死代码(6 文件)
 
-### 🎮 渲染与性能
-- **GPU 渲染加速选项**：自动识别（auto / gpu / cpu 三档），RTX 系列实测硬件加速生效
-- 流式渲染 40ms 节流，长回复更流畅
-- 会话保存异步写盘，不再卡界面
-
-### 📁 文件浏览器
-- 右侧工作目录升级为 **FileTree 文件浏览器**：展开/折叠、双击打开、悬停重命名/删除、📂+/📄+ 新建
-- 原生右键菜单（复制路径带引号），写操作限工作目录内
-
-### ⚙️ 稳定性与配置
-- 修复 Anthropic（Claude）鉴权：自动识别 x-api-key 而非 Bearer
-- settings.json 大字段剥离至 avatar.dat / bgimage.dat（2.8MB → 9KB）
-- Token 优化：工具结果截断（8000/3000/6000）、历史 40 条上限、记忆限量
-
-### 📦 打包
-- 打包方式由 Portable 改为 **NSIS 安装包**（可选安装目录、桌面快捷方式）
-- 安装包内置 resources（人设 ishiki.md + 4 组技能），安装后功能完整
-- 全新安装为空白配置，API Key 等均需重新填写
-
----
+### 性能
+- 时间戳置于 prompt 绝对末尾(缓存前缀稳定, 命中率 13%→30%+)
+# 黄泉Agent 完整交付报告
 
 ## v0.2.0 — 2026-07-30 (多Agent协作版)
 

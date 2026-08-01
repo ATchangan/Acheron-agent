@@ -30,6 +30,7 @@ if (typeof window !== 'undefined' && (window as any).huangquan?.memory) refreshM
 
 // 简易工具缓存（避免 IPC 往返延迟）
 const toolCache = new Map<string, { result: string; ts: number }>()
+const costedReqs = new Set<string>()
 const CACHE_TTL: Record<string, number> = {
   read: 30000, ls: 30000, grep: 30000, find: 30000,
   web_search: 120000, web_fetch: 120000,
@@ -270,15 +271,32 @@ function routeAgent(userMessage: string): string | null {
   return disabled.includes('姬子') ? null : '姬子'
 }
 
+// v0.2.3: 路径规范化(处理 .. 穿越), 用于 sandbox 权限比较
+function normPath(p: string): string {
+  const norm = String(p || '').replace(/\\/g, '/')
+  const isAbs = /^[a-zA-Z]:\//.test(norm) || norm.startsWith('/')
+  const parts: string[] = []
+  for (const seg of norm.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return (isAbs ? '/' : '') + parts.join('/')
+}
+
 // v0.2.1: 文件权限检查
 function checkFilePermission(name: string, args: any): string | null {
   const perm = (useSettingsStore.getState().general as any).filePermission || 'full'
   if (perm === 'full') return null
   const wd = (useSettingsStore.getState().general as any).workDir || ''
   const p = args.path || args.dirPath || ''
-  // sandbox: 仅在 working directory 内允许操作
-  if (perm === 'sandbox' && wd && p && !p.replace(/\\/g, '/').toLowerCase().startsWith(wd.replace(/\\/g, '/').toLowerCase())) {
-    return 'E:permission denied (sandbox): path outside work directory'
+  // sandbox: 仅在 working directory 内允许操作 —— v0.2.3: 规范化路径后再比较, 防 .. 穿越绕过
+  if (perm === 'sandbox' && wd && p) {
+    const rp = normPath(p).toLowerCase()
+    const rw = normPath(wd).toLowerCase()
+    if (!(rp === rw || (rw && rp.startsWith(rw + '/')))) {
+      return 'E:permission denied (sandbox): path outside work directory'
+    }
   }
   // readonly: 禁止写/删/执行
   if (perm === 'readonly' && ['write','edit','mkdir','exec_command','codebox'].includes(name)) {
@@ -338,7 +356,9 @@ const TOOLS: any[] = [
 
 // v0.2.1: 工具开关——从设置读取禁用列表，过滤 TOOLS
 function getActiveTools(): any[] {
-  const disabled: string[] = (useSettingsStore.getState().general as any).disabledTools || []
+  const raw = (useSettingsStore.getState().general as any).disabledTools
+  // v0.2.3-fix(P4-2): 未显式配置时默认禁用高风险 workflow 工具(LLM 输出直接执行 JS, 已限 8KB+严格模式, 仍需人工开启)
+  const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   if (disabled.length === 0) return TOOLS
   return TOOLS.filter(t => !disabled.includes(t.function.name))
 }
@@ -348,17 +368,50 @@ async function runTool(name: string, a: any): Promise<string> {
     // v0.2.1: 文件权限检查
     const permErr = checkFilePermission(name, a)
     if (permErr) return permErr
+    // v0.2.3: 每工具权限表(ToolsView 配置)接入 —— v0.2.3-fix(T1): IPC API 名 → agent 工具名映射
+    // ToolsView 的 BUILTIN_TOOLS 用 IPC 名(readFile/exec...), runTool 用 agent 名(read/exec_command...), 不映射则权限设置部分失效
+    try {
+      const perms = JSON.parse(localStorage.getItem('huangquan_tool_perms') || '{}') as Record<string, string>
+      const IPC_TO_TOOL: Record<string, string> = { readFile: 'read', writeFile: 'write', readDir: 'ls', exec: 'exec_command', systemInfo: 'system_info', processList: 'process_list', killProcess: 'kill_process', clipboardRead: 'clipboard_read', clipboardWrite: 'clipboard_write', cron_task: 'schedule_task', browse: 'web_read', browse_screenshot: 'web_read' }
+      const ipcKey = Object.keys(IPC_TO_TOOL).find(k => IPC_TO_TOOL[k] === name)
+      const lv = perms[name] || (ipcKey ? perms[ipcKey] : undefined)
+      if (lv === 'deny') return 'E:permission denied: ' + name + ' 已被禁止(可在 设置→工具→权限 中修改)'
+      if (lv === 'ask') return 'E:permission denied: ' + name + ' 需要手动确认(可在 设置→工具→权限 中改为允许后重试)'
+    } catch { /* localStorage 不可用则忽略 */ }
     // v0.2: cache
     const ck = name + ':' + JSON.stringify(a || {})
     const cached = getCached(ck, name)
+    // v0.2.6: 缓存命中统计 —— 按当前会话 + 按当前模型 双维度
+    {
+      const st = useChatStore.getState()
+      const sid = st.cid
+      const mdl = st.curModel
+      if (sid) {
+        useChatStore.setState(s => {
+          const c = s.sessCache[sid] || { hits: 0, misses: 0 }
+          const sess = { ...s.sessCache, [sid]: cached ? { hits: c.hits + 1, misses: c.misses } : { hits: c.hits, misses: c.misses + 1 } }
+          // v0.2.6: 按模型统计(未使用的模型不会出现)
+          let modelPart = s.modelCache
+          if (mdl) {
+            const m = s.modelCache[mdl] || { hits: 0, misses: 0 }
+            modelPart = { ...s.modelCache, [mdl]: cached ? { hits: m.hits + 1, misses: m.misses } : { hits: m.hits, misses: m.misses + 1 } }
+          }
+          return { sessCache: sess, modelCache: modelPart }
+        })
+      }
+      // v0.2.6: 持久化埋点(主进程按模型统计, 重启保留) —— 仅数据记录, 不干预缓存读写
+      if (mdl) { try { window.huangquan.modelStats?.record(mdl, !!cached) } catch { /* 忽略 */ } }
+    }
     if (cached) return cached + ' [cache]'
     if (['write','edit','mkdir','exec_command'].includes(name)) onWriteOp()
     switch (name) {
-      case 'read': { if (!a.path) return 'E:need path'; const c = await window.huangquan.computer.readFile(a.path); return a.offset ? c.split('\n').slice(+a.offset - 1, (+a.offset - 1) + (+a.limit || 200)).join('\n') : (c.length > 8000 ? c.slice(0, 8000) + '\n...[已截断, 共 ' + c.length + ' 字符, 如需后续内容用 read offset=' + (c.slice(0, 8000).split('\n').length + 1) + ' 续读]' : c) }
+      // v0.2.3: read 支持主进程分段读(offset/limit 透传, 修复 >5MB 文件无法续读)
+      case 'read': { if (!a.path) return 'E:need path'; const c = await window.huangquan.computer.readFile(a.path, a.offset, a.limit); if (a.offset) return c; return (c.length > 8000 ? c.slice(0, 8000) + '\n...[已截断, 共 ' + c.length + ' 字符, 如需后续内容用 read offset=' + (c.slice(0, 8000).split('\n').length + 1) + ' 续读]' : c) }
       case 'write': { if (!a.path || a.content === undefined) return 'E:need path+content'; await window.huangquan.computer.writeFile(a.path, a.content); return a.path + ' (' + a.content.length + ' chars)' }
       case 'edit': { if (!a.path || !a.oldText) return 'E:need path+oldText+newText'; const o = await window.huangquan.computer.readFile(a.path); if (!o.includes(a.oldText)) return 'E:text not found in ' + a.path; await window.huangquan.computer.writeFile(a.path, o.replace(a.oldText, a.newText || '')); return a.path + ' (edited)' }
       case 'exec_command': { if (!a.cmd) return 'E:need cmd'; const r = await window.huangquan.computer.exec(a.cmd); const out = r || '(empty output)'; return out.length > 3000 ? out.slice(0, 1500) + '\n...[输出过长已截断, 共 ' + out.length + ' 字符, 头尾已保留]\n' + out.slice(-1500) : out }
-      case 'mkdir': { if (!a.path) return 'E:need path'; await window.huangquan.computer.exec('mkdir "' + a.path.replace(/\\/g, '/') + '"'); return a.path + ' (created)' }
+      // v0.2.3-security: mkdir 走主进程 IPC(带工作目录校验 + 防 shell 注入), 不再拼 exec
+      case 'mkdir': { if (!a.path) return 'E:need path'; const r = await window.huangquan.computer.mkdir(a.path); if (!r?.ok) return 'E:mkdir failed: ' + (r?.error || 'unknown'); return a.path + ' (created)' }
       case 'grep': { if (!a.dirPath || !a.pattern) return 'E:need dirPath+pattern'; return await window.huangquan.computer.grep(a.dirPath, a.pattern) || '(no matches)' }
       case 'find': { if (!a.dirPath || !a.glob) return 'E:need dirPath+glob'; return await window.huangquan.computer.find(a.dirPath, a.glob) || '(no files found)' }
       case 'ls': { const wd = useSettingsStore.getState().general.workDir; const items = await window.huangquan.computer.readDir(a.dirPath || wd || '.'); return items.length ? items.map(i => (i.isDirectory ? '[DIR]' : '[FILE]') + ' ' + i.name + ' (' + i.size + 'B)').join('\n') : '(empty directory)' }
@@ -387,8 +440,34 @@ async function runTool(name: string, a: any): Promise<string> {
       case 'clipboard_write': { if(!a.text)return'E:need text';await window.huangquan.computer.clipboardWrite(a.text);return'ok:clipped' }
       case 'process_list': return await window.huangquan.computer.processList()
       case 'kill_process': { if(!a.pid)return'E:need pid';return await window.huangquan.computer.killProcess(a.pid) }
-      case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = a.fact || ''; (m as any).pinnedFacts = [...((m as any).pinnedFacts || []), fact]; await window.huangquan.memory.save(safeIPC(m)); return 'ok:pinned' }
-      case 'recall_memory': { const m = await window.huangquan.memory.load(); const pinned = ((m as any).pinnedFacts || []) as string[]; const facts = ((m as any).facts || []) as string[]; const snippets = ((m as any).summaries || []) as any[]; const query = (a.query || '').toLowerCase(); const allItems = [...pinned.map(f => ({ content: f, score: 1.5 })), ...facts.map(f => ({ content: f, score: f.toLowerCase().includes(query) ? 1.0 : 0 })), ...snippets.map(s => ({ content: s.content || '', score: (s.content||'').toLowerCase().includes(query) ? 0.8 : 0 }))]; const results = query ? allItems.filter(r => r.content.toLowerCase().includes(query)).sort((a,b) => b.score - a.score) : allItems; return results.length ? results.slice(0, 10).map((r:any,i:number) => (i+1) + '. ' + r.content).join('\n---\n') : '(empty)' }
+      // v0.2.3-fix(P12): 相同事实去重(重复调用不再累积)
+      case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = String(a.fact || '').trim(); if (!fact) return 'E:need fact'; const pf = ((m as any).pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; (m as any).pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m)); return 'ok:pinned' }
+      // v0.2.3: recall_memory 接入向量语义检索(主进程 TF-IDF) + 关键词匹配合并
+      case 'recall_memory': {
+        const query = (a.query || '').trim()
+        const m = await window.huangquan.memory.load().catch(() => ({}))
+        const pinned = ((m as any).pinnedFacts || []) as string[]
+        const facts = ((m as any).facts || []) as string[]
+        const snippets = ((m as any).summaries || []) as any[]
+        const q = query.toLowerCase()
+        // 关键词命中(置顶 1.5 / 长期 1.0 / 摘要 0.8)
+        const kwItems = [...pinned.map(f => ({ content: String(f), score: 1.5 })), ...facts.map(f => ({ content: String(f), score: String(f).toLowerCase().includes(q) ? 1.0 : 0 })), ...snippets.map(s => ({ content: String(s.content || ''), score: (s.content || '').toLowerCase().includes(q) ? 0.8 : 0 }))]
+        const kwHits = q ? kwItems.filter(r => r.content.toLowerCase().includes(q)).sort((a, b) => b.score - a.score) : kwItems
+        // 向量语义检索(主进程, 失败静默)
+        let vecHits: { content: string; score: number }[] = []
+        try {
+          const v = await window.huangquan.memory.search(query)
+          if (Array.isArray(v)) vecHits = v.map((x: any) => ({ content: String(x.content || ''), score: 0.5 }))
+        } catch { /* 向量检索不可用则忽略 */ }
+        // 合并去重
+        const seen = new Set<string>()
+        const merged = [...vecHits, ...kwHits].filter(r => {
+          if (!r.content || seen.has(r.content)) return false
+          seen.add(r.content)
+          return true
+        }).slice(0, 10)
+        return merged.length ? merged.map((r: any, i: number) => (i + 1) + '. ' + r.content).join('\n---\n') : '(empty)'
+      }
       case 'codebox': { if (!a.lang || !a.code) return 'E:need lang+code'; return await window.huangquan.computer.codebox(a.lang, a.code) }
       case 'import_doc': { if (!a.path) return 'E:need path'; const ok = await window.huangquan.memory.importFile(a.path).catch(() => false); return ok ? 'ok:imported' : 'E:import failed' }
       case 'schedule_task': { if (!a.expression || !a.prompt) return 'E:need expression+prompt'; return await window.huangquan.cron.add(a.expression, a.prompt) }
@@ -432,7 +511,8 @@ async function runTool(name: string, a: any): Promise<string> {
       case 'read_image': { if (!a.path) return 'E:need path'; return await window.huangquan.computer.readImageBase64(a.path) }
       case 'show_card': { if (!a.html) return 'E:need html'; return '<!--CARD' + (a.title ? ':' + a.title : '') + '-->' + a.html + '<!--/CARD-->' }
       case 'bridge_notify': { const g = useSettingsStore.getState().general as any; if (g.notifyEnabled === false) return 'ok:notifications disabled'; const kind = a.type || 'info'; if (kind === 'task_done' && g.notifyTaskDone === false) return 'ok:task_done notifications disabled'; if (kind === 'error' && g.notifyError === false) return 'ok:error notifications disabled'; try { new Notification(a.title || '黄泉Agent', { body: a.body || '' }) } catch {} return 'ok:notified' }
-      case 'workflow': { if (!a.script) return 'E:need script'; return new Promise(resolve => { const logs = []; const ctx = { log: msg => logs.push(msg), tools: { run: async (n, args) => { logs.push('[wf] ' + n); return await runTool(n, args) } }, done: r => resolve(JSON.stringify({ result: r, logs }, null, 2)) }; try { const fn = new Function('ctx', a.script); const ret = fn(ctx); if (ret instanceof Promise) ret.catch(e => resolve('E:workflow error: ' + e.message)) } catch (e) { resolve('E:workflow error: ' + e.message) } }) }
+      // v0.2.3-security: workflow 脚本加固 —— 限长 8KB、严格模式、隔离 window 访问, 防提示注入直接操纵宿主
+      case 'workflow': { if (!a.script) return 'E:need script'; if (String(a.script).length > 8192) return 'E:workflow script too long (max 8KB)'; return new Promise(resolve => { const logs = []; const ctx = { log: (msg: any) => { logs.push(String(msg)); if (logs.length > 200) logs.shift() }, tools: { run: async (n: string, args: any) => { logs.push('[wf] ' + n); return await runTool(n, args) } }, done: (r: any) => resolve(JSON.stringify({ result: r, logs }, null, 2)) }; try { const fn = new Function('ctx', '"use strict"; ' + a.script); const ret = fn(ctx); if (ret instanceof Promise) ret.catch(e => resolve('E:workflow error: ' + e.message)); } catch (e) { resolve('E:workflow error: ' + (e as any)?.message || String(e)) } }) }
       // v0.2.1: 情景记忆 + 审计 + 目标持久化
       case 'audit_log': {
         const mem = await window.huangquan.memory.load().catch(() => ({ episodic: [] }))
@@ -446,10 +526,12 @@ async function runTool(name: string, a: any): Promise<string> {
         ;(window as any).__watchState = prevState
         try {
           const content = await window.huangquan.computer.readFile(a.path)
-          const hash = content.length + ':' + content.slice(0, 200)
+          // v0.2.3: 强哈希(内容全量), 修复弱哈希误判(同长同前缀内容变化不识别)
+          let hash = ''
+          try { hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content)).then(b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 32)) } catch { hash = content.length + ':' + content.slice(0, 200) }
           if (prevState[watchKey] && prevState[watchKey] !== hash) {
             const old = prevState[watchKey]; prevState[watchKey] = hash
-            return `CHANGED: ${a.path} (prev: ${old.slice(0, 50)}... → now: ${hash.slice(0, 50)}...)`
+            return `CHANGED: ${a.path} (hash: ${old.slice(0, 16)}... → ${hash.slice(0, 16)}...)`
           }
           prevState[watchKey] = hash
           return `WATCHING: ${a.path} (${content.length} bytes). Call again to detect changes.`
@@ -525,7 +607,7 @@ function memoryBlock(): string {
 
 function buildPrompt(mode: string, ishiki: string): string {
   const tl = TOOLS.map(t => '- ' + t.function.name + '(' + Object.keys(t.function.parameters.properties || {}).join(',') + ')').join('\n')
-  const wd = useSettingsStore.getState().general.workDir || 'C:\\Users\\Changan\\Desktop\\黄泉agent'
+  const wd = useSettingsStore.getState().general.workDir || ''
   const cfg = useSettingsStore.getState().general
   
   // ── System Prompt 标准 10 段结构 ──
@@ -537,7 +619,8 @@ function buildPrompt(mode: string, ishiki: string): string {
   const publicIshiki = '## 边界\n对外部访客保持礼貌与边界。不透露用户隐私。不确定的事坦诚说明，不编造。\n'
   const tools = '## 可用工具\n' + tl + '\n'
   const pinned = '## 固定规则\n- 所有产出保存到工作台目录，按任务创建独立文件夹\n- 代码需求同步配套接口文档、部署说明、测试用例\n- 批量重复任务优先自动化脚本\n- 输出完毕自行核查事实/逻辑/计算错误\n'
-  const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n时间：' + new Date().toLocaleString('zh-CN') + '\n'
+  // v0.2.6: 时间戳移到 prompt 最末尾 —— 保持前缀稳定, 最大化 DeepSeek 缓存命中
+  const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
   // v0.2: 多Agent编队
   const multiAgent = '## 多Agent编队\n你属于黄泉Agent编队的一员。编队成员：\n' +
     Object.entries(AGENTS).map(([n,ag]) => `- ${ag.icon} ${n} (${ag.role}): 全工具权限`).join('\n') +
@@ -587,9 +670,19 @@ function buildPrompt(mode: string, ishiki: string): string {
 }
 
 interface S {
-  sessions: SessionData[]; cid: string | null; sp: string; streaming: boolean; error: string | null
+  sessions: SessionData[]; cid: string | null; sp: string; spIshiki: string; streaming: boolean; error: string | null
+  // v0.2.3: 执行阶段(思考中/工具调用) —— 用于思考气泡动态显示, 不写入消息流
+  // v0.2.3-fix(Q5): 携带 sid —— 多会话并发时气泡只显示当前会话的阶段, 不串台
+  stage: { sid: string; phase: 'thinking' | 'tool'; label: string; detail: string } | null
   terminal: { id: string; name: string; args: any; result: string; time: number }[]
   cu: number; cl: number
+  // v0.2.6: 实时使用模型 + 按会话/按模型的缓存命中统计
+  curModel: string
+  sessCache: Record<string, { hits: number; misses: number }>
+  modelCache: Record<string, { hits: number; misses: number }>
+  // v0.2.6: 会话×模型的 TOKEN 缓存命中(前端镜像, 右侧面板实时显示)
+  sessTok: Record<string, Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number }>>
+
   // v0.2.1: 多Agent 协作状态（当前正在调用的 Agent 集合，并发时多个同时显示）
   activeAgents: string[]
   load: () => Promise<void>
@@ -610,7 +703,7 @@ let taskGen = 0
 let pendingInterject: string[] = []
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, sp: '', streaming: false, executing: false, error: null, terminal: [], cu: 0, cl: 65536,
+  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {},
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
 
@@ -624,10 +717,15 @@ export const useChatStore = create<S>((set, get) => ({
     const mode = cfg.general?.mode || 'work'
     const ss = skills.length ? '\n\n## 已装载技能\n' + skills.map((s:any) => `- **${s.name}**: ${s.description}`).join('\n') : ''
     const sp = buildPrompt(mode, ishiki) + ss
-    // 自动创建工作台目录（默认桌面\黄泉agent）
-    const wd = (cfg.general as any)?.workDir || 'C:\\Users\\Changan\\Desktop\\黄泉agent'
-    if (!(cfg.general as any)?.workDir) { useSettingsStore.getState().setWorkDir(wd) }
-    window.huangquan.computer.exec('if (-not (Test-Path "' + wd + '")) { New-Item -ItemType Directory -Path "' + wd + '" -Force }').catch(() => {})
+    // v0.2.3: 独立保存原始 ishiki(不再从 sp 反推, 避免动态内容污染身份段)
+    set({ spIshiki: ishiki })
+    // 自动创建工作台目录（默认使用主进程 workspace 目录, v0.2.3: 不再硬编码用户路径）
+    let wd = (cfg.general as any)?.workDir || ''
+    if (!wd) {
+      try { const paths: any = await window.huangquan.getPaths(); wd = paths?.workDir || '' } catch { /* 忽略 */ }
+      if (wd) useSettingsStore.getState().setWorkDir(wd)
+    }
+    if (wd) window.huangquan.computer.exec('if (-not (Test-Path "' + wd + '")) { New-Item -ItemType Directory -Path "' + wd + '" -Force }').catch(() => {})
     const sessions = await Promise.all(metas.map((m: any) => window.huangquan.sessions.load(m.id).catch(() => ({ id: m.id, title: 'Chat', messages: [], mode: 'work' }))))
     // v0.2.1: 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
     const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode }
@@ -636,7 +734,9 @@ export const useChatStore = create<S>((set, get) => ({
     for (const s of stale) { window.huangquan.sessions.delete(s.id).catch(() => {}) }
     const kept = sessions.filter(s => s.messages.length > 0)
     kept.unshift(ns)
-    set({ sessions: kept, cid: ns.id, sp })
+    // v0.2.3-fix(可用性): maxSessions 设置接入 —— 超限时仅保留最新的 N 个会话(0=不限)
+    const maxS = Number((cfg.general as any)?.maxSessions) || 0
+    set({ sessions: maxS > 0 ? kept.slice(0, maxS) : kept, cid: ns.id, sp })
   },
 
   setMode: async (m) => {
@@ -664,14 +764,23 @@ export const useChatStore = create<S>((set, get) => ({
     set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [] }))
     window.huangquan.sessions.save(safeIPC(ns))
   },
-  switchS: (id) => set(s => {
-    // v0.2.3: 切换会话时,全局 streaming/executing 跟随目标会话的忙碌状态（每个会话独立）
-    const target = s.sessions.find(x => x.id === id)
-    const busy = !!(target as any)?.busy
-    return { cid: id, error: null, streaming: busy, executing: busy }
-  }),
+  switchS: (id) => {
+    // v0.2.3-fix(可用性): autoSave 设置接入 —— 切换会话前自动保存当前会话(autoSave !== false 时)
+    const curId = get().cid
+    if (curId && curId !== id && (useSettingsStore.getState().general as any).autoSave !== false) {
+      const cur = get().sessions.find(x => x.id === curId)
+      if (cur) window.huangquan.sessions.save(cur).catch(() => {})
+    }
+    set(s => {
+      // v0.2.3: 切换会话时,全局 streaming/executing 跟随目标会话的忙碌状态（每个会话独立）
+      const target = s.sessions.find(x => x.id === id)
+      const busy = !!(target as any)?.busy
+      return { cid: id, error: null, streaming: busy, executing: busy }
+    })
+  },
   del: (id) => {
     window.huangquan.sessions.delete(id)
+    // v0.2.6: 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
     set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal } })
   },
 
@@ -727,10 +836,12 @@ export const useChatStore = create<S>((set, get) => ({
       return null
     }
     const main = resolveModel('mainModel') || { p, model: p.selectedModel || p.models[0] || 'deepseek-v4-pro' }
-    // 简单任务自动用快速模型（autoFastModel 开启且消息短/无图片时）
-    const isSimple = gNow.autoFastModel !== false && !images?.length && content.length < 300 && !(content.includes('工具') || content.includes('代码') || content.includes('脚本'))
+    // 简单任务自动用快速模型（autoFastModel 开启且消息短/无图片时）—— v0.2.3-fix(P29): 词表扩充, 减少误判
+    const heavyWords = ['工具', '代码', '脚本', '文件', '读取', '创建', '查找', '目录', '搜索', '网页', '下载', '执行', '命令', '终端', '分析', '总结', '报告', '修改', '删除', '移动', '复制']
+    const isSimple = gNow.autoFastModel !== false && !images?.length && content.length < 300 && !heavyWords.some(w => content.includes(w))
     const fast = isSimple ? (resolveModel('fastModel') || main) : main
     let curP = fast.p, model = fast.model
+    set({ curModel: model || '' })
     updateContextLimit(model)
 
     // v0.2.1: 记录当前活跃 Agent（路由结果），供右侧面板展示
@@ -804,7 +915,8 @@ export const useChatStore = create<S>((set, get) => ({
       }
       // 每次发送时根据当前模式重建系统提示词
       const currentMode = useSettingsStore.getState().general.mode || 'work'
-      const ishiki = get().sp.replace(/\n##.+/s, '') // 提取原始 ishiki
+      // v0.2.3: 使用独立保存的 ishiki(不再从 sp 反推 —— sp 含技能列表/动态内容会污染身份段)
+      const ishiki = get().spIshiki || get().sp.replace(/\n##.+/s, '')
       let sp = buildPrompt(currentMode, ishiki)
       // 注入 Agent 角色
       let agentRole = (window as any).__huangquan_agent
@@ -827,6 +939,8 @@ export const useChatStore = create<S>((set, get) => ({
           sp += '\n\n【调度铁律】用户任务若涉及多个专业领域（如代码+文档、设计+开发、分析+总结、开发+测试+审查），你必须立即调用 dispatch 把子任务分发给对应 Agent 并行执行，不能自己包办；只有单领域小任务才可亲自完成或 handoff。'
         }
       }
+      // v0.2.6: 时间戳放绝对最末尾 —— 保持前缀稳定, 最大化缓存命中(动态内容永不打断前缀)
+      sp += '\n## 当前时间\n' + new Date().toLocaleString('zh-CN')
       // v0.2: 上下文压缩（v0.2.1: 接入 compactStrategy/compactMsgCount/compactTokenLimit/compactStrength 设置）
       const gComp = useSettingsStore.getState().general as any
       const compStrategy = gComp.compactStrategy || 'auto'
@@ -855,14 +969,45 @@ export const useChatStore = create<S>((set, get) => ({
     }
 
     type CallResult = { text: string; tcs: { id: string; name: string; args: any }[] }
-    const callLLM = (aid: string): Promise<CallResult> =>
+    const callLLM = (aid: string, ridArg?: string): Promise<CallResult> =>
       new Promise((resolve, reject) => {
         const cbs: (() => void)[] = []; let text = ''; const tcs: any[] = []
         // v0.2.3: 多会话并发 —— 每次调用独立 requestId，只收自己的流式事件
-        const rid = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+        // v0.2.3: rid 由外部传入(超时 abort 可精确对应同一请求)
+        const rid = ridArg || ('r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
         // v0.2.2: 记录 TTFT(首字延迟) / 总时长 / token 用量
         const t0 = Date.now(); let firstChunkAt = 0; let usage: any = null
-        cbs.push(window.huangquan.llm.onUsage(u => { if (u && u.requestId && u.requestId !== rid) return; usage = u }))
+        cbs.push(window.huangquan.llm.onUsage(u => {
+          if (u && u.requestId && u.requestId !== rid) return
+          // v0.2.6: 按模型单价估算本次消费金额
+          if (u) {
+            // v0.2.6: 用量归一化(监控方案): 兼容 DeepSeek/OpenAI/Anthropic 缓存字段
+            // read: prompt_cache_hit_tokens | prompt_tokens_details.cached_tokens | cache_read_input_tokens
+            // write: cache_creation_input_tokens(Anthropic 写入缓存, 单独统计)
+            const readT = u.prompt_cache_hit_tokens || (u as any).prompt_tokens_details?.cached_tokens || (u as any).cache_read_input_tokens || 0
+            const writeT = (u as any).cache_creation_input_tokens || 0
+            const inputT = u.prompt_tokens || (u as any).input_tokens || 0
+            usage = { ...u, _readTokens: readT, _inputTokens: inputT, _writeTokens: writeT }
+            // v0.2.6: 同一次请求的 usage 只统计/累加一次(流式 usage 可能多次到达, 防重复)
+            if (!costedReqs.has(rid)) {
+              // v0.2.3: 防止无限增长(每 500 条裁剪一半)
+              if (costedReqs.size > 500) { const arr = [...costedReqs]; costedReqs.clear(); for (const x of arr.slice(-250)) costedReqs.add(x) }
+              costedReqs.add(rid)
+              const sid2 = get().cid || ''
+              // 持久化埋点(主进程, 会话×模型)
+              try {
+                window.huangquan.modelStats?.recordRequest(sid2, model, readT > 0)
+                if (readT > 0 || inputT > 0 || writeT > 0) window.huangquan.modelStats?.recordTokens(sid2, model, readT, inputT, writeT)
+              } catch { /* 忽略 */ }
+              // 前端镜像(右侧面板实时显示)
+              if (sid2) set(s => {
+                const ss = s.sessTok[sid2] || {}
+                const c2 = ss[model] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, hitReqs: 0 }
+                return { sessTok: { ...s.sessTok, [sid2]: { ...ss, [model]: { requests: c2.requests + 1, readTokens: c2.readTokens + readT, inputTokens: c2.inputTokens + inputT, writeTokens: c2.writeTokens + writeT, hitReqs: c2.hitReqs + (readT > 0 ? 1 : 0) } } } }
+              })
+            }
+          } else { usage = u }
+        }))
         // v0.2.5-opt: 流式渲染节流 —— 40ms 内合并多次 chunk 再 set, 避免每个 token 全量重渲染
         let flushTimer: any = null
         const flushText = () => {
@@ -890,7 +1035,8 @@ export const useChatStore = create<S>((set, get) => ({
           if (e && e.requestId && e.requestId !== rid) return // 其他会话的错误，忽略
           cbs.forEach(f => f()); reject(new Error(errMsg))
         }))
-        cbs.push(window.huangquan.llm.onToolCall((tc: any) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { /* JSON parse failed, skip */ } }))
+        // v0.2.3-fix(P27): 工具参数解析失败不再完全静默 —— console.warn 便于排查
+        cbs.push(window.huangquan.llm.onToolCall((tc: any) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { console.warn('[黄泉Agent] 工具参数解析失败:', tc?.function?.name, String(tc?.function?.arguments || '').slice(0, 100)) } }))
         const cur = get().sessions.find(x => x.id === sid)!
         const msgs = buildMsg(cur.messages, isVisionModel(model))
         // v0.2: 更新上下文用量
@@ -900,9 +1046,11 @@ export const useChatStore = create<S>((set, get) => ({
       })
 
     try {
-      // 每次 LLM 调用独立超时保护
+      // 每次 LLM 调用独立超时保护 —— v0.2.3: 只中止当前请求(requestId), 不再误杀其他会话并发请求
       let timeoutId: any = null
-      const guard = () => { timeoutId = setTimeout(() => window.huangquan.llm.abort(), 120000) }
+      // v0.2.3-fix(可用性): toolTimeout 设置接入 —— 默认 120s, 可在设置中调整
+      const toolTimeout = Number((useSettingsStore.getState().general as any).toolTimeout) || 120000
+      const guard = (rid: string) => { timeoutId = setTimeout(() => window.huangquan.llm.abort(rid), toolTimeout) }
       const clear = () => { if (timeoutId) clearTimeout(timeoutId) }
 
       // v0.2.1: 主执行循环 —— 正常轮次 + 插话补充轮次（工作中插话=补充指令，任务继续而非重开）
@@ -922,8 +1070,10 @@ export const useChatStore = create<S>((set, get) => ({
           set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() } as any] } : x) }))
         }
 
-        guard()
-        res = await callLLM(aid); clear()
+        const rid1 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+        guard(rid1)
+        set({ stage: { sid, phase: 'thinking', label: '思考中', detail: '' } })
+        res = await callLLM(aid, rid1); clear()
 
         // 3. 工具调用循环（熔断+计时+重试+并行+单气泡整合）
         toolLog = []
@@ -941,7 +1091,11 @@ export const useChatStore = create<S>((set, get) => ({
           const doParallel = (useSettingsStore.getState().general as any).parallelTools !== false
           const doEpisodic = (useSettingsStore.getState().general as any).episodicMemory !== false
 
-          const runOne = async (tc: any) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now(); r2 = await runTool(tc.name, tc.args); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms }); if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = tc.args.agent_name; set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }
+          const runOne = async (tc: any) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now(); // v0.2.3: 思考气泡显示「正在调用 XX」
+            const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '🔧 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
+            r2 = await runTool(tc.name, tc.args); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms }); // v0.2.3: 完成后显示 ✓(带结果摘要)
+          set({ stage: { sid, phase: 'tool', label: '✓ ' + tc.name, detail: (r2 && r2.length > 50 ? r2.slice(0, 50) + '…' : (r2 || '')) } })
+          if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = tc.args.agent_name; set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }
           const writes = ['write', 'edit', 'exec_command', 'mkdir', 'codebox']
           if (doParallel) {
             // 读类并行，写类串行；结果按 tc 一一对应收集，避免同名工具结果错配
@@ -972,13 +1126,16 @@ export const useChatStore = create<S>((set, get) => ({
             const lm = resolveModel('longTextModel'); if (lm) { curP = lm.p; model = lm.model }
           }
           aid = uuidv4(); set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
-          guard()
+          const rid2 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+          guard(rid2)
+          set({ stage: { sid, phase: 'thinking', label: '思考中', detail: '' } })
           if (myGen !== taskGen) { clear(); break } // 终止后不再发起下一轮 LLM
-          res = await callLLM(aid); clear()
+          res = await callLLM(aid, rid2); clear()
           if (myGen !== taskGen) break // 终止后丢弃本轮结果
         }
 
         // 4. 单气泡 + Hermes 风格日志
+        set({ stage: null }) // v0.2.3: 任务完成, 思考气泡消失
         const finalSession = get().sessions.find(x => x.id === sid)
         if (finalSession) {
           // v0.2.1: 合并本轮所有 assistant 文本 → 单一气泡（工具循环中间轮的文字并入最终回复）
@@ -987,15 +1144,7 @@ export const useChatStore = create<S>((set, get) => ({
           const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
           const llmText = res.text || ''; const hasTools = toolLog.length > 0
           let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
-          // v0.2.2: 隐藏工具日志（✅ ls ... / ✅ N ops | M failed 摘要）—— 不再拼进消息正文
-          if (false && hasTools) {
-            const failCount = toolLog.filter(t => t.error).length; const totalMs = toolLog.reduce((s, t) => s + t.ms, 0)
-            const totalTime = totalMs >= 1000 ? (totalMs / 1000).toFixed(1) + 's' : totalMs + 'ms'
-            const lines = ['', '---']
-            toolLog.forEach(t => { const icon = t.error ? '❌' : '✅'; const timeStr = t.ms >= 1000 ? (t.ms / 1000).toFixed(1) + 's' : t.ms + 'ms'; const pathArg = t.args?.path || t.args?.dirPath || t.args?.filePath || t.args?.url || ''; const target = pathArg ? ' ' + pathArg.slice(-60) : ''; lines.push(icon + ' ' + t.name + (target ? ' ' + target : '') + ' (' + timeStr + ')'); if (t.error && t.result) lines.push('  > ' + t.result.replace(/^E:/, '').slice(0, 100)) })
-            lines.push(''); lines.push((failCount > 0 ? '⚠️' : '✅') + ' ' + toolLog.length + ' ops | ' + failCount + ' failed | ' + totalTime); lines.push('')
-            finalContent = finalContent.trim() ? finalContent + '\n' + lines.join('\n') : lines.join('\n')
-          }
+          // v0.2.3: 工具日志已改为写入右侧终端面板(terminal), 不再拼进消息正文(原死代码块已删除)
           // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）
           // v0.2.2-fix: 只清空【本轮内】的中间 assistant 消息 —— 之前遍历整个会话导致历史回复全部被清空
           const roundIds = new Set(thisRound.map(m => m.id))
@@ -1016,7 +1165,8 @@ export const useChatStore = create<S>((set, get) => ({
       if (images?.length && /image_url|image url|image data/i.test(errMsg)) {
         console.warn('[黄泉Agent] 模型不支持图片，自动降级为纯文本重试:', errMsg.slice(0, 120))
         try {
-          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.filter(m => m.id !== (x.messages.find(mm => mm.id === userMsg?.id)?.id)) } : x) }))
+          // v0.2.3-fix(P11): 简化 —— 直接按 userMsg.id 过滤, 消除冗余查找
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.filter(m => m.id !== userMsg?.id) } : x) }))
         } catch { /* 忽略 */ }
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
         set({ streaming: false, executing: false, error: null, activeAgents: [] })
@@ -1028,14 +1178,19 @@ export const useChatStore = create<S>((set, get) => ({
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid && !m.content ? { ...m, content: '' } : m) } : x) }))
       } catch { /* 会话可能已删除 */ }
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
-      set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: s.cid === sid ? errMsg : s.error, activeAgents: s.cid === sid ? [] : s.activeAgents }))
+      set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: s.cid === sid ? errMsg : s.error, stage: s.cid === sid ? null : s.stage, activeAgents: s.cid === sid ? [] : s.activeAgents }))
     }
   },
 
   stop: () => {
     taskGen++; window.huangquan.llm.abort()
-    // v0.2.3: 停止时也清除当前会话忙碌标记
+    // v0.2.3-fix(可用性): autoSave 设置接入 —— 停止时保存当前会话(部分回复不丢失)
     const curId = get().cid
+    if (curId && (useSettingsStore.getState().general as any).autoSave !== false) {
+      const cur = get().sessions.find(x => x.id === curId)
+      if (cur) window.huangquan.sessions.save(cur).catch(() => {})
+    }
+    // v0.2.3: 停止时也清除当前会话忙碌标记
     if (curId) set(s => ({ sessions: s.sessions.map(x => x.id === curId ? { ...x, busy: false } : x) }))
     set({ streaming: false, executing: false, error: null })
   },

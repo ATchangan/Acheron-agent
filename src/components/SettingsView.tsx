@@ -103,7 +103,12 @@ const NumSetting: React.FC<{ label: string; hint: string; value: number; min: nu
 
 export default function SettingsView({ onNavigate }: { onNavigate: (v: string) => void }) {
   const { providers, general, addProvider, removeProvider, updateProvider } = useSettingsStore()
+
   const [tab, setTab] = useState('models'); const [selIdx, setSelIdx] = useState(0); const [showNew, setShowNew] = useState(false)
+  // v0.2.6: 模型缓存统计(持久化)
+  // v0.2.3-fix(N25): 类型对齐 v4 数据模型
+  interface ModelStatV4 { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number }
+  const [modelStats, setModelStats] = useState<Record<string, ModelStatV4>>({})
   const [newName, setNewName] = useState(''); const [newKey, setNewKey] = useState(''); const [newUrl, setNewUrl] = useState(''); const [newType, setNewType] = useState('OpenAI Compatible')
   const [bgOp, setBgOp] = useState((general as any).bgOpacity ?? 0.7)
   const hasBg = !!(general as any).bgImage
@@ -153,8 +158,11 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     if (tab === 'mcp') { window.huangquan.mcpList?.().then((s: any) => setMcpServers(s || [])).catch(() => setMcpServers([])) }
     if (tab === 'skills') { window.huangquan.skills.list().then((s: any) => setSkillsList(s || [])).catch(() => setSkillsList([])) }
     // v0.2.1: 引擎页自动加载真实存储统计
+    if (tab === 'stats') { window.huangquan.modelStats.get().then((d: any) => setModelStats(d?.models || {})).catch(() => setModelStats({})) }
     if (tab === 'advanced') {
       window.huangquan.storageStats().then((s: any) => { const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) }).catch(() => {})
+      // v0.2.6: 工具缓存命中率
+      window.huangquan.cacheStats().then((cs: any) => { save({ stat_cacheHits: cs?.hits || 0, stat_cacheMisses: cs?.misses || 0, stat_cacheRate: cs?.hit_rate || '0%' }) }).catch(() => {})
     }
   }, [tab])
 
@@ -162,7 +170,13 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const save = (patch: Record<string, any>) => { useSettingsStore.setState(s => ({ general: { ...s.general, ...patch } })); clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
   const toHex = (c: string) => (/^#[0-9a-fA-F]{6}$/.test(c || '') ? c : '#0D0D1A')
 
-  useEffect(() => { if (tab === 'memory') window.huangquan.memory.load().then((m: any) => setMemF(m?.pinnedFacts || [])).catch(() => {}) }, [tab])
+  // v0.2.3-fix(S1): 长期记忆计数用 state(不再在 JSX 里渲染 async IIFE -> [object Promise])
+  const [factsCount, setFactsCount] = useState(0)
+  useEffect(() => {
+    if (tab === 'memory') {
+      window.huangquan.memory.load().then((m: any) => { setMemF(m?.pinnedFacts || []); setFactsCount((m?.facts || []).length) }).catch(() => {})
+    }
+  }, [tab])
 
   const selectProvider = (name: string) => {
     const idx = providers.findIndex(x => x.name === name)
@@ -253,6 +267,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'tools', icon: '🔧', label: '工具' }, { key: 'media', icon: '🎬', label: '多媒体' },
     { key: 'mcp', icon: '🧩', label: 'MCP' }, { key: 'skills', icon: '📚', label: '技能' },
     { key: 'skin', icon: '🎨', label: '外观' },
+    { key: 'stats', icon: '📊', label: '模型缓存统计' },
     { key: 'advanced', icon: '⚙️', label: '引擎' },
   ]
 
@@ -455,9 +470,8 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaAudioProvider||''} onChange={e=>save({mediaAudioProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.audioModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
                 <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaAudioModel||''} onChange={e=>save({mediaAudioModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.audioModels||[]).length).flatMap(mp2 => (mp2.audioModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
                 <Toggle checked={g.ttsEnabled !== false} onChange={v=>save({ttsEnabled:v})} label="启用语音合成 (TTS)" />
-                <Toggle checked={g.asrEnabled !== false} onChange={v=>save({asrEnabled:v})} label="启用语音识别 (ASR)" />
+                {/* v0.2.3: ASR 语音识别未实现引擎, 已移除 */}
               </div>
-            </div> : tab === 'persona' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>基础身份</div>
                 <div style={{ display: 'flex', gap: 16, marginBottom: 14, alignItems: 'center' }}>
@@ -602,7 +616,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                     const facts = (m as any).facts || []
                     if (!facts.length) { alert('暂无长期记忆') }
                     else { alert(facts.map((f: string, i: number) => (i + 1) + '. ' + f.slice(0, 200)).join('\n')) }
-                  }}>浏览全部 ({(async () => { try { const m = await window.huangquan.memory.load(); return ((m as any).facts || []).length } catch { return 0 } })().toString()})...</button>
+                  }}>浏览全部 ({factsCount})</button>
                   <button style={{ ...S.btn('danger'), marginLeft: 8 }} onClick={async () => {
                     if (!confirm('清空全部长期记忆？此操作不可撤销。')) return
                     const m = await window.huangquan.memory.load()
@@ -943,6 +957,59 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('primary')} onClick={async () => { if (!skillUrl.trim()) { showToast('请输入 Git 地址'); return } const r = await window.huangquan.skills.install(skillUrl.trim()); showToast(r === 'ok' ? '技能安装成功' : String(r)); setSkillUrl(''); window.huangquan.skills.list().then((s: any) => setSkillsList(s || [])) }}>安装</button>
                 </div>
               </div>
+            </div> : tab === 'stats' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+              <div style={S.card}>
+                <div style={S.section}>📊 模型缓存统计</div>
+                <div style={S.hint}>统计所有聊天会话中每个模型在 API 调用时的缓存命中情况。命中率 = 缓存读取 token ÷ 输入总 token(token 口径,反映实际节省的输入量;请求级命中在 DeepSeek 自动缓存下恒 100%,仅作明细参考)。数据永久本地保存(model-cache-stats.json)，重启不丢失，删除历史会话不影响统计。</div>
+                {Object.keys(modelStats).length === 0 ? (
+                  <div style={{ fontSize: 11, color: C.muted, padding: '12px 0', textAlign: 'center' }}>暂无使用记录 —— 调用模型产生 API 请求后，该模型会自动出现在表格中</div>
+                ) : (
+                  <>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8, fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ color: C.muted, borderBottom: '1px solid ' + C.border, textAlign: 'left' }}>
+                          <th style={{ padding: '6px 8px', fontWeight: 600 }}>模型名称</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>总请求</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>命中请求</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>缓存读取</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>缓存写入</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>命中率</th>
+                          <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(modelStats).map(([m, c]) => {
+                          const reqs = c.requests || 0
+                          const hitReqs = c.hitReqs || 0
+                          const readT = c.readTokens || 0
+                          const writeT = c.writeTokens || 0
+                          const inputT = c.inputTokens || 0
+                          // token 口径命中率(有区分度): 缓存读取 ÷ 输入总
+                          const rate = inputT > 0 ? (readT / inputT * 100).toFixed(1) : '—'
+                          const fmtTok = (n: number) => n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n)
+                          return (
+                            <tr key={m} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', color: C.text }}>
+                              <td style={{ padding: '6px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m}>{m}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{reqs}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#48c98a' }} title="命中缓存的请求数">{hitReqs}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#48c98a' }}>{fmtTok(readT)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#6ba8ff' }}>{fmtTok(writeT)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: '#48c98a' }} title="缓存读取 token ÷ 输入总 token">{rate}{rate !== '—' ? '%' : ''}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                <button style={{ ...S.btn('ghost'), height: 20, fontSize: 9, padding: '0 6px' }} onClick={async () => { await window.huangquan.modelStats.resetOne(m); const s = await window.huangquan.modelStats.get(); setModelStats(s?.models || {}); }}>重置</button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                      <button style={{ ...S.btn('danger'), height: 24, fontSize: 10 }} onClick={async () => { if (!confirm('确定重置全部模型的缓存统计？此操作不可恢复')) return; await window.huangquan.modelStats.resetAll(); const s = await window.huangquan.modelStats.get(); setModelStats(s?.models || {}) }}>重置全部模型统计</button>
+                      <button style={{ ...S.btn('ghost'), height: 24, fontSize: 10 }} onClick={async () => { const s = await window.huangquan.modelStats.get(); setModelStats(s?.models || {}) }}>🔄 刷新</button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div> : tab === 'skin' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}><div style={S.section}>Agent 头像</div>
                 <div style={S.hint}>上传图片作为 Agent 头像，或使用 emoji 文字。留空默认"泉"。</div>
@@ -1079,58 +1146,9 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('ghost')} onClick={() => { save({ browserHomeUrl: '', browserFloatPos: 'top-right', browserFloatTimeout: 30, browserSnapMs: 1200, webReadEnabled: true, webReadHeadless: true, webReadTimeout: 15000, webReadUA: '', webReadProxy: '', webReadAutoClose: true, webReadCleanAds: true, webReadCookies: '' }) }}>恢复默认</button>
                 </div>
               </div>
-              <div style={S.card}>
-                <div style={S.section}>📁 文件系统配置（参数预留）</div>
-                <div style={S.label}>访问范围</div>
-                <select style={S.sel} value={g.fsAccessScope||'workspace'} onChange={e=>save({fsAccessScope:e.target.value})}>
-                  <option value="workspace">仅工作目录</option><option value="workspaceSub">工作目录及子目录</option><option value="whitelist">自定义白名单</option>
-                </select>
-                <div style={S.row}><div style={S.label}>文件大小限制</div></div>
-                <div style={{display:'flex',gap:12}}>
-                  <div style={{flex:1}}><div style={S.hint}>读取上限</div><input type="number" style={S.inp} value={g.fsReadLimit||10} onChange={e=>save({fsReadLimit:parseInt(e.target.value)||10})}/><span style={S.hint}>MB</span></div>
-                  <div style={{flex:1}}><div style={S.hint}>写入上限</div><input type="number" style={S.inp} value={g.fsWriteLimit||50} onChange={e=>save({fsWriteLimit:parseInt(e.target.value)||50})}/><span style={S.hint}>MB</span></div>
-                </div>
-                <div style={S.label}>文件类型过滤</div>
-                <select style={S.sel} value={g.fsTypeFilter||'exclude'} onChange={e=>save({fsTypeFilter:e.target.value})}>
-                  <option value="none">无限制</option><option value="exclude">排除特定类型(.exe,.dll,.sys)</option><option value="allow">仅允许特定类型</option>
-                </select>
-                <Toggle checked={g.fsCache !== false} onChange={v=>save({fsCache:v})} label="读取缓存" hint="同一文件5分钟内不重复读取" />
-                <div style={S.label}>缓存过期</div>
-                <select style={S.sel} value={g.fsCacheTtl||'5m'} onChange={e=>save({fsCacheTtl:e.target.value})}><option value="1m">1分钟</option><option value="5m">5分钟</option><option value="15m">15分钟</option><option value="1h">1小时</option></select>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>💻 Shell 配置（参数预留）</div>
-                <div style={S.label}>默认 Shell</div>
-                <select style={S.sel} value={g.shellType||'auto'} onChange={e=>save({shellType:e.target.value})}><option value="auto">自动适配平台</option><option value="powershell">PowerShell</option><option value="cmd">CMD</option><option value="bash">Bash</option></select>
-                <div style={S.row}><div style={S.label}>单次命令超时</div><input type="number" style={S.inp} value={g.shellTimeout||120} onChange={e=>save({shellTimeout:parseInt(e.target.value)||120})} /><span style={S.hint}>秒</span></div>
-                <Toggle checked={g.shellKillOnTimeout !== false} onChange={v=>save({shellKillOnTimeout:v})} label="超时后自动终止" />
-                <Toggle checked={g.shellBackground !== false} onChange={v=>save({shellBackground:v})} label="允许后台长任务" hint="编译/训练/下载等耗时操作异步执行" />
-                <div style={S.row}><div style={S.label}>高危命令黑名单</div></div>
-                <textarea style={{...S.inp,height:44,fontSize:10,fontFamily:'monospace'}} value={g.shellBlacklist||'rm -rf /\nformat /'} onChange={e=>save({shellBlacklist:e.target.value})} />
-                <div style={S.hint}>每行一条，命中时阻止执行</div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>🌐 浏览器配置（参数预留）</div>
-                <div style={S.label}>显示模式</div>
-                <select style={S.sel} value={g.browserMode||'headless'} onChange={e=>save({browserMode:e.target.value})}><option value="headless">无头模式</option><option value="headed">有头（调试）</option></select>
-                <div style={S.row}><div style={S.label}>视口宽度</div><input type="number" style={S.inp} value={g.browserWidth||1280} onChange={e=>save({browserWidth:parseInt(e.target.value)||1280})} /></div>
-                <div style={S.row}><div style={S.label}>加载超时</div><input type="number" style={S.inp} value={g.browserTimeout||30} onChange={e=>save({browserTimeout:parseInt(e.target.value)||30})} /><span style={S.hint}>秒</span></div>
-                <Toggle checked={g.browserCookie !== false} onChange={v=>save({browserCookie:v})} label="维持 Cookie 登录态" />
-                <Toggle checked={g.browserAutoDismiss !== false} onChange={v=>save({browserAutoDismiss:v})} label="自动处理 Cookie 弹窗" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>📄 办公文档配置（参数预留）</div>
-                <Toggle checked={g.officePdf !== false} onChange={v=>save({officePdf:v})} label="PDF 读取（解析为 Markdown）" />
-                <Toggle checked={g.officeDocx !== false} onChange={v=>save({officeDocx:v})} label="Word (.docx) 读写" />
-                <Toggle checked={g.officeXlsx !== false} onChange={v=>save({officeXlsx:v})} label="Excel (.xlsx) 读写" />
-                <Toggle checked={g.officeGfm !== false} onChange={v=>save({officeGfm:v})} label="Markdown 支持 GFM + Mermaid" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>🧩 MCP 配置</div>
-                <Toggle checked={g.mcpAutoReconnect !== false} onChange={v=>save({mcpAutoReconnect:v})} label="断线自动重连" />
-                <Toggle checked={g.mcpAutoConnectOnStart === true} onChange={v=>save({mcpAutoConnectOnStart:v})} label="启动时自动连接全部 MCP 服务器" />
-                <div style={S.row}><div style={S.label}>启动超时</div><input type="number" style={S.inp} value={g.mcpTimeout||10} onChange={e=>save({mcpTimeout:parseInt(e.target.value)||10})} /><span style={S.hint}>秒</span></div>
-              </div>
+              {/* v0.2.3: 文件系统配置(参数预留)已移除 */}
+              {/* v0.2.3: Shell 配置(参数预留)已移除 */}
+              {/* v0.2.3: 浏览器配置(参数预留)已移除 */}
               <div style={S.card}>
                 <div style={S.section}>可用工具</div>
                 <div style={S.hint}>关闭不需要的工具可减少 Token 消耗，加速响应</div>
@@ -1189,8 +1207,8 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.section}>系统信息</div>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                   {[
-                    ['版本', 'v0.2.1'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
-                    ['构建', new Date().toLocaleDateString('zh-CN')], ['工具数', '41'],
+                    ['版本', 'v0.2.3'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
+                    ['构建', new Date().toLocaleDateString('zh-CN')], ['工具数', '27'],
                     ['Agent数', '7'], ['技能数', '4+']
                   ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{v}</div></div>)}
                 </div>
@@ -1229,7 +1247,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.section}>路径与权限</div>
                 <div style={S.label}>工作目录</div>
                 <div style={S.hint}>Agent 默认读写文件的根目录</div>
-                <input style={{ ...S.inp, marginTop: 6 }} value={g.workDir || ''} placeholder="C:\Users\Changan\Desktop\黄泉agent" onChange={e => save({ workDir: e.target.value })} />
+                <input style={{ ...S.inp, marginTop: 6 }} value={g.workDir || ''} placeholder="如 D:\桌面\黄泉工作台" onChange={e => save({ workDir: e.target.value })} />
                 <div style={{ marginTop: 14 }}><div style={S.label}>文件操作权限</div><div style={S.hint}>控制 Agent 对文件系统的操作范围</div></div>
                 <select style={{ ...S.sel, width: '100%', marginTop: 6 }} value={g.filePermission || 'full'} onChange={e => save({ filePermission: e.target.value })}>
                   <option value="full">🔓 完整权限 — 读写执行均可</option>
@@ -1250,71 +1268,12 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('danger')} onClick={async () => { try { await window.huangquan.memory.clearVector(); alert('向量库已清空') } catch { alert('操作失败') } }}>清空向量库</button>
                 </div>
               </div>
-              <div style={S.card}>
-                <div style={S.section}>权限阈值 L0-L4</div>
-                <div style={S.hint}>控制各风险等级操作是否需要人工确认（文档 §5.1）</div>
-                {[
-                  ['L0 纯读取', '读文件/搜索/列出目录', g.l0confirm || 'auto'],
-                  ['L1 写工作区', '创建/编辑项目文件', g.l1confirm || 'auto'],
-                  ['L2 写系统', '安装依赖/修改系统配置', g.l2confirm || 'confirm'],
-                  ['L3 网络写入', '推送代码/删文件/发送消息', g.l3confirm || 'confirm'],
-                  ['L4 不可逆破坏', '删除仓库/格式化磁盘', g.l4confirm || 'double'],
-                ].map(([label, desc, current]) => {
-                  const val = current as string
-                  return <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '4px 0' }}>
-                    <div style={{ minWidth: 100 }}><div style={{ fontSize: 11, fontWeight: 600, color: C.text }}>{label}</div><div style={S.hint}>{desc}</div></div>
-                    <select style={{ ...S.sel, height: 28, fontSize: 10 }} value={val} onChange={e => { const k = (label.includes('L0') ? 'l0confirm' : label.includes('L1') ? 'l1confirm' : label.includes('L2') ? 'l2confirm' : label.includes('L3') ? 'l3confirm' : 'l4confirm'); save({ [k]: e.target.value }) }}>
-                      <option value="auto">⚡ 自动执行</option>
-                      <option value="confirm">🔒 需要确认</option>
-                      <option value="double">🛡️ 双重确认</option>
-                      <option value="block">🚫 禁止执行</option>
-                    </select>
-                  </div>
-                })}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>通知详细配置</div>
-                <Toggle checked={g.notifyTaskDone !== false} onChange={v => save({ notifyTaskDone: v })} label="任务完成通知" hint="Agent 完成长时间任务后推送桌面通知" />
-                <Toggle checked={g.notifyError !== false} onChange={v => save({ notifyError: v })} label="异常告警通知" hint="工具调用失败/服务异常/权限不足等告警" />
-                <Toggle checked={g.notifyFileWatch !== false} onChange={v => save({ notifyFileWatch: v })} label="文件变更通知" hint="watch_file 检测到文件变化时推送" />
-                <div style={{ marginTop: 12 }}><div style={S.label}>事件通知矩阵</div></div>
-                <div style={S.hint}>按事件类型选择通知渠道（桌面弹窗 / 即时通讯）</div>
-                {[
-                  ['长任务完成','notifyTaskDone'],['任务失败/异常','notifyError'],['需要人工确认','notifyConfirmNeeded'],
-                  ['定时任务执行','notifyCronResult'],['每日/每周总结','notifyDigest'],['安全告警','notifySecurity'],
-                  ['服务/资源异常','notifyResourceAlert'],['工具调用被拦截','notifyBlockedTool'],
-                ].map(([label,key]) => <div key={key} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'3px 0' }}>
-                  <span style={{ fontSize:11,color:C.text }}>{label}</span>
-                  <div style={{ display:'flex',gap:4 }}>
-                    <label style={{ fontSize:9,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',gap:2 }}><input type="checkbox" checked={g[key+'_desktop'] !== false} onChange={e => save({ [key+'_desktop']: e.target.checked })} />桌面</label>
-                    <label style={{ fontSize:9,color:C.muted,cursor:'pointer',display:'flex',alignItems:'center',gap:2 }}><input type="checkbox" checked={g[key+'_im'] === true} onChange={e => save({ [key+'_im']: e.target.checked })} />IM</label>
-                  </div>
-                </div>)}
-                <div style={S.label}>免打扰模式</div>
-                <select style={S.sel} value={g.dndMode || 'scheduled'} onChange={e => save({ dndMode: e.target.value })}>
-                  <option value="off">关闭 — 始终通知</option>
-                  <option value="scheduled">定时 — 指定时段静音</option>
-                  <option value="always">始终 — 不推送通知</option>
-                  <option value="smart">智能 — 全屏/演示/忙碌时自动</option>
-                </select>
-                <div style={S.label}>勿扰时段</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                  <input type="time" style={{ ...S.inp, width: 120 }} value={g.quietFrom || ''} onChange={e => save({ quietFrom: e.target.value })} />
-                  <span style={{ fontSize: 11, color: C.muted }}>至</span>
-                  <input type="time" style={{ ...S.inp, width: 120 }} value={g.quietTo || ''} onChange={e => save({ quietTo: e.target.value })} />
-                </div>
-                <div style={S.hint}>此时间段内抑制所有非紧急通知</div>
-              </div>
+              {/* v0.2.3: 权限阈值 L0-L4 未接线(permission.ts 死代码), 已移除 */}
+              {/* v0.2.3: 通知详细配置(事件矩阵/免打扰)未实现消费, 已移除 */}
               <div style={S.card}>
                 <div style={S.section}>语音 TTS / ASR</div>
-                <Toggle checked={g.ttsEnabled === true} onChange={v => save({ ttsEnabled: v })} label="TTS 语音合成" hint="Agent 回复时朗读文本（需系统 TTS 引擎支持）" />
-                <Toggle checked={g.asrEnabled !== false} onChange={v => save({ asrEnabled: v })} label="ASR 语音输入" hint="启用输入框麦克风按钮，支持语音转文字" />
-                <div style={{ marginTop: 8 }}><div style={S.label}>TTS 语速</div></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="range" min="50" max="200" value={Math.round((g.ttsRate || 1) * 100)} onChange={e => save({ ttsRate: parseInt(e.target.value) / 100 })} style={{ flex: 1 }} />
-                  <span style={{ fontSize: 11, color: C.text, minWidth: 36 }}>{((g.ttsRate || 1)).toFixed(2)}x</span>
-                </div>
-              </div>
+                <Toggle checked={g.ttsEnabled === true} onChange={v => save({ ttsEnabled: v })} label="TTS 语音合成" hint="消息下方 🔊 按钮朗读回复（Windows 内置语音引擎, 离线可用）" />
+                {/* v0.2.3: ASR 语音识别未实现引擎, 已移除 */}
               <div style={S.card}>
                 <div style={S.section}>日志与调试</div>
                 <div style={S.label}>日志级别</div>
@@ -1337,27 +1296,18 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 {g.proxyMode === 'custom' && <><input style={{ ...S.inp, marginTop: 8 }} placeholder="http://127.0.0.1:7890" value={g.proxyUrl || ''} onChange={e => save({ proxyUrl: e.target.value })} /><div style={S.hint}>HTTP/HTTPS 代理地址</div></>}
                 <div style={S.row}><div style={S.label}>连接超时</div><input type="number" style={S.inp} value={g.connectTimeout || 30} onChange={e => save({ connectTimeout: parseInt(e.target.value) || 30 })} /></div>
               </div>
-              <div style={S.card}>
-                <div style={S.section}>安全与隐私</div>
-                <Toggle checked={g.auditEnabled !== false} onChange={v => save({ auditEnabled: v })} label="审计日志" hint="记录工具调用、文件修改、网络请求" />
-                <div style={S.label}>日志保留</div><select style={S.sel} value={g.auditRetention || '30d'} onChange={e => save({ auditRetention: e.target.value })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option><option value="forever">永久</option></select>
-                <Toggle checked={g.sessionLock !== false} onChange={v => save({ sessionLock: v })} label="闲置锁定" hint="30分钟后需验证身份" />
-                <Toggle checked={g.maskKeys !== false} onChange={v => save({ maskKeys: v })} label="日志中脱敏密钥" hint="自动遮盖 API Key / Token" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>调试信息展示</div>
-                {[['showToolDetails','显示工具调用详情(参数和返回)'],['showTokenUsage','显示 Token 消耗(每次对话后)'],['showReasoningChain','显示推理链(Agent思考过程)'],['showCompactSummary','显示压缩摘要'],['showMcpLog','显示 MCP 通信日志']].map(([k,l])=><Toggle key={k} checked={g[k]===true} onChange={v=>save({[k]:v})} label={l} />)}
-              </div>
+              {/* v0.2.3: 安全与隐私(闲置锁定/脱敏/审计保留)未实现消费, 已移除 */}
               <div style={S.card}>
                 <div style={S.section}>数据管理</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
-                  {[['对话历史', 'sessions'], ['记忆数据', 'memory'], ['技能/插件', 'plugins'], ['缓存', 'cache'], ['工作区', 'workspace'], ['配置文件', 'settings']].map(([k, key]) => <div key={k} style={{ background: C.input, borderRadius: 6, padding: '8px 10px' }}>
-                    <div style={S.hint}>{k}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{g[`stat_${key}`] || '读取中...'}</div>
-                  </div>)}
+                {/* v0.2.6: 工具缓存命中率(总) */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ fontSize: 11, color: C.muted }}>🔧 工具缓存命中率(总)</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#48c98a' }}>{g.stat_cacheRate || '—'} <span style={{ fontSize: 10, color: C.muted, fontWeight: 400 }}>({g.stat_cacheHits || 0} 命中 / {g.stat_cacheMisses || 0} 未中)</span></div>
+                </div>
+
                 </div>
                 <div style={{ textAlign: 'right', marginBottom: 8 }}>
-                  <button style={{ ...S.btn('ghost'), height: 24, fontSize: 9, padding: '0 8px' }} onClick={async () => { try { const s = await window.huangquan.storageStats(); const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch); showToast('已刷新') } catch { showToast('统计失败') } }}>🔄 刷新</button>
+                  <button style={{ ...S.btn('ghost'), height: 24, fontSize: 9, padding: '0 8px' }} onClick={async () => { try { const s = await window.huangquan.storageStats(); const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; const cs = await window.huangquan.cacheStats(); patch['stat_cacheHits'] = cs?.hits || 0; patch['stat_cacheMisses'] = cs?.misses || 0; patch['stat_cacheRate'] = cs?.hit_rate || '0%'; save(patch); showToast('已刷新') } catch { showToast('统计失败') } }}>🔄 刷新</button>
                 </div>
                 <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:10}}>
                   <button style={S.btn('ghost')} onClick={async () => { try { await window.huangquan.cacheClear(); showToast('缓存已清除'); const s = await window.huangquan.storageStats(); const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) } catch { showToast('清除失败') } }}>清除缓存</button>
@@ -1366,32 +1316,24 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('primary')} onClick={async () => { try { const workDir = g.workDir || ''; const path = await window.huangquan.sessions.export(g.exportFormat || 'md', workDir); showToast(path.startsWith('E:') ? path : ('已导出：' + path)) } catch { showToast('导出失败') } }}>📤 导出对话历史</button>
                 </div>
                 <div style={S.row}><div style={S.label}>导出格式</div><select style={S.sel} value={g.exportFormat||'md'} onChange={e=>save({exportFormat:e.target.value})}><option value="md">Markdown</option><option value="json">JSON</option><option value="txt">纯文本</option></select></div>
-                <Toggle checked={g.autoBackup !== false} onChange={v=>save({autoBackup:v})} label="自动备份设置" hint="每天自动备份配置到本地" />
+
                 <Toggle checked={g.trayEnabled === true} onChange={v=>save({trayEnabled:v})} label="最小化/关闭时缩至系统托盘" hint="开启后点击最小化或关闭按钮，窗口隐藏到托盘继续运行；从托盘菜单「退出」才真正退出" />
               </div>
-              <div style={S.card}>
-                <div style={S.section}>快捷键</div>
-                {[
-                  ['发送消息','Enter'],['换行','Shift+Enter'],['新建对话','Ctrl+N'],
-                  ['打开设置','Ctrl+,'],['聚焦输入框','Ctrl+L'],['停止生成','Esc'],
-                  ['重新生成','Ctrl+Shift+R'],['复制最后回复','Ctrl+Shift+C'],
-                  ['切换侧边栏','Ctrl+B'],['清除当前对话','Ctrl+Shift+Del'],
-                ].map(([k,v])=><div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'2px 0'}}>
-                  <span style={{fontSize:11,color:C.text}}>{k}</span>
-                  <input style={{...S.inp,width:150,height:24,fontSize:10,fontFamily:'monospace'}} value={v} onChange={e=>{const sc=(g.shortcuts||{});sc[k]=e.target.value;save({shortcuts:sc})}} />
-                </div>)}
-              </div>
+              {/* v0.2.3: 快捷键编辑器未绑定真实快捷键, 已移除 */}
+
+
               <div style={S.card}>
                 <div style={S.section}>关于</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[['版本','v0.2.1'],['平台','黄泉Agent'],['Electron','32.x'],['React','18.3'],['Node','22.x'],['系统','Windows 10'],['构建',new Date().toLocaleDateString('zh-CN')],['开发者','ATchangan']].map(([k,v]) => <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{v}</div></div>)}
+                  {[['版本','v0.2.3'],['平台','黄泉Agent'],['Electron','32.x'],['React','18.3'],['Node','22.x'],['系统','Windows 10'],['构建',new Date().toLocaleDateString('zh-CN')]].map(([k,v]) => (
+                    <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{v}</div></div>
+                  ))}
                 </div>
-                <div style={{ textAlign: 'right', marginTop: 8 }}><button style={S.btn('ghost')} onClick={() => navigator.clipboard?.writeText(JSON.stringify({ version:'0.2.1', platform:'黄泉Agent', developer:'ATchangan', electron:'32.x', node:'22.x', date:new Date().toISOString() }, null, 2)).then(() => alert('已复制'))}>复制系统信息</button></div>
               </div>
             </div> : null}
         </div>
       </div>
-      {toast && <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', background:C.accent, color:'#fff', padding:'10px 24px', borderRadius:20, fontSize:12, fontWeight:600, zIndex:1000, boxShadow:'0 4px 16px rgba(0,0,0,0.4)', animation:'fadeInUp .2s' }}>{toast}</div>}
+      {toast && <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', background:C.accent, color:'#fff', padding:'10px 18px', borderRadius:8, fontSize:12, zIndex:9999 }}>{toast}</div>}
     </div>
   )
 }

@@ -18,11 +18,13 @@ function sendRPC(server: MCPServer, method: string, params: any): Promise<any> {
     const proc = server.process!
     if (!proc.stdin || proc.stdin.destroyed) { reject(new Error('Process not running')); return }
     
-    const timeout = setTimeout(() => reject(new Error('MCP timeout')), 10000)
+    const cleanup = () => { clearTimeout(timeout); proc.stdout?.removeListener('line', onLine) }
+    // v0.2.3-fix(P25): 超时/完成都要移除监听器, 防止泄漏
+    const timeout = setTimeout(() => { cleanup(); reject(new Error('MCP timeout')) }, 10000)
     const onLine = (line: string) => {
       try {
         const res = JSON.parse(line)
-        if (res.id === id) { clearTimeout(timeout); proc.stdout?.removeListener('line', onLine); resolve(res.result || res) }
+        if (res.id === id) { cleanup(); resolve(res.result || res) }
       } catch {}
     }
     proc.stdout?.on('line', onLine)
