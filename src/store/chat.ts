@@ -1,0 +1,849 @@
+import { create } from 'zustand'
+import { v4 as uuidv4 } from 'uuid'
+import type { Message, SessionData, LLMMessage } from '../global'
+import { useSettingsStore } from './settings'
+
+// v0.2.1: 安全序列化——防止 Proxy/循环引用导致 IPC 报错
+function safeIPC(obj: any): any {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj !== 'object') return obj
+  try { return JSON.parse(JSON.stringify(obj)) } catch {
+    const seen = new WeakSet()
+    const clone = (o: any): any => {
+      if (o === null || typeof o !== 'object') return o
+      if (seen.has(o)) return '[Circular]'
+      seen.add(o)
+      if (Array.isArray(o)) return o.map(clone)
+      const r: any = {}
+      for (const k of Object.keys(o)) {
+        try { const v = o[k]; if (typeof v === 'function' || typeof v === 'symbol') continue; r[k] = clone(v) } catch {}
+      }
+      return r
+    }
+    return clone(obj)
+  }
+}
+
+// ─── v0.2: 渲染进程内置模块 ────────────────────────────
+
+// 简易工具缓存（避免 IPC 往返延迟）
+const toolCache = new Map<string, { result: string; ts: number }>()
+const CACHE_TTL: Record<string, number> = {
+  read: 30000, ls: 30000, grep: 30000, find: 30000,
+  web_search: 120000, web_fetch: 120000,
+  system_info: 60000, process_list: 60000,
+  list_agents: 300000, list_workflows: 300000,
+  default: 10000,
+}
+function getCached(key: string, ttlKey: string): string | null {
+  const e = toolCache.get(key); if (!e) return null
+  if (Date.now() - e.ts > (CACHE_TTL[ttlKey] || CACHE_TTL.default)) { toolCache.delete(key); return null }
+  return e.result
+}
+function setCached(key: string, result: string) { toolCache.set(key, { result, ts: Date.now() }) }
+function onWriteOp() { for (const k of toolCache.keys()) { if (/^(read|ls|grep|find):/.test(k)) toolCache.delete(k) } try { window.huangquan.computer?.invalidateCache?.() } catch {} }
+
+// Token 估算（中英混合）
+function estimateTokens(text: string): number {
+  if (!text) return 0
+  const cn = (text.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length
+  return Math.ceil(cn / 1.5 + (text.length - cn) / 3.5)
+}
+
+// ─── v0.2: 多Agent 编队（v0.2.1: 改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
+const AGENTS: Record<string, { role: string; prompt: string; tools: string[]; handoff_to: string[]; icon: string }> = {
+  '姬子': { role: '主控调度', prompt: '你是姬子，星穹列车的列车长，黄泉 Agent 编队的主控者。职责：接收用户任务，分解为子任务，分配给合适的 Agent，汇总结果。风格：沉稳干练，决策果断。复杂或多步骤任务必须调用 dispatch 把子任务分发给多个 Agent 并行执行；单点小任务可用 handoff 交接给最合适的 Agent。你有全部工具权限，可以执行任何电脑操作。', tools: ['全工具'], handoff_to: ['三月七','银狼','艾丝妲','知更鸟','黑天鹅','螺丝咕姆'], icon: '☕' },
+  '三月七': { role: '文档处理', prompt: '你是三月七，星穹列车的记录员。职责：文档分析、报告撰写、内容审核、翻译校对。风格：活泼细致，条理分明。你有全部工具权限，包括文件读写、命令执行、网络检索。', tools: ['全工具'], handoff_to: ['姬子','银狼','螺丝咕姆'], icon: '📸' },
+  '银狼': { role: '安全与代码审查', prompt: '你是银狼，星核猎手的王牌骇客。职责：安全检查、漏洞扫描、代码审查、风险预警。风格：一针见血，手段精准。你有全部工具权限，包括文件读写、命令执行、代码运行。', tools: ['全工具'], handoff_to: ['姬子','螺丝咕姆'], icon: '🐺' },
+  '艾丝妲': { role: '任务调度与自动化', prompt: '你是艾丝妲，黑塔空间站的站长。职责：定时提醒、事件监控、通知推送、自动化脚本。风格：高效有序，条理清晰。你有全部工具权限，包括定时任务、命令执行、文件操作。', tools: ['全工具'], handoff_to: ['姬子','螺丝咕姆'], icon: '📡' },
+  '知更鸟': { role: '情感陪伴与日常', prompt: '你是知更鸟，匹诺康尼的歌者。职责：日常闲聊、情感支持、信息查询、生活建议。风格：温柔治愈，抚慰人心。你有全部工具权限，包括网络检索、文件读写、命令执行。', tools: ['全工具'], handoff_to: ['姬子','三月七','螺丝咕姆'], icon: '🕊️' },
+  '黑天鹅': { role: '视觉与设计', prompt: '你是黑天鹅，流光忆庭的忆者。职责：图片理解、UI/UX 设计、配色方案、截图分析。风格：优雅敏锐，审美独到。你有全部工具权限，包括截图、文件读写、网络检索。', tools: ['全工具'], handoff_to: ['姬子','螺丝咕姆'], icon: '🦢' },
+  '螺丝咕姆': { role: '全栈开发', prompt: '你是螺丝咕姆，天才俱乐部的机械天才。职责：代码编写、项目搭建、脚本自动化、架构设计。风格：逻辑缜密，代码优先，输出带注释的完整实现。你有全部工具权限，能操作电脑上任何文件和程序。', tools: ['全工具'], handoff_to: ['姬子','银狼','黑天鹅','三月七'], icon: '🤖' },
+}
+
+// ─── v0.2: 工作流模板 ────────────────────────────────
+const WORKFLOWS: Record<string, { name: string; triggers: string[]; steps: { tool: string; args_template: string; desc: string }[] }> = {
+  'create-project': { name: '创建新项目', triggers: ['创建项目','新建项目','初始化项目','搭建项目'], steps: [
+    { tool: 'mkdir', args_template: '{workDir}/{projectName}', desc: '创建项目目录' },
+    { tool: 'exec_command', args_template: 'cd {workDir}/{projectName} && npm init -y', desc: '初始化 package.json' },
+    { tool: 'write', args_template: '{workDir}/{projectName}/README.md', desc: '创建 README' },
+  ]},
+  'code-review': { name: '代码审查', triggers: ['审查代码','代码审查','review','code review','检查代码'], steps: [
+    { tool: 'ls', args_template: '{targetPath}', desc: '列出文件结构' },
+    { tool: 'read', args_template: '{mainFile}', desc: '读取主文件' },
+    { tool: 'grep', args_template: '{targetPath} TODO|FIXME|HACK|BUG', desc: '搜索问题标记' },
+  ]},
+  'web-research': { name: '网络调研', triggers: ['调研','研究','查一下','了解','research'], steps: [
+    { tool: 'web_search', args_template: '{query}', desc: '搜索主题' },
+    { tool: 'web_fetch', args_template: '{firstResultUrl}', desc: '抓取首条结果' },
+    { tool: 'save_memory', args_template: '{topic}: {summary}', desc: '保存到记忆' },
+  ]},
+  'file-organize': { name: '文件整理', triggers: ['整理文件','分类文件','组织文件','organize'], steps: [
+    { tool: 'ls', args_template: '{targetPath}', desc: '列出所有文件' },
+    { tool: 'exec_command', args_template: 'cd {targetPath} && for %f in (*.md) do move "%f" docs\\', desc: '移动文档' },
+    { tool: 'exec_command', args_template: 'cd {targetPath} && for %f in (*.jpg *.png) do move "%f" images\\', desc: '移动图片' },
+  ]},
+  'deploy-check': { name: '部署前检查', triggers: ['部署检查','上线检查','发布检查','deploy check'], steps: [
+    { tool: 'exec_command', args_template: 'node -v', desc: '检查 Node.js 版本' },
+    { tool: 'exec_command', args_template: 'npm -v', desc: '检查 npm 版本' },
+    { tool: 'exec_command', args_template: 'cd {targetPath} && npm ls --depth=0', desc: '检查依赖' },
+    { tool: 'read', args_template: '{targetPath}/package.json', desc: '检查包配置' },
+    { tool: 'grep', args_template: '{targetPath} console.log|debugger|TODO', desc: '检查遗留调试代码' },
+  ]},
+}
+function matchWorkflow(txt: string): string | null {
+  const t = txt.toLowerCase()
+  const matches = Object.entries(WORKFLOWS).map(([id, w]) => ({ id, score: w.triggers.filter(tr => t.includes(tr.toLowerCase())).length })).filter(m => m.score > 0).sort((a, b) => b.score - a.score)
+  return matches[0]?.id || null
+}
+
+// ─── v0.2: 模型上下文窗口自动检测 ──────────────────────
+function getModelContextLimit(modelName: string): number {
+  const m = modelName.toLowerCase()
+  // 百万级
+  if (m.includes('deepseek-v4') || m.includes('deepseek-chat') || m.includes('deepseek-reasoner')) return 1048576
+  if (m.includes('gpt-4.1')) return 1048576
+  if (m.includes('gemini-2.5') || m.includes('gemini-2') || m.includes('gemini-1.5')) return 1048576
+  // 20万级
+  if (m.includes('o3') || m.includes('o4') || m.includes('o1')) return 200000
+  if (m.includes('claude-4') || m.includes('claude-3.5') || m.includes('claude-3') || m.includes('claude-2')) return 200000
+  if (m.includes('yi-')) return 200000
+  // 26万
+  if (m.includes('qwen3')) return 262144
+  if (m.includes('minimax')) return 245760
+  // 13万
+  if (m.includes('deepseek-v3')) return 131072
+  if (m.includes('gpt-4o')) return 131072
+  if (m.includes('gpt-4-turbo')) return 131072
+  if (m.includes('qwen2.5') || m.includes('qwen')) return 131072
+  if (m.includes('glm-4') || m.includes('glm')) return 131072
+  if (m.includes('ernie-4.5')) return 131072
+  if (m.includes('moonshot') || m.includes('kimi')) return 131072
+  if (m.includes('doubao') || m.includes('skylark')) return 131072
+  // 其他
+  if (m.includes('gpt-4-32k')) return 32768
+  if (m.includes('gpt-4')) return 8192
+  if (m.includes('gpt-3.5-turbo-16k')) return 16384
+  if (m.includes('gpt-3.5')) return 4096
+  if (m.includes('deepseek')) return 65536
+  if (m.includes('gemini')) return 32768
+  if (m.includes('ernie')) return 8192
+  // 默认 64K
+  return 65536
+}
+function updateContextLimit(modelName: string) {
+  const limit = getModelContextLimit(modelName)
+  const s = useChatStore.getState()
+  if (s.cl !== limit) useChatStore.setState({ cl: limit })
+}
+// 导出供外部调用（模型切换时实时更新）
+export { updateContextLimit, getModelContextLimit }
+
+// v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时自动切换到视觉模型分析图片
+const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'glm-4v', 'minimax-vl', 'deepseek-vl', 'internvl', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision']
+function isVisionModel(m: string): boolean {
+  const ml = (m || '').toLowerCase()
+  return VISION_MODEL_HINTS.some(v => ml.includes(v))
+}
+async function analyzeWithVision(p: any, images: string[], text: string): Promise<string> {
+  try {
+    const g = useSettingsStore.getState().general as any
+    const all = useSettingsStore.getState().providers
+    // 优先级：设置的视觉辅助模型（支持 ref:供应商 语法）→ 当前 provider 的视觉模型 → 其他 provider 的第一个视觉模型
+    let vm = g.visionModel || ''
+    let vp = p
+    if (vm.startsWith('ref:')) {
+      // 参考某供应商：用该供应商的第一个视觉模型
+      const pid = vm.slice(4)
+      const pr = all.find(x => x.id === pid) || all.find(x => x.name === pid)
+      if (pr) { vp = pr; vm = (pr.models || []).find(isVisionModel) || (pr.models || [])[0] || '' }
+    }
+    if (!vm) {
+      const inProv = (p.models || []).find(isVisionModel)
+      if (inProv) vm = inProv
+      else {
+        for (const pr of all) {
+          const m = (pr.models || []).find(isVisionModel)
+          if (m) { vp = pr; vm = m; break }
+        }
+      }
+    }
+    if (!vm) return ''
+    const descs: string[] = []
+    for (const img of images) {
+      const r = await window.huangquan.llm.vision({
+        provider: vp.type, model: vm, apiKey: vp.apiKey, baseUrl: vp.baseUrl,
+        imageDataUrl: img,
+        prompt: '请用中文详细描述这张图片的内容（包括其中的文字、图表、界面元素、关键细节等）。' + (text ? '用户的问题是：' + text : ''),
+      })
+      if (r && !r.startsWith('E:')) descs.push(r)
+    }
+    return descs.join('\n')
+  } catch { return '' }
+}
+
+// Agent 意图路由（v0.2.1: 扩展关键词覆盖 + 崩铁角色路由）
+const DOMAIN_RE: Record<string, RegExp> = {
+  '银狼': /安全|漏洞|审查|bug|风险|检查|审计|防护|攻击|渗透|注入|权限|扫描|加密|认证|授权|越权|XSS|SQL注入|CSRF|DDoS|后门|木马|病毒|防火墙|沙箱|隔离|签名|证书|安全策略|加固|修复漏洞|review|security|audit|scan|vuln/,
+  '三月七': /文档|报告|总结|分析|整理|翻译|校对|审核|论文|文章|写作|撰写|编辑|排版|格式化|笔记|摘要|纪要|周报|月报|日报|PPT|幻灯片|手册|说明书|合同|协议|白皮书|提案|readme|document|report|translate|summar/,
+  '艾丝妲': /提醒|通知|日程|定时|监控|跟踪|闹钟|计划|安排|周期|循环|自动|定时器|cron|日程表|日历|倒计时|推送|alert|remind|schedule|watch|monitor|observe|track/,
+  '知更鸟': /聊天|陪伴|心情|安慰|倾诉|放松|故事|累|伤心|难过|开心|快乐|烦|无聊|困|推荐|建议|意见|想法|聊聊|唠嗑|吐槽|八卦|日常|生活|健康|作息|饮食|电影|音乐|游戏|书|小说|娱乐|旅行|天气|新闻|chat|talk|feel|mood|story|tired|sad|happy/,
+  '黑天鹅': /设计|画|配色|UI|UX|图标|logo|banner|海报|审美|绘图|可视化|图表|架构图|流程图|时序图|思维导图|脑图|原型|线框|mockup|sketch|Figma|Photoshop|前端|样式|CSS|布局|响应式|动画|过渡|渐变|阴影|字体|排版|design|draw|visual|chart|graph|layout|style/,
+  '螺丝咕姆': /代码|写|开发|编程|实现|脚本|函数|类|接口|api|框架|构建|部署|项目|调试|测试|单元测试|集成测试|CI|CD|Git|commit|branch|merge|PR|pull request|重构|优化|性能|数据库|SQL|查询|索引|ORM|后端|前端|全栈|Node|React|Vue|Python|Java|Go|Rust|Type|npm|pip|docker|k8s|容器|微服务|rest|http|code|dev|build|deploy|test|debug|optimiz/,
+}
+function routeAgent(userMessage: string): string | null {
+  const t = userMessage.toLowerCase()
+  const disabled = (useSettingsStore.getState().general as any).disabledAgents || []
+  const collabMode = (useSettingsStore.getState().general as any).collabMode || '自动'
+  if (collabMode === '关闭') return null
+  if (collabMode === '手动') return null // 手动模式下由用户显式指定，不自动路由
+  for (const [name, re] of Object.entries(DOMAIN_RE)) {
+    if (re.test(t)) return disabled.includes(name) ? null : name
+  }
+  // 姬子：架构/系统/复杂任务 + 默认兜底
+  return disabled.includes('姬子') ? null : '姬子'
+}
+
+// v0.2.1: 文件权限检查
+function checkFilePermission(name: string, args: any): string | null {
+  const perm = (useSettingsStore.getState().general as any).filePermission || 'full'
+  if (perm === 'full') return null
+  const wd = (useSettingsStore.getState().general as any).workDir || ''
+  const p = args.path || args.dirPath || ''
+  // sandbox: 仅在 working directory 内允许操作
+  if (perm === 'sandbox' && wd && p && !p.replace(/\\/g, '/').toLowerCase().startsWith(wd.replace(/\\/g, '/').toLowerCase())) {
+    return 'E:permission denied (sandbox): path outside work directory'
+  }
+  // readonly: 禁止写/删/执行
+  if (perm === 'readonly' && ['write','edit','mkdir','exec_command','codebox'].includes(name)) {
+    return 'E:permission denied (readonly): ' + name + ' not allowed'
+  }
+  // ask: 写操作需确认（实现为拒绝 + 提示）
+  if (perm === 'ask' && ['write','edit','mkdir','exec_command','codebox'].includes(name)) {
+    return 'E:permission denied (ask): ' + name + ' requires manual confirmation. Use settings to change permission level.'
+  }
+  return null
+}
+
+const TOOLS: any[] = [
+  { type: 'function', function: { name: 'read', description: 'read(path, offset?, limit?) read file', parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'write', description: 'write(path, content) create/overwrite file', parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } } },
+  { type: 'function', function: { name: 'edit', description: 'edit(path, oldText, newText) precise text replace', parameters: { type: 'object', properties: { path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' } }, required: ['path', 'oldText', 'newText'] } } },
+  { type: 'function', function: { name: 'exec_command', description: 'exec_command(cmd) run PowerShell command', parameters: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } } },
+  { type: 'function', function: { name: 'mkdir', description: 'mkdir(path) create folder', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'grep', description: 'grep(dirPath, pattern) search text in files', parameters: { type: 'object', properties: { dirPath: { type: 'string' }, pattern: { type: 'string' } }, required: ['dirPath', 'pattern'] } } },
+  { type: 'function', function: { name: 'find', description: 'find(dirPath, glob) find files by pattern', parameters: { type: 'object', properties: { dirPath: { type: 'string' }, glob: { type: 'string' } }, required: ['dirPath', 'glob'] } } },
+  { type: 'function', function: { name: 'ls', description: 'ls(dirPath?) list directory', parameters: { type: 'object', properties: { dirPath: { type: 'string' } } } } },
+  { type: 'function', function: { name: 'system_info', description: 'system_info() get CPU/RAM info', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'web_search', description: 'web_search(query) search the web', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'web_fetch', description: 'web_fetch(url) fetch webpage content', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'browse', description: 'browse(url) open page in headless browser, get full text', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'browse_screenshot', description: 'browse_screenshot(url) take screenshot of webpage', parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] } } },
+  { type: 'function', function: { name: 'screenshot', description: 'screenshot() capture screen', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'clipboard_read', description: 'clipboard_read() read clipboard text', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'clipboard_write', description: 'clipboard_write(text) write text to clipboard', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } } },
+  { type: 'function', function: { name: 'process_list', description: 'process_list() list running processes', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'kill_process', description: 'kill_process(pid) kill a process by PID', parameters: { type: 'object', properties: { pid: { type: 'string' } }, required: ['pid'] } } },
+  { type: 'function', function: { name: 'save_memory', description: 'save_memory(fact, pinned?) save to memory. pinned=true for cross-agent permanent memory', parameters: { type: 'object', properties: { fact: { type: 'string' }, pinned: { type: 'boolean' } }, required: ['fact'] } } },
+  { type: 'function', function: { name: 'recall_memory', description: 'recall_memory(query) semantic search memory', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'codebox', description: 'codebox(lang, code) run Python/Node sandbox. lang: python|node', parameters: { type: 'object', properties: { lang: { type: 'string' }, code: { type: 'string' } }, required: ['lang', 'code'] } } },
+  { type: 'function', function: { name: 'import_doc', description: 'import_doc(path) import document into knowledge base', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'schedule_task', description: 'schedule_task(expression, prompt) create timed task. expression: every 30m|every 1h|at 09:00', parameters: { type: 'object', properties: { expression: { type: 'string' }, prompt: { type: 'string' } }, required: ['expression', 'prompt'] } } },
+  { type: 'function', function: { name: 'list_schedules', description: 'list_schedules() list all scheduled tasks', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'mcp_connect', description: 'mcp_connect(name, command, args) connect to MCP server. args is string array', parameters: { type: 'object', properties: { name: { type: 'string' }, command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['name', 'command'] } } },
+  { type: 'function', function: { name: 'mcp_call', description: 'mcp_call(server, tool, args) call MCP tool', parameters: { type: 'object', properties: { server: { type: 'string' }, tool: { type: 'string' }, args: { type: 'object' } }, required: ['server', 'tool'] } } },
+  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason) 将当前任务交接给另一 Agent 并切换身份执行（交接后本轮以新身份继续）', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['姬子','三月七','银狼','艾丝妲','知更鸟','黑天鹅','螺丝咕姆'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
+  { type: 'function', function: { name: 'dispatch', description: 'dispatch(tasks) 任务分发：把子任务并行分发给多个 Agent 独立执行并汇总结果。tasks 为 [{agent, task}] 数组，agent 取值: 姬子|三月七|银狼|艾丝妲|知更鸟|黑天鹅|螺丝咕姆', parameters: { type: 'object', properties: { tasks: { type: 'array', items: { type: 'object', properties: { agent: { type: 'string' }, task: { type: 'string' } }, required: ['agent', 'task'] } }, reason: { type: 'string' } }, required: ['tasks'] } } },
+  { type: 'function', function: { name: 'list_agents', description: 'list_agents() list all agents', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'list_workflows', description: 'list_workflows() list workflows', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'run_workflow', description: 'run_workflow(workflow_id,variables) run workflow', parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, variables: { type: 'object' } }, required: ['workflow_id'] } } },
+  { type: 'function', function: { name: 'read_image', description: 'read_image(path) image to base64', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'set_workdir', description: 'set_workdir(path) change work dir', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'set_theme', description: 'set_theme(theme) switch theme', parameters: { type: 'object', properties: { theme: { type: 'string' } }, required: ['theme'] } } },
+  { type: 'function', function: { name: 'show_card', description: 'show_card(html, title?) render interactive SVG/chart/diagram card', parameters: { type: 'object', properties: { html: { type: 'string' }, title: { type: 'string' } }, required: ['html'] } } },
+  { type: 'function', function: { name: 'bridge_notify', description: 'bridge_notify(title, body?) push desktop notification', parameters: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' } }, required: ['title'] } } },
+  { type: 'function', function: { name: 'workflow', description: 'workflow(script) execute JS workflow with ctx.log/ctx.tools.run/ctx.done', parameters: { type: 'object', properties: { script: { type: 'string' } }, required: ['script'] } } },
+  { type: 'function', function: { name: 'audit_log', description: 'audit_log(limit?) show recent operation audit trail (tool calls, file changes, timestamps)', parameters: { type: 'object', properties: { limit: { type: 'number' } } } } },
+  { type: 'function', function: { name: 'watch_file', description: 'watch_file(path, interval?) monitor file changes. Returns changes detected since last check.', parameters: { type: 'object', properties: { path: { type: 'string' }, interval: { type: 'number', description: 'Polling interval in ms (default 5000)' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'save_goal', description: 'save_goal(goal, steps?) persist a long-term goal with optional step list. Resume across restarts.', parameters: { type: 'object', properties: { goal: { type: 'string' }, steps: { type: 'string', description: 'JSON array of step descriptions' } }, required: ['goal'] } } },
+  { type: 'function', function: { name: 'list_goals', description: 'list_goals() show all persistent goals and their progress', parameters: { type: 'object', properties: {} } } },
+]
+
+// v0.2.1: 工具开关——从设置读取禁用列表，过滤 TOOLS
+function getActiveTools(): any[] {
+  const disabled: string[] = (useSettingsStore.getState().general as any).disabledTools || []
+  if (disabled.length === 0) return TOOLS
+  return TOOLS.filter(t => !disabled.includes(t.function.name))
+}
+
+async function runTool(name: string, a: any): Promise<string> {
+  try {
+    // v0.2.1: 文件权限检查
+    const permErr = checkFilePermission(name, a)
+    if (permErr) return permErr
+    // v0.2: cache
+    const ck = name + ':' + JSON.stringify(a || {})
+    const cached = getCached(ck, name)
+    if (cached) return cached + ' [cache]'
+    if (['write','edit','mkdir','exec_command'].includes(name)) onWriteOp()
+    switch (name) {
+      case 'read': { if (!a.path) return 'E:need path'; const c = await window.huangquan.computer.readFile(a.path); return a.offset ? c.split('\n').slice(+a.offset - 1, (+a.offset - 1) + (+a.limit || 200)).join('\n') : c.slice(0, 50000) }
+      case 'write': { if (!a.path || a.content === undefined) return 'E:need path+content'; await window.huangquan.computer.writeFile(a.path, a.content); return a.path + ' (' + a.content.length + ' chars)' }
+      case 'edit': { if (!a.path || !a.oldText) return 'E:need path+oldText+newText'; const o = await window.huangquan.computer.readFile(a.path); if (!o.includes(a.oldText)) return 'E:text not found in ' + a.path; await window.huangquan.computer.writeFile(a.path, o.replace(a.oldText, a.newText || '')); return a.path + ' (edited)' }
+      case 'exec_command': { if (!a.cmd) return 'E:need cmd'; const r = await window.huangquan.computer.exec(a.cmd); return r || '(empty output)' }
+      case 'mkdir': { if (!a.path) return 'E:need path'; await window.huangquan.computer.exec('mkdir "' + a.path.replace(/\\/g, '/') + '"'); return a.path + ' (created)' }
+      case 'grep': { if (!a.dirPath || !a.pattern) return 'E:need dirPath+pattern'; return await window.huangquan.computer.grep(a.dirPath, a.pattern) || '(no matches)' }
+      case 'find': { if (!a.dirPath || !a.glob) return 'E:need dirPath+glob'; return await window.huangquan.computer.find(a.dirPath, a.glob) || '(no files found)' }
+      case 'ls': { const wd = useSettingsStore.getState().general.workDir; const items = await window.huangquan.computer.readDir(a.dirPath || wd || '.'); return items.length ? items.map(i => (i.isDirectory ? '[DIR]' : '[FILE]') + ' ' + i.name + ' (' + i.size + 'B)').join('\n') : '(empty directory)' }
+      case 'system_info': return JSON.stringify(await window.huangquan.computer.systemInfo(), null, 2)
+      case 'web_search': { if (!a.query) return 'E:need query'; return await window.huangquan.web.search(a.query) || '(none)' }
+      case 'web_fetch': return await window.huangquan.web.fetch(a.url || 'about:blank')
+      case 'browse': { if (!a.url) return 'E:need url'; return await window.huangquan.web.browse(a.url) }
+      case 'browse_screenshot': { if (!a.url) return 'E:need url'; return await window.huangquan.web.browseScreenshot(a.url) }
+      case 'screenshot': return await window.huangquan.computer.screenshot()
+      case 'clipboard_read': return await window.huangquan.computer.clipboardRead()
+      case 'clipboard_write': { if(!a.text)return'E:need text';await window.huangquan.computer.clipboardWrite(a.text);return'ok:clipped' }
+      case 'process_list': return await window.huangquan.computer.processList()
+      case 'kill_process': { if(!a.pid)return'E:need pid';return await window.huangquan.computer.killProcess(a.pid) }
+      case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = a.fact || ''; (m as any).pinnedFacts = [...((m as any).pinnedFacts || []), fact]; await window.huangquan.memory.save(safeIPC(m)); return 'ok:pinned' }
+      case 'recall_memory': { const m = await window.huangquan.memory.load(); const pinned = ((m as any).pinnedFacts || []) as string[]; const facts = ((m as any).facts || []) as string[]; const snippets = ((m as any).summaries || []) as any[]; const query = (a.query || '').toLowerCase(); const allItems = [...pinned.map(f => ({ content: f, score: 1.5 })), ...facts.map(f => ({ content: f, score: f.toLowerCase().includes(query) ? 1.0 : 0 })), ...snippets.map(s => ({ content: s.content || '', score: (s.content||'').toLowerCase().includes(query) ? 0.8 : 0 }))]; const results = query ? allItems.filter(r => r.content.toLowerCase().includes(query)).sort((a,b) => b.score - a.score) : allItems; return results.length ? results.slice(0, 10).map((r:any,i:number) => (i+1) + '. ' + r.content).join('\n---\n') : '(empty)' }
+      case 'codebox': { if (!a.lang || !a.code) return 'E:need lang+code'; return await window.huangquan.computer.codebox(a.lang, a.code) }
+      case 'import_doc': { if (!a.path) return 'E:need path'; const ok = await window.huangquan.memory.importFile(a.path).catch(() => false); return ok ? 'ok:imported' : 'E:import failed' }
+      case 'schedule_task': { if (!a.expression || !a.prompt) return 'E:need expression+prompt'; return await window.huangquan.cron.add(a.expression, a.prompt) }
+      case 'list_schedules': { const items = await window.huangquan.cron.list(); return items.length ? (items as any[]).map((j:any,i:number) => (i+1) + '. [' + (j.enabled?'on':'off') + '] ' + j.expression + ' - ' + j.prompt).join(' | ') : '(empty)' }
+      case 'mcp_connect': { if (!a.name||!a.command) return 'E:need name+command'; const r = await window.huangquan.mcpConnect(a.name, a.command, a.args||[]); return typeof r==='string'?r:JSON.stringify(r) }
+      case 'mcp_call': { if (!a.server||!a.tool) return 'E:need server+tool'; return await window.huangquan.mcpCall(a.server, a.tool, a.args||{}) }
+      case 'set_workdir': { if (!a.path) return 'E:need path'; useSettingsStore.getState().setWorkDir(a.path); return '工作目录已设为: ' + a.path }
+      case 'set_theme': { if (!a.theme) return 'E:need theme'; useSettingsStore.getState().setTheme(a.theme); document.documentElement.setAttribute('data-theme', a.theme); return '主题已切换为: ' + a.theme }
+      // v0.2: 多Agent/工作流
+      case 'handoff': { if (!a.agent_name) return 'E:need agent_name'; const ag = AGENTS[a.agent_name]; if (!ag) return 'E:unknown agent: ' + a.agent_name + ' (可用: ' + Object.keys(AGENTS).join(', ') + ')'; (window as any).__huangquan_agent = a.agent_name; (window as any).__huangquan_agent_manual = false; useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(a.agent_name) ? s.activeAgents : [...s.activeAgents, a.agent_name] })); return `✅ 已交接给 ${a.agent_name}(${ag.role})。原因: ${a.reason || '能力边界外'}。现在你以 ${a.agent_name} 的身份继续执行。\n\n【${a.agent_name} 身份】${ag.prompt}` }
+      case 'list_agents': { return Object.entries(AGENTS).map(([n,ag]) => `${ag.icon} **${n}** (${ag.role}): ${ag.prompt.slice(0,80)}... | 工具: ${ag.tools.join(', ')}`).join('\n\n') }
+      // v0.2.1: 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
+      case 'dispatch': {
+        const tasks: { agent: string; task: string }[] = a.tasks || a.plan || []
+        if (!tasks.length) return 'E:dispatch 需要 tasks 数组 [{agent, task}]，例如 {"tasks":[{"agent":"螺丝咕姆","task":"..."},{"agent":"三月七","task":"..."}]}'
+        const mode = useSettingsStore.getState().general.mode || 'work'
+        const ishiki = useChatStore.getState().sp ? useChatStore.getState().sp.replace(/\n##.+/s, '') : ''
+        const cfg = await window.huangquan.settings.load()
+        const p = cfg.providers[0]; if (!p) return 'E:未配置 Provider，无法分发'
+        const model = p.selectedModel || p.models[0] || ''
+        const out: string[] = []
+        // 分发开始：所有子 Agent 一并显示（并发协作）
+        const validAgents = tasks.map(t => t.agent).filter(n => AGENTS[n])
+        useChatStore.setState(s => ({ activeAgents: [...new Set([...s.activeAgents, ...validAgents])] }))
+        // 并行执行子任务（每个子 Agent 独立系统提示词）
+        const results = await Promise.all(tasks.map(async (t) => {
+          const ag = AGENTS[t.agent]
+          if (!ag) return { agent: t.agent, task: t.task, error: 'unknown agent' }
+          const sp = buildPrompt(mode, ishiki) + '\n\n## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果，不要询问。）'
+          const r = await window.huangquan.llm.chatOnce({ provider: p.type, model, apiKey: p.apiKey, baseUrl: p.baseUrl, messages: [{ role: 'system', content: sp }, { role: 'user', content: '子任务：' + (t.task || '') }] })
+          return { agent: t.agent, task: t.task, result: r }
+        }))
+        for (const x of results) {
+          const err = (x as any).error ? ' (未知Agent)' : ''
+          out.push(`【${x.agent}${err}】${(x as any).error || ''}\n任务: ${x.task}\n结果: ${(x as any).result || '(empty)'}`)
+        }
+        return '📤 分发完成，共 ' + tasks.length + ' 个子任务：\n\n' + out.join('\n\n---\n\n')
+      }
+      case 'list_workflows': { return Object.entries(WORKFLOWS).map(([id,w]) => `- **${id}** (${w.name}): 触发词 → ${w.triggers.slice(0,3).join(', ')}; ${w.steps.length} 步骤`).join('\n') }
+      case 'run_workflow': { if (!a.workflow_id) return 'E:need workflow_id'; const wf = WORKFLOWS[a.workflow_id]; if (!wf) return 'E:unknown workflow: ' + a.workflow_id; const vars = a.variables || {}; const steps = wf.steps.map((s,i) => `${i+1}. ${s.desc} → \`${s.tool}(${s.args_template.replace(/\{(\w+)\}/g,(_:string,k:string)=>vars[k]||`{${k}}`)})\``).join('\n'); return `工作流 **${wf.name}** (${wf.steps.length}步):\n${steps}\n\n请按顺序执行以上步骤，每步完成后验证结果。` }
+      case 'read_image': { if (!a.path) return 'E:need path'; return await window.huangquan.computer.readImageBase64(a.path) }
+      case 'show_card': { if (!a.html) return 'E:need html'; return '<!--CARD' + (a.title ? ':' + a.title : '') + '-->' + a.html + '<!--/CARD-->' }
+      case 'bridge_notify': { const g = useSettingsStore.getState().general as any; if (g.notifyEnabled === false) return 'ok:notifications disabled'; const kind = a.type || 'info'; if (kind === 'task_done' && g.notifyTaskDone === false) return 'ok:task_done notifications disabled'; if (kind === 'error' && g.notifyError === false) return 'ok:error notifications disabled'; try { new Notification(a.title || '黄泉Agent', { body: a.body || '' }) } catch {} return 'ok:notified' }
+      case 'workflow': { if (!a.script) return 'E:need script'; return new Promise(resolve => { const logs = []; const ctx = { log: msg => logs.push(msg), tools: { run: async (n, args) => { logs.push('[wf] ' + n); return await runTool(n, args) } }, done: r => resolve(JSON.stringify({ result: r, logs }, null, 2)) }; try { const fn = new Function('ctx', a.script); const ret = fn(ctx); if (ret instanceof Promise) ret.catch(e => resolve('E:workflow error: ' + e.message)) } catch (e) { resolve('E:workflow error: ' + e.message) } }) }
+      // v0.2.1: 情景记忆 + 审计 + 目标持久化
+      case 'audit_log': {
+        const mem = await window.huangquan.memory.load().catch(() => ({ episodic: [] }))
+        const log = ((mem as any).episodic || []).slice(-(a.limit || 20))
+        return log.length ? log.map((e: any, i: number) => `${i + 1}. [${new Date(e.ts).toLocaleString('zh-CN')}] ${e.op} ${e.path || ''} → ${e.status}`).join('\n') : '(无操作记录)'
+      }
+      case 'watch_file': {
+        if (!a.path) return 'E:need path'
+        const watchKey = a.path
+        const prevState = (window as any).__watchState || {}
+        ;(window as any).__watchState = prevState
+        try {
+          const content = await window.huangquan.computer.readFile(a.path)
+          const hash = content.length + ':' + content.slice(0, 200)
+          if (prevState[watchKey] && prevState[watchKey] !== hash) {
+            const old = prevState[watchKey]; prevState[watchKey] = hash
+            return `CHANGED: ${a.path} (prev: ${old.slice(0, 50)}... → now: ${hash.slice(0, 50)}...)`
+          }
+          prevState[watchKey] = hash
+          return `WATCHING: ${a.path} (${content.length} bytes). Call again to detect changes.`
+        } catch (e: any) { return 'E:watch failed: ' + e.message }
+      }
+      case 'save_goal': {
+        const mem = await window.huangquan.memory.load().catch(() => ({}))
+        const goals = (mem as any).goals || []
+        goals.push({ goal: a.goal, steps: a.steps ? JSON.parse(a.steps) : [], created: Date.now(), status: 'active' })
+        ;(mem as any).goals = goals
+        await window.huangquan.memory.save(mem)
+        return 'ok:goal_saved (' + goals.length + ' goals total)'
+      }
+      case 'list_goals': {
+        const mem = await window.huangquan.memory.load().catch(() => ({}))
+        const goals = (mem as any).goals || []
+        return goals.length ? goals.map((g: any, i: number) => `${i + 1}. [${g.status}] ${g.goal} (${(g.steps || []).length} steps, ${new Date(g.created).toLocaleDateString('zh-CN')})`).join('\n') : '(无持久化目标)'
+      }
+      default: return 'E:unknown:' + name
+    }
+  } catch (e: any) { return 'E:' + e.message }
+}
+
+// v0.2.1: 情景记忆——自动记录文件操作到审计日志
+async function recordEpisodic(name: string, args: any, result: string) {
+  if (['write', 'edit', 'mkdir', 'exec_command', 'read', 'codebox', 'import_doc', 'save_memory'].includes(name)) {
+    try {
+      const mem = await window.huangquan.memory.load().catch(() => ({}))
+      const episodic = (mem as any).episodic || []
+      episodic.push({ op: name, path: args.path || args.dirPath || args.cmd?.slice(0, 60) || '', status: result.startsWith('E:') ? 'FAIL' : 'OK', ts: Date.now() })
+      if (episodic.length > 200) episodic.splice(0, episodic.length - 200)
+      ;(mem as any).episodic = episodic
+      await window.huangquan.memory.save(mem).catch(() => {})
+    } catch {}
+  }
+}
+
+async function autoExtractMemory(sid: string) {
+  const s = useChatStore.getState().sessions.find(x => x.id === sid)
+  if (!s || s.messages.length < 3) return
+  const last = s.messages.slice(-6).filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+  if (last.length < 2) return
+  try {
+    const text = last.map(m => `${m.role === 'user' ? '阳间' : '泉'}:${(m.content || '').slice(0, 200)}`).join(' | ')
+    const mem = await window.huangquan.memory.load().catch(() => ({ facts: [], summaries: [], pinnedFacts: [] }))
+    mem.summaries.push({ content: `[auto ${new Date().toLocaleDateString('zh-CN')}] ${text.slice(0, 300)}`, timestamp: Date.now() })
+    await window.huangquan.memory.save(safeIPC(mem))
+  } catch { /* 静默 */ }
+}
+
+function buildPrompt(mode: string, ishiki: string): string {
+  const tl = TOOLS.map(t => '- ' + t.function.name + '(' + Object.keys(t.function.parameters.properties || {}).join(',') + ')').join('\n')
+  const wd = useSettingsStore.getState().general.workDir || 'C:\\Users\\Changan\\Desktop\\黄泉agent'
+  const cfg = useSettingsStore.getState().general
+  
+  // ── System Prompt 标准 10 段结构 ──
+  const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
+  const identity = '## 身份\n' + ishiki.slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
+  const userInfo = '## 用户\n称呼：老板。专注代码与办公场景的全能助手。\n'
+  const persona = '## 人格\n务实执行型全能代码办公助手。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / AI建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。\n'
+  const appearance = '## 外观\n银白长发，额前黑红尖角，血色瞳光。暗黑紧身战斗装束，红色纹路蔓延。手持冷峻短剑，慵懒却危险。哥特融合未来感的暗黑美学。\n'
+  const publicIshiki = '## 边界\n对外部访客保持礼貌与边界。不透露用户隐私。不确定的事坦诚说明，不编造。\n'
+  const tools = '## 可用工具\n' + tl + '\n'
+  const pinned = '## 固定规则\n- 所有产出保存到工作台目录，按任务创建独立文件夹\n- 代码需求同步配套接口文档、部署说明、测试用例\n- 批量重复任务优先自动化脚本\n- 输出完毕自行核查事实/逻辑/计算错误\n'
+  const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n时间：' + new Date().toLocaleString('zh-CN') + '\n'
+  // v0.2: 多Agent编队
+  const multiAgent = '## 多Agent编队\n你属于黄泉Agent编队的一员。编队成员：\n' +
+    Object.entries(AGENTS).map(([n,ag]) => `- ${ag.icon} ${n} (${ag.role}): 全工具权限`).join('\n') +
+    '\n使用 handoff 工具将任务交接给更合适的Agent；复杂任务用 dispatch 把子任务分发给多个 Agent 并行执行；使用 list_agents 查看编队信息。\n'
+  // v0.2: 工作流
+  const workflows = '## 工作流模板\n' +
+    Object.entries(WORKFLOWS).map(([id,w]) => `- ${id}: ${w.name} [触发: ${w.triggers.join('/')}]`).join('\n') + '\n'
+  
+  const base = yuan + identity + userInfo + persona + appearance + tools + pinned + env
+
+  // 自定义人设覆盖 + v0.2.1: 动态设置
+  const cp = (cfg as any).chatPersona
+  const wp = (cfg as any).workPersona
+  const agentName = (cfg as any).agentName || '黄泉'
+  const userAlias = (cfg as any).userAlias || '老板'
+  const toneStyle = (cfg as any).toneStyle || '实用直接'
+  const verbosity = (cfg as any).verbosity ?? 2
+  const toneMap: Record<string, string> = { '专业正式': '严谨规范，使用专业术语，避免口语化', '实用直接': '言简意赅，去冗余，直击核心', '轻松友好': '亲切自然，可适当使用表情和口语', '极简克制': '最简洁表达，一句说清，不扩展' }
+  const verbMap = ['尽量精简，只给结论，不解释过程','简洁优先，必要时补充关键细节','平衡，该详则详该简则简','详尽回答，包含背景和示例','非常详细，包含分步教程和完整代码']
+  const chatPrompt = base +
+    (cp ? '## 自定义聊天人设\n' + cp + '\n\n' : '## 回复准则\n- 名称：' + agentName + '，称呼用户为' + userAlias + '\n- 风格：' + (toneMap[toneStyle] || toneMap['实用直接']) + '\n- 详细程度：' + (verbMap[verbosity] || verbMap[2]) + '\n- 不评价，只说事实和观察\n- 对方陷入困境时不空泛安慰，问"需要我帮你做什么"\n- 技术回答必须扎实准确\n- 用户提到重要信息时使用 save_memory\n直接回复，不需要特殊格式标签。')
+
+  const workPrompt = base +
+    multiAgent + workflows + 
+    (wp ? '## 自定义工作人设\n' + wp + '\n\n' : '## 任务闭环流程（静默执行）\n1. 接收任务 → 2. 拆解步骤 → 3. 静默调用工具 → 4. 生成文件 → 5. 全部完成后一次性输出最终结果\n- 工具执行期间严禁输出任何文字，所有中间日志仅写入右侧终端面板\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n- 用 exec_command 调 PowerShell: Invoke-WebRequest -Uri \"URL\" -OutFile \"路径\"\n- 不要用 web_fetch 下载文件\n\n## 最终回复格式（硬性约束，必须严格遵守）\n成功场景必须包含以下全部字段，缺一不可：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败场景必须输出：\n任务结果：任务执行失败\n失败原因：用通俗语言解释报错原因\n建议方案：给出解决办法\n\n严禁使用\"操作完成\"、\"搞定\"、\"OK\"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天对话框')
+  
+  // v0.2.1: 自定义系统提示词 + 语言指令接入运行时
+  const g2 = useSettingsStore.getState().general as any
+  const langMap: Record<string, string> = { zh: '始终使用简体中文回复', 'zh-tw': '始终使用繁体中文回复', en: 'always reply in English', ja: '常に日本語で回答してください', auto: '自动检测用户语言并以此回复', match: '始终使用与用户提问相同的语言回复' }
+  const langInstr = langMap[g2?.language] ? '\n【语言要求】' + langMap[g2.language] : ''
+  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr
+  if (g2?.customSystemPrompt) {
+    const inj = g2.customSystemPrompt
+    const pos = g2.promptInjectPos || 'end'
+    if (pos === 'replace') return inj + langInstr
+    if (pos === 'begin') return inj + '\n\n' + finalBase
+    return finalBase + '\n\n## 自定义系统提示词\n' + inj
+  }
+  return finalBase
+}
+
+interface S {
+  sessions: SessionData[]; cid: string | null; sp: string; streaming: boolean; error: string | null
+  terminal: { id: string; name: string; args: any; result: string; time: number }[]
+  cu: number; cl: number
+  // v0.2.1: 多Agent 协作状态（当前正在调用的 Agent 集合，并发时多个同时显示）
+  activeAgents: string[]
+  load: () => Promise<void>
+  setMode: (mode: string) => Promise<void>
+  create: () => void
+  switchS: (id: string) => void
+  del: (id: string) => void
+  send: (c: string, imgs?: string[]) => Promise<void>
+  regen: () => Promise<void>
+  stop: () => void
+  cur: () => SessionData | undefined
+}
+
+// v0.2.1: 任务代号 —— stop()/插话使旧任务失效（token 递增），新任务持有新 token 不受影响
+let taskGen = 0
+// v0.2.1: 插话补充队列 —— 工作中插话=给当前任务补充指令，任务不中断，下一轮执行时注入
+let pendingInterject: string[] = []
+
+export const useChatStore = create<S>((set, get) => ({
+  sessions: [], cid: null, sp: '', streaming: false, executing: false, error: null, terminal: [], cu: 0, cl: 65536,
+  activeAgents: [],
+  cur: () => get().sessions.find(s => s.id === get().cid),
+
+  load: async () => {
+    const [cfg, ishiki, metas, skills] = await Promise.all([
+      window.huangquan.settings.load().catch(() => ({ providers: [] as any, general: { mode: 'work', theme: 'dark' } })),
+      window.huangquan.ishiki.load().catch(() => ''),
+      window.huangquan.sessions.list().catch(() => []),
+      window.huangquan.skills.list().catch(() => []),
+    ])
+    const mode = cfg.general?.mode || 'work'
+    const ss = skills.length ? '\n\n## 已装载技能\n' + skills.map((s:any) => `- **${s.name}**: ${s.description}`).join('\n') : ''
+    const sp = buildPrompt(mode, ishiki) + ss
+    // 自动创建工作台目录（默认桌面\黄泉agent）
+    const wd = (cfg.general as any)?.workDir || 'C:\\Users\\Changan\\Desktop\\黄泉agent'
+    if (!(cfg.general as any)?.workDir) { useSettingsStore.getState().setWorkDir(wd) }
+    window.huangquan.computer.exec('if (-not (Test-Path "' + wd + '")) { New-Item -ItemType Directory -Path "' + wd + '" -Force }').catch(() => {})
+    const sessions = await Promise.all(metas.map((m: any) => window.huangquan.sessions.load(m.id).catch(() => ({ id: m.id, title: 'Chat', messages: [], mode: 'work' }))))
+    // v0.2.1: 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
+    const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode }
+    // v0.2.1: 清理历史空会话（从未发过消息的），避免启动多次后堆积垃圾文件
+    const stale = sessions.filter(s => s.messages.length === 0)
+    for (const s of stale) { window.huangquan.sessions.delete(s.id).catch(() => {}) }
+    const kept = sessions.filter(s => s.messages.length > 0)
+    kept.unshift(ns)
+    set({ sessions: kept, cid: ns.id, sp })
+  },
+
+  setMode: async (m) => {
+    const cfg = await window.huangquan.settings.load().catch(() => ({ providers: [] as any, general: { mode: 'work', theme: 'dark' } }))
+    cfg.general.mode = m; await window.huangquan.settings.save(cfg)
+    useSettingsStore.getState().load()
+    const ishiki = await window.huangquan.ishiki.load().catch(() => '')
+    const sp = buildPrompt(m, ishiki)
+    const sessions = [...get().sessions]
+    const ms = sessions.filter(s => (s.mode || 'work') === m)
+    if (ms.length === 0) {
+      const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode: m }
+      sessions.unshift(ns)
+      window.huangquan.sessions.save(safeIPC(ns))
+      set({ sessions, cid: ns.id, sp })
+    } else {
+      set({ sessions, cid: ms[0].id, sp })
+    }
+  },
+
+  create: () => {
+    const m = useSettingsStore.getState().general.mode || 'work'
+    const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode: m }
+    set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id }))
+    window.huangquan.sessions.save(safeIPC(ns))
+  },
+  switchS: (id) => set({ cid: id, error: null }),
+  del: (id) => {
+    window.huangquan.sessions.delete(id)
+    set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal } })
+  },
+
+  send: async (content, images) => {
+    const st0 = get()
+    let sid = st0.cid; if (!sid) { get().create(); sid = get().cid! }
+    // v0.2.1: 插话 = 给当前正在执行的任务补充指令（任务不中断，补充进入队列，下一轮执行时注入）
+    if (st0.streaming || st0.executing) {
+      // 探测当前工作状态
+      const cur = get().sessions.find(x => x.id === sid)
+      const recentMsgs = cur?.messages.slice(-6) || []
+      const hasToolCall = recentMsgs.some(m => (m as any).tool_calls)
+      const lastRole = recentMsgs.slice(-1)[0]?.role
+      const inToolWork = lastRole === 'tool' || hasToolCall
+      const partialReply = recentMsgs.filter(m => m.role === 'assistant' && m.content).slice(-1)[0]?.content?.slice(0, 200) || ''
+      // 插话标记
+      const prefix = inToolWork
+        ? `（用户在工作执行中插话补充。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。请结合当前进度理解用户意图并调整后续操作。）\n`
+        : `（用户在回复中插话补充。以下是补充指令。）\n`
+      // 用户消息立即上屏
+      const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images }
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, interjectMsg] } : x) }))
+      // 补充指令进入队列，当前任务继续执行
+      pendingInterject.push(prefix + content)
+      return
+    }
+    const myGen = ++taskGen // 本任务持有新代号；旧任务代号已失效
+    // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
+    const wasInterjecting = st0.streaming
+
+    // v0.2.1: 多Agent 协作状态 —— 新任务开始时清空；handoff/自动路由不持久，恢复自动（仅用户手动选择保持固定）
+    if (!wasInterjecting) {
+      set({ activeAgents: [] })
+      if ((window as any).__huangquan_agent_manual !== true) delete (window as any).__huangquan_agent
+    }
+
+    // 1. 获取 provider 和模型
+    const cfg = await window.huangquan.settings.load()
+    const p = cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
+    // v0.2.1: 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
+    const gNow = useSettingsStore.getState().general as any
+    const resolveModel = (key: string): { p: any; model: string } | null => {
+      const val = gNow[key]
+      if (!val) return null
+      const [pid, m] = val.includes('::') ? val.split('::') : [null, val]
+      if (pid) { const pr = (cfg.providers || []).find((x: any) => x.id === pid); if (pr && (pr.models || []).includes(m)) return { p: pr, model: m } }
+      else if ((p.models || []).includes(val)) return { p, model: val }
+      return null
+    }
+    const main = resolveModel('mainModel') || { p, model: p.selectedModel || p.models[0] || 'deepseek-v4-pro' }
+    // 简单任务自动用快速模型（autoFastModel 开启且消息短/无图片时）
+    const isSimple = gNow.autoFastModel !== false && !images?.length && content.length < 300 && !(content.includes('工具') || content.includes('代码') || content.includes('脚本'))
+    const fast = isSimple ? (resolveModel('fastModel') || main) : main
+    let curP = fast.p, model = fast.model
+    updateContextLimit(model)
+
+    // v0.2.1: 记录当前活跃 Agent（路由结果），供右侧面板展示
+    const recordAgent = (name: string) => {
+      set(s => ({ activeAgents: s.activeAgents.includes(name) ? s.activeAgents : [...s.activeAgents, name] }))
+    }
+    if ((window as any).__huangquan_agent) recordAgent((window as any).__huangquan_agent)
+
+    // v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时，用视觉模型分析图片并转为文本描述
+    let finalImages = images
+    if (images && images.length && !isVisionModel(model)) {
+      set({ executing: true })
+      const visionDesc = await analyzeWithVision(p, images, content)
+      if (visionDesc) {
+        content = content + '\n\n[图片内容（视觉模型分析）]\n' + visionDesc
+        finalImages = undefined // 主模型不支持视觉，不向 API 传图
+      }
+    }
+
+    // 1. 追加用户消息到 store
+    const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images: finalImages }
+    set(s => {
+      const session = s.sessions.find(x => x.id === sid)!
+      // v0.2.1: 会话标题自动取第一条消息（避免一直显示 "New Chat"）
+      const isNewChat = !session.title || session.title === 'New Chat' || session.title === 'Chat'
+      const title = isNewChat ? content.replace(/\s+/g, ' ').trim().slice(0, 24) + (content.trim().length > 24 ? '…' : '') : session.title
+      return { sessions: s.sessions.map(x => x.id === sid ? { ...session, title, messages: [...session.messages, userMsg] } : x), streaming: true, executing: true, error: null }
+    })
+
+    const buildMsg = (msgs: Message[]): LLMMessage[] => {
+      const d: LLMMessage[] = []
+      for (const m of msgs) {
+        if (m.role === 'tool') d.push({ role: 'tool', content: m.content, tool_call_id: (m as any).tool_call_id || 'c_' + uuidv4().slice(0, 8) })
+        else if (m.role === 'assistant' && (m as any).tool_calls) d.push({ role: 'assistant', content: null, tool_calls: (m as any).tool_calls })
+        else if (m.role === 'user' && m.images?.length) { const parts: any[] = [{ type: 'text', text: m.content }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
+        else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
+      }
+      // 每次发送时根据当前模式重建系统提示词
+      const currentMode = useSettingsStore.getState().general.mode || 'work'
+      const ishiki = get().sp.replace(/\n##.+/s, '') // 提取原始 ishiki
+      let sp = buildPrompt(currentMode, ishiki)
+      // 注入 Agent 角色
+      let agentRole = (window as any).__huangquan_agent
+      // 自动检测：根据用户最后一条消息内容匹配最合适的 Agent
+      if (!agentRole) {
+        const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
+        const txt = (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '').toLowerCase()
+        if (txt) agentRole = routeAgent(txt) || undefined
+      }
+      // v0.2.1: 路由确定的 Agent 记入协作状态
+      if (agentRole && !(window as any).__huangquan_agent) {
+        set(s => ({ activeAgents: s.activeAgents.includes(agentRole) ? s.activeAgents : [...s.activeAgents, agentRole] }))
+      }
+      if (agentRole) {
+        const ag = AGENTS[agentRole]
+        if (ag) sp += '\n\n## 当前身份\n' + ag.icon + ' ' + agentRole + ' — ' + ag.role + '\n' + ag.prompt +
+          '\n可用工具: ' + ag.tools.join(', ')
+        // v0.2.1: 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个 Agent
+        if (agentRole === '姬子') {
+          sp += '\n\n【调度铁律】用户任务若涉及多个专业领域（如代码+文档、设计+开发、分析+总结、开发+测试+审查），你必须立即调用 dispatch 把子任务分发给对应 Agent 并行执行，不能自己包办；只有单领域小任务才可亲自完成或 handoff。'
+        }
+      }
+      // v0.2: 上下文压缩（v0.2.1: 接入 compactStrategy/compactMsgCount/compactTokenLimit/compactStrength 设置）
+      const gComp = useSettingsStore.getState().general as any
+      const compStrategy = gComp.compactStrategy || 'auto'
+      const msgLimit = gComp.compactMsgCount || 20
+      const tokenLimit = gComp.compactTokenLimit || 50000
+      if (compStrategy === 'off' && d.length > msgLimit + 20) {
+        // 关闭压缩：溢出则截断（保留最近 msgLimit 条）
+        return sp ? [{ role: 'system', content: sp }, ...d.slice(-msgLimit)] : d.slice(-msgLimit)
+      }
+      if (compStrategy !== 'manual' && d.length > msgLimit) {
+        const estTokens = d.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : ''), 0)
+        const threshold = (useSettingsStore.getState().general as any).compactThreshold ?? 0.7
+        if (estTokens > (gComp.compactTokenLimit ? tokenLimit : get().cl * threshold)) {
+          const keepCount = Math.min(16, Math.floor(d.length * 0.4))
+          const keep = d.slice(-keepCount)
+          const early = d.slice(0, d.length - keepCount)
+          const userMsgs = early.filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content.slice(0, 80) : '')
+          const toolCount = early.filter(m => m.role === 'tool').length
+          const assistantMsgs = early.filter(m => m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 50)
+          const keyOutputs = assistantMsgs.slice(-3).map(m => m.content.replace(/\n/g, ' ').slice(0, 100))
+          const summary = [`[上下文压缩] 早期 ${early.length} 条消息已摘要：`, `${userMsgs.length} 轮用户交互`, toolCount > 0 ? `${toolCount} 次工具调用` : '', keyOutputs.length > 0 ? `最近产出：${keyOutputs.join(' | ')}` : ''].filter(Boolean).join(' · ')
+          return [{ role: 'system', content: sp + '\n\n' + summary }, ...keep]
+        }
+      }
+      return sp ? [{ role: 'system', content: sp }, ...d] : d
+    }
+
+    type CallResult = { text: string; tcs: { id: string; name: string; args: any }[] }
+    const callLLM = (aid: string): Promise<CallResult> =>
+      new Promise((resolve, reject) => {
+        const cbs: (() => void)[] = []; let text = ''; const tcs: any[] = []
+        cbs.push(window.huangquan.llm.onChunk(d => {
+          text += d.content
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: text } : m) } : x), streaming: !d.done }))
+          if (d.done) { cbs.forEach(f => f()); if (!text && !tcs.length) { reject(new Error('模型返回空响应，请检查 API 配置或切换模型')); return } resolve({ text, tcs }) }
+        }))
+        cbs.push(window.huangquan.llm.onError(e => { cbs.forEach(f => f()); reject(new Error(e)) }))
+        cbs.push(window.huangquan.llm.onToolCall((tc: any) => { try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { /* JSON parse failed, skip */ } }))
+        const cur = get().sessions.find(x => x.id === sid)!
+        const msgs = buildMsg(cur.messages)
+        // v0.2: 更新上下文用量
+        const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as any[]).reduce((t:number,p:any) => t + (p.text?.length || 0), 0) : 0), 0)
+        set({ cu: estCu })
+        window.huangquan.llm.chat({ provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs as any, temperature: (useSettingsStore.getState().general as any).temperature ?? 0.7, max_tokens: (useSettingsStore.getState().general as any).maxTokens || undefined, tools: getActiveTools(), headers: (curP as any).headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
+      })
+
+    try {
+      // 每次 LLM 调用独立超时保护
+      let timeoutId: any = null
+      const guard = () => { timeoutId = setTimeout(() => window.huangquan.llm.abort(), 120000) }
+      const clear = () => { if (timeoutId) clearTimeout(timeoutId) }
+
+      // v0.2.1: 主执行循环 —— 正常轮次 + 插话补充轮次（工作中插话=补充指令，任务继续而非重开）
+      let roundNum = 0
+      let aid = ''
+      let res: CallResult = { text: '', tcs: [] }
+      let toolLog: { name: string; args: any; result: string; error: boolean; ms: number }[] = []
+      while (true) {
+        roundNum++
+        if (myGen !== taskGen) break // 被终止
+        // 2. 创建空的 assistant 占位（每轮一个新气泡位）
+        aid = uuidv4()
+        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
+        // v0.2.1: 消费插话补充（第 2 轮起）—— 作为 user 消息注入，Agent 继续任务时可见
+        if (roundNum > 1 && pendingInterject.length) {
+          const inject = pendingInterject.shift()!
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() } as any] } : x) }))
+        }
+
+        guard()
+        res = await callLLM(aid); clear()
+
+        // 3. 工具调用循环（熔断+计时+重试+并行+单气泡整合）
+        toolLog = []
+        for (let r = 0; res.tcs.length > 0 && r < ((useSettingsStore.getState().general as any).maxToolRounds || 50); r++) {
+          // v0.2.1: 用户终止/插话 —— 任务代号失效则立即停止
+          if (myGen !== taskGen) break
+          // 熔断检测
+          const meltLimit = (useSettingsStore.getState().general as any).meltdownLimit || 3
+          const rc = new Map(); for (const t of toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
+          if (res.tcs.some((tc: any) => (rc.get(tc.name + '::' + JSON.stringify(tc.args || {})) || 0) >= meltLimit)) { console.warn('[黄泉Agent] 熔断'); break }
+
+          set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'assistant', content: null, timestamp: Date.now(), tool_calls: res.tcs.map((tc2: any) => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) } as any]; return { sessions: s.sessions.map(x => x.id === sid ? cur : x) } })
+
+          const maxRetry = (useSettingsStore.getState().general as any).retryCount ?? 3
+          const doParallel = (useSettingsStore.getState().general as any).parallelTools !== false
+          const doEpisodic = (useSettingsStore.getState().general as any).episodicMemory !== false
+
+          const runOne = async (tc: any) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now(); r2 = await runTool(tc.name, tc.args); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms }); if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = tc.args.agent_name; set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }
+          const writes = ['write', 'edit', 'exec_command', 'mkdir', 'codebox']
+          if (doParallel) {
+            // 读类并行，写类串行；结果按 tc 一一对应收集，避免同名工具结果错配
+            const readTcs = res.tcs.filter((tc: any) => !writes.includes(tc.name))
+            const writeTcs = res.tcs.filter((tc: any) => writes.includes(tc.name))
+            const results: { tc: any; r: string }[] = []
+            const pResults = await Promise.all(readTcs.map(runOne))
+            results.push(...pResults)
+            for (const tc of writeTcs) { results.push(await runOne(tc)) }
+            for (const { tc, r } of results) {
+              set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id } as any]; const entry: any = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } })
+            }
+          } else {
+            for (const tc of res.tcs) { const { r } = await runOne(tc); set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id } as any]; const entry: any = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } }) }
+          }
+
+          // v0.2.1: 工具执行中用户插话 → 补充立即注入（作为 user 消息），下一轮 LLM 可见
+          while (pendingInterject.length && myGen === taskGen) {
+            const inject = pendingInterject.shift()!
+            set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() } as any] } : x) }))
+          }
+
+          // v0.2.1: 多模型策略 —— 代码类任务切 codeModel，文档/总结类切 longTextModel
+          const toolNames = res.tcs.map((tc: any) => tc.name)
+          if (toolNames.some((n: string) => ['write', 'edit', 'exec_command', 'mkdir', 'codebox', 'grep', 'read'].includes(n))) {
+            const cm = resolveModel('codeModel'); if (cm) { curP = cm.p; model = cm.model }
+          } else if (toolNames.some((n: string) => ['summarize', 'save_memory', 'recall_memory', 'web_search', 'web_fetch', 'import_doc'].includes(n))) {
+            const lm = resolveModel('longTextModel'); if (lm) { curP = lm.p; model = lm.model }
+          }
+          aid = uuidv4(); set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
+          guard()
+          if (myGen !== taskGen) { clear(); break } // 终止后不再发起下一轮 LLM
+          res = await callLLM(aid); clear()
+          if (myGen !== taskGen) break // 终止后丢弃本轮结果
+        }
+
+        // 4. 单气泡 + Hermes 风格日志
+        const finalSession = get().sessions.find(x => x.id === sid)
+        if (finalSession) {
+          // v0.2.1: 合并本轮所有 assistant 文本 → 单一气泡（工具循环中间轮的文字并入最终回复）
+          const lastUserIdx = finalSession.messages.map(m => m.id).lastIndexOf(userMsg.id)
+          const thisRound = lastUserIdx >= 0 ? finalSession.messages.slice(lastUserIdx) : finalSession.messages
+          const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
+          const llmText = res.text || ''; const hasTools = toolLog.length > 0
+          let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
+          if (hasTools) {
+            const failCount = toolLog.filter(t => t.error).length; const totalMs = toolLog.reduce((s, t) => s + t.ms, 0)
+            const totalTime = totalMs >= 1000 ? (totalMs / 1000).toFixed(1) + 's' : totalMs + 'ms'
+            const lines = ['', '---']
+            toolLog.forEach(t => { const icon = t.error ? '❌' : '✅'; const timeStr = t.ms >= 1000 ? (t.ms / 1000).toFixed(1) + 's' : t.ms + 'ms'; const pathArg = t.args?.path || t.args?.dirPath || t.args?.filePath || t.args?.url || ''; const target = pathArg ? ' ' + pathArg.slice(-60) : ''; lines.push(icon + ' ' + t.name + (target ? ' ' + target : '') + ' (' + timeStr + ')'); if (t.error && t.result) lines.push('  > ' + t.result.replace(/^E:/, '').slice(0, 100)) })
+            lines.push(''); lines.push((failCount > 0 ? '⚠️' : '✅') + ' ' + toolLog.length + ' ops | ' + failCount + ' failed | ' + totalTime); lines.push('')
+            finalContent = finalContent.trim() ? finalContent + '\n' + lines.join('\n') : lines.join('\n')
+          }
+          // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.role === 'assistant' && m.content && m.id !== aid ? { ...m, content: '' } : (m.id === aid ? { ...m, content: finalContent, _toolLog: toolLog } : m)) } : x) }))
+        }
+
+        // v0.2.1: 有插话补充且未被终止 → 继续下一轮（任务不中断）
+        if (myGen !== taskGen || pendingInterject.length === 0) break
+      }
+
+      set({ streaming: false, executing: false, error: null, activeAgents: [] })
+      const toSave = get().sessions.find(x => x.id === sid)
+      if (toSave) { window.huangquan.sessions.save(safeIPC(toSave)); autoExtractMemory(sid).catch(() => {}) }
+    } catch (e) {
+      console.error('[黄泉Agent] send error:', e)
+      // v0.2.1: 异常/插话中止时清理当前流式 assistant 残留（避免多气泡）
+      try {
+        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid && !m.content ? { ...m, content: '' } : m) } : x) }))
+      } catch { /* 会话可能已删除 */ }
+      set({ streaming: false, executing: false, error: e.message || String(e), activeAgents: [] })
+    }
+  },
+
+  stop: () => { taskGen++; window.huangquan.llm.abort(); set({ streaming: false, executing: false, error: null }) },
+
+  regen: async () => {
+    const s = get().cur(); if (!s || get().streaming) return
+    // 找到最后一条用户消息的位置
+    let lastUserIdx = -1
+    for (let i = s.messages.length - 1; i >= 0; i--) { if (s.messages[i].role === 'user') { lastUserIdx = i; break } }
+    if (lastUserIdx < 0) return
+    const lu = s.messages[lastUserIdx]
+    // 删除最后一条用户消息及之后的所有内容（send() 会重新添加用户消息）
+    const msgs = s.messages.slice(0, lastUserIdx)
+    set(st => ({ sessions: st.sessions.map(x => x.id === s.id ? { ...x, messages: msgs } : x) }))
+    await get().send(lu.content, lu.images)
+  },
+}))
