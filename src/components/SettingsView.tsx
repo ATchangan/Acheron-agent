@@ -472,6 +472,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <Toggle checked={g.ttsEnabled !== false} onChange={v=>save({ttsEnabled:v})} label="启用语音合成 (TTS)" />
                 {/* v0.2.3: ASR 语音识别未实现引擎, 已移除 */}
               </div>
+            </div> : tab === 'persona' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>基础身份</div>
                 <div style={{ display: 'flex', gap: 16, marginBottom: 14, alignItems: 'center' }}>
