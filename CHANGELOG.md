@@ -26,7 +26,7 @@
 ### 性能
 - 时间戳置于 prompt 绝对末尾(缓存前缀稳定)
 
-### 安装包修复 (0.2.3.1)
+### 安装包修复 (0.2.3)
 - 修复安装版启动崩溃:skillsDir 移至 userData(原指向 app.asar 内目录,mkdir 抛 ENOTDIR 导致主窗口不创建、应用"打不开")
 - 修复 exe/快捷方式图标为默认 Electron 图标:移除 signAndEditExecutable:false(该配置会跳过全部 exe 资源编辑)+ 提供多尺寸 icon.ico
 # 黄泉Agent 完整交付报告

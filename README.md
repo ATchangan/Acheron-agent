@@ -198,7 +198,7 @@ npm run package:win   # 打包为 NSIS 安装包
 - 时间戳置于 prompt 绝对末尾，缓存前缀稳定
 - 崩溃日志异步追加；清理主进程双 Agent 体系与 planner/workflow 死代码（6 文件）
 
-**安装包修复（0.2.3.1）**
+**安装包修复（0.2.3）**
 - 修复安装版启动崩溃：skillsDir 移至 userData（原指向 app.asar 内目录，mkdir 抛 ENOTDIR 导致主窗口不创建）
 - 修复 exe/快捷方式图标：移除 signAndEditExecutable:false（会跳过 exe 资源编辑）+ 多尺寸 icon.ico
 
