@@ -1,174 +1,131 @@
-﻿# ⚔️ 黄泉Agent · Acheron-agent
+# 黄泉Agent · Acheron-agent
 
 > 「即便万事终归于虚无，有些事，即便没有意义，也依然值得去做。」
 
-有人格、有记忆、能自主行动的 Windows 桌面 AI 助手。Electron 32 + React 18 + TypeScript + Vite 5 + Zustand。
+一个以《崩坏：星穹铁道》角色「黄泉」为原型的 Windows 桌面 AI 助手。它不只是一个聊天窗口：能读写文件、执行命令、搜索网页、定时干活，还能调度一支由星穹铁道角色组成的 Agent 小队并行协作。技术栈是 Electron 32 + React 18 + TypeScript + Vite 5 + Zustand。
+
+和它对话不是问答，是交付。复杂任务会被拆成看得见的执行计划，Agent 各干各的，工具调用的过程在界面上实时可见。
 
 ---
 
-## 🎭 这是什么
+## 主要功能
 
-黄泉Agent 是一个以《崩坏：星穹铁道》角色「黄泉」为灵魂的桌面 AI 助手。它不是简单的聊天壳，而是一套完整的 Agent 系统：能操作你的电脑、读写文件、执行命令、搜索网页、定时自主工作，还能调度一支「星穹列车」专业 Agent 编队并行协作。
+### 星穹列车 Agent 编队
 
-**和黄泉的对话不是问答，是交付**：复杂任务自动拆解为可见执行计划，专业 Agent 各司其职，工具调用过程实时可视化。
+内置 7 个 Agent，都有完整工具权限，支持交接（handoff）和并行分发（dispatch）：
 
----
+- 姬子：主控调度，负责任务分解、分发和汇总
+- 三月七：文档处理，分析、报告、翻译
+- 银狼：安全与代码审查，查漏洞、盯风险
+- 艾丝妲：任务调度与自动化，定时任务、监控、脚本
+- 知更鸟：情感陪伴与日常闲聊
+- 黑天鹅：视觉与设计，看图、配色、截图
+- 螺丝咕姆：全栈开发，代码、项目、架构
 
-## ✨ 核心能力
+姬子可以调用 `dispatch` 把子任务分给多个 Agent 并行执行，或者用 `handoff` 交接上下文。复杂任务一次对话里就能完成多 Agent 接力。
 
-### 🚂 星穹列车 Agent 编队
+### 40+ 内置工具
 
-7 个 Agent，全部拥有全工具权限，可交接（handoff）与并行分发（dispatch）：
+- 文件：read（分段读取，支持 >5MB 续读）、write、edit、mkdir、grep、find、ls
+- 系统：exec_command（自动识别 PowerShell/cmd）、system_info、process_list、kill_process
+- 网络：web_search、web_fetch、browse（无头浏览器取全文）、browse_screenshot、web_read（系统 Edge 解析网页）
+- 界面：screenshot、clipboard_read/write
+- 多媒体：TTS 语音朗读（Windows 自带语音，离线可用）、read_image（自动压缩）
+- 记忆：save_memory（可置顶跨 Agent 保留）、recall_memory（向量语义检索）、import_doc
+- 沙箱：codebox（跑 Python/Node 代码）
+- 定时：schedule_task、list_schedules
+- MCP：mcp_connect（stdio）、mcp_call、mcp:sse（SSE 传输，跟随系统代理）
+- Agent：handoff、dispatch、list_agents
+- 工作流：list_workflows、run_workflow（6 个内置模板）
+- 其他：show_card、bridge_notify、audit_log、watch_file、save_goal/list_goals、set_workdir、set_theme
 
-| Agent | 职责 | 风格 |
-|-------|------|------|
-| ☕ 姬子 | 主控调度：任务分解、并行分发、结果汇总 | 沉稳干练 |
-| 📸 三月七 | 文档处理：分析、报告、审核、翻译 | 活泼细致 |
-| 🐺 银狼 | 安全与代码审查：漏洞扫描、风险预警 | 一针见血 |
-| 📡 艾丝妲 | 任务调度与自动化：定时、监控、脚本 | 高效有序 |
-| 🕊️ 知更鸟 | 情感陪伴与日常：闲聊、支持、建议 | 温柔治愈 |
-| 🦢 黑天鹅 | 视觉与设计：图片理解、UI、配色、截图 | 优雅敏锐 |
-| 🤖 螺丝咕姆 | 全栈开发：代码、项目、架构、自动化 | 逻辑缜密 |
+工具可以单独开关，有 LRU+TTL 缓存（读操作 30 秒、搜索 120 秒，写操作自动失效），每个工具还有独立的权限设置（deny / ask / full），不用一刀切。
 
-姬子作为主控可调用 `dispatch` 把子任务并行分发给多个 Agent 独立执行，或用 `handoff` 交接上下文——复杂任务一次对话内多 Agent 接力完成。
+### 记忆与上下文
 
-### 🛠️ 40+ 内置工具
+- 语义记忆：TF-IDF 向量化 + 余弦相似度检索，按重要度评分、每日衰减、有 Token 预算和自动遗忘上限（500 条）。v0.2.4 起嵌入引擎可配置，中文用 bigram 分词，检索更准
+- 上下文管理：中英混合 Token 估算，压力大时自动分层压缩（截断 → 摘要 → 激进压缩），自动适配不同模型的窗口大小（deepseek 1M / claude 200K / qwen 262K 等）
 
-| 类别 | 工具 |
-|------|------|
-| 📁 文件 | read（分段+UTF-8安全，>5MB 续读）、write、edit、mkdir、grep、find、ls |
-| 💻 系统 | exec_command（智能 PowerShell/cmd 检测）、system_info、process_list、kill_process |
-| 🌐 网络 | web_search、web_fetch、browse（无头浏览器取全文）、browse_screenshot、web_read（系统 Edge 网页解析） |
-| 🖥️ 界面 | screenshot、clipboard_read/write |
-| 🔊 多媒体 | TTS 语音朗读（Windows SAPI，离线可用）、read_image（≤1280px 自动压缩） |
-| 🧠 记忆 | save_memory（可 pinned 跨 Agent 永久）、recall_memory（向量语义检索）、import_doc |
-| ⚙️ 沙箱 | codebox（Python/Node 代码运行） |
-| ⏰ 定时 | schedule_task（every 30m / at 09:00）、list_schedules |
-| 🧩 MCP | mcp_connect（stdio）、mcp_call、mcp:sse（SSE 传输，跟随系统代理） |
-| 🤝 Agent | handoff、dispatch、list_agents |
-| 📋 工作流 | list_workflows、run_workflow（6 个内置模板） |
-| 🎴 增强 | show_card（交互卡片）、bridge_notify（桌面通知）、workflow（JS 编排）、audit_log（审计）、watch_file（文件监控）、save_goal/list_goals（长期目标）、set_workdir、set_theme |
+### 安全
 
-工具支持**开关控制**（设置里禁用）、**LRU+TTL 缓存**（读操作 30s / 搜索 120s，写操作自动失效）、**每工具权限表**（deny / ask / full 实时生效）。
+- API Key、自定义 Headers、网页 Cookie 全部用 Windows DPAPI 加密落盘，不存明文
+- L0-L4 风险分级：读文件 L0，普通写入 L1，终端命令 L2，系统路径写入 L3，删除和危险命令（rm -rf、format、shutdown 等黑名单）L4
+- 文件权限四档：full / sandbox（限工作目录）/ readonly / ask
+- 命令执行走 spawn + 白名单，会话 ID 白名单防路径穿越，Markdown 渲染全量转义防 XSS
 
-### 📋 Plan-Execute-Verify 执行循环
+### 其他
 
-规划 → 分步执行 → 验证修正。依赖管理、失败自动重试、可并行标记，计划可视化——黄泉的思考过程不是黑箱。
-
-### 🧠 语义记忆系统
-
-TF-IDF 向量化 + 余弦相似度检索 + 重要性评分 + 每日衰减 + Token 预算（5000）+ 自动遗忘（最多 500 条）。支持 pinned 记忆跨 Agent 永久保留。
-
-### 🧠 上下文智能管理
-
-中英混合 Token 估算，按压力自动分层压缩：light（工具结果截断）/ medium（50% 摘要）/ heavy（保留 8 条 + 滚动摘要），自动适配模型上下文窗口（deepseek 1M / claude 200K / qwen 262K / gpt-4o 131K 等）。
-
-### 🔒 安全体系
-
-- **API Key 加密落盘**：apiKey / customHeaders / webReadCookies 经 Windows DPAPI（safeStorage）加密存储，不存明文
-- **L0-L4 风险分级**：读 L0 / 普通写 L1 / 终端命令 L2 / 系统路径写 L3 / 删除与危险命令（rm -rf、format、shutdown 等黑名单）L4
-- **文件权限四档**：full / sandbox（仅工作目录）/ readonly / ask
-- **注入与穿越防护**：命令执行走 spawn + 白名单校验、会话 id 白名单防路径穿越、sandbox 路径规范化
-- **XSS 防护**：技能预览 Markdown 全量转义 + 协议白名单
-
-### 🌐 独立浏览器窗口
-
-无头浏览器常驻，agent 浏览时页面保持打开，前端可实时截图查看；独立窗口 + 使用中悬浮窗，浏览过程全程可见可控。
-
-### 🔌 MCP & Skills & 插件
-
-- **MCP**：stdio + SSE 双传输，连接本地/远程 MCP 服务器发现并调用工具
-- **Skills**：内置 code-review / data-analysis / project-manager / writing-assistant，支持 git clone 安装、创建、删除
-- **插件（式神录）**：manifest.json 声明式注册，目录扫描自动加载
-
-### 🎨 深度个性化
-
-- **6 套主题**：暗色科技 / 浅色温润 / 深黑极简 / 森林 / 高对比 / 自定义配色
-- **皮肤系统**：任意背景图，自动提取主色调融入 UI 强调色
-- 窗口透明度、动画开关、字体大小、消息间距、聊天宽度
-- **双人设**：聊天模式 = 黄泉官方精细人设（崩铁完整背景/台词/感官损伤设定），工作模式 = 高效执行人设，可自由编辑
-
-### ⚡ 性能与稳定
-
-- GPU 渲染加速自动识别（auto / gpu / cpu），流式渲染 40ms 节流
-- 会话保存异步写盘；会话元数据缓存
-- 全局崩溃捕获 + crash.log + 渲染进程崩溃自动恢复
-- 单实例锁，防止多实例并行干扰
+- 独立浏览器窗口 + 悬浮提示，agent 浏览网页时你可以实时看到它在看什么
+- 6 套主题 + 皮肤系统（背景图自动提取主色调），窗口透明度、动画、字号都可调
+- 聊天/工作双模式，两种人设（黄泉完整人设 / 高效执行人设）都可以自己编辑
+- 自动更新：启动时检查 GitHub Releases，有新版本会提示（v0.2.4 新增）
+- GPU 渲染自动识别（auto/gpu/cpu），流式渲染 40ms 节流，会话异步写盘
 
 ---
 
-## 🏗️ 架构
+## 项目结构
 
 ```
 Acheron-agent/
 ├── electron/                  # Electron 主进程
-│   ├── main.ts                # 窗口/托盘/IPC/LLM流式/浏览器自动化/沙箱/崩溃捕获/DPAPI 加密
-│   ├── preload.ts             # contextBridge 安全桥（IPC 参数清洗）
-│   ├── webtools.ts            # 网页解析工具（playwright-core + 系统 Edge）
-│   ├── mcp/                   # MCP 客户端（stdio + SSE）
-│   ├── memory/vector.ts       # TF-IDF 语义记忆（衰减/遗忘/预算）
-│   ├── scheduler/cron.ts      # 定时任务（every Xm / at HH:MM，防漂移）
-│   ├── security/permission.ts # L0-L4 风险分级 + 危险命令黑名单
-│   ├── cache/                 # 工具结果 LRU+TTL 缓存 + 模型缓存统计
-│   └── plugins/loader.ts      # 式神录插件加载器
+│   ├── main.ts                # 窗口/托盘/IPC/LLM流式/浏览器自动化/DPAPI 加密/崩溃处理
+│   ├── preload.ts             # contextBridge 安全桥
+│   ├── webtools.ts            # 网页解析(playwright-core + 系统 Edge)
+│   ├── mcp/                   # MCP 客户端(stdio + SSE)
+│   ├── memory/vector.ts       # 语义记忆(向量检索/衰减/预算)
+│   ├── scheduler/cron.ts      # 定时任务
+│   ├── security/permission.ts # L0-L4 风险分级
+│   ├── cache/                 # 工具结果缓存 + 模型缓存统计
+│   └── plugins/loader.ts      # 插件加载
 ├── src/                       # React 渲染进程
-│   ├── store/
-│   │   ├── chat.ts            # 40+ 工具实现 + Agent 编队 + 权限检查 + 思考气泡
-│   │   └── settings.ts        # 双人设 + 主题/皮肤/多媒体供应商 + 防抖保存
-│   ├── components/
-│   │   ├── ChatView.tsx       # 对话/工作双模式
-│   │   ├── Sidebar.tsx        # 导航 + 会话管理
-│   │   ├── RightPanel.tsx     # 工具调用终端 + 系统状态 + 记忆计数
-│   │   ├── FileTree.tsx       # 工作目录文件浏览器
-│   │   ├── BrowserView.tsx    # 独立浏览器窗口
-│   │   ├── FloatBadge.tsx     # 使用中悬浮窗
-│   │   ├── SettingsView.tsx   # 多标签设置（供应商/策略/角色/记忆/协作/工具/多媒体/MCP/技能/外观/引擎）
-│   │   ├── AgentsView.tsx     # Agent 编队面板
-│   │   └── MemoryView.tsx     # 记忆管理
-│   └── styles/                # 多套主题 + UI 抛光
-└── resources/
-    ├── skills/                # 4 组内置技能
-    └── ishiki.md              # 黄泉人格定义
+│   ├── store/chat.ts          # 工具实现 + Agent 编队 + 权限检查
+│   ├── store/settings.ts      # 人设/主题/供应商设置
+│   └── components/            # 聊天/设置/文件树/浏览器/悬浮窗等界面
+├── resources/
+│   ├── skills/                # 4 组内置技能
+│   └── ishiki.md              # 黄泉人格定义
+└── .github/workflows/         # CI 自动构建(推 tag 自动出安装包)
 ```
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
-### 下载安装
+### 安装
 
-从 [Releases](https://github.com/ATchangan/Acheron-agent/releases) 下载 `Acheron-agent-x.x.x.exe`，双击安装（NSIS 安装包，可选安装目录、创建桌面快捷方式）。
+从 [Releases](https://github.com/ATchangan/Acheron-agent/releases) 下载 `Acheron-agent-x.x.x.exe`，双击安装（NSIS 安装包，可选安装目录、创建桌面快捷方式）。也支持覆盖安装升级，旧数据不会丢。
 
 ### 首次配置
 
-1. 打开 **设置 → 供应商**，选择/添加 LLM Provider（DeepSeek / OpenAI / 自定义 OpenAI Compatible / 本地 Ollama）
-2. 填写 API Key 与 Base URL（本地服务可留空）—— **API Key 经系统级 DPAPI 加密保存，不会明文落盘**
-3. **策略** 标签可配置模型分工：主对话 / 长文本 / 代码 / 快速响应 / 视觉辅助，或保持自动
-4. 开始对话——默认聊天人设即「黄泉」
+1. 打开「设置 → 供应商」，添加 LLM 服务商（DeepSeek / OpenAI / OpenAI Compatible / 本地 Ollama 等）
+2. 填 API Key 和 Base URL。Key 会用系统级 DPAPI 加密保存，不会明文写在磁盘上
+3. 「策略」页可以指定不同任务用哪个模型（主对话 / 长文本 / 代码 / 快速响应 / 视觉），不配就全自动
+4. 直接开始聊。默认就是黄泉人设
 
-> 💡 安装后为全新空白配置，所有 API Key / 供应商 / 人设设置均需重新填写；旧版数据在 `%APPDATA%\huangquan-agent`，可用设置导出/导入迁移。
+安装后是全新空白配置，所有 API Key、供应商、人设都要自己填。你的数据只存在本机（`%APPDATA%\huangquan-agent`），安装包和仓库里都没有任何人的私密信息。
 
 ### 从源码构建
 
 ```bash
 npm install
-npm run build         # 构建
-npm run package:win   # 打包为 NSIS 安装包
+npm run build         # 构建渲染层 + 主进程
+npm run package:win   # 打包 NSIS 安装包
 ```
 
 ---
 
-## 🛡️ 安全与隐私
+## 更新日志
 
-- API Key / customHeaders / webReadCookies 经 **Windows DPAPI（safeStorage）加密** 后落盘，仅本机当前用户可解密
-- 本地优先：对话、记忆、设置全部在本机，不上传任何数据
-- 工具调用经 L0-L4 风险分级 + 文件权限四档 + 每工具权限表三重控制
-- 命令执行走 spawn + 白名单，防注入；会话 id 白名单防路径穿越
-- 设置支持导出/导入 JSON 备份
+### v0.2.4 (2026-08-03)
 
----
-
-## 📝 更新日志
+- RAG embedding 升级：嵌入引擎可配置，TF-IDF 退役
+- 中文 bigram 向量分词，语义检索更准
+- 情景记忆写盘防抖，memory 异步写入
+- 自动更新：启动时检查 GitHub Releases 新版本并提示
+- 设置页新增「关于」章节（版本信息、软件更新独立 tab）
+- 新增 CI 构建工作流（.github/workflows/build.yml，推 tag 自动打包发布）
+- 危险命令拦截增强、skills 路径白名单
+- 历史截断保留摘要、插话队列会话归属、Promise 错误不再刷屏
 
 ### v0.2.3 (2026-08-02)
 
@@ -281,7 +238,7 @@ npm run package:win   # 打包为 NSIS 安装包
 
 ---
 
-## 📄 人格原型
+## 人格原型
 
 人格定义取材于《崩坏：星穹铁道》角色「黄泉」（Acheron / 雷电·忘川守·芽衣）。出云国最后的幸存者，背负终极诏刀「忘川」的巡海游侠，主动踏入虚无的自灭者——世界于她只剩黑白灰，红色是唯一能清晰辨识的色彩，是记忆、是故人、也是她存在于此的证明。
 
@@ -289,6 +246,6 @@ npm run package:win   # 打包为 NSIS 安装包
 
 ---
 
-## 📜 许可
+## 许可
 
 Apache-2.0
