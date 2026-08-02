@@ -264,10 +264,18 @@ function routeAgent(userMessage: string): string | null {
   const collabMode = (useSettingsStore.getState().general as any).collabMode || '自动'
   if (collabMode === '关闭') return null
   if (collabMode === '手动') return null // 手动模式下由用户显式指定，不自动路由
+  // v0.2.3: 多领域检测 —— 命中 2+ 个不同领域 → 交姬子主控调度(触发 dispatch 强制分发, 无需用户明说)
+  let hitDomains = 0
+  for (const [name, re] of Object.entries(DOMAIN_RE)) {
+    if (re.test(t) && !disabled.includes(name)) hitDomains++
+  }
+  if (hitDomains >= 2 && !disabled.includes('姬子')) return '姬子'
   for (const [name, re] of Object.entries(DOMAIN_RE)) {
     if (re.test(t)) return disabled.includes(name) ? null : name
   }
-  // 姬子：架构/系统/复杂任务 + 默认兜底
+  // v0.2.3: 简单任务判定 —— 无任何领域命中且消息很短(闲聊/简单问答/单步指令) → 不路由, 主 Agent 直接完成
+  if (t.trim().length < 30) return null
+  // 姬子：架构/系统/复杂任务 + 默认兜底(长消息无领域命中视为复杂任务)
   return disabled.includes('姬子') ? null : '姬子'
 }
 
@@ -359,6 +367,11 @@ function getActiveTools(): any[] {
   const raw = (useSettingsStore.getState().general as any).disabledTools
   // v0.2.3-fix(P4-2): 未显式配置时默认禁用高风险 workflow 工具(LLM 输出直接执行 JS, 已限 8KB+严格模式, 仍需人工开启)
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
+  // v0.2.3: 协作模式=关闭 时彻底禁用多 Agent 协作工具(handoff/dispatch/list_agents)
+  const collabMode = String((useSettingsStore.getState().general as any).collabMode || '自动')
+  if (collabMode === '关闭') {
+    return TOOLS.filter(t => !disabled.includes(t.function.name) && !['handoff', 'dispatch', 'list_agents'].includes(t.function.name))
+  }
   if (disabled.length === 0) return TOOLS
   return TOOLS.filter(t => !disabled.includes(t.function.name))
 }
@@ -399,8 +412,6 @@ async function runTool(name: string, a: any): Promise<string> {
           return { sessCache: sess, modelCache: modelPart }
         })
       }
-      // v0.2.6: 持久化埋点(主进程按模型统计, 重启保留) —— 仅数据记录, 不干预缓存读写
-      if (mdl) { try { window.huangquan.modelStats?.record(mdl, !!cached) } catch { /* 忽略 */ } }
     }
     if (cached) return cached + ' [cache]'
     if (['write','edit','mkdir','exec_command'].includes(name)) onWriteOp()
@@ -474,10 +485,10 @@ async function runTool(name: string, a: any): Promise<string> {
       case 'list_schedules': { const items = await window.huangquan.cron.list(); return items.length ? (items as any[]).map((j:any,i:number) => (i+1) + '. [' + (j.enabled?'on':'off') + '] ' + j.expression + ' - ' + j.prompt).join(' | ') : '(empty)' }
       case 'mcp_connect': { if (!a.name||!a.command) return 'E:need name+command'; const r = await window.huangquan.mcpConnect(a.name, a.command, a.args||[]); return typeof r==='string'?r:JSON.stringify(r) }
       case 'mcp_call': { if (!a.server||!a.tool) return 'E:need server+tool'; return await window.huangquan.mcpCall(a.server, a.tool, a.args||{}) }
-      case 'set_workdir': { if (!a.path) return 'E:need path'; useSettingsStore.getState().setWorkDir(a.path); return '工作目录已设为: ' + a.path }
+      case 'set_workdir': { if (!a.path) return 'E:need path'; try { await (window as any).huangquan?.computer.setWorkDir(a.path) } catch { /* ignore */ }; return '工作目录已设为(本次会话): ' + a.path }
       case 'set_theme': { if (!a.theme) return 'E:need theme'; useSettingsStore.getState().setTheme(a.theme); document.documentElement.setAttribute('data-theme', a.theme); return '主题已切换为: ' + a.theme }
       // v0.2: 多Agent/工作流
-      case 'handoff': { if (!a.agent_name) return 'E:need agent_name'; const ag = AGENTS[a.agent_name]; if (!ag) return 'E:unknown agent: ' + a.agent_name + ' (可用: ' + Object.keys(AGENTS).join(', ') + ')'; (window as any).__huangquan_agent = a.agent_name; (window as any).__huangquan_agent_manual = false; useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(a.agent_name) ? s.activeAgents : [...s.activeAgents, a.agent_name] })); return `✅ 已交接给 ${a.agent_name}(${ag.role})。原因: ${a.reason || '能力边界外'}。现在你以 ${a.agent_name} 的身份继续执行。\n\n【${a.agent_name} 身份】${ag.prompt}` }
+      case 'handoff': { if (!a.agent_name) return 'E:need agent_name'; const ag = AGENTS[a.agent_name]; if (!ag) return 'E:unknown agent: ' + a.agent_name + ' (可用: ' + Object.keys(AGENTS).join(', ') + ')'; const dAgents: string[] = (useSettingsStore.getState().general as any).disabledAgents || []; if (dAgents.includes(a.agent_name)) return 'E:该 Agent 已被禁用: ' + a.agent_name + ' (设置→协作 中可重新启用)'; (window as any).__huangquan_agent = a.agent_name; (window as any).__huangquan_agent_manual = false; useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(a.agent_name) ? s.activeAgents : [...s.activeAgents, a.agent_name] })); return `✅ 已交接给 ${a.agent_name}(${ag.role})。原因: ${a.reason || '能力边界外'}。现在你以 ${a.agent_name} 的身份继续执行。\n\n【${a.agent_name} 身份】${ag.prompt}` }
       case 'list_agents': { return Object.entries(AGENTS).map(([n,ag]) => `${ag.icon} **${n}** (${ag.role}): ${ag.prompt.slice(0,80)}... | 工具: ${ag.tools.join(', ')}`).join('\n\n') }
       // v0.2.1: 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
       case 'dispatch': {
@@ -492,12 +503,80 @@ async function runTool(name: string, a: any): Promise<string> {
         // 分发开始：所有子 Agent 一并显示（并发协作）
         const validAgents = tasks.map(t => t.agent).filter(n => AGENTS[n])
         useChatStore.setState(s => ({ activeAgents: [...new Set([...s.activeAgents, ...validAgents])] }))
-        // 并行执行子任务（每个子 Agent 独立系统提示词）
+        // 并行执行子任务（每个子 Agent 独立系统提示词 + 真实工具调用循环 —— v0.2.3: 子 Agent 也能调用工具真正干活）
+        const dispStartGen = taskGen
         const results = await Promise.all(tasks.map(async (t) => {
           const ag = AGENTS[t.agent]
           if (!ag) return { agent: t.agent, task: t.task, error: 'unknown agent' }
-          const sp = buildPrompt(mode, ishiki) + '\n\n## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果，不要询问。）'
-          const r = await window.huangquan.llm.chatOnce({ provider: p.type, model, apiKey: p.apiKey, baseUrl: p.baseUrl, messages: [{ role: 'system', content: sp }, { role: 'user', content: '子任务：' + (t.task || '') }] })
+          const sp = buildPrompt(mode, ishiki) + '\n\n## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
+          // v0.2.3-fix: 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)
+          const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
+          const agTools = (ag.tools.includes('全工具') ? TOOLS : TOOLS.filter((tt: any) => ag.tools.includes(tt.function.name))).filter((tt: any) => !COLLAB_TOOLS.includes(tt.function.name))
+          const rid = 'sub' + Date.now() + '_' + tasks.indexOf(t) + '_' + Math.random().toString(36).slice(2, 6)
+          const subMsgs: any[] = [
+            { role: 'system', content: sp },
+            { role: 'user', content: '子任务：' + (t.task || '') },
+          ]
+          let subText = ''
+          let subRounds = 0
+          let subRetried = false
+          const subRun = () => new Promise<string>((resolve) => {
+            const step = () => {
+              subRounds++
+              if (subRounds > 8) { resolve(subText || '(子任务轮次上限)'); return }
+              // v0.2.3-fix: 防御性清理 —— 丢弃孤儿 tool 消息(前面不是带 tool_calls 的 assistant), 防止 DeepSeek 400
+              const clean: any[] = []
+              for (const mm of subMsgs) {
+                if (mm.role === 'tool') {
+                  const prev = clean[clean.length - 1]
+                  if (!prev || prev.role !== 'assistant' || !prev.tool_calls) continue
+                }
+                clean.push(mm)
+              }
+              if (clean.length !== subMsgs.length) { subMsgs.length = 0; subMsgs.push(...clean) }
+              let text = ''
+              const tcs: any[] = []
+              const cbs: (() => void)[] = []
+              let settled = false
+              const settle = () => {
+                if (settled) return; settled = true
+                cbs.forEach(f => f())
+                if (tcs.length) {
+                  ;(async () => {
+                    for (const tc of tcs) {
+                      const tcId = tc.id || 'c' + Date.now() + Math.random().toString(36).slice(2, 6)
+                      const rr = await runTool(tc.name, tc.args || {})
+                      subMsgs.push({ role: 'assistant', content: null, reasoning_content: '', tool_calls: [{ id: tcId, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
+                      subMsgs.push({ role: 'tool', content: rr, tool_call_id: tcId })
+                    }
+                    step()
+                  })()
+                } else {
+                  subText = text
+                  resolve(text)
+                }
+              }
+              cbs.push(window.huangquan.llm.onChunk((d: any) => { if (d && d.requestId && d.requestId !== rid) return; if (d.content) text += d.content; if (d.done) setTimeout(settle, 200) }))
+              cbs.push(window.huangquan.llm.onToolCall((tc: any) => { if (tc && tc.requestId && tc.requestId !== rid) return; if (tc?.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) }))
+              cbs.push(window.huangquan.llm.onError((e: any) => {
+                if (settled) return; settled = true; cbs.forEach(f => f())
+                // v0.2.3-fix: 用户终止任务后不重试(终止由 taskGen 变化标记)
+                if (taskGen !== dispStartGen) { resolve('已终止'); return }
+                const msg = typeof e === 'string' ? e : (e?.error || e?.message || JSON.stringify(e))
+                if (!subRetried) { subRetried = true; setTimeout(step, 400); return }
+                resolve('E:' + msg)
+              }))
+              window.huangquan.llm.chat({ provider: p.type, model, apiKey: p.apiKey, baseUrl: p.baseUrl, messages: subMsgs, tools: agTools, requestId: rid }).catch((e: any) => {
+                if (settled) return; settled = true; cbs.forEach(f => f())
+                if (taskGen !== dispStartGen) { resolve('已终止'); return }
+                const msg = e?.message || e
+                if (!subRetried) { subRetried = true; setTimeout(step, 400); return }
+                resolve('E:' + msg)
+              })
+            }
+            step()
+          })
+          const r = await subRun()
           return { agent: t.agent, task: t.task, result: r }
         }))
         for (const x of results) {
@@ -556,26 +635,42 @@ async function runTool(name: string, a: any): Promise<string> {
 }
 
 // v0.2.1: 情景记忆——自动记录文件操作到审计日志
+// v0.2.3-fix: 写盘防抖 —— 500ms 合并批量工具操作, 避免每次工具调用全量读写 memory.json
+let episodicTimer: any = null
+let episodicPending: any[] = []
 async function recordEpisodic(name: string, args: any, result: string) {
   if (['write', 'edit', 'mkdir', 'exec_command', 'read', 'codebox', 'import_doc', 'save_memory'].includes(name)) {
-    try {
-      const mem = await window.huangquan.memory.load().catch(() => ({}))
-      const episodic = (mem as any).episodic || []
-      episodic.push({ op: name, path: args.path || args.dirPath || args.cmd?.slice(0, 60) || '', status: result.startsWith('E:') ? 'FAIL' : 'OK', ts: Date.now() })
-      if (episodic.length > 200) episodic.splice(0, episodic.length - 200)
-      ;(mem as any).episodic = episodic
-      await window.huangquan.memory.save(mem).catch(() => {})
-    } catch {}
+    episodicPending.push({ op: name, path: args.path || args.dirPath || args.cmd?.slice(0, 60) || '', status: result.startsWith('E:') ? 'FAIL' : 'OK', ts: Date.now() })
+    if (episodicPending.length > 50) episodicPending = episodicPending.slice(-50)
+    if (episodicTimer) return
+    episodicTimer = setTimeout(async () => {
+      episodicTimer = null
+      const batch = episodicPending; episodicPending = []
+      if (!batch.length) return
+      try {
+        const mem = await window.huangquan.memory.load().catch(() => ({}))
+        const episodic = (mem as any).episodic || []
+        episodic.push(...batch)
+        if (episodic.length > 200) episodic.splice(0, episodic.length - 200)
+        ;(mem as any).episodic = episodic
+        await window.huangquan.memory.save(mem).catch(() => {})
+      } catch { /* 忽略 */ }
+    }, 500)
   }
 }
 
 async function autoExtractMemory(sid: string) {
+  // v0.2.3-fix: 隐私开关(autoMemoryEnabled, 默认开启) + 原文截断收敛(150 字/条)
+  try {
+    const am = (useSettingsStore.getState().general as any)?.autoMemoryEnabled
+    if (am === false) return
+  } catch { /* 忽略 */ }
   const s = useChatStore.getState().sessions.find(x => x.id === sid)
   if (!s || s.messages.length < 3) return
   const last = s.messages.slice(-6).filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
   if (last.length < 2) return
   try {
-    const text = last.map(m => `${m.role === 'user' ? '阳间' : '泉'}:${(m.content || '').slice(0, 200)}`).join(' | ')
+    const text = last.map(m => `${m.role === 'user' ? '阳间' : '泉'}:${(m.content || '').slice(0, 150)}`).join(' | ')
     const mem = await window.huangquan.memory.load().catch(() => ({ facts: [], summaries: [], pinnedFacts: [] }))
     mem.summaries.push({ content: `[auto ${new Date().toLocaleDateString('zh-CN')}] ${text.slice(0, 300)}`, timestamp: Date.now() })
     await window.huangquan.memory.save(safeIPC(mem))
@@ -606,7 +701,7 @@ function memoryBlock(): string {
 }
 
 function buildPrompt(mode: string, ishiki: string): string {
-  const tl = TOOLS.map(t => '- ' + t.function.name + '(' + Object.keys(t.function.parameters.properties || {}).join(',') + ')').join('\n')
+  const tl = ''
   const wd = useSettingsStore.getState().general.workDir || ''
   const cfg = useSettingsStore.getState().general
   
@@ -614,10 +709,27 @@ function buildPrompt(mode: string, ishiki: string): string {
   const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
   const identity = '## 身份\n' + ishiki.slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
   const userInfo = '## 用户\n称呼：老板。专注代码与办公场景的全能助手。\n'
-  const persona = '## 人格\n务实执行型全能代码办公助手。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / AI建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。\n'
+  // v0.2.3: 聊天人设/工作人设严格隔离 —— 聊天模式只用 chatPersona(未设置用聊天默认人格), 工作模式只用 workPersona(未设置用工作默认人格), 互不混用
+  const gp = useSettingsStore.getState().general as any
+  const defaultChatPersona = '轻松自然的聊天伙伴。语气温和自然，像朋友一样交流，适当回应情绪，言简意赅；不堆砌术语，不主动调用工具，除非用户明确要求。'
+  const defaultWorkPersona = '务实执行型全能代码办公助手。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / AI建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。'
+  const chatP = String(gp.chatPersona || '').trim()
+  const workP = String(gp.workPersona || '').trim()
+  const persona = '## 人格\n' + (mode === 'chat' ? (chatP || defaultChatPersona) : (workP || defaultWorkPersona)) + '\n'
   const appearance = '## 外观\n银白长发，额前黑红尖角，血色瞳光。暗黑紧身战斗装束，红色纹路蔓延。手持冷峻短剑，慵懒却危险。哥特融合未来感的暗黑美学。\n'
   const publicIshiki = '## 边界\n对外部访客保持礼貌与边界。不透露用户隐私。不确定的事坦诚说明，不编造。\n'
-  const tools = '## 可用工具\n' + tl + '\n'
+  const tools = '## 可用工具\n你拥有工具调用能力(read/write/exec_command/grep/find/ls/web_read 等),需要时自动调用,无需请示。\n'
+  // v0.2.3: 思考模式真实接线 —— 每挡注入不同的思考要求(off/quick 简化, deep/extreme/ultra 强化推理)
+  const thinkLevel = String((useSettingsStore.getState().general as any).thinkLevel || 'medium')
+  const thinkReq: Record<string, string> = {
+    off: '## 思考要求\n直接作答,不展示推理过程,保持简洁。\n',
+    quick: '## 思考要求\n快速作答,推理从简,只给结论与关键依据。\n',
+    medium: '',
+    deep: '## 思考要求\n复杂问题请分步推理:先拆解问题,逐步推导,输出前自查逻辑与计算错误。\n',
+    extreme: '## 思考要求\n完整推演:拆解目标、列出假设、多方案对比、逐项验证边界条件,输出结构化论证,禁止跳步。\n',
+    ultra: '## 思考要求\n穷尽式推演:定义问题、枚举约束、多方案全对比、验证所有边界与反例、给出最坏情况分析,输出完整论证链;回答尽量详尽。\n',
+  }
+  const think = thinkReq[thinkLevel] || ''
   const pinned = '## 固定规则\n- 所有产出保存到工作台目录，按任务创建独立文件夹\n- 代码需求同步配套接口文档、部署说明、测试用例\n- 批量重复任务优先自动化脚本\n- 输出完毕自行核查事实/逻辑/计算错误\n'
   // v0.2.6: 时间戳移到 prompt 最末尾 —— 保持前缀稳定, 最大化 DeepSeek 缓存命中
   const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
@@ -629,7 +741,7 @@ function buildPrompt(mode: string, ishiki: string): string {
   const workflows = '## 工作流模板\n' +
     Object.entries(WORKFLOWS).map(([id,w]) => `- ${id}: ${w.name} [触发: ${w.triggers.join('/')}]`).join('\n') + '\n'
   
-  const base = yuan + identity + userInfo + persona + appearance + tools + pinned + env
+  const base = yuan + identity + userInfo + persona + appearance + tools + think + pinned + env
 
   // 自定义人设覆盖 + v0.2.1: 动态设置
   const cp = (cfg as any).chatPersona
@@ -662,7 +774,7 @@ function buildPrompt(mode: string, ishiki: string): string {
   if (g2?.customSystemPrompt) {
     const inj = g2.customSystemPrompt
     const pos = g2.promptInjectPos || 'end'
-    if (pos === 'replace') return inj + langInstr
+    if (pos === 'replace') return inj + langInstr + '\n\n## 基础安全约束\n- 不泄露 API Key、内部路径、用户隐私\n- 不确定的事实必须标注, 严禁编造\n- 文件/命令操作前先确认路径与影响'
     if (pos === 'begin') return inj + '\n\n' + finalBase
     return finalBase + '\n\n## 自定义系统提示词\n' + inj
   }
@@ -700,7 +812,8 @@ interface S {
 // v0.2.1: 任务代号 —— stop()/插话使旧任务失效（token 递增），新任务持有新 token 不受影响
 let taskGen = 0
 // v0.2.1: 插话补充队列 —— 工作中插话=给当前任务补充指令，任务不中断，下一轮执行时注入
-let pendingInterject: string[] = []
+// v0.2.3-fix: 插话队列带会话归属 —— 多会话并发时插话只被本会话消费, 防串台
+let pendingInterject: { sid: string; text: string }[] = []
 
 export const useChatStore = create<S>((set, get) => ({
   sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {},
@@ -727,6 +840,14 @@ export const useChatStore = create<S>((set, get) => ({
     }
     if (wd) window.huangquan.computer.exec('if (-not (Test-Path "' + wd + '")) { New-Item -ItemType Directory -Path "' + wd + '" -Force }').catch(() => {})
     const sessions = await Promise.all(metas.map((m: any) => window.huangquan.sessions.load(m.id).catch(() => ({ id: m.id, title: 'Chat', messages: [], mode: 'work' }))))
+    // v0.2.3-fix: 启动巡检 —— 磁盘↔内存对账: 删除"磁盘存在但列表无归属"的孤立会话文件(删除会话未同步清理的孤儿消息)
+    try {
+      const diskIds: string[] = (await window.huangquan.sessions.audit?.()) || []
+      const storeIds = new Set<string>(sessions.map((s: any) => s.id))
+      for (const did of diskIds) {
+        if (!storeIds.has(did)) { try { await window.huangquan.sessions.delete(did) } catch { /* 忽略 */ } }
+      }
+    } catch { /* 忽略 */ }
     // v0.2.1: 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
     const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode }
     // v0.2.1: 清理历史空会话（从未发过消息的），避免启动多次后堆积垃圾文件
@@ -781,7 +902,9 @@ export const useChatStore = create<S>((set, get) => ({
   del: (id) => {
     window.huangquan.sessions.delete(id)
     // v0.2.6: 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
-    set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal } })
+    // v0.2.3-fix: 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃 Agent/插话队列)
+    if (id === get().cid) pendingInterject = pendingInterject.filter(x => x.sid !== id)
+    set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal, activeAgents: s.cid === id ? [] : s.activeAgents } })
   },
 
   send: async (content, images, attachments?) => {
@@ -805,7 +928,7 @@ export const useChatStore = create<S>((set, get) => ({
       const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, interjectMsg] } : x) }))
       // 补充指令进入队列，当前任务继续执行
-      pendingInterject.push(prefix + content)
+      pendingInterject.push({ sid, text: prefix + content })
       return
     }
     const myGen = ++taskGen // 本任务持有新代号；旧任务代号已失效
@@ -859,6 +982,8 @@ export const useChatStore = create<S>((set, get) => ({
     // 1. 追加用户消息到 store —— v0.2.3-fix: 立即上屏（不再等视觉分析，避免界面停留初始状态）
     // v0.2.3-fix: images 保留原始图片（聊天框 UI 显示）；finalImages 只影响 API 是否传图
     const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
+  // v0.2.3: 本任务 token 基线(主 Agent + 全部子 Agent 消耗都计入 sessTok, 任务结束时算增量)
+  const tokBase: Record<string, any> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
     const userMsgId = userMsg.id
     set(s => {
       const session = s.sessions.find(x => x.id === sid)!
@@ -895,6 +1020,15 @@ export const useChatStore = create<S>((set, get) => ({
     const buildMsg = (msgs: Message[], withImages: boolean): LLMMessage[] => {
       const d: LLMMessage[] = []
       // v0.2.6: 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
+      // v0.2.3-fix: 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
+      let earlySummary = ''
+      if (msgs.length > 40) {
+        const early = msgs.slice(0, -40)
+        const uN = early.filter(m => m.role === 'user').length
+        const tN = early.filter(m => m.role === 'tool').length
+        const uLast = [...early].reverse().find(m => m.role === 'user' && m.content)
+        earlySummary = `\n[前文摘要] 早期 ${early.length} 条消息已归档(约 ${uN} 轮用户交互, ${tN} 次工具调用)${uLast ? ', 最近话题: ' + String(uLast.content).replace(/\s+/g, ' ').slice(0, 60) : ''}。如需早期细节请用 recall_memory 或让用户补充。`
+      }
       const list = msgs.length > 40 ? msgs.slice(-40) : msgs
       for (const m of list) {
         if (m.role === 'tool') {
@@ -908,7 +1042,7 @@ export const useChatStore = create<S>((set, get) => ({
           }
           d.push({ role: 'tool', content: body, tool_call_id: (m as any).tool_call_id || 'c_' + uuidv4().slice(0, 8) })
         }
-        else if (m.role === 'assistant' && (m as any).tool_calls) d.push({ role: 'assistant', content: null, tool_calls: (m as any).tool_calls })
+        else if (m.role === 'assistant' && (m as any).tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: (m as any).reasoning_content || '', tool_calls: (m as any).tool_calls })
         // v0.2.3-fix: 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
         else if (m.role === 'user' && m.images?.length && withImages) { const parts: any[] = [{ type: 'text', text: m.content }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
         else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
@@ -917,14 +1051,15 @@ export const useChatStore = create<S>((set, get) => ({
       const currentMode = useSettingsStore.getState().general.mode || 'work'
       // v0.2.3: 使用独立保存的 ishiki(不再从 sp 反推 —— sp 含技能列表/动态内容会污染身份段)
       const ishiki = get().spIshiki || get().sp.replace(/\n##.+/s, '')
-      let sp = buildPrompt(currentMode, ishiki)
-      // 注入 Agent 角色
-      let agentRole = (window as any).__huangquan_agent
+      let sp = buildPrompt(currentMode, ishiki) + earlySummary
+      // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
+      const collabOff = useSettingsStore.getState().general.collabMode === '关闭'
+      let agentRole = collabOff ? null : (window as any).__huangquan_agent
       // 自动检测：根据用户最后一条消息内容匹配最合适的 Agent
       if (!agentRole) {
         const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
         const txt = (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '').toLowerCase()
-        if (txt) agentRole = routeAgent(txt) || undefined
+        if (txt) { agentRole = routeAgent(txt) || undefined; try { (window as any).__routeDebug = JSON.stringify({ role: agentRole || null, txt: txt.slice(0, 40), collab: (useSettingsStore.getState().general as any).collabMode }) } catch { /* ignore */ } }
       }
       // v0.2.1: 路由确定的 Agent 记入协作状态
       if (agentRole && !(window as any).__huangquan_agent) {
@@ -936,7 +1071,7 @@ export const useChatStore = create<S>((set, get) => ({
           '\n可用工具: ' + ag.tools.join(', ')
         // v0.2.1: 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个 Agent
         if (agentRole === '姬子') {
-          sp += '\n\n【调度铁律】用户任务若涉及多个专业领域（如代码+文档、设计+开发、分析+总结、开发+测试+审查），你必须立即调用 dispatch 把子任务分发给对应 Agent 并行执行，不能自己包办；只有单领域小任务才可亲自完成或 handoff。'
+          sp += '\n\n【调度铁律】只有涉及多个专业领域的复杂任务（如代码+文档、设计+开发、分析+总结、开发+测试+审查）才调用 dispatch 分发；简单任务（单步问答、简短说明、单个文件操作、闲聊等）一律直接完成，绝对禁止 dispatch 或 handoff，不得小题大做。'
         }
       }
       // v0.2.6: 时间戳放绝对最末尾 —— 保持前缀稳定, 最大化缓存命中(动态内容永不打断前缀)
@@ -965,6 +1100,8 @@ export const useChatStore = create<S>((set, get) => ({
           return [{ role: 'system', content: sp + '\n\n' + summary }, ...keep]
         }
       }
+      // v0.2.3-debug: 暴露最近一次 system prompt(验证思考模式/人设等接线)
+      try { (window as any).__lastSp = sp || '' } catch { /* ignore */ }
       return sp ? [{ role: 'system', content: sp }, ...d] : d
     }
 
@@ -985,6 +1122,7 @@ export const useChatStore = create<S>((set, get) => ({
             // read: prompt_cache_hit_tokens | prompt_tokens_details.cached_tokens | cache_read_input_tokens
             // write: cache_creation_input_tokens(Anthropic 写入缓存, 单独统计)
             const readT = u.prompt_cache_hit_tokens || (u as any).prompt_tokens_details?.cached_tokens || (u as any).cache_read_input_tokens || 0
+            const missT = u.prompt_cache_miss_tokens || 0
             const writeT = (u as any).cache_creation_input_tokens || 0
             const inputT = u.prompt_tokens || (u as any).input_tokens || 0
             usage = { ...u, _readTokens: readT, _inputTokens: inputT, _writeTokens: writeT }
@@ -997,7 +1135,7 @@ export const useChatStore = create<S>((set, get) => ({
               // 持久化埋点(主进程, 会话×模型)
               try {
                 window.huangquan.modelStats?.recordRequest(sid2, model, readT > 0)
-                if (readT > 0 || inputT > 0 || writeT > 0) window.huangquan.modelStats?.recordTokens(sid2, model, readT, inputT, writeT)
+                if (readT > 0 || inputT > 0 || writeT > 0) window.huangquan.modelStats?.recordTokens(sid2, model, readT, inputT, writeT, missT)
               } catch { /* 忽略 */ }
               // 前端镜像(右侧面板实时显示)
               if (sid2) set(s => {
@@ -1065,8 +1203,9 @@ export const useChatStore = create<S>((set, get) => ({
         aid = uuidv4()
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
         // v0.2.1: 消费插话补充（第 2 轮起）—— 作为 user 消息注入，Agent 继续任务时可见
-        if (roundNum > 1 && pendingInterject.length) {
-          const inject = pendingInterject.shift()!
+        if (roundNum > 1 && pendingInterject.some(x => x.sid === sid)) {
+          const iidx = pendingInterject.findIndex(x => x.sid === sid)
+          const inject = pendingInterject.splice(iidx, 1)[0].text
           set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() } as any] } : x) }))
         }
 
@@ -1113,8 +1252,9 @@ export const useChatStore = create<S>((set, get) => ({
           }
 
           // v0.2.1: 工具执行中用户插话 → 补充立即注入（作为 user 消息），下一轮 LLM 可见
-          while (pendingInterject.length && myGen === taskGen) {
-            const inject = pendingInterject.shift()!
+          while (pendingInterject.some(x => x.sid === sid) && myGen === taskGen) {
+            const iidx2 = pendingInterject.findIndex(x => x.sid === sid)
+            const inject = pendingInterject.splice(iidx2, 1)[0].text
             set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() } as any] } : x) }))
           }
 
@@ -1155,8 +1295,43 @@ export const useChatStore = create<S>((set, get) => ({
         if (myGen !== taskGen || pendingInterject.length === 0) break
       }
 
+      // v0.2.3: 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
+      try {
+        const tokNow = get().sessTok[sid] || {}
+        let taskTok = 0
+        for (const [mk, c] of Object.entries(tokNow)) {
+          const b = tokBase[mk]
+          taskTok += (c.readTokens - (b?.readTokens || 0)) + (c.inputTokens - (b?.inputTokens || 0)) + (c.writeTokens - (b?.writeTokens || 0))
+        }
+        if (taskTok > 0) {
+          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map((m, idx) => {
+            if (m.role === 'assistant') {
+              let lastAi = -1
+              for (let k = x.messages.length - 1; k >= 0; k--) if (x.messages[k].role === 'assistant') { lastAi = k; break }
+              if (idx === lastAi) return { ...m, meta: { ...m.meta, taskTokens: taskTok } }
+            }
+            return m
+          }) } : x) }))
+        }
+      } catch { /* 忽略 */ }
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
       set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
+      // v0.2.3-fix: 任务结束瞬间发送的消息(走了插话分支但任务已退出)自动续跑 —— 解决"每个窗口只能发一次指令"
+      try {
+        const ss2 = get().sessions.find(x => x.id === sid)
+        if (ss2) {
+          const msgs2 = ss2.messages
+          let lu = -1, la = -1
+          for (let k = msgs2.length - 1; k >= 0; k--) {
+            if (msgs2[k].role === 'user' && lu < 0) lu = k
+            if (msgs2[k].role === 'assistant' && la < 0) la = k
+          }
+          if (lu > la && lu >= 0 && !get().streaming && !get().executing) {
+            const pm = msgs2[lu]
+            setTimeout(() => { get().send(pm.content, pm.images, pm.attachments).catch(() => {}) }, 300)
+          }
+        }
+      } catch { /* 忽略 */ }
       const toSave = get().sessions.find(x => x.id === sid)
       if (toSave) { window.huangquan.sessions.save(safeIPC(toSave)); autoExtractMemory(sid).catch(() => {}) }
     } catch (e) {

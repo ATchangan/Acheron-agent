@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 // v0.2.6: 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
 
@@ -15,7 +15,7 @@ const iconFor = (name: string): string => {
   return map[ext] || '📄'
 }
 
-const C = { text: '#E8E8F0', muted: '#78789A', border: '#2A2D48', hover: '#1A1A30', green: '#48c98a', red: '#ff6b6b', blue: '#6ba8ff' }
+const C = { text: 'var(--text-primary)', muted: 'var(--text-muted)', border: 'var(--border)', hover: 'var(--bg-hover)', green: '#48c98a', red: '#ff6b6b', blue: '#6ba8ff' }
 
 export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFile }: {
   root: string; depth?: number; onChanged?: () => void; onNewDir?: () => void; onNewFile?: () => void
@@ -27,6 +27,8 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
   const [hovered, setHovered] = useState('')
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
+  // v0.2.3-opt: 目录列表缓存(3s 新鲜度) —— 展开/刷新不再每次都 IPC 重读
+  const cacheRef = useRef<Map<string, { list: FsItem[]; ts: number }>>(new Map())
 
   // v0.2.6: 工作目录实时刷新 —— 展开后每 5s 静默重读(不闪 loading, 保持展开状态), agent 写文件后自动可见
   const hasLoaded = items !== null
@@ -34,19 +36,27 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
     if (!expanded || !hasLoaded) return
     const timer = setInterval(async () => {
       try {
+        const cached = cacheRef.current.get(root)
+        if (cached && Date.now() - cached.ts < 3000) return
         const list = await window.huangquan.computer.readDir(root)
         list.sort((a: FsItem, b: FsItem) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
+        cacheRef.current.set(root, { list, ts: Date.now() })
         setItems(list)
       } catch { /* 目录暂时不可读则静默跳过 */ }
     }, 5000)
     return () => clearInterval(timer)
   }, [expanded, hasLoaded, root])
 
-  const load = async () => {
+  const load = async (force = false) => {
     setLoading(true); setErr('')
     try {
+      const cached = cacheRef.current.get(root)
+      if (!force && cached && Date.now() - cached.ts < 3000) {
+        setItems(cached.list); setLoading(false); return
+      }
       const list = await window.huangquan.computer.readDir(root)
       list.sort((a: FsItem, b: FsItem) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
+      cacheRef.current.set(root, { list, ts: Date.now() })
       setItems(list)
     } catch (e: any) { setErr(String(e?.message || e)) }
     setLoading(false)
@@ -68,12 +78,12 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
     if (!renameVal.trim()) { setRenaming(null); return }
     const r = await window.huangquan.computer.rename(path, renameVal.trim())
     if (!r.ok) alert('重命名失败: ' + r.error)
-    else { setRenaming(null); await load(); onChanged?.() }
+    else { setRenaming(null); cacheRef.current.delete(root); await load(); onChanged?.() }
   }
   const doDelete = async (path: string, name: string, isDir: boolean) => {
     if (!confirm('确定删除 ' + (isDir ? '文件夹' : '文件') + '「' + name + '」?此操作不可恢复')) return
     const r = await window.huangquan.computer.remove(path)
-    if (!r.ok) { alert('删除失败: ' + r.error) } else { await load(); onChanged?.() }
+    if (!r.ok) { alert('删除失败: ' + r.error) } else { cacheRef.current.delete(root); await load(); onChanged?.() }
   }
   const doOpen = async (path: string) => { try { await window.huangquan.computer.openFile(path) } catch { /* 忽略 */ } }
 
@@ -96,20 +106,20 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
       <input autoFocus value={renameVal} onChange={e => setRenameVal(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') doRename(path); if (e.key === 'Escape') setRenaming(null) }}
         onClick={e => e.stopPropagation()}
-        style={{ flex: 1, fontSize: 11, background: '#0F0F22', border: '1px solid ' + C.border, color: C.text, borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
-      <button onClick={() => doRename(path)} style={{ fontSize: 10, cursor: 'pointer', background: C.border, border: 'none', borderRadius: 4, color: C.text }}>✓</button>
+        style={{ flex: 1, fontSize: 'calc(var(--ui-font-size) - 2px)', background: '#1b1c22', border: '1px solid ' + C.border, color: C.text, borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
+      <button onClick={() => doRename(path)} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: C.border, border: 'none', borderRadius: 4, color: C.text }}>✓</button>
     </div>
   )
 
   return (
-    <div style={{ fontSize: 11 }}>
+    <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)' }}>
       <div
         onClick={toggle}
         onContextMenu={(e) => onCtx(e, root, root.split(/[\\/]/).pop() || root, true)}
         onMouseEnter={() => setHovered(root)} onMouseLeave={() => setHovered('')}
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', borderRadius: 4, cursor: 'pointer', background: hovered === root ? C.hover : 'transparent' }}
       >
-        <span style={{ color: C.muted, fontSize: 9, width: 12, display: 'inline-block' }}>{loading ? '⏳' : (expanded ? '▼' : '▶')}</span>
+        <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 4px)', width: 12, display: 'inline-block' }}>{loading ? '⏳' : (expanded ? '▼' : '▶')}</span>
         <span>{isWorkDir ? '📁' : (expanded ? '📂' : '📁')}</span>
         <span style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={root}>{root.split(/[\\/]/).pop() || root}</span>
         {hovered === root && !isWorkDir && (
@@ -139,7 +149,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
                   <span style={{ width: 12, display: 'inline-block' }} />
                   <span>{iconFor(it.name)}</span>
                   <span style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={it.name}>{it.name}</span>
-                  <span style={{ color: C.muted, fontSize: 9 }}>{fmtSize(it.size)}</span>
+                  <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 4px)' }}>{fmtSize(it.size)}</span>
                   {hovered === root + '\\' + it.name && (
                     <span style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
                       <span title="打开" style={{ color: C.green, cursor: 'pointer' }} onClick={() => doOpen(root + '\\' + it.name)}>📂</span>

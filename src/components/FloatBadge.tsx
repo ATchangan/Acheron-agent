@@ -40,12 +40,12 @@ export default function FloatBadge() {
         boxShadow: '0 4px 18px rgba(0,0,0,0.45)', userSelect: 'none',
       }}
     >
-      <span style={{ fontSize: 16, animation: 'floatSpin 1.6s linear infinite' }}>🌐</span>
+      <span style={{ fontSize: 'calc(var(--ui-font-size) + 3px)', animation: 'floatSpin 1.6s linear infinite' }}>🌐</span>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#E8E8F0', whiteSpace: 'nowrap' }}>Agent 正在使用浏览器</span>
-        <span style={{ fontSize: 10, color: '#b39ddb', whiteSpace: 'nowrap' }}>点击查看实时画面</span>
+        <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Agent 正在使用浏览器</span>
+        <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent-purple)', whiteSpace: 'nowrap' }}>点击查看实时画面</span>
       </div>
-      <span style={{ fontSize: 10, color: '#48c98a', marginLeft: 4 }}>● 进行中</span>
+      <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: '#48c98a', marginLeft: 4 }}>● 进行中</span>
     </div>
   )
 }

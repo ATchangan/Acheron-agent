@@ -17,7 +17,7 @@ const WinBtn: React.FC<{ onClick: () => void; danger?: boolean; children: React.
   <button onClick={onClick} title={danger ? '关闭' : undefined}
     style={{
       width: 34, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: 16,
+      background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: 'calc(var(--ui-font-size) + 3px)',
       cursor: 'pointer', borderRadius: 0, padding: 0, lineHeight: 1, transition: 'all .12s',
     }}
     onMouseEnter={e => {
@@ -33,20 +33,27 @@ const WinBtn: React.FC<{ onClick: () => void; danger?: boolean; children: React.
 )
 
 const PRESETS_THEME: Record<string, Record<string, string>> = {
-  'dark-tech':  { '--bg-root':'#0D0D1A','--bg-surface':'#12122A','--bg-elevated':'#1A1A2E','--bg-card':'#1E1E38','--bg-hover':'#252545','--border':'#2A2A4A','--border-glow':'#3A3A5A','--accent':'#6B4C9A','--accent-dim':'#5A3D85','--accent-purple':'#8B6FC0','--accent-green':'#2D6A4F','--text-primary':'#E8E8F0','--text-secondary':'#9999AA','--text-muted':'#5A5A78' },
-  'light-warm': { '--bg-root':'#F5F2EB','--bg-surface':'#FFF','--bg-elevated':'#FAF8F3','--bg-card':'#FFF','--bg-hover':'#F0EDE5','--border':'#E5E1D8','--border-glow':'#D5D0C5','--accent':'#2563EB','--accent-dim':'#1D4ED8','--accent-purple':'#7C3AED','--accent-green':'#059669','--text-primary':'#1A1A1A','--text-secondary':'#555','--text-muted':'#888' },
-  'deep-black': { '--bg-root':'#000','--bg-surface':'#0A0A0A','--bg-elevated':'#111','--bg-card':'#151515','--bg-hover':'#1A1A1A','--border':'#252525','--border-glow':'#333','--accent':'#FFF','--accent-dim':'#CCC','--accent-purple':'#999','--accent-green':'#0F6','--text-primary':'#E0E0E0','--text-secondary':'#808080','--text-muted':'#505050' },
-  'forest':     { '--bg-root':'#0D1A0D','--bg-surface':'#132213','--bg-elevated':'#1A2E1A','--bg-card':'#1E381E','--bg-hover':'#254525','--border':'#2A4A2A','--border-glow':'#3A5A3A','--accent':'#4A9A6B','--accent-dim':'#3D855A','--accent-purple':'#6FC08B','--accent-green':'#2D6A4F','--text-primary':'#D0E8D0','--text-secondary':'#99AA99','--text-muted':'#5A785A' },
-  'high-contrast': { '--bg-root':'#000','--bg-surface':'#000','--bg-elevated':'#0A0A0A','--bg-card':'#111','--bg-hover':'#1A1A1A','--border':'#444','--border-glow':'#666','--accent':'#FFF','--accent-dim':'#FFF','--accent-purple':'#FFF','--accent-green':'#0F0','--text-primary':'#FFF','--text-secondary':'#CCC','--text-muted':'#999' },
+  'dark-tech':  { '--bg-root':'#15171c','--bg-surface':'#1b1d23','--bg-elevated':'#212329','--bg-card':'#24262d','--bg-hover':'#2c2e36','--border':'#363840','--border-glow':'#454852','--accent':'#5e7c96','--accent-dim':'#4e6a82','--accent-purple':'#7e93a8','--accent-green':'#5f8f74','--text-primary':'#e0e2e8','--text-secondary':'#999ba6','--text-muted':'#60636e','--skin-accent':'94,124,150' },
+  'light-warm': { '--bg-root':'#f4f2ec','--bg-surface':'#fbfaf6','--bg-elevated':'#f7f5ef','--bg-card':'#fbfaf6','--bg-hover':'#edebe3','--border':'#e2dfd5','--border-glow':'#d2cfc4','--accent':'#7a6a55','--accent-dim':'#665845','--accent-purple':'#94846c','--accent-green':'#5f7d62','--text-primary':'#2a2a28','--text-secondary':'#6e6e68','--text-muted':'#9a9a92','--skin-accent':'122,106,85' },
+  'deep-black': { '--bg-root':'#0e0e0e','--bg-surface':'#131313','--bg-elevated':'#181818','--bg-card':'#1c1c1c','--bg-hover':'#242424','--border':'#2e2e2e','--border-glow':'#404040','--accent':'#8a8f98','--accent-dim':'#767b84','--accent-purple':'#a0a5ad','--accent-green':'#6f8f74','--text-primary':'#e4e4e4','--text-secondary':'#989898','--text-muted':'#606060','--skin-accent':'138,143,152' },
+  'forest':     { '--bg-root':'#141815','--bg-surface':'#191e1a','--bg-elevated':'#1e241f','--bg-card':'#212823','--bg-hover':'#29312b','--border':'#333b35','--border-glow':'#434d45','--accent':'#647d68','--accent-dim':'#546b58','--accent-purple':'#85987f','--accent-green':'#5f8f74','--text-primary':'#dee2de','--text-secondary':'#969c96','--text-muted':'#5e655f','--skin-accent':'100,125,104' },
+  'high-contrast': { '--bg-root':'#000','--bg-surface':'#000','--bg-elevated':'#0a0a0a','--bg-card':'#111','--bg-hover':'#1a1a1a','--border':'#444','--border-glow':'#666','--accent':'#FFF','--accent-dim':'#FFF','--accent-purple':'#FFF','--accent-green':'#0F0','--text-primary':'#FFF','--text-secondary':'#CCC','--text-muted':'#999','--skin-accent':'255,255,255' },
+}
+
+// v0.2.3: 跟随系统主题 —— 'system' 按系统深浅色解析为暗色/浅色预设
+function resolveThemePreset(preset: string | undefined): string {
+  if (preset && preset !== 'system') return preset
+  try { return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark-tech' : 'light-warm' } catch { return 'dark-tech' }
 }
 
 function applyAppearance(g: any) {
   const r = document.documentElement.style
   // Theme preset: set ALL CSS variables to match the preset
-  if (g.themePreset && PRESETS_THEME[g.themePreset]) {
-    const t = PRESETS_THEME[g.themePreset]
+  const preset = resolveThemePreset(g.themePreset)
+  if (preset && PRESETS_THEME[preset]) {
+    const t = PRESETS_THEME[preset]
     for (const [k,v] of Object.entries(t)) r.setProperty(k, v)
-    document.documentElement.setAttribute('data-theme', g.themePreset)
+    document.documentElement.setAttribute('data-theme', preset)
   }
   // Custom theme colors override (from settings)
   const customTheme = g.customColors || g.customTheme
@@ -64,6 +71,29 @@ function applyAppearance(g: any) {
     r.setProperty('--accent', adj(1))
     r.setProperty('--accent-dim', adj(0.8))
     r.setProperty('--border-glow', adj(0.4))
+    // v0.2.3-fix: 字体颜色按图片亮度自适应(亮图深字/暗图浅字) —— 防主题预设覆盖皮肤文字色
+    const luma = (0.299 * sc.r + 0.587 * sc.g + 0.114 * sc.b) / 255
+    if (luma > 0.55) {
+      r.setProperty('--text-primary', '#1c1d21')
+      r.setProperty('--text-secondary', 'rgba(20,21,25,0.78)')
+      r.setProperty('--text-muted', 'rgba(20,21,25,0.58)')
+      r.setProperty('--border', 'rgba(0,0,0,0.16)')
+      r.setProperty('--bg-elevated', 'rgba(255,255,255,0.78)')
+      r.setProperty('--bg-card', 'rgba(250,250,252,0.92)')
+      r.setProperty('--bg-input', 'rgba(240,241,244,0.92)')
+      r.setProperty('--bg-root', 'rgba(248,248,250,0.5)')
+      r.setProperty('--bg-surface', 'rgba(244,245,248,0.85)')
+      r.setProperty('--skin-overlay', 'rgba(255,255,255,0.40)')
+    } else {
+      r.setProperty('--text-primary', '#e9e9eb')
+      r.setProperty('--text-secondary', 'rgba(255,255,255,0.86)')
+      r.setProperty('--text-muted', 'rgba(255,255,255,0.66)')
+      r.setProperty('--border', 'rgba(255,255,255,0.16)')
+      r.setProperty('--bg-elevated', 'rgba(255,255,255,0.10)')
+      r.setProperty('--bg-card', 'rgba(23,24,28,0.92)')
+      r.setProperty('--bg-input', 'rgba(20,21,25,0.92)')
+      r.setProperty('--skin-overlay', 'rgba(8,8,15,0.50)')
+    }
   }
   // Typography: override CSS variables
   if (g.uiFontSize) r.setProperty('--ui-font-size', g.uiFontSize + 'px')
@@ -76,7 +106,7 @@ function applyAppearance(g: any) {
   // Chat max width
   if (g.chatMaxWidth) r.setProperty('--chat-max-width', g.chatMaxWidth + 'px')
   // Apply data-theme attribute for preset (CSS uses [data-theme="xxx"] selectors)
-  document.documentElement.setAttribute('data-theme', g.themePreset || 'dark-tech')
+  document.documentElement.setAttribute('data-theme', resolveThemePreset(g.themePreset) || 'dark-tech')
 }
 
 export default function App() {
@@ -122,11 +152,18 @@ export default function App() {
   }, [])
 
   // v0.2.1: 实时监听外观设置变更
+  // v0.2.3: 跟随系统 —— 系统深浅色切换时实时重应用(system 预设)
   useEffect(() => {
     const unsub = useSettingsStore.subscribe(s => {
       applyAppearance(s.general as any)
     })
-    return unsub
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onSysChange = () => {
+      const g = useSettingsStore.getState().general as any
+      if ((g.themePreset || '') === 'system') applyAppearance(g)
+    }
+    mq.addEventListener('change', onSysChange)
+    return () => { unsub(); mq.removeEventListener('change', onSysChange) }
   }, [])
 
   const renderView = () => {
@@ -135,7 +172,7 @@ export default function App() {
       case 'settings': return <SettingsView onNavigate={setView} />
       case 'agents':   return <AgentsView />
       case 'memory':   return <MemoryView />
-      case 'browser':  return <div style={{ padding: 40, color: '#78789A', fontSize: 13 }}>无头浏览器已在独立窗口打开 ↗</div>
+      case 'browser':  return <div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 'var(--ui-font-size)' }}>无头浏览器已在独立窗口打开 ↗</div>
       default:         return <ChatView onNavigate={setView} />
     }
   }

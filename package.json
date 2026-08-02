@@ -1,6 +1,6 @@
 {
   "name": "huangquan-agent",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "黄泉Agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -13,6 +13,7 @@
     "package:linux": "npm run build && electron-builder --linux --config electron-builder.yml"
   },
   "dependencies": {
+    "lucide-react": "^1.28.0",
     "playwright-core": "^1.62.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

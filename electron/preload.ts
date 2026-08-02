@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     load: (id: string) => ipcRenderer.invoke('sessions:load', id),
     save: (s: unknown) => ipcRenderer.invoke('sessions:save', safeArg(s)),
     delete: (id: string) => ipcRenderer.invoke('sessions:delete', id),
+    audit: () => ipcRenderer.invoke('sessions:audit'),
     clearAll: () => ipcRenderer.invoke('sessions:clearAll'),
     export: (format: string, workDir?: string) => ipcRenderer.invoke('sessions:export', format, workDir),
   },
@@ -56,6 +57,8 @@ contextBridge.exposeInMainWorld('huangquan', {
     load: (path: string) => ipcRenderer.invoke('skills:load', path),
     create: (name: string, content: string) => ipcRenderer.invoke('skills:create', name, content),
     install: (url: string) => ipcRenderer.invoke('skills:install', url),
+    installLocal: (src: string) => ipcRenderer.invoke('skills:installLocal', src),
+    pickLocal: () => ipcRenderer.invoke('skills:pickLocal'),
     delete: (name: string) => ipcRenderer.invoke('skills:delete', name),
   },
   memory: {
@@ -87,9 +90,20 @@ contextBridge.exposeInMainWorld('huangquan', {
   mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => ipcRenderer.invoke('media:describe', opts),
   tts: { speak: (text: string, rate?: number) => ipcRenderer.invoke('tts:speak', text, rate) },
   getPaths: () => ipcRenderer.invoke('get:paths'),
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    download: (url: string, fileName: string) => ipcRenderer.invoke('update:download', url, fileName),
+    onProgress: (cb: (d: { received: number; total: number }) => void) => {
+      const h = (_: unknown, d: { received: number; total: number }) => cb(d)
+      ipcRenderer.on('update:progress', h); return () => ipcRenderer.removeListener('update:progress', h)
+    },
+  },
   computer: {
     exec: (cmd: string) => ipcRenderer.invoke('computer:exec', cmd),
     readFile: (path: string, offset?: number, limit?: number) => ipcRenderer.invoke('computer:readFile', path, offset, limit),
+    stat: (p: string) => ipcRenderer.invoke('computer:stat', p),
+    sysPerf: () => ipcRenderer.invoke('computer:sysPerf'),
+    setWorkDir: (dir: string) => ipcRenderer.invoke('computer:setWorkDir', dir),
     writeFile: (path: string, content: string) => ipcRenderer.invoke('computer:writeFile', path, content),
     readDir: (path: string) => ipcRenderer.invoke('computer:readDir', path),
     mkdir: (path: string) => ipcRenderer.invoke('computer:mkdir', path),
@@ -147,7 +161,7 @@ contextBridge.exposeInMainWorld('huangquan', {
   cacheStats: () => ipcRenderer.invoke('cache:stats'),
   modelStats: {
     recordRequest: (sid: string, model: string, hit: boolean) => ipcRenderer.invoke('modelStats:recordRequest', sid, model, hit),
-    recordTokens: (sid: string, model: string, hitT: number, missT: number, writeT: number) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, hitT, missT, writeT),
+    recordTokens: (sid: string, model: string, hitT: number, missT: number, writeT: number, missTok?: number) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, hitT, missT, writeT, missTok),
     deleteSession: (sid: string) => ipcRenderer.invoke('modelStats:deleteSession', sid),
     get: () => ipcRenderer.invoke('modelStats:get'),
     getSession: (sid: string) => ipcRenderer.invoke('modelStats:getSession', sid),

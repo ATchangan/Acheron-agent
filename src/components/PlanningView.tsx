@@ -147,30 +147,30 @@ const S = {
     display: 'flex',
     flexDirection: 'column' as const,
     height: '100%',
-    backgroundColor: '#0D0D1A',
-    color: '#E8E8F0',
+    backgroundColor: '#17181c',
+    color: 'var(--text-primary)',
     overflow: 'hidden',
   },
   // header
   header: { padding: '20px 24px 0', flexShrink: 0 },
   titleRow: { display: 'flex', alignItems: 'center', gap: '10px' },
   icon: { fontSize: '28px' },
-  title: { fontSize: '20px', fontWeight: 600 as const, color: '#E8E8F0', margin: 0 },
-  subtitle: { fontSize: '12px', color: '#9999AA', marginTop: '2px' },
+  title: { fontSize: '20px', fontWeight: 600 as const, color: 'var(--text-primary)', margin: 0 },
+  subtitle: { fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' },
   // tabs
   navRow: {
     display: 'flex',
     gap: '4px',
     marginTop: '14px',
-    borderBottom: '1px solid #2A2A4A',
+    borderBottom: '1px solid #3a3c46',
     paddingBottom: '8px',
   },
   navBtn: (active: boolean) => ({
     padding: '5px 14px',
     borderRadius: '6px',
     border: 'none',
-    background: active ? 'rgba(107,76,154,.15)' : 'transparent',
-    color: active ? '#6B4C9A' : '#9999AA',
+    background: active ? 'rgba(124,111,168,.15)' : 'transparent',
+    color: active ? '#7c6fa8' : '#9999AA',
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: active ? (600 as const) : (400 as const),
@@ -180,15 +180,15 @@ const S = {
   body: { flex: 1, overflowY: 'auto' as const, padding: '0 24px 24px' },
   // cards
   card: {
-    background: '#1A1A2E',
-    border: '1px solid #2A2A4A',
+    background: '#23252b',
+    border: '1px solid #3a3c46',
     borderRadius: '10px',
     padding: '16px',
     marginBottom: '10px',
   },
   cardSm: {
-    background: '#1A1A2E',
-    border: '1px solid #2A2A4A',
+    background: '#23252b',
+    border: '1px solid #3a3c46',
     borderRadius: '8px',
     padding: '10px 14px',
     marginBottom: '6px',
@@ -199,10 +199,10 @@ const S = {
   input: {
     width: '100%',
     boxSizing: 'border-box' as const,
-    background: '#12122A',
-    border: '1px solid #2A2A4A',
+    background: '#1d1e24',
+    border: '1px solid #3a3c46',
     borderRadius: '6px',
-    color: '#E8E8F0',
+    color: 'var(--text-primary)',
     padding: '8px 12px',
     fontSize: '13px',
     outline: 'none',
@@ -211,10 +211,10 @@ const S = {
   textarea: {
     width: '100%',
     boxSizing: 'border-box' as const,
-    background: '#12122A',
-    border: '1px solid #2A2A4A',
+    background: '#1d1e24',
+    border: '1px solid #3a3c46',
     borderRadius: '6px',
-    color: '#E8E8F0',
+    color: 'var(--text-primary)',
     padding: '8px 12px',
     fontSize: '12px',
     outline: 'none',
@@ -231,18 +231,18 @@ const S = {
     fontWeight: 600 as const,
     transition: 'all .12s',
     background:
-      variant === 'primary' ? '#6B4C9A'
+      variant === 'primary' ? '#7c6fa8'
       : variant === 'danger' ? '#C23B22'
       : variant === 'green' ? '#2D6A4F'
       : 'transparent',
     color:
       variant === 'ghost' ? '#9999AA' : '#E8E8F0',
-    border: variant === 'ghost' ? '1px solid #2A2A4A' : 'none',
+    border: variant === 'ghost' ? '1px solid #3a3c46' : 'none',
   }),
   // progress bar
   progressBarOuter: {
     height: '6px',
-    background: '#2A2A4A',
+    background: '#3a3c46',
     borderRadius: '3px',
     margin: '8px 0',
     overflow: 'hidden',
@@ -250,18 +250,18 @@ const S = {
   progressBarInner: (pct: number) => ({
     height: '100%',
     width: `${pct}%`,
-    background: pct < 100 ? '#6B4C9A' : '#2D6A4F',
+    background: pct < 100 ? '#7c6fa8' : '#2D6A4F',
     borderRadius: '3px',
     transition: 'width .3s ease',
   }),
   // step card
   stepCard: (status: StepStatus) => ({
-    background: '#1A1A2E',
+    background: '#23252b',
     border: `1px solid ${
       status === 'completed' ? '#2D6A4F'
-      : status === 'in_progress' ? '#6B4C9A'
+      : status === 'in_progress' ? '#7c6fa8'
       : status === 'blocked' ? '#C23B22'
-      : '#2A2A4A'
+      : '#3a3c46'
     }`,
     borderRadius: '8px',
     padding: '12px 14px',
@@ -282,12 +282,12 @@ const S = {
     fontWeight: 600 as const,
     background:
       status === 'completed' ? 'rgba(45,106,79,.20)'
-      : status === 'in_progress' ? 'rgba(107,76,154,.25)'
+      : status === 'in_progress' ? 'rgba(124,111,168,.25)'
       : status === 'blocked' ? 'rgba(194,59,34,.20)'
       : 'rgba(153,153,170,.12)',
     color:
       status === 'completed' ? '#48c98a'
-      : status === 'in_progress' ? '#8B6FC0'
+      : status === 'in_progress' ? '#9488bc'
       : status === 'blocked' ? '#e05540'
       : '#9999AA',
     flexShrink: 0,
@@ -298,7 +298,7 @@ const S = {
     color: status === 'completed' ? '#9999AA' : '#E8E8F0',
     textDecoration: status === 'completed' ? 'line-through' : 'none',
   }),
-  stepDesc: { fontSize: '11px', color: '#9999AA', marginTop: '2px', lineHeight: 1.5 },
+  stepDesc: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: 1.5 },
   stepActions: {
     display: 'flex',
     gap: '4px',
@@ -313,34 +313,34 @@ const S = {
     flexShrink: 0,
     background:
       status === 'completed' ? '#2D6A4F'
-      : status === 'in_progress' ? '#6B4C9A'
+      : status === 'in_progress' ? '#7c6fa8'
       : status === 'blocked' ? '#C23B22'
-      : '#2A2A4A',
+      : '#3a3c46',
     border: `2px solid ${
       status === 'completed' ? '#48c98a'
-      : status === 'in_progress' ? '#8B6FC0'
+      : status === 'in_progress' ? '#9488bc'
       : status === 'blocked' ? '#e05540'
       : '#555'
     }`,
     transition: 'all .25s',
   }),
-  timelineLine: { width: '2px', height: '24px', background: '#2A2A4A', marginLeft: '4px' },
+  timelineLine: { width: '2px', height: '24px', background: '#3a3c46', marginLeft: '4px' },
   // labels
-  label: { fontSize: '11px', color: '#9999AA', marginBottom: '4px', display: 'block' } as React.CSSProperties,
+  label: { fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' } as React.CSSProperties,
   sectionTitle: {
     fontSize: '13px',
     fontWeight: 600 as const,
-    color: '#E8E8F0',
+    color: 'var(--text-primary)',
     margin: '16px 0 8px',
   },
   // notes
   notesArea: {
-    background: '#12122A',
-    border: '1px solid #2A2A4A',
+    background: '#1d1e24',
+    border: '1px solid #3a3c46',
     borderRadius: '4px',
     padding: '6px 8px',
     fontSize: '11px',
-    color: '#9999AA',
+    color: 'var(--text-secondary)',
     marginTop: '6px',
     fontStyle: 'italic' as const,
   },
@@ -351,7 +351,7 @@ const S = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '48px 24px',
-    color: '#9999AA',
+    color: 'var(--text-secondary)',
     gap: '12px',
   },
   emptyIcon: { fontSize: '48px', opacity: 0.4 },
@@ -363,16 +363,16 @@ const S = {
     gap: '10px',
   },
   templateCard: {
-    background: '#1A1A2E',
-    border: '1px solid #2A2A4A',
+    background: '#23252b',
+    border: '1px solid #3a3c46',
     borderRadius: '8px',
     padding: '14px',
     cursor: 'pointer',
     transition: 'border-color .15s, background .15s',
   },
   templateIcon: { fontSize: '24px', marginBottom: '6px' },
-  templateTitle: { fontSize: '13px', fontWeight: 600 as const, color: '#E8E8F0' },
-  templateCount: { fontSize: '11px', color: '#9999AA', marginTop: '4px' },
+  templateTitle: { fontSize: '13px', fontWeight: 600 as const, color: 'var(--text-primary)' },
+  templateCount: { fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' },
   // plan card in history
   planCardStatus: (status: PlanStatus) => ({
     fontSize: '10px',
@@ -380,12 +380,12 @@ const S = {
     borderRadius: '4px',
     fontWeight: 600 as const,
     background:
-      status === 'active' ? 'rgba(107,76,154,.25)'
+      status === 'active' ? 'rgba(124,111,168,.25)'
       : status === 'paused' ? 'rgba(153,153,170,.15)'
       : status === 'completed' ? 'rgba(45,106,79,.20)'
       : 'rgba(153,153,170,.10)',
     color:
-      status === 'active' ? '#8B6FC0'
+      status === 'active' ? '#9488bc'
       : status === 'paused' ? '#9999AA'
       : status === 'completed' ? '#48c98a'
       : '#666',
@@ -400,7 +400,7 @@ const S = {
     userSelect: 'none' as const,
   },
   confirmOverlay: {
-    background: '#1A1A2E',
+    background: '#23252b',
     border: '1px solid #C23B22',
     borderRadius: '8px',
     padding: '12px',
@@ -464,7 +464,7 @@ const StepCard: React.FC<{
         {/* dependencies */}
         {step.dependencies.length > 0 && (
           <div style={{ marginTop: '6px' }}>
-            <span style={{ fontSize: '10px', color: '#6B4C9A' }}>
+            <span style={{ fontSize: '10px', color: 'var(--accent)' }}>
               依赖: {step.dependencies.map((d, i) => <span key={d}>{i > 0 ? ', ' : ''}{d.replace('step_', '#')}</span>)}
             </span>
           </div>
@@ -545,10 +545,10 @@ const ProgressHeader: React.FC<{ steps: PlanStep[]; status: PlanStatus }> = ({ s
   return (
     <div style={S.card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: '#E8E8F0' }}>
+        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
           {PLAN_STATUS_LABELS[status]} · 进度 {pct}%
         </span>
-        <span style={{ fontSize: '11px', color: '#9999AA' }}>
+        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
           ✔ {done} / {steps.length}
           {inProg > 0 && <>  ◉ {inProg}</>}
           {blocked > 0 && <>  ⊘ {blocked}</>}
@@ -842,8 +842,8 @@ const PlanningView: React.FC = () => {
                       key={tpl.id}
                       style={S.templateCard}
                       onClick={() => applyTemplate(tpl)}
-                      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#6B4C9A' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#2A2A4A' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#7c6fa8' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#3a3c46' }}
                     >
                       <div style={S.templateIcon}>{tpl.icon}</div>
                       <div style={S.templateTitle}>{tpl.title}</div>
@@ -892,7 +892,7 @@ const PlanningView: React.FC = () => {
                 ))}
 
                 {/* add step inline */}
-                <div style={{ marginTop: '10px', borderTop: '1px solid #2A2A4A', paddingTop: '10px' }}>
+                <div style={{ marginTop: '10px', borderTop: '1px solid #3a3c46', paddingTop: '10px' }}>
                   <label style={S.label}>添加步骤</label>
                   <input
                     style={S.input}
@@ -941,10 +941,10 @@ const PlanningView: React.FC = () => {
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#E8E8F0', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
                     🏯 {activePlan.title}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#9999AA', lineHeight: 1.5 }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                     {activePlan.goal}
                   </div>
                   <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>
@@ -986,7 +986,7 @@ const PlanningView: React.FC = () => {
               {/* delete confirm */}
               {deleteConfirm === activePlan.id && (
                 <div style={S.confirmOverlay}>
-                  <div style={{ fontSize: '12px', color: '#E8E8F0', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-primary)', marginBottom: '8px' }}>
                     确定要删除这个计划吗？此操作不可撤销。
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
@@ -1005,7 +1005,7 @@ const PlanningView: React.FC = () => {
               <div style={S.sectionTitle}>
                 📍 谋断步骤流程
                 {activePlan.status !== 'archived' && (
-                  <span style={{ fontSize: '10px', color: '#9999AA', fontWeight: 400, marginLeft: '8px' }}>
+                  <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 400, marginLeft: '8px' }}>
                     ({activePlan.steps.filter(s => s.status === 'completed').length}/{activePlan.steps.length} 完成)
                   </span>
                 )}
@@ -1075,21 +1075,21 @@ const PlanningView: React.FC = () => {
                 <div key={plan.id} style={{
                   ...S.cardSm,
                   cursor: 'pointer',
-                  borderColor: plan.id === activePlanId ? '#6B4C9A' : '#2A2A4A',
+                  borderColor: plan.id === activePlanId ? '#7c6fa8' : '#3a3c46',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ flex: 1, minWidth: 0 }} onClick={() => viewPlan(plan.id)}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#E8E8F0' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
                         🏯 {plan.title}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#9999AA', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {plan.goal}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
                         <div style={{ flex: 1, ...S.progressBarOuter, margin: 0, height: '4px' }}>
                           <div style={{ ...S.progressBarInner(pct), height: '4px' }} />
                         </div>
-                        <span style={{ fontSize: '10px', color: '#9999AA', flexShrink: 0 }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', flexShrink: 0 }}>
                           {done}/{plan.steps.length}
                         </span>
                       </div>
@@ -1111,7 +1111,7 @@ const PlanningView: React.FC = () => {
                   {/* delete confirm inline */}
                   {deleteConfirm === plan.id && (
                     <div style={{ ...S.confirmOverlay, marginTop: '8px', marginBottom: 0 }}>
-                      <div style={{ fontSize: '11px', color: '#E8E8F0', marginBottom: '6px' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-primary)', marginBottom: '6px' }}>
                         确定删除「{plan.title}」？
                       </div>
                       <div style={{ display: 'flex', gap: '4px' }}>

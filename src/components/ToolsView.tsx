@@ -190,7 +190,7 @@ export default function ToolsView() {
         {/* Stats bar */}
         <div style={{
           display: 'flex', gap: 18, marginTop: 10, marginBottom: 8,
-          fontSize: 12, color: 'var(--text-secondary)',
+          fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)',
         }}>
           <span>🔹 内置工具 <b style={{ color: 'var(--text-primary)' }}>{totalTools}</b></span>
           <span>🔌 MCP 服务器 <b style={{ color: 'var(--text-primary)' }}>{mcpCount}</b></span>
@@ -252,7 +252,7 @@ export default function ToolsView() {
                           {/* top row: name + status + perm */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                              <strong style={{ fontSize: 13 }}>{tool.name}</strong>
+                              <strong style={{ fontSize: 'var(--ui-font-size)' }}>{tool.name}</strong>
                               <span className="provider-type" style={{ marginLeft: 8 }}>{tool.id}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -270,7 +270,7 @@ export default function ToolsView() {
                               {tool.testAction && perm !== 'deny' && (
                                 <button
                                   className="btn-small"
-                                  style={{ fontSize: 10, padding: '2px 7px' }}
+                                  style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '2px 7px' }}
                                   onClick={() => testTool(tool)}
                                 >
                                   测试
@@ -279,13 +279,13 @@ export default function ToolsView() {
                             </div>
                           </div>
                           {/* description */}
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
                             {tool.description}
                           </div>
                           {/* test result inline */}
                           {testResult?.id === tool.id && (
                             <div style={{
-                              fontSize: 10,
+                              fontSize: 'calc(var(--ui-font-size) - 3px)',
                               fontFamily: "'JetBrains Mono', monospace",
                               padding: '4px 8px',
                               borderRadius: 'var(--radius-sm)',
@@ -339,7 +339,7 @@ export default function ToolsView() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button className="btn-primary" onClick={connectMcp}>连接</button>
-                  <span style={{ fontSize: 11, color: mcpStatus.startsWith('✗') ? '#ff4466' : 'var(--accent-green)' }}>
+                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: mcpStatus.startsWith('✗') ? '#ff4466' : 'var(--accent-green)' }}>
                     {mcpStatus}
                   </span>
                 </div>
@@ -375,10 +375,10 @@ export default function ToolsView() {
           <div>
             <section className="settings-section">
               <h3>模拟三级权限</h3>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+              <p style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginBottom: 12 }}>
                 点击工具行切换权限级别：<span style={{ color: 'var(--accent-green)' }}>允许</span> → <span style={{ color: 'var(--accent)' }}>询问</span> → <span style={{ color: '#ff4466' }}>禁止</span>。权限保存至本地存储。
               </p>
-              <div style={{ display: 'flex', gap: 12, marginBottom: 12, fontSize: 11, color: 'var(--text-muted)' }}>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>
                 <span>🟢 允许 {Object.values(perms).filter(v => v === 'full').length}</span>
                 <span>🟡 询问 {Object.values(perms).filter(v => v === 'ask').length}</span>
                 <span>🔴 禁止 {Object.values(perms).filter(v => v === 'deny').length}</span>
@@ -400,11 +400,11 @@ export default function ToolsView() {
                         style={{ cursor: 'pointer' }}
                       >
                         <div>
-                          <label style={{ fontSize: 13 }}>{tool.name}</label>
+                          <label style={{ fontSize: 'var(--ui-font-size)' }}>{tool.name}</label>
                           <span className="provider-type" style={{ marginLeft: 8 }}>{tool.id}</span>
                         </div>
                         <span style={{
-                          fontSize: 11,
+                          fontSize: 'calc(var(--ui-font-size) - 2px)',
                           fontWeight: 600,
                           color: PERM_COLOR[p],
                           padding: '2px 10px',

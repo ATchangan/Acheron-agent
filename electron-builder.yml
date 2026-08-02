@@ -3,16 +3,16 @@ productName: 黄泉Agent
 directories:
   output: release
   buildResources: resources
+artifactName: Acheron-agent-${version}.exe
 files:
   - dist/**/*
   - dist-electron/**/*
-  - resources/**/*
-artifactName: Acheron-agent-${version}.exe
+  - resources/**/*        # SOP红线: 必须含 resources/**,否则人设 ishiki.md + 4 组技能不进包
 win:
   target:
     - nsis
   icon: resources/icon.ico
-  sign: null
+  sign: null              # 无证书自动跳过签名; 绝不要写 signAndEditExecutable: false(会丢失图标/版本信息)
 mac:
   target:
     - dmg

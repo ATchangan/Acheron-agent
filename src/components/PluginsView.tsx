@@ -41,7 +41,7 @@ const CATEGORY_HINT: Record<string, string> = {
   jin: '日常',
 }
 
-const YELLOW_RIVER = '#6B4C9A'
+const YELLOW_RIVER = '#7c6fa8'
 
 // ─── インラインスタイル ───────────────────────────────
 const s = {
@@ -52,8 +52,8 @@ const s = {
     display: 'flex', gap: 16, flexWrap: 'wrap' as const, marginBottom: 8,
   } as React.CSSProperties,
   statChip: {
-    fontSize: 12, padding: '4px 12px', borderRadius: 20, border: `1px solid ${YELLOW_RIVER}`,
-    color: '#9999AA', background: 'rgba(107,76,154,0.08)', display: 'flex', alignItems: 'center', gap: 5,
+    fontSize: 'calc(var(--ui-font-size) - 1px)', padding: '4px 12px', borderRadius: 20, border: `1px solid ${YELLOW_RIVER}`,
+    color: 'var(--text-secondary)', background: 'rgba(124,111,168,0.08)', display: 'flex', alignItems: 'center', gap: 5,
   } as React.CSSProperties,
   actionRow: {
     display: 'flex', gap: 8, alignItems: 'center',
@@ -70,19 +70,19 @@ const s = {
   } as React.CSSProperties,
   pluginIcon: {
     width: 38, height: 38, borderRadius: 'var(--radius)',
-    background: `linear-gradient(135deg, ${YELLOW_RIVER}, #8B6FC0)`,
+    background: `linear-gradient(135deg, ${YELLOW_RIVER}, #9488bc)`,
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
     flexShrink: 0,
   } as React.CSSProperties,
   pluginName: {
-    fontSize: 14, fontWeight: 600, color: 'var(--text-primary)',
+    fontSize: 'calc(var(--ui-font-size) + 1px)', fontWeight: 600, color: 'var(--text-primary)',
   } as React.CSSProperties,
   pluginMeta: {
-    fontSize: 11, color: 'var(--text-muted)', marginTop: 2,
+    fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginTop: 2,
     display: 'flex', gap: 8, alignItems: 'center',
   } as React.CSSProperties,
   categoryBadge: {
-    fontSize: 10, padding: '1px 8px', borderRadius: 10, border: '1px solid',
+    fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '1px 8px', borderRadius: 10, border: '1px solid',
     whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
   expandBody: {
@@ -90,19 +90,19 @@ const s = {
     display: 'flex', flexDirection: 'column' as const, gap: 12,
   } as React.CSSProperties,
   sectionTitle: {
-    fontSize: 11, fontWeight: 600, color: '#8B6FC0', textTransform: 'uppercase' as const,
+    fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: 'var(--accent-purple)', textTransform: 'uppercase' as const,
     letterSpacing: '.5px', marginBottom: 4,
   } as React.CSSProperties,
   toolRow: {
-    display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)',
+    display: 'flex', alignItems: 'center', gap: 8, fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)',
     padding: '4px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-root)',
     marginBottom: 4,
   } as React.CSSProperties,
   toolName: {
-    color: 'var(--accent)', fontFamily: "'JetBrains Mono', 'Consolas', monospace", fontSize: 11,
+    color: 'var(--accent)', fontFamily: "'JetBrains Mono', 'Consolas', monospace", fontSize: 'calc(var(--ui-font-size) - 2px)',
   } as React.CSSProperties,
   permChip: {
-    fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--bg-root)',
+    fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '2px 8px', borderRadius: 10, background: 'var(--bg-root)',
     color: 'var(--text-secondary)', border: '1px solid var(--border)',
     display: 'inline-flex', marginRight: 4, marginBottom: 4,
   } as React.CSSProperties,
@@ -117,20 +117,20 @@ const s = {
     padding: '4px 12px', borderRadius: 'var(--radius-sm)', border: 'none',
     background: active ? YELLOW_RIVER : 'transparent',
     color: active ? '#fff' : 'var(--text-secondary)',
-    cursor: 'pointer', fontSize: 12, fontWeight: active ? 600 : 400,
+    cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: active ? 600 : 400,
     transition: 'all .12s',
   }),
   msgSuccess: {
-    fontSize: 12, color: '#48c98a', marginTop: 8,
+    fontSize: 'calc(var(--ui-font-size) - 1px)', color: '#48c98a', marginTop: 8,
   } as React.CSSProperties,
   msgError: {
-    fontSize: 12, color: '#ff6688', marginTop: 8,
+    fontSize: 'calc(var(--ui-font-size) - 1px)', color: '#ff6688', marginTop: 8,
   } as React.CSSProperties,
   emptyIcon: {
     fontSize: 40, marginBottom: 12, opacity: 0.4,
   } as React.CSSProperties,
   expandHint: {
-    fontSize: 10, color: 'var(--text-muted)', opacity: 0.6,
+    fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', opacity: 0.6,
   } as React.CSSProperties,
 }
 
@@ -376,7 +376,7 @@ export default function PluginsView() {
       <div style={s.header}>
         <div>
           <h2>🎭 黄泉式神録</h2>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+          <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginTop: 2 }}>
             插件拡張 · 契約式神
           </span>
         </div>
@@ -508,7 +508,7 @@ export default function PluginsView() {
           }}
         >
           <div style={s.emptyIcon}>📭</div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 6 }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--ui-font-size)', marginBottom: 6 }}>
             まだ契約式神がいません
           </p>
           <p className="empty-hint">
@@ -556,7 +556,7 @@ export default function PluginsView() {
                     </div>
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: 'calc(var(--ui-font-size) - 2px)',
                         color: 'var(--text-muted)',
                         marginTop: 3,
                         overflow: 'hidden',
@@ -591,7 +591,7 @@ export default function PluginsView() {
                   {/* メタデータ */}
                   <div>
                     <div style={s.sectionTitle}>📋 メタデータ</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                       {p.manifest.author && (
                         <span>作者: {p.manifest.author}</span>
                       )}
@@ -652,7 +652,7 @@ export default function PluginsView() {
                       {p.manifest.commands.map((c, i) => (
                         <div key={i} style={s.toolRow}>
                           <span style={s.toolName}>{c.name}</span>
-                          <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }}>
+                          <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono',monospace", fontSize: 'calc(var(--ui-font-size) - 3px)' }}>
                             {c.action}
                           </span>
                         </div>
@@ -672,7 +672,7 @@ export default function PluginsView() {
                             setCategory(p.manifest.name, key)
                           }}
                           style={{
-                            fontSize: 11,
+                            fontSize: 'calc(var(--ui-font-size) - 2px)',
                             padding: '3px 10px',
                             borderRadius: 14,
                             border: `1px solid ${

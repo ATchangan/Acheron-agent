@@ -278,8 +278,8 @@ const S = {
     display: 'flex',
     flexDirection: 'column' as const,
     height: '100%',
-    backgroundColor: '#0D0D1A',
-    color: '#E8E8F0',
+    backgroundColor: '#17181c',
+    color: 'var(--text-primary)',
     overflow: 'hidden',
   } as React.CSSProperties,
 
@@ -299,13 +299,13 @@ const S = {
   title: {
     fontSize: '18px',
     fontWeight: 600 as const,
-    color: '#E8E8F0',
+    color: 'var(--text-primary)',
     margin: 0,
   } as React.CSSProperties,
 
   subtitle: {
     fontSize: '11px',
-    color: '#9999AA',
+    color: 'var(--text-secondary)',
     marginTop: '2px',
   } as React.CSSProperties,
 
@@ -317,15 +317,15 @@ const S = {
     marginTop: '12px',
     flexWrap: 'wrap' as const,
     paddingBottom: '10px',
-    borderBottom: '1px solid #2A2A4A',
+    borderBottom: '1px solid #3a3c46',
   } as React.CSSProperties,
 
   langTab: (active: boolean): React.CSSProperties => ({
     padding: '4px 12px',
     borderRadius: '5px',
     border: 'none',
-    background: active ? 'rgba(107,76,154,.20)' : 'transparent',
-    color: active ? '#6B4C9A' : '#7777AA',
+    background: active ? 'rgba(124,111,168,.20)' : 'transparent',
+    color: active ? '#7c6fa8' : '#7777AA',
     cursor: 'pointer',
     fontSize: '11px',
     fontWeight: active ? (600 as const) : (400 as const),
@@ -336,14 +336,14 @@ const S = {
   toolbarSep: {
     width: '1px',
     height: '20px',
-    background: '#2A2A4A',
+    background: '#3a3c46',
   } as React.CSSProperties,
 
   actionBtn: (color?: string): React.CSSProperties => ({
     padding: '4px 10px',
     borderRadius: '5px',
     border: 'none',
-    background: 'rgba(107,76,154,.12)',
+    background: 'rgba(124,111,168,.12)',
     color: color || '#B8B8D0',
     cursor: 'pointer',
     fontSize: '11px',
@@ -355,7 +355,7 @@ const S = {
     padding: '4px 16px',
     borderRadius: '5px',
     border: 'none',
-    background: '#6B4C9A',
+    background: '#7c6fa8',
     color: '#FFFFFF',
     cursor: 'pointer',
     fontSize: '12px',
@@ -390,7 +390,7 @@ const S = {
 
   editorLabel: {
     fontSize: '11px',
-    color: '#9999AA',
+    color: 'var(--text-secondary)',
     fontWeight: 600 as const,
   } as React.CSSProperties,
 
@@ -398,8 +398,8 @@ const S = {
     flex: 1,
     display: 'flex',
     minHeight: 0,
-    background: '#1A1A2E',
-    border: '1px solid #2A2A4A',
+    background: '#23252b',
+    border: '1px solid #3a3c46',
     borderRadius: '8px',
     overflow: 'hidden',
   } as React.CSSProperties,
@@ -407,14 +407,14 @@ const S = {
   lineNumbers: {
     width: '44px',
     minWidth: '44px',
-    background: '#12122A',
-    borderRight: '1px solid #2A2A4A',
+    background: '#1d1e24',
+    borderRight: '1px solid #3a3c46',
     padding: '10px 4px 10px 0',
     overflow: 'hidden',
     textAlign: 'right' as const,
     fontSize: '12px',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
-    color: '#4A4A6A',
+    color: 'var(--text-muted)',
     lineHeight: '1.6',
     userSelect: 'none' as const,
     whiteSpace: 'pre' as const,
@@ -422,9 +422,9 @@ const S = {
 
   textarea: {
     flex: 1,
-    background: '#1A1A2E',
+    background: '#23252b',
     border: 'none',
-    color: '#E8E8F0',
+    color: 'var(--text-primary)',
     padding: '10px 14px',
     fontSize: '13px',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
@@ -452,20 +452,20 @@ const S = {
 
   outputLabel: {
     fontSize: '11px',
-    color: '#9999AA',
+    color: 'var(--text-secondary)',
     fontWeight: 600 as const,
   } as React.CSSProperties,
 
   outputDuration: {
     fontSize: '10px',
-    color: '#6B4C9A',
+    color: 'var(--accent)',
     marginLeft: '8px',
   } as React.CSSProperties,
 
   console: {
     flex: 1,
     background: '#0A0A16',
-    border: '1px solid #2A2A4A',
+    border: '1px solid #3a3c46',
     borderRadius: '8px',
     padding: '10px 14px',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
@@ -480,14 +480,14 @@ const S = {
   } as React.CSSProperties,
 
   consolePlaceholder: {
-    color: '#3A3A5A',
+    color: 'var(--text-muted)',
     fontStyle: 'italic' as const,
   } as React.CSSProperties,
 
   /* ── 历史面板 ── */
   historyPanel: {
-    background: '#1A1A2E',
-    border: '1px solid #2A2A4A',
+    background: '#23252b',
+    border: '1px solid #3a3c46',
     borderRadius: '8px',
     marginTop: '8px',
     maxHeight: '160px',
@@ -500,22 +500,22 @@ const S = {
     justifyContent: 'space-between' as const,
     alignItems: 'center',
     padding: '6px 12px',
-    borderBottom: '1px solid #2A2A4A',
+    borderBottom: '1px solid #3a3c46',
     position: 'sticky' as const,
     top: 0,
-    background: '#1A1A2E',
+    background: '#23252b',
     zIndex: 1,
   } as React.CSSProperties,
 
   historyTitle: {
     fontSize: '10px',
-    color: '#9999AA',
+    color: 'var(--text-secondary)',
     fontWeight: 600 as const,
   } as React.CSSProperties,
 
   historyClear: {
     fontSize: '10px',
-    color: '#666688',
+    color: 'var(--text-muted)',
     background: 'none',
     border: 'none',
     cursor: 'pointer',
@@ -526,7 +526,7 @@ const S = {
     alignItems: 'center',
     gap: '8px',
     padding: '5px 12px',
-    borderBottom: '1px solid #1E1E38',
+    borderBottom: '1px solid #262830',
     cursor: 'pointer',
     transition: 'all .1s',
     fontSize: '11px',
@@ -554,7 +554,7 @@ const S = {
   },
 
   historyCode: {
-    color: '#B8B8D0',
+    color: 'var(--text-secondary)',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
@@ -565,7 +565,7 @@ const S = {
 
   historyTime: {
     fontSize: '10px',
-    color: '#5A5A78',
+    color: 'var(--text-muted)',
     whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
 
@@ -575,8 +575,8 @@ const S = {
     top: '100%',
     left: 0,
     zIndex: 10,
-    background: '#1E1E38',
-    border: '1px solid #2A2A4A',
+    background: '#262830',
+    border: '1px solid #3a3c46',
     borderRadius: '8px',
     padding: '6px 0',
     minWidth: '200px',
@@ -588,7 +588,7 @@ const S = {
     padding: '6px 14px',
     cursor: 'pointer',
     fontSize: '12px',
-    color: '#E8E8F0',
+    color: 'var(--text-primary)',
     border: 'none',
     background: 'none',
     width: '100%',
@@ -602,9 +602,9 @@ const S = {
     position: 'fixed' as const,
     bottom: '20px',
     right: '20px',
-    background: '#1E1E38',
-    border: '1px solid #6B4C9A',
-    color: '#E8E8F0',
+    background: '#262830',
+    border: '1px solid #7c6fa8',
+    color: 'var(--text-primary)',
     padding: '8px 16px',
     borderRadius: '8px',
     fontSize: '12px',
@@ -949,7 +949,7 @@ export default function CodeView() {
                     key={i}
                     style={S.templateItem}
                     onClick={() => applyTemplate(tpl)}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(107,76,154,.15)')}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,111,168,.15)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                   >
                     {tpl.label}
@@ -993,7 +993,7 @@ export default function CodeView() {
             <span style={S.editorLabel}>
               📝 {LANGS.find(l => l.id === lang)?.icon} {LANGS.find(l => l.id === lang)?.label} 编辑器
             </span>
-            <span style={{ fontSize: '10px', color: '#5A5A78' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
               {code.length} 字符 · {lineCount} 行 · Ctrl+Enter 运行
             </span>
           </div>
@@ -1062,7 +1062,7 @@ export default function CodeView() {
                 key={`${entry.timestamp}-${i}`}
                 style={S.historyItem}
                 onClick={() => loadFromHistory(entry)}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(107,76,154,.08)')}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,111,168,.08)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'none')}
               >
                 <span style={S.historyLang(entry.lang)}>

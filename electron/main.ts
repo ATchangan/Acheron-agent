@@ -64,6 +64,7 @@ function encProviders(data: any): any {
   if (Array.isArray(out.providers)) out.providers = out.providers.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: encKey(p.apiKey), customHeaders: p.customHeaders ? encKey(String(p.customHeaders)) : p.customHeaders } : p)
   if (Array.isArray((out as any).mediaProviders)) (out as any).mediaProviders = (out as any).mediaProviders.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: encKey(p.apiKey) } : p)
   if (out.general && typeof out.general.webReadCookies === 'string' && out.general.webReadCookies.trim()) out.general.webReadCookies = encKey(out.general.webReadCookies)
+  if (out.general && typeof out.general.embeddingApiKey === 'string' && out.general.embeddingApiKey.trim()) out.general.embeddingApiKey = encKey(out.general.embeddingApiKey)
   return out
 }
 function decProviders(data: any): any {
@@ -72,6 +73,7 @@ function decProviders(data: any): any {
   if (Array.isArray(out.providers)) out.providers = out.providers.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: decKey(p.apiKey), customHeaders: p.customHeaders ? decKey(String(p.customHeaders)) : p.customHeaders } : p)
   if (Array.isArray((out as any).mediaProviders)) (out as any).mediaProviders = (out as any).mediaProviders.map((p: any) => (p && p.apiKey) ? { ...p, apiKey: decKey(p.apiKey) } : p)
   if (out.general && typeof out.general.webReadCookies === 'string' && out.general.webReadCookies.startsWith('__ENC__')) out.general.webReadCookies = decKey(out.general.webReadCookies)
+  if (out.general && typeof out.general.embeddingApiKey === 'string' && out.general.embeddingApiKey.startsWith('__ENC__')) out.general.embeddingApiKey = decKey(out.general.embeddingApiKey)
   return out
 }
 
@@ -119,12 +121,12 @@ const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
 const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
-// v0.2.3-fix: 用户技能目录移到 userData —— 打包版 ROOT 在 app.asar 内只读,
-// 原 join(ROOT,'skills') 在安装版中 mkdir 抛 ENOTDIR 导致启动中断(主窗口不创建)
+// v0.2.3-pack(SOP红线): skillsDir 必须在 userData —— 安装版 app.asar 内只读, mkdir 抛 ENOTDIR 导致启动崩溃
 const skillsDir = join(userDataPath, 'skills')
 
+// v0.2.3-pack(SOP红线): mkdir 循环全部 try-catch —— resources/skills 在 asar 内只读, 失败不能崩溃
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
-  try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }) } catch { /* 只读环境跳过 */ }
+  try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }) } catch { /* 只读目录(asar 内)或权限受限: 跳过 */ }
 }
 
 // 启动时初始向量记忆
@@ -421,6 +423,13 @@ function buildSessionMeta() {
     } catch { /* 损坏文件跳过 */ }
   }
 }
+// v0.2.3-fix: 会话巡检 —— 返回磁盘上所有会话文件 id(供渲染层对账清理孤儿数据)
+ipcMain.handle('sessions:audit', () => {
+  try {
+    if (!fs.existsSync(sessionsDir)) return []
+    return fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json')).map(f => f.replace(/\.json$/, ''))
+  } catch { return [] }
+})
 ipcMain.handle('sessions:list', () => {
   try {
     if (sessionMeta.size === 0 && fs.existsSync(sessionsDir)) buildSessionMeta()
@@ -517,8 +526,15 @@ ipcMain.handle('skills:list', () => {
     return skills
   } catch { return [] }
 })
+// v0.2.3-fix: 只允许读取技能目录内的文件(防越权读取任意路径)
 ipcMain.handle('skills:load', (_e, path: string) => {
-  try { return fs.readFileSync(path, 'utf-8') }
+  try {
+    const p = String(path || '')
+    const allowed = [join(skillsDir, ''), join(resourcesDir, 'skills', '')]
+    const rp = require('path').resolve(p)
+    if (!allowed.some(a => rp === require('path').resolve(a) || rp.startsWith(require('path').resolve(a)))) return ''
+    return fs.readFileSync(rp, 'utf-8')
+  }
   catch { return '' }
 })
 
@@ -529,7 +545,8 @@ ipcMain.handle('memory:load', () => {
 })
 ipcMain.handle('memory:save', (_e, memory) => {
   // v0.2.1: 安全序列化防止循环引用
-  fs.writeFileSync(memoryPath, JSON.stringify(safeClone(memory), null, 2), 'utf-8')
+  // v0.2.3-fix: 异步写盘不阻塞主进程
+  fs.promises.writeFile(memoryPath, JSON.stringify(safeClone(memory), null, 2), 'utf-8').catch(() => {})
   return true
 })
 
@@ -543,11 +560,24 @@ function getVM() {
   }
   return _vm
 }
+// v0.2.3: 从设置刷新 embedding 引擎配置(启动/设置变更后调用, 无需重启)
+function refreshEmbeddingConfig() {
+  try {
+    const vm = getVM()
+    const g = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {}
+    if (g.embeddingBaseUrl && g.embeddingModel) {
+      const key = typeof g.embeddingApiKey === 'string' && g.embeddingApiKey.startsWith('__ENC__') ? decKey(g.embeddingApiKey) : (g.embeddingApiKey || '')
+      vm.setEmbeddingConfig({ baseUrl: String(g.embeddingBaseUrl), apiKey: key, model: String(g.embeddingModel) })
+    } else {
+      vm.setEmbeddingConfig(null)
+    }
+  } catch { /* 忽略 */ }
+}
 ipcMain.handle('memory:search', async (_e, query: string) => {
-  try { return getVM().searchMemory(query, 5) } catch { return [] }
+  try { refreshEmbeddingConfig(); return await getVM().searchMemory(query, 5) } catch { return [] }
 })
 ipcMain.handle('memory:addVector', async (_e, content: string) => {
-  try { getVM().addMemory(content); getVM().saveMemory(); return true } catch { return false }
+  try { refreshEmbeddingConfig(); getVM().addMemory(content); getVM().saveMemory(); return true } catch { return false }
 })
 ipcMain.handle('memory:importFile', async (_e, filePath: string) => {
   try {
@@ -584,7 +614,13 @@ ipcMain.handle('memory:clearVector', async () => {
 })
 
 // ─── 电脑控制 ──────────────────────────────────────
+// v0.2.3-fix: 危险命令前置拦截 —— 不可逆/系统级命令直接拒绝(防误操作与恶意注入)
+const DANGEROUS_CMD: string[] = ['rm -rf', 'rm -fr', 'format ', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'del /f /s /q c:\\', 'rd /s /q c:\\']
 ipcMain.handle('computer:exec', async (_e, cmd: string) => {
+  const cmdL = String(cmd || '').toLowerCase()
+  for (const d of DANGEROUS_CMD) {
+    if (cmdL.includes(d.toLowerCase())) return 'E:permission denied: 危险命令已被拦截 (' + d.trim() + ')。如需执行请手动在终端操作。'
+  }
   return new Promise<string>((resolve) => {
     // v0.2.1: 更可靠的 PowerShell 检测——检查 powershell 关键字和常见 cmdlet 模式
     const trimmed = cmd.trim()
@@ -606,6 +642,63 @@ ipcMain.handle('computer:exec', async (_e, cmd: string) => {
   })
 })
 
+// v0.2.3-opt: 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
+let perfCache: any = null; let perfCacheAt = 0
+let lastCpuSample: { idle: number; total: number } | null = null; let lastCpuAt = 0
+// v0.2.3-opt: GPU 采样 —— 优先 nvidia-smi(正在使用的 NVIDIA GPU, 准确), 失败回退性能计数器各引擎最大值
+let gpuViaNvidia = true
+function sampleGpu(): Promise<{ pct: number | null; name: string | null }> {
+  return new Promise((resolve) => {
+    if (gpuViaNvidia) {
+      exec('nvidia-smi --query-gpu=name,utilization.gpu --format=csv,noheader,nounits', { timeout: 3000, windowsHide: true }, (err, stdout) => {
+        if (err) { gpuViaNvidia = false; sampleGpuWin(resolve); return }
+        const line = String(stdout).trim().split('\n')[0] || ''
+        const m = line.match(/(.+),\s*(\d+)/)
+        if (m) resolve({ pct: Math.max(0, Math.min(100, parseInt(m[2]))), name: m[1].trim() })
+        else resolve({ pct: null, name: null })
+      })
+    } else sampleGpuWin(resolve)
+  })
+}
+function sampleGpuWin(resolve: (v: { pct: number | null; name: string | null }) => void) {
+  const script = "try { $s = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($s -and $s.Count -gt 0) { ($s | Measure-Object -Property CookedValue -Maximum).Maximum } else { -1 } } catch { -1 }"
+  exec('powershell.exe -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\"') + '"', { timeout: 4000, windowsHide: true }, (err, stdout) => {
+    if (err) return resolve({ pct: null, name: null })
+    const v = parseFloat(String(stdout).trim().split('\n').pop() || '')
+    resolve({ pct: isFinite(v) && v >= 0 ? Math.min(100, Math.round(v)) : null, name: null })
+  })
+}
+ipcMain.handle('computer:sysPerf', async () => {
+  const now = Date.now()
+  if (perfCache && now - perfCacheAt < 2000) return perfCache
+  // CPU 占用: 两次 os.cpus() 采样差
+  const cpus = os.cpus()
+  let idle = 0, total = 0
+  for (const c of cpus) {
+    idle += c.times.idle
+    total += c.times.user + c.times.nice + c.times.sys + c.times.idle + c.times.irq
+  }
+  let cpuPct = 0
+  if (lastCpuSample && now - lastCpuAt > 300) {
+    const dIdle = idle - lastCpuSample.idle
+    const dTotal = total - lastCpuSample.total
+    cpuPct = dTotal > 0 ? Math.max(0, Math.min(100, Math.round((1 - dIdle / dTotal) * 100))) : 0
+  }
+  lastCpuSample = { idle, total }; lastCpuAt = now
+  const memTotal = os.totalmem(), memFree = os.freemem()
+  const memUsed = memTotal - memFree
+  const memPct = Math.round(memUsed / memTotal * 100)
+  const gpu = await sampleGpu()
+  perfCache = { cpuPct, memPct, memUsed, memTotal, gpuPct: gpu.pct, gpuName: gpu.name, cpus: cpus.length }
+  perfCacheAt = now
+  return perfCache
+})
+ipcMain.handle('computer:stat', async (_e, filePath: string) => {
+  const st = fs.statSync(filePath)
+  return { mtimeMs: st.mtimeMs, size: st.size, isFile: st.isFile(), isDirectory: st.isDirectory() }
+})
+// v0.2.3-opt: readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
+const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string }>()
 ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number, limit?: number) => {
   if (!fs.existsSync(filePath)) throw new Error('文件不存在')
   const stat = fs.statSync(filePath)
@@ -648,7 +741,13 @@ ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number
     return buf.toString('utf-8', 0, Math.min(validLen, readSize))
   }
   if (stat.size > 5 * 1024 * 1024) throw new Error('文件过大 (>5MB)，请使用 offset/limit 分段读取')
-  return fs.readFileSync(filePath, 'utf-8')
+  // v0.2.3-opt: 命中缓存且文件未变 → 零磁盘读
+  const hit = readFileCache.get(filePath)
+  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.content
+  const content = fs.readFileSync(filePath, 'utf-8')
+  readFileCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, content })
+  if (readFileCache.size > 500) { const k = readFileCache.keys().next().value; if (k !== undefined) readFileCache.delete(k) }
+  return content
 })
 ipcMain.handle('computer:writeFile', async (_e, filePath: string, content: string) => {
   fs.mkdirSync(dirname(filePath), { recursive: true })
@@ -660,15 +759,18 @@ ipcMain.handle('computer:readDir', async (_e, dirPath: string) => {
   return items.map(item => ({ name: item.name, isDirectory: item.isDirectory(), size: item.isFile() ? fs.statSync(join(dirPath, item.name)).size : 0 }))
 })
 // ─── v0.2.6: 文件浏览器操作(写操作限定工作目录内, 防误删) ──
+// v0.2.3-fix: set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录
+let workDirOverride: string | null = null
 function assertInsideWorkDir(p: string): boolean {
   try {
-    const wd = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general?.workDir
+    const wd = workDirOverride || JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general?.workDir
     if (!wd) return false
     const rp = require('path').resolve(p)
     const rw = require('path').resolve(wd)
     return rp === rw || rp.startsWith(rw + require('path').sep)
   } catch { return false }
 }
+ipcMain.handle('computer:setWorkDir', (_e, dir: string) => { workDirOverride = dir || null; return true })
 ipcMain.handle('computer:mkdir', async (_e, dirPath: string) => {
   try {
     if (!assertInsideWorkDir(dirPath)) return { ok: false, error: '仅允许在工作目录内创建' }
@@ -753,52 +855,67 @@ ipcMain.handle('computer:readImageBase64', async (_e, filePath: string) => {
   const mm: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }
   return 'data:' + (mm[ext] || 'image/png') + ';base64,' + buf.toString('base64')
 })
+// v0.2.3-opt: 检索提速 —— 并行遍历(16 路并发) + 扩展忽略目录 + 大文件跳过
+const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'dist-electron', 'build', 'release', 'out', 'target', '__pycache__', '.venv', 'venv', '.idea', '.vscode', '.next', '.nuxt', '.cache', 'coverage', '.gradle', '.tox', 'site-packages'])
+
 ipcMain.handle('computer:grep', async (_e, dirPath: string, pattern: string) => {
-  // v0.2.3: fs.promises 异步递归, 不再阻塞主进程
+  // v0.2.3-opt: 并行遍历 + 忽略大目录 + 大文件跳过
   const results: string[] = []
-  let scanned = 0
-  async function walk(dir: string, depth: number): Promise<void> {
-    if (depth > 8 || scanned > 5000 || results.length >= 100) return
+  const scanned = { n: 0 }
+  async function walkGrep(dir: string): Promise<void> {
+    if (scanned.n > 8000 || results.length >= 100) return
     let entries
     try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) } catch { return }
+    const tasks: Promise<void>[] = []
     for (const entry of entries) {
-      if (results.length >= 100) return
+      if (scanned.n > 8000 || results.length >= 100) break
       const fp = join(dir, entry.name)
-      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') await walk(fp, depth + 1)
-      else if (entry.isFile() && /\.(ts|tsx|js|jsx|json|md|css|html|py|rs|go|java|c|cpp)$/.test(entry.name)) {
-        scanned++
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue
+        tasks.push((async () => { await walkGrep(fp) })())
+        if (tasks.length >= 16) { await Promise.all(tasks); tasks.length = 0 }
+      } else if (entry.isFile() && /\.(ts|tsx|js|jsx|json|md|css|html|py|rs|go|java|c|cpp|txt|yml|yaml)$/.test(entry.name)) {
+        scanned.n++
         try {
+          const st = await fs.promises.stat(fp)
+          if (st.size > 2 * 1024 * 1024) continue
           const content = await fs.promises.readFile(fp, 'utf-8')
-          content.split('\n').forEach((line, idx) => { if (line.includes(pattern)) results.push(`${fp}:${idx + 1}:${line.trim()}`) })
+          content.split('\n').forEach((line, idx) => { if (line.includes(pattern)) results.push(fp + ':' + (idx + 1) + ':' + line.trim().slice(0, 200)) })
         } catch { /* binary skip */ }
       }
     }
+    if (tasks.length) await Promise.all(tasks)
   }
-  try { await walk(dirPath, 0) } catch { /* ok */ }
+  try { await walkGrep(dirPath) } catch { /* ok */ }
   return results.slice(0, 100).join('\n')
 })
+
 ipcMain.handle('computer:find', async (_e, dirPath: string, glob: string) => {
-  // v0.2.3: fs.promises 异步递归 + glob 转义修复(非正则元字符不再破坏表达式)
+  // v0.2.3-opt: 并行遍历 + 忽略大目录
   const results: string[] = []
-  let scanned = 0
+  const scanned = { n: 0 }
   let regex: RegExp
   try {
-    // v0.2.3-fix: 分段转义 —— 先按 * 分割, 各段转义后以 .* 连接(避免把 * 生成的点再次转义成 \.*)
     const escSeg = (s: string) => s.replace(/[.+^${}()|[\]\\]/g, '\\$&')
     regex = new RegExp(String(glob || '').split('*').map(escSeg).join('.*'))
   } catch { return '' }
-  async function walk(dir: string, depth: number): Promise<void> {
-    if (depth > 8 || scanned > 5000 || results.length >= 200) return
+  async function walkFind(dir: string): Promise<void> {
+    if (scanned.n > 8000 || results.length >= 200) return
     let entries
     try { entries = await fs.promises.readdir(dir, { withFileTypes: true }) } catch { return }
+    const tasks: Promise<void>[] = []
     for (const entry of entries) {
-      if (results.length >= 200) return
+      if (scanned.n > 8000 || results.length >= 200) break
       const fp = join(dir, entry.name)
-      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') await walk(fp, depth + 1)
-      else if (entry.isFile()) { scanned++; if (regex.test(entry.name)) results.push(fp) }
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue
+        tasks.push((async () => { await walkFind(fp) })())
+        if (tasks.length >= 16) { await Promise.all(tasks); tasks.length = 0 }
+      } else if (entry.isFile()) { scanned.n++; if (regex.test(entry.name)) results.push(fp) }
     }
+    if (tasks.length) await Promise.all(tasks)
   }
-  try { await walk(dirPath, 0) } catch { /* ok */ }
+  try { await walkFind(dirPath) } catch { /* ok */ }
   return results.slice(0, 200).join('\n')
 })
 
@@ -1055,7 +1172,12 @@ ipcMain.handle('web:fetch', async (_e, url: string) => {
 })
 
 // ─── v0.2.5: 无头浏览器网页解析工具 web_read (Playwright + 系统 Edge/Chrome) ──
+// v0.2.3-opt: web_read 10s 同 URL 缓存(重复访问零导航)
+const webReadCache = new Map<string, { ts: number; result: string }>()
 ipcMain.handle('web:read', async (_e, url: string, mode?: string) => {
+  const cacheKey = url + '|' + (mode || 'text')
+  const cachedHit = webReadCache.get(cacheKey)
+  if (cachedHit && Date.now() - cachedHit.ts < 10000) return cachedHit.result
   try {
     const { webRead } = require('./webtools')
     // 读取设置中的浏览器解析配置(双向绑定全局配置文件)
@@ -1080,6 +1202,7 @@ ipcMain.handle('web:read', async (_e, url: string, mode?: string) => {
       autoClose: cfg.webReadAutoClose !== false,
       cookies: cfg.webReadCookies || '',
     })
+    webReadCache.set(cacheKey, { ts: Date.now(), result: JSON.stringify(result) })
     return JSON.stringify(result)
   } catch (e: any) {
     return JSON.stringify({ ok: false, error: 'web_read 调用异常: ' + String(e?.message || e), advice: '请查看应用日志或稍后重试' })
@@ -1101,13 +1224,107 @@ ipcMain.handle('mcp:call', async (_e, server, tool, a) => {
 })
 ipcMain.handle('mcp:list', () => { try { return require('./mcp/client').listServers() } catch { return [] } })
 ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
+
+// ─── v0.2.3: 自动更新 —— GitHub Releases 版本检查 + 安装包下载 ──
+const UPDATE_REPO = 'ATchangan/Acheron-agent'
+function currentVersion(): string {
+  try { return require('../package.json').version || app.getVersion() || '0.0.0' } catch { return app.getVersion() || '0.0.0' }
+}
+function compareVer(a: string, b: string): number {
+  const pa = String(a).replace(/^v/i, '').split('.').map(n => parseInt(n) || 0)
+  const pb = String(b).replace(/^v/i, '').split('.').map(n => parseInt(n) || 0)
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0
+    if (x !== y) return x - y
+  }
+  return 0
+}
+ipcMain.handle('update:check', async () => {
+  try {
+    const res = await netFetch('https://api.github.com/repos/' + UPDATE_REPO + '/releases/latest', {
+      headers: { 'User-Agent': 'huangquan-agent', 'Accept': 'application/vnd.github+json' },
+      signal: AbortSignal.timeout(12000),
+    })
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status }
+    const d: any = await res.json()
+    const latest = String(d.tag_name || '').replace(/^v/i, '')
+    const cur = currentVersion()
+    const has = compareVer(latest, cur) > 0
+    return {
+      ok: true, hasUpdate: has, version: latest, current: cur,
+      url: d.html_url || '',
+      assets: (d.assets || []).map((a: any) => ({ name: a.name, url: a.browser_download_url, size: a.size })),
+      notes: String(d.body || '').slice(0, 800),
+    }
+  } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+})
+// 下载安装包到系统下载目录(带进度事件)
+ipcMain.handle('update:download', async (event, url: string, fileName: string) => {
+  try {
+    const name = String(fileName || '').replace(/[^\w\-. ]/g, '').slice(0, 120) || 'Acheron-agent-update.exe'
+    const dest = join(app.getPath('downloads'), name)
+    const res = await netFetch(String(url), { signal: AbortSignal.timeout(1800000) })
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status }
+    const reader = res.body?.getReader()
+    if (!reader) return { ok: false, error: '无响应流' }
+    const chunks: Buffer[] = []
+    let received = 0
+    const total = Number(res.headers.get('content-length') || 0)
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(Buffer.from(value))
+      received += value.length
+      if (total > 0 && received % (1024 * 512) < 4096) {
+        try { event.sender.send('update:progress', { received, total }) } catch { /* 忽略 */ }
+      }
+    }
+    fs.writeFileSync(dest, Buffer.concat(chunks))
+    return { ok: true, path: dest, size: received }
+  } catch (e: any) { return { ok: false, error: String(e?.message || e) } }
+})
+// v0.2.3-fix: 本地技能选择 —— 原生对话框(可同时选目录或 .zip), 替代渲染层 window.prompt(Electron 不支持, 会抛错)
+ipcMain.handle('skills:pickLocal', async () => {
+  try {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '选择本地技能(目录或 .zip)',
+      properties: ['openDirectory', 'openFile'],
+      filters: [{ name: '技能包', extensions: ['zip'] }],
+    })
+    return canceled || !filePaths.length ? null : filePaths[0]
+  } catch { return null }
+})
 ipcMain.handle('skills:create', (_e, name: string, content: string) => {
+  console.log('[SKILLS:CREATE] called', name, 'skillsDir=', skillsDir)
   try {
     const dir = join(skillsDir, name)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(join(dir, 'SKILL.md'), content, 'utf-8')
+    console.log('[SKILLS:CREATE] ok', dir)
     return true
-  } catch (e: any) { return 'Error: ' + e.message }
+  } catch (e: any) { console.log('[SKILLS:CREATE] ERR', e?.message); return 'Error: ' + e.message }
+})
+// v0.2.3: 本地技能安装 —— 复制本地技能目录到 skillsDir(只读源, 校验目录名)
+ipcMain.handle('skills:installLocal', async (_e, srcPath: string) => {
+  try {
+    const src = String(srcPath || '').trim()
+    if (!fs.existsSync(src)) return 'Error: 路径不存在'
+    const st = fs.statSync(src)
+    const name = src.split(/[\\/]/).pop()!.replace(/\.git$/, '').replace(/[^\w\-. ]/g, '').trim()
+    if (!/^[\w\-. ]{1,80}$/.test(name)) return 'Error: 无效的技能名称'
+    const dest = join(skillsDir, name)
+    if (fs.existsSync(dest)) return 'Error: 同名技能已存在: ' + name
+    if (st.isDirectory()) {
+      fs.cpSync(src, dest, { recursive: true })
+    } else if (st.isFile() && src.endsWith('.zip')) {
+      const { execFileSync } = require('child_process') as any
+      fs.mkdirSync(dest, { recursive: true })
+      try { execFileSync('powershell.exe', ['-NoProfile', '-Command', 'Expand-Archive -Path "' + src.replace(/"/g, '`"') + '" -DestinationPath "' + dest.replace(/"/g, '`"') + '" -Force'], { timeout: 60000 }) } catch { fs.rmSync(dest, { recursive: true, force: true }); return 'Error: zip 解压失败' }
+    } else {
+      return 'Error: 仅支持目录或 .zip 文件'
+    }
+    return 'OK 已安装: ' + name
+  } catch (e: any) { return 'Error: ' + (e?.message || e) }
 })
 ipcMain.handle('skills:install', (_e, url: string) => {
   // v0.2.3-security: spawn 替代 exec 拼接 —— 修复命令注入(url 含 ; && 等可执行任意命令)
@@ -1204,6 +1421,16 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
     }
   }
   const body: any = { model, messages, temperature, stream: true }
+  // v0.2.3-fix: 官方要求 include_usage 才保证流式返回完整 usage(prompt_cache_hit/miss_tokens), 否则缓存统计缺失
+  body.stream_options = { include_usage: true }
+  // v0.2.3-debug: 打印首个 assistant(tool_calls) 完整结构(排查 reasoning_content 400)
+  if ((messages || []).some((m: any) => m.role === 'assistant' && m.tool_calls)) {
+    const atc = (messages as any[]).find((m: any) => m.role === 'assistant' && m.tool_calls)
+    const toolMsgs = (messages as any[]).filter((m: any) => m.role === 'tool').length
+    console.log('[LLM] ATC:', JSON.stringify({ keys: Object.keys(atc), content: atc.content, rc: atc.reasoning_content, tcId: atc.tool_calls?.[0]?.id, tools: toolMsgs }))
+  }
+  // v0.2.3-debug: 打印消息 role 序列(排查 tool 消息格式问题)
+  if ((messages || []).length > 20) console.log('[LLM] roles:', (messages as any[]).map((m: any) => m.role).join(','), '| tc:', (messages as any[]).filter((m: any) => m.tool_calls).length)
   if (tools?.length) { body.tools = tools }
 
   let url: string
@@ -1225,8 +1452,10 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
   const abortCtrl = new AbortController()
   activeRequests.set(requestId, abortCtrl)
   // v0.2.3: 请求结束后自动从活跃表移除（防止泄漏 + 精确中止）
-  const removeReq = () => activeRequests.delete(requestId)
+  const removeReq = () => { activeRequests.delete(requestId); event.sender.removeListener('destroyed', removeReq) }
   event.sender.once('destroyed', removeReq)
+  // v0.2.3: 请求结束(成功/失败)立即清理 listener, 防止 WebContents 监听器累积(修复 MaxListenersExceededWarning)
+  const doneClean = () => { removeReq(); event.sender.removeListener('destroyed', removeReq) }
 
   try {
     console.log('[LLM]', provider, model, url, 'msgs:', messages?.length, 'tools:', tools?.length || 0)
@@ -1236,8 +1465,8 @@ ipcMain.handle('llm:chat', async (event, params: any) => {
       body: JSON.stringify(body),
       signal: abortCtrl.signal,
     })
-    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); event.sender.send('llm:error', { requestId, error: `API ${res.status}: ${e.slice(0, 400)}` }); return }
-    console.log('[LLM] stream ok')
+    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); doneClean(); console.error('[LLM] FAIL-MSGS:', JSON.stringify((messages || []).slice(0, 6).map((m: any) => ({ role: m.role, tc: m.tool_calls ? m.tool_calls.length : 0, tcid: m.tool_call_id || null, c: typeof m.content === 'string' ? m.content.slice(0, 60) : null })))); event.sender.send('llm:error', { requestId, error: `API ${res.status}: ${e.slice(0, 400)}` }); return }
+    console.log('[LLM] stream ok'); doneClean()
     const reader = res.body?.getReader(); if (!reader) { event.sender.send('llm:error', { requestId, error: '无流' }); return }
 
     const dec = new TextDecoder(); let buf = ''
@@ -1414,7 +1643,7 @@ ipcMain.handle('mcp:sse:list', () => { try { return require('./mcp/sse-transport
 // ─── v0.2: 工具缓存 ────────────────────────────────
 // ─── v0.2.6: 按 会话×模型 的 TOKEN 缓存命中统计(持久化) ──
 ipcMain.handle('modelStats:recordRequest', (_e, sid: string, model: string, hit: boolean) => { try { require('./cache/model-cache-stats').recordRequest(sid, model, hit) } catch { /* 忽略 */ } return true })
-ipcMain.handle('modelStats:recordTokens', (_e, sid: string, model: string, hitT: number, missT: number, writeT: number) => { try { require('./cache/model-cache-stats').recordTokens(sid, model, hitT, missT, writeT) } catch { /* 忽略 */ } return true })
+ipcMain.handle('modelStats:recordTokens', (_e, sid: string, model: string, hitT: number, inputT: number, writeT: number, missT?: number) => { try { require('./cache/model-cache-stats').recordTokens(sid, model, hitT, inputT, writeT, missT) } catch { /* 忽略 */ } return true })
 ipcMain.handle('modelStats:deleteSession', (_e, sid: string) => { try { require('./cache/model-cache-stats').deleteSession(sid) } catch { /* 忽略 */ } return true })
 ipcMain.handle('modelStats:get', () => { try { return require('./cache/model-cache-stats').getAll() } catch { return { sessions: {}, models: {} } } })
 ipcMain.handle('modelStats:getSession', (_e, sid: string) => { try { return require('./cache/model-cache-stats').getSession(sid) } catch { return {} } })

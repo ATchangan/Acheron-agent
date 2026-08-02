@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react'
+import { Volume2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useChatStore } from '../store/chat'
@@ -61,16 +62,23 @@ export default function MessageItem({ message, streaming }: Props) {
   const [selected, setSelected] = useState(false)
   const isUser = message.role === 'user'
   const timeText = new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  const handleCopy = () => {
-    const text = message.content || ''
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text)
-    } else {
+  const handleCopy = async () => {
+    // v0.2.3-fix: 内容可能是多模态数组 → 统一转文本; clipboard 需焦点 → 异常时回退 execCommand(无需焦点/权限)
+    const raw = message.content
+    const text = typeof raw === 'string' ? raw : JSON.stringify(raw || '')
+    try {
+      if (navigator.clipboard && document.hasFocus()) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        throw new Error('clipboard-unavailable')
+      }
+    } catch {
       const ta = document.createElement('textarea')
       ta.value = text
       ta.style.position = 'fixed'; ta.style.opacity = '0'
       document.body.appendChild(ta); ta.select()
-      document.execCommand('copy'); document.body.removeChild(ta)
+      try { document.execCommand('copy') } catch { /* ignore */ }
+      document.body.removeChild(ta)
     }
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
@@ -124,8 +132,8 @@ export default function MessageItem({ message, streaming }: Props) {
               <details key={i} className="tool-call-block" style={{ borderColor: 'var(--accent-green)', background: 'rgba(72,201,138,.05)' }} open={args.length <= 60}>
                 <summary className="tool-call-header" style={{ color: 'var(--accent-green)', cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ whiteSpace: 'nowrap' }}>🔧 {fn.name}</span>
-                  {inline && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{inline.length > 50 ? inline.slice(0, 50) + '…' : inline}</span>}
-                  <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{args.length > 60 ? '展开' : ''}</span>
+                  {inline && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 'calc(var(--ui-font-size) - 2px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{inline.length > 50 ? inline.slice(0, 50) + '…' : inline}</span>}
+                  <span style={{ color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 3px)' }}>{args.length > 60 ? '展开' : ''}</span>
                 </summary>
                 {args.length > 60 && <pre className="tool-call-output">{args}</pre>}
               </details>
@@ -157,16 +165,16 @@ export default function MessageItem({ message, streaming }: Props) {
       <div className="markdown-body">
         {clean && <ReactMarkdown remarkPlugins={[remarkGfm]}>{clean || (streaming ? '' : '...')}</ReactMarkdown>}
         {reflect && (
-          <details style={{ margin: '8px 0', fontSize: 12 }}>
+          <details style={{ margin: '8px 0', fontSize: 'calc(var(--ui-font-size) - 1px)' }}>
             <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', userSelect: 'none' }}>
               💭 {streaming ? '反思中…' : '反思内容(点击展开)'}
             </summary>
-            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,92,191,.08)', border: '1px solid rgba(124,92,191,.25)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{reflect}</div>
+            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,111,168,.08)', border: '1px solid rgba(124,111,168,.25)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{reflect}</div>
           </details>
         )}
         {cards.map((card, i) => (
           <div key={i} className="card-container" style={{ margin: '12px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-color)', background: '#fff' }}>
-            {card.title && <div style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#555', borderBottom: '1px solid #eee', background: '#fafafa' }}>{card.title}</div>}
+            {card.title && <div style={{ padding: '8px 14px', fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: '#555', borderBottom: '1px solid #eee', background: '#fafafa' }}>{card.title}</div>}
             <iframe srcDoc={card.html} sandbox="allow-scripts" style={{ width: '100%', height: Math.min(cardMaxHeight, Math.max(200, (card.html.match(/\n/g) || []).length * 20 + 100)), border: 'none' }} title={card.title || 'card'} />
           </div>
         ))}
@@ -196,16 +204,16 @@ export default function MessageItem({ message, streaming }: Props) {
         ) : null}
         {isUser ? (editing ? (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <textarea className="chat-textarea" style={{ flex: 1, minHeight: 48, background: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: 6, padding: 8, fontSize: 12 }} value={editText} onChange={e => setEditText(e.target.value)} autoFocus />
-            <button className="send-btn" onClick={saveEdit} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 13 }} title="保存修改">✓</button>
-            <button className="send-btn stop-btn" onClick={() => setEditing(false)} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 13 }} title="取消">✕</button>
+            <textarea className="chat-textarea" style={{ flex: 1, minHeight: 48, background: 'var(--bg-card)', border: '1px solid var(--accent)', borderRadius: 6, padding: 8, fontSize: 'calc(var(--ui-font-size) - 1px)' }} value={editText} onChange={e => setEditText(e.target.value)} autoFocus />
+            <button className="send-btn" onClick={saveEdit} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="保存修改">✓</button>
+            <button className="send-btn stop-btn" onClick={() => setEditing(false)} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="取消">✕</button>
           </div>
         ) : <div className="message-text">{message.content}</div>) : renderAssistantContent(message.content)}
         <div className={`message-footer ${isUser ? 'footer-right' : 'footer-left'}`}>
           {showTimestamps === 'always' && <span className="footer-time">{timeText}</span>}
           {!isUser && (
             <>
-              {ttsEnabled && <FooterBtn title={ttsBusy ? '朗读中…' : '语音朗读'} onClick={speakText}>{ttsBusy ? '🔊…' : '🔊'}</FooterBtn>}
+              {ttsEnabled && <FooterBtn title={ttsBusy ? '朗读中…' : '语音朗读'} onClick={speakText}>{ttsBusy ? <Volume2 size={13} /> : <Volume2 size={13} />}</FooterBtn>}
               <FooterBtn title="重新生成" onClick={regen}><RefreshIcon /></FooterBtn>
               <FooterBtn title={copied ? '已复制' : '复制内容'} onClick={handleCopy} active={copied}>{copied ? <CheckIcon /> : <CopyIcon />}</FooterBtn>
               <FooterBtn title="全选引入到输入框" onClick={() => { const text = message.content || ''; if (text) sendQuote(text) }}><QuoteIcon /></FooterBtn>
@@ -215,13 +223,14 @@ export default function MessageItem({ message, streaming }: Props) {
                 </svg>
               </FooterBtn>
               {(message.meta?.ttft !== undefined || message.meta?.duration !== undefined || message.usage) && (
-                <span style={{ color: 'var(--text-muted)', fontSize: 10, marginLeft: 4, display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 3px)', marginLeft: 4, display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
                   {message.meta?.ttft !== undefined && <span title="首字延迟 (TTFT)">⚡{fmtTime(message.meta.ttft)}</span>}
                   {message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
-                  {message.usage && (() => {
-                    const total = message.usage.total_tokens || (message.usage.prompt_tokens + message.usage.completion_tokens)
-                    const speed = message.meta?.duration ? Math.round(message.usage.completion_tokens / (message.meta.duration / 1000)) : 0
-                    return <span title="本次回复消耗 token 总数">{total} tok{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
+                  {(message.usage || message.meta?.taskTokens) && (() => {
+                    // v0.2.3: 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
+                    const total = message.meta?.taskTokens || message.usage.total_tokens || (message.usage.prompt_tokens + message.usage.completion_tokens)
+                    const speed = message.meta?.duration ? Math.round(message.usage?.completion_tokens || 0 / (message.meta.duration / 1000)) : 0
+                    return <span title={message.meta?.taskTokens ? '本任务总消耗(主 Agent + 全部子 Agent)' : '本次回复消耗 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全Agent)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
                   })()}
                 </span>
               )}

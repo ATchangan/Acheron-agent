@@ -90,14 +90,33 @@ function applySkin(dataUrl: string | null) {
   }
 }
 
-async function applySkinColors(dataUrl: string) {
-  const c = await extractDominantColor(dataUrl)
+// v0.2.3-fix: 字体颜色按图片亮度自适应 —— 亮图深色字, 暗图浅色字
+function applySkinTextColor(c: { r: number; g: number; b: number }) {
   const r = document.documentElement
-  // 主色调应用到 UI 元素
-  r.style.setProperty('--skin-accent', `${c.r},${c.g},${c.b}`)
-  r.style.setProperty('--accent', adjustColor(c.r, c.g, c.b, 1.0))
-  r.style.setProperty('--accent-dim', adjustColor(c.r, c.g, c.b, 0.8))
-  r.style.setProperty('--border-glow', adjustColor(c.r, c.g, c.b, 0.4))
+  const luma = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255
+  if (luma > 0.55) {
+    // 亮图: 深色文字 + 浅色界面底(输入框/卡片/界面盖层同步变浅, 避免深字深底看不清)
+    r.style.setProperty('--text-primary', '#1c1d21')
+    r.style.setProperty('--text-secondary', 'rgba(20,21,25,0.78)')
+    r.style.setProperty('--text-muted', 'rgba(20,21,25,0.58)')
+    r.style.setProperty('--border', 'rgba(0,0,0,0.16)')
+    r.style.setProperty('--bg-elevated', 'rgba(255,255,255,0.78)')
+    r.style.setProperty('--bg-card', 'rgba(250,250,252,0.92)')
+    r.style.setProperty('--bg-input', 'rgba(240,241,244,0.92)')
+    r.style.setProperty('--bg-root', 'rgba(248,248,250,0.5)')
+    r.style.setProperty('--bg-surface', 'rgba(244,245,248,0.85)')
+    r.style.setProperty('--skin-overlay', 'rgba(255,255,255,0.40)')
+  } else {
+    // 暗图: 浅色文字 + 深色界面底
+    r.style.setProperty('--text-primary', '#e9e9eb')
+    r.style.setProperty('--text-secondary', 'rgba(255,255,255,0.86)')
+    r.style.setProperty('--text-muted', 'rgba(255,255,255,0.66)')
+    r.style.setProperty('--border', 'rgba(255,255,255,0.16)')
+    r.style.setProperty('--bg-elevated', 'rgba(255,255,255,0.10)')
+    r.style.setProperty('--bg-card', 'rgba(23,24,28,0.92)')
+    r.style.setProperty('--bg-input', 'rgba(20,21,25,0.92)')
+    r.style.setProperty('--skin-overlay', 'rgba(8,8,15,0.50)')
+  }
 }
 
 // v0.2.1: 默认人设 —— 聊天=崩坏：星穹铁道 黄泉（官方精细人设整合）
@@ -164,7 +183,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   return {
   providers: [],
   general: {
-    theme: 'dark', themePreset: 'dark-tech', mode: 'work',   // 默认外观: 暗色科技(dark-tech)
+    theme: 'dark', mode: 'work',
     // v0.2.5: 无头浏览器网页解析工具配置
     webReadEnabled: true,        // 总开关: 关闭后 Agent 无法调用 web_read
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
@@ -204,6 +223,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
         document.documentElement.style.setProperty('--accent', adjustColor(sc.r, sc.g, sc.b, 1.0))
         document.documentElement.style.setProperty('--accent-dim', adjustColor(sc.r, sc.g, sc.b, 0.8))
         document.documentElement.style.setProperty('--border-glow', adjustColor(sc.r, sc.g, sc.b, 0.4))
+        // v0.2.3-fix: 启动时也应用文字色自适应(亮图深字/暗图浅字)
+        applySkinTextColor(sc)
       }
     } catch { set({ loaded: true }) }
     // v0.2.3-fix(可用性): logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
@@ -247,6 +268,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       r.style.setProperty('--accent', adjustColor(c.r, c.g, c.b, 1.0))
       r.style.setProperty('--accent-dim', adjustColor(c.r, c.g, c.b, 0.8))
       r.style.setProperty('--border-glow', adjustColor(c.r, c.g, c.b, 0.4))
+      applySkinTextColor(c)
       set((s) => ({ general: { ...s.general, skinColors: { r: c.r, g: c.g, b: c.b } } })); debouncedSave()
     } else {
       applySkin(null)

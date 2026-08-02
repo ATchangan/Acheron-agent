@@ -23,45 +23,52 @@ html[data-bg] body {
 /* 全屏磨砂蒙版层 — 统一压暗 + 磨砂 */
 html[data-bg] body::before {
   content: ''; position: fixed; inset: 0;
-  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
-  background: rgba(6,6,12,0.35);
+  background: rgba(6,6,12,0.12);
   pointer-events: none; z-index: 0;
 }
 
-/* 侧边栏毛玻璃 — rgba(10,10,16,0.65) + blur 8px */
+/* v0.2.3: 设置界面在壁纸模式下半透明 —— 透出背景图氛围, 同时保证选项可读
+   (文字/背景色由皮肤按图片亮度自适应, 不再硬编码覆盖) */
+html[data-bg] .settings-root {
+  background: var(--skin-overlay, rgba(8,8,15,0.50)) !important;
+}
+/* 设置页顶部/内容区再加一层底, 保证文字清晰 */
+html[data-bg] .settings-root > div:first-child,
+html[data-bg] .settings-root [style*="overflowY"] {
+  background: rgba(8,8,15,0.35) !important;
+}
+/* v0.2.3-fix: 浏览器/技能/工作台界面在壁纸模式下一视同仁 —— 半透明 + 文字提亮 */
+html[data-bg] .browser-root,
+html[data-bg] .skills-root,
+html[data-bg] .agents-root {
+  background: var(--skin-overlay, rgba(8,8,15,0.50)) !important;
+}
+/* 侧边栏/右侧面板/顶部导航 — 背景跟随皮肤亮度(亮图浅底深字, 暗图深底浅字) */
 html[data-bg] .sidebar {
-  background: rgba(10,10,16,0.65) !important;
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  background: var(--skin-overlay, rgba(10,10,16,0.92)) !important;
 }
-/* 右侧面板毛玻璃 */
 html[data-bg] .sidebar-right {
-  background: rgba(10,10,16,0.65) !important;
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  background: var(--skin-overlay, rgba(10,10,16,0.92)) !important;
 }
-/* 顶部导航毛玻璃 */
 html[data-bg] .chat-header-tab {
-  background: rgba(10,10,16,0.55);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  background: var(--skin-overlay, rgba(10,10,16,0.9)) !important;
 }
 
 /* 中央聊天区半透深色蒙版 */
 html[data-bg] .chat-main {
-  background: rgba(6,6,12,0.54) !important;
+  background: var(--skin-overlay, rgba(6,6,12,0.50)) !important;
 }
 /* 底部输入框区域 */
 html[data-bg] .chat-input-area {
-  background: rgba(6,6,12,0.54);
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  background: var(--skin-overlay, rgba(6,6,12,0.85)) !important;
 }
 /* 设置页 */
 html[data-bg] .settings-view {
-  background: rgba(10,10,16,0.55);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  background: rgba(10,10,16,0.88);
 }
 /* Agent 页 */
 html[data-bg] .agents-view {
-  background: rgba(10,10,16,0.55);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  background: rgba(10,10,16,0.88);
 }
 /* 空状态页 */
 html[data-bg] .chat-center-empty,
@@ -79,7 +86,7 @@ html[data-bg] .app-shell::before { background: none; }
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(ellipse at 50% 0%, rgba(107,76,154,.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at 50% 0%, rgba(var(--skin-accent),.06) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -90,23 +97,20 @@ html[data-bg] .app-shell::before { background: none; }
   box-shadow: 1px 0 8px rgba(0,0,0,.2); 
 }
 .brand-text {
-  font-size: 15px;
+  font-size: calc(var(--ui-font-size) + 2px);
   font-weight: 700;
   letter-spacing: 1px;
-  background: linear-gradient(135deg, var(--accent-purple, #8B6FC0), var(--accent, #6B4C9A));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 .brand-sub {
-  font-size: 9px;
+  font-size: calc(var(--ui-font-size) - 4px);
   font-weight: 400;
   letter-spacing: 2px;
   opacity: .5;
   -webkit-text-fill-color: var(--text-muted);
 }
 .sidebar-section-label {
-  font-size: 10px;
+  font-size: calc(var(--ui-font-size) - 3px);
   text-transform: uppercase;
   letter-spacing: 2px;
   color: var(--text-muted);
@@ -125,12 +129,12 @@ html[data-bg] .app-shell::before { background: none; }
   transform: translateX(2px);
 }
 .menu-item.active {
-  background: linear-gradient(90deg, rgba(107,76,154,.3), rgba(107,76,154,.1));
+  background: rgba(var(--skin-accent),.18);
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .menu-icon {
-  font-size: 14px;
+  font-size: calc(var(--ui-font-size) + 1px);
   width: 20px;
   text-align: center;
   flex-shrink: 0;
@@ -149,11 +153,11 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .session-item:hover { background: var(--bg-hover); }
 .session-item.active {
-  background: rgba(107,76,154,.15);
+  background: rgba(var(--skin-accent),.15);
   border-left: 2px solid var(--accent);
 }
 .session-title {
-  font-size: 12px;
+  font-size: calc(var(--ui-font-size) - 1px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -185,20 +189,18 @@ html[data-bg] .app-shell::before { background: none; }
   border-left-color: var(--accent-dim); 
 }
 .message-user .message-body {
-  background: rgba(107,76,154,.1);
+  background: rgba(var(--skin-accent),.1);
   border-radius: var(--radius-lg);
   padding: 8px 14px;
 }
 .message-assistant .message-body {
-  background: rgba(26,26,46,.5);
+  background: var(--bg-elevated);
   border-radius: var(--radius-lg);
   padding: 8px 14px;
 }
 
 /* === 标签栏精致化 === */
 .chat-header-tab { 
-  backdrop-filter: blur(8px); 
-  -webkit-backdrop-filter: blur(8px); 
   border-bottom: 1px solid var(--border);
 }
 .tab-btn { 
@@ -208,7 +210,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .tab-btn.active { 
   position: relative; 
-  background: rgba(107,76,154,.15);
+  background: rgba(var(--skin-accent),.15);
 }
 .tab-btn.active::after { 
   content: ''; 
@@ -227,7 +229,7 @@ html[data-bg] .app-shell::before { background: none; }
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: calc(var(--ui-font-size) + 1px);
   cursor: pointer;
   padding: 2px 8px;
   border-radius: var(--radius-xs);
@@ -244,8 +246,8 @@ html[data-bg] .app-shell::before { background: none; }
 /* === 输入框聚焦增强 === */
 .chat-textarea:focus { box-shadow: none; }
 .input-wrapper:focus-within { 
-  border-color: var(--accent); 
-  box-shadow: 0 0 0 1px var(--accent), 0 0 16px rgba(107,76,154,.12); 
+  border-color: var(--accent-dim); 
+  box-shadow: 0 0 0 1px var(--accent-dim); 
 }
 
 /* === 按钮精致化 === */
@@ -262,26 +264,24 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .btn-primary:hover {
   background: var(--accent-purple);
-  box-shadow: 0 2px 8px rgba(107,76,154,.4);
-  transform: translateY(-1px);
+  box-shadow: 0 1px 3px rgba(0,0,0,.3);
 }
 .btn-primary:active { transform: scale(.98); }
 .send-btn { 
-  box-shadow: 0 2px 8px rgba(107,76,154,.3); 
+  box-shadow: 0 1px 3px rgba(0,0,0,.25); 
 }
 .send-btn:hover { 
-  transform: scale(1.05); 
-  box-shadow: 0 4px 16px rgba(107,76,154,.5); 
+  transform: scale(1.04); 
+  box-shadow: 0 2px 8px rgba(0,0,0,.3); 
 }
-.send-btn:active { transform: scale(.95); }
+.send-btn:active { transform: scale(.96); }
 
 /* === 下拉菜单增强 === */
 .dropdown-menu { 
-  backdrop-filter: blur(12px); 
-  -webkit-backdrop-filter: blur(12px); 
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+  background: var(--bg-elevated);
 }
 .dropdown-item { 
   font-weight: 500; 
@@ -299,8 +299,6 @@ html[data-bg] .app-shell::before { background: none; }
 
 /* === 错误栏增强 === */
 .error-bar { 
-  backdrop-filter: blur(8px); 
-  -webkit-backdrop-filter: blur(8px); 
   border-left: 3px solid #C23B22;
 }
 
@@ -329,7 +327,6 @@ html[data-bg] .app-shell::before { background: none; }
 /* === 空状态增强（黄泉主题） === */
 .avatar-hex { 
   animation: float 3s ease-in-out infinite; 
-  filter: drop-shadow(0 0 20px rgba(107,76,154,.3));
 }
 @keyframes float { 
   0%,100% { transform: translateY(0); } 
@@ -341,7 +338,7 @@ html[data-bg] .app-shell::before { background: none; }
 
 /* === 面板标题 === */
 .panel-title {
-  font-size: 14px;
+  font-size: calc(var(--ui-font-size) + 1px);
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 12px;
@@ -362,7 +359,6 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .hq-card:hover {
   border-color: var(--border-glow);
-  box-shadow: 0 2px 12px rgba(0,0,0,.2);
 }
 
 /* === 状态徽章 === */
@@ -372,15 +368,15 @@ html[data-bg] .app-shell::before { background: none; }
   gap: 4px;
   padding: 2px 8px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: calc(var(--ui-font-size) - 2px);
   font-weight: 600;
   letter-spacing: .3px;
 }
 .hq-badge-success { background: rgba(45,106,79,.2); color: #48c98a; }
 .hq-badge-warning { background: rgba(212,175,55,.15); color: #D4AF37; }
 .hq-badge-danger { background: rgba(194,59,34,.15); color: #C23B22; }
-.hq-badge-info { background: rgba(107,76,154,.2); color: #8B6FC0; }
-.hq-badge-muted { background: rgba(153,153,170,.1); color: #9999AA; }
+.hq-badge-info { background: rgba(var(--skin-accent),.2); color: var(--accent-purple); }
+.hq-badge-muted { background: rgba(var(--skin-accent),.1); color: var(--text-muted); }
 
 /* === 输入框通用样式 === */
 .hq-input {
@@ -389,7 +385,7 @@ html[data-bg] .app-shell::before { background: none; }
   border-radius: var(--radius);
   color: var(--text-primary);
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   font-family: inherit;
   outline: none;
   width: 100%;
@@ -397,7 +393,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .hq-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(107,76,154,.1);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(var(--skin-accent),.1);
 }
 .hq-textarea {
   background: var(--bg-elevated);
@@ -405,7 +401,7 @@ html[data-bg] .app-shell::before { background: none; }
   border-radius: var(--radius);
   color: var(--text-primary);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   outline: none;
   width: 100%;
@@ -416,7 +412,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .hq-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(107,76,154,.1);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(var(--skin-accent),.1);
 }
 
 /* === 按钮组 === */
@@ -431,13 +427,13 @@ html[data-bg] .app-shell::before { background: none; }
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: calc(var(--ui-font-size) - 1px);
   cursor: pointer;
   font-weight: 500;
   transition: all .12s ease;
 }
 .hq-btn:hover { background: var(--bg-hover); border-color: var(--border-glow); }
-.hq-btn.active { background: rgba(107,76,154,.2); border-color: var(--accent); color: var(--accent-purple); }
+.hq-btn.active { background: rgba(var(--skin-accent),.2); border-color: var(--accent); color: var(--accent-purple); }
 .hq-btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
 .hq-btn-accent:hover { background: var(--accent-purple); }
 .hq-btn-danger { color: #C23B22; border-color: rgba(194,59,34,.3); }
@@ -484,11 +480,11 @@ html[data-bg] .app-shell::before { background: none; }
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: calc(var(--ui-font-size) - 2px);
   font-weight: 500;
-  background: rgba(107,76,154,.15);
+  background: rgba(var(--skin-accent),.15);
   color: var(--accent-purple);
-  border: 1px solid rgba(107,76,154,.2);
+  border: 1px solid rgba(var(--skin-accent),.2);
 }
 
 /* === 终端/控制台输出 === */
@@ -498,7 +494,7 @@ html[data-bg] .app-shell::before { background: none; }
   border-radius: var(--radius);
   padding: 12px 16px;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-  font-size: 12px;
+  font-size: calc(var(--ui-font-size) - 1px);
   color: #48c98a;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -535,22 +531,22 @@ html[data-bg] .app-shell::before { background: none; }
 .hq-ghost {
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   padding: 40px 20px;
 }
 .hq-ghost-icon {
-  font-size: 48px;
+  font-size: calc(var(--ui-font-size) + 35px);
   margin-bottom: 12px;
   opacity: .5;
 }
 
 /* === 菜单徽章 === */
 .menu-badge {
-  font-size: 9px;
+  font-size: calc(var(--ui-font-size) - 4px);
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(107,76,154,.3);
-  color: #8B6FC0;
+  background: rgba(var(--skin-accent),.3);
+  color: var(--accent-purple);
   font-weight: 700;
   letter-spacing: .5px;
   margin-left: auto;
@@ -572,5 +568,5 @@ html[data-bg] .app-shell::before { background: none; }
   box-shadow: 0 4px 20px rgba(0,0,0,.3);
   animation: hq-toast-in .2s ease;
   z-index: 1000;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
 }

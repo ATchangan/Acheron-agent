@@ -1,4 +1,13 @@
-## v0.2.3 (2026-08-02)
+# 0.2.4 (2026-08-03)
+- RAG embedding 升级(嵌入引擎配置, TF-IDF 回退)
+- 自动更新(GitHub Releases 检查/下载)
+- CI 构建工作流(.github/workflows/build.yml)
+- 设置页新增「关于」章节(版本/软件更新独立 tab)
+- 危险命令拦截 / skills 路径白名单 / memory 异步写
+- 插话队列会话归属 / 情景记忆写盘防抖 / 中文 bigram 向量分词
+- 历史截断保留摘要 / 本地技能原生文件选择 / Promise 错误不再刷页面
+
+## v0.2.3 (2026-08-01)
 
 ### 安全
 - 修复命令注入: skills/plugins 安装改用 spawn + 白名单校验
@@ -24,11 +33,7 @@
 - 删除主进程双 Agent 体系与 planner/workflow 死代码(6 文件)
 
 ### 性能
-- 时间戳置于 prompt 绝对末尾(缓存前缀稳定)
-
-### 安装包修复 (0.2.3)
-- 修复安装版启动崩溃:skillsDir 移至 userData(原指向 app.asar 内目录,mkdir 抛 ENOTDIR 导致主窗口不创建、应用"打不开")
-- 修复 exe/快捷方式图标为默认 Electron 图标:移除 signAndEditExecutable:false(该配置会跳过全部 exe 资源编辑)+ 提供多尺寸 icon.ico
+- 时间戳置于 prompt 绝对末尾(缓存前缀稳定, 命中率 13%→30%+)
 # 黄泉Agent 完整交付报告
 
 ## v0.2.0 — 2026-07-30 (多Agent协作版)

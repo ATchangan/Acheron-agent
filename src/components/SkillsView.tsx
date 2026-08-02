@@ -195,7 +195,7 @@ export default function SkillsView() {
 
   /* ---------- render ---------- */
   return (
-    <div style={S.container}>
+    <div className="skills-root" style={S.container}>
       {/* ── Header ── */}
       <div style={S.header}>
         <div>
@@ -395,7 +395,7 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: 2,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     color: 'var(--text-secondary)',
     margin: 0,
   },
@@ -422,7 +422,7 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 5,
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
   },
   statLabel: {
     color: 'var(--text-secondary)',
@@ -445,7 +445,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: '8px 14px',
     borderRadius: 'var(--radius)',
     marginBottom: 14,
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     flexShrink: 0,
   },
 
@@ -490,7 +490,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 20,
   },
   badge: {
-    fontSize: 10,
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     padding: '2px 10px',
     borderRadius: 10,
     border: '1px solid',
@@ -498,7 +498,7 @@ const S: Record<string, React.CSSProperties> = {
     lineHeight: '16px',
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: 'calc(var(--ui-font-size) + 2px)',
     fontWeight: 600,
     color: 'var(--text-primary)',
     margin: '0 0 6px',
@@ -507,7 +507,7 @@ const S: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   cardDesc: {
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     color: 'var(--text-secondary)',
     margin: '0 0 10px',
     flex: 1,
@@ -518,7 +518,7 @@ const S: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
   cardPath: {
-    fontSize: 10,
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     color: 'var(--text-muted)',
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     marginBottom: 12,
@@ -560,7 +560,7 @@ const S: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 'calc(var(--ui-font-size) + 3px)',
     fontWeight: 600,
     margin: 0,
     color: 'var(--text-primary)',
@@ -586,7 +586,7 @@ const S: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
     padding: 10,
     borderRadius: 'var(--radius)',
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     resize: 'vertical',
     outline: 'none',
@@ -596,7 +596,7 @@ const S: Record<string, React.CSSProperties> = {
 
   /* viewer */
   viewerPath: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: 'var(--text-muted)',
     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
     marginBottom: 14,
@@ -606,7 +606,7 @@ const S: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border)',
   },
   viewerContent: {
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     lineHeight: 1.7,
     color: 'var(--text-primary)',
     wordBreak: 'break-word',
@@ -624,7 +624,7 @@ const S: Record<string, React.CSSProperties> = {
     color: 'var(--text-primary)',
     padding: '10px 24px',
     borderRadius: 'var(--radius-lg)',
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     zIndex: 300,
     boxShadow: '0 6px 24px rgba(0,0,0,0.45)',
     whiteSpace: 'nowrap',

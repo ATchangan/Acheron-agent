@@ -36,17 +36,17 @@ export default function MemoryView() {
   }
 
   const s = {
-    container: { padding: '24px 28px', height: '100%', overflowY: 'auto' as const, color: '#E8E8F0', background: 'rgba(13,13,26,0.55)' },
-    title: { fontSize: 20, fontWeight: 600, color: '#6B4C9A', marginBottom: 4 },
-    subtitle: { fontSize: 12, color: '#9999AA', marginBottom: 20 },
+    container: { padding: '24px 28px', height: '100%', overflowY: 'auto' as const, color: 'var(--text-primary)', background: 'rgba(13,13,26,0.55)' },
+    title: { fontSize: 20, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 },
+    subtitle: { fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', marginBottom: 20 },
     section: { marginBottom: 24 },
-    sectionTitle: { fontSize: 12, fontWeight: 600, color: '#D4AF37', marginBottom: 8 },
+    sectionTitle: { fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: '#D4AF37', marginBottom: 8 },
     card: { background: 'rgba(30,30,56,0.6)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-    factText: { fontSize: 13, color: '#E8E8F0', flex: 1, whiteSpace: 'pre-wrap' as const },
-    btn: (color: string) => ({ background: 'transparent', border: `1px solid ${color}`, color, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11, marginLeft: 8 } as React.CSSProperties),
-    inp: { background: 'rgba(20,20,40,0.8)', border: '1px solid #2A2A4A', color: '#E8E8F0', padding: '6px 10px', borderRadius: 4, fontSize: 12, flex: 1, outline: 'none' } as React.CSSProperties,
-    empty: { textAlign: 'center' as const, color: '#5A5A78', fontSize: 12, padding: 20 },
-    toast: { position: 'fixed' as const, bottom: 24, right: 24, background: '#1E1E38', border: '1px solid #6B4C9A', color: '#E8E8F0', padding: '8px 16px', borderRadius: 6, fontSize: 12, zIndex: 1000 },
+    factText: { fontSize: 'var(--ui-font-size)', color: 'var(--text-primary)', flex: 1, whiteSpace: 'pre-wrap' as const },
+    btn: (color: string) => ({ background: 'transparent', border: `1px solid ${color}`, color, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', marginLeft: 8 } as React.CSSProperties),
+    inp: { background: 'rgba(20,20,40,0.8)', border: '1px solid #3a3c46', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 4, fontSize: 'calc(var(--ui-font-size) - 1px)', flex: 1, outline: 'none' } as React.CSSProperties,
+    empty: { textAlign: 'center' as const, color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 20 },
+    toast: { position: 'fixed' as const, bottom: 24, right: 24, background: '#262830', border: '1px solid #7c6fa8', color: 'var(--text-primary)', padding: '8px 16px', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 1px)', zIndex: 1000 },
   }
 
   const totalChars = pinnedFacts.reduce((s, f) => s + f.length, 0)
@@ -55,7 +55,7 @@ export default function MemoryView() {
     <div style={s.container}>
       <h1 style={s.title}>◈ 置顶记忆</h1>
       <p style={s.subtitle}>{loading ? '加载中...' : `${pinnedFacts.length} 条 · ${totalChars} 字符`}</p>
-      <p style={{ fontSize: 10, color: '#5A5A78', marginBottom: 16 }}>唯一持久存储载体 — 系统规则、Agent配置、个人偏好均存于此</p>
+      <p style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginBottom: 16 }}>唯一持久存储载体 — 系统规则、Agent配置、个人偏好均存于此</p>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <input style={s.inp} value={newPinned} onChange={e => setNewPinned(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPinned()} placeholder="添加置顶记忆..." />

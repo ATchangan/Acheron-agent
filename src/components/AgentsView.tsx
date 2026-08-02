@@ -105,8 +105,8 @@ function now(): number {
 // ---------------------------------------------------------------------------
 
 const P = {
-  bg: '#0D0D1A', surface: '#1A1A2E', accent: '#6B4C9A', text: '#E8E8F0',
-  secondary: '#9999AA', border: '#2A2A4A', danger: '#F44336', success: '#4CAF50',
+  bg: '#17181c', surface: '#23252b', accent: '#7c6fa8', text: '#E8E8F0',
+  secondary: '#9999AA', border: '#3a3c46', danger: '#F44336', success: '#4CAF50',
   warn: '#FF9800', info: '#2196F3',
 }
 
@@ -411,7 +411,7 @@ const AgentsView: React.FC = () => {
   // ---- render ===============================================================
 
   return (
-    <div style={s.root}>
+    <div className="agents-root" style={s.root}>
       {/* Header */}
       <div style={s.header}>
         <h1 style={s.title}>◉ 多 Agent 协作</h1>
@@ -483,7 +483,7 @@ const AgentsView: React.FC = () => {
                   <span style={{ ...s.statusDot, backgroundColor: STATUS_COLORS[agent.status] }}>
                     {STATUS_LABELS[agent.status]}
                   </span>
-                  {activeAgent === agent.role && <span style={{ marginLeft: 4, fontSize: 9, color: P.accent, fontWeight: 700, background: P.accent + '22', padding: '1px 6px', borderRadius: 4 }}>活跃</span>}
+                  {activeAgent === agent.role && <span style={{ marginLeft: 4, fontSize: 'calc(var(--ui-font-size) - 4px)', color: P.accent, fontWeight: 700, background: P.accent + '22', padding: '1px 6px', borderRadius: 4 }}>活跃</span>}
                 </div>
                 <div style={s.agentDesc}>{agent.description}</div>
                 <div style={s.agentCardBottom}>
@@ -575,13 +575,13 @@ const AgentsView: React.FC = () => {
               return (
                 <div key={task.id} style={s.taskCard}>
                   <div style={s.taskCardTop}>
-                    <span style={{ fontSize: 13, color: P.secondary }}>
+                    <span style={{ fontSize: 'var(--ui-font-size)', color: P.secondary }}>
                       {agent?.icon || '👤'} {task.agentName}
                     </span>
                     <span style={{
                       ...s.statusDot,
                       backgroundColor: TASK_STATUS_COLORS[task.status],
-                      fontSize: 10,
+                      fontSize: 'calc(var(--ui-font-size) - 3px)',
                     }}>
                       {TASK_STATUS_LABELS[task.status]}
                     </span>
@@ -622,14 +622,14 @@ const AgentsView: React.FC = () => {
         <div style={s.col}>
           <div style={s.colHeader}>
             <span>🏛️ 圆桌讨论</span>
-            <span style={{ fontSize: 11, color: P.secondary }}>
+            <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: P.secondary }}>
               已选 {selectedForDiscussion.size} 位
             </span>
           </div>
 
           {/* Agent selection for discussion */}
           <div style={s.discussionSelectArea}>
-            <div style={{ fontSize: 12, color: P.secondary, marginBottom: 8 }}>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: P.secondary, marginBottom: 8 }}>
               选择参与讨论的神祇：
             </div>
             <div style={s.discussionAgentGrid}>
@@ -650,7 +650,7 @@ const AgentsView: React.FC = () => {
                 )
               })}
               {activeAgents.length === 0 && (
-                <span style={{ fontSize: 12, color: P.secondary }}>请先召入神祇</span>
+                <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: P.secondary }}>请先召入神祇</span>
               )}
             </div>
           </div>
@@ -765,7 +765,7 @@ const s: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     color: P.secondary,
     flex: 1,
   },
@@ -774,7 +774,7 @@ const s: Record<string, React.CSSProperties> = {
     gap: 8,
   },
   statBadge: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: P.secondary,
     backgroundColor: `${P.accent}22`,
     padding: '3px 10px',
@@ -805,7 +805,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '10px 14px',
     borderBottom: `1px solid ${P.border}`,
     backgroundColor: P.surface,
-    fontSize: 14,
+    fontSize: 'calc(var(--ui-font-size) + 1px)',
     fontWeight: 600,
     flexShrink: 0,
   },
@@ -837,7 +837,7 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${P.border}`,
     borderRadius: 6,
     padding: '8px 12px',
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     color: P.text,
     outline: 'none',
     width: '100%',
@@ -848,7 +848,7 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${P.border}`,
     borderRadius: 6,
     padding: '8px 10px',
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     color: P.text,
     outline: 'none',
   },
@@ -857,7 +857,7 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${P.border}`,
     borderRadius: 6,
     padding: '8px 12px',
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     color: P.text,
     outline: 'none',
     resize: 'vertical' as const,
@@ -870,7 +870,7 @@ const s: Record<string, React.CSSProperties> = {
     border: 'none',
     borderRadius: 6,
     padding: '7px 14px',
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     fontWeight: 600,
     cursor: 'pointer',
   },
@@ -879,14 +879,14 @@ const s: Record<string, React.CSSProperties> = {
     border: `1px solid ${P.border}`,
     borderRadius: 4,
     padding: '3px 8px',
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: P.secondary,
     cursor: 'pointer',
   },
 
   // Role preview
   rolePreview: {
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     color: P.secondary,
     padding: '4px 0',
     lineHeight: 1.4,
@@ -915,16 +915,16 @@ const s: Record<string, React.CSSProperties> = {
     flex: 1,
   },
   agentName: {
-    fontSize: 14,
+    fontSize: 'calc(var(--ui-font-size) + 1px)',
     fontWeight: 600,
     color: P.text,
   },
   agentRoleLabel: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: P.accent,
   },
   agentDesc: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: P.secondary,
     lineHeight: 1.4,
   },
@@ -939,11 +939,11 @@ const s: Record<string, React.CSSProperties> = {
     gap: 6,
   },
   taskCountBadge: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: P.secondary,
   },
   statusDot: {
-    fontSize: 10,
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     fontWeight: 600,
     padding: '2px 8px',
     borderRadius: 10,
@@ -961,7 +961,7 @@ const s: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   filterLabel: {
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     color: P.secondary,
     whiteSpace: 'nowrap' as const,
   },
@@ -983,12 +983,12 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: 'center',
   },
   taskTitle: {
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     fontWeight: 600,
     color: P.text,
   },
   taskDesc: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: P.secondary,
     lineHeight: 1.4,
   },
@@ -1010,7 +1010,7 @@ const s: Record<string, React.CSSProperties> = {
     gap: 6,
   },
   discussionAgentChip: {
-    fontSize: 11,
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     padding: '4px 10px',
     borderRadius: 14,
     border: '1px solid',
@@ -1064,21 +1064,21 @@ const s: Record<string, React.CSSProperties> = {
     marginBottom: 4,
   },
   msgAgentName: {
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     fontWeight: 600,
     color: P.accent,
   },
   msgTime: {
-    fontSize: 10,
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     color: P.secondary,
   },
   msgContent: {
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     color: P.text,
     lineHeight: 1.5,
   },
   systemMsg: {
-    fontSize: 12,
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     color: P.secondary,
     textAlign: 'center' as const,
     width: '100%',
@@ -1088,7 +1088,7 @@ const s: Record<string, React.CSSProperties> = {
 
   // Empty states
   emptyHint: {
-    fontSize: 13,
+    fontSize: 'var(--ui-font-size)',
     color: P.secondary,
     textAlign: 'center' as const,
     padding: '40px 20px',

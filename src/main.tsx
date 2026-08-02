@@ -1,12 +1,11 @@
 // 全局错误捕获 — 在 React 渲染之前
 window.addEventListener('error', (e) => {
   const msg = `[FATAL] ${e.message} at ${e.filename}:${e.lineno}:${e.colno}`
-  document.body.innerHTML = `<div style="padding:40px;color:#ff4466;font-family:monospace;font-size:13px;white-space:pre-wrap;background:#0D0D1A;min-height:100vh">${msg}\n${e.error?.stack || ''}</div>`
+  document.body.innerHTML = `<div style="padding:40px;color:#ff4466;font-family:monospace;font-size:13px;white-space:pre-wrap;background:#17181c;min-height:100vh">${msg}\n${e.error?.stack || ''}</div>`
 })
+// v0.2.3-fix: unhandledrejection 只记录不替换页面 —— 部分 Promise 错误(如对话框取消)可恢复, 刷成错误页反而丢 UI
 window.addEventListener('unhandledrejection', (e) => {
-  const existing = document.body.textContent || ''
-  const msg = `\n\n[REJECTION] ${e.reason?.message || e.reason}`
-  document.body.innerHTML = `<div style="padding:40px;color:#ffaa00;font-family:monospace;font-size:13px;white-space:pre-wrap;background:#0D0D1A;min-height:100vh">${existing}${msg}</div>`
+  console.error('[REJECTION]', e.reason?.message || e.reason)
 })
 
 import React from 'react'
@@ -22,10 +21,10 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: '40px', color: '#ff4466', fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap', background: '#0D0D1A', minHeight: '100vh' }}>
+        <div style={{ padding: '40px', color: '#ff4466', fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap', background: '#17181c', minHeight: '100vh' }}>
           <h1 style={{ color: '#ff4466' }}>⚠ React 渲染错误</h1>
           <pre style={{ color: '#ffaa00', marginTop: 16 }}>{this.state.error.message}</pre>
-          <pre style={{ color: '#999', marginTop: 8, fontSize: 11 }}>{this.state.error.stack}</pre>
+          <pre style={{ color: '#999', marginTop: 8, fontSize: 'calc(var(--ui-font-size) - 2px)' }}>{this.state.error.stack}</pre>
         </div>
       )
     }
@@ -43,5 +42,5 @@ try {
   )
 } catch (e: any) {
   // v0.2.3-fix(P28): 错误页提供重新加载按钮, 不再只能重启应用
-  document.body.innerHTML = `<div style="padding:40px;color:#ff4466;font-family:monospace;font-size:14px;background:#0D0D1A;min-height:100vh"><h1>React 渲染失败</h1><pre>${String(e.message)}\n${String(e.stack || '')}</pre><button onclick="location.reload()" style="margin-top:16px;padding:8px 20px;background:#6B4C9A;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">重新加载</button></div>`
+  document.body.innerHTML = `<div style="padding:40px;color:#ff4466;font-family:monospace;font-size:14px;background:#17181c;min-height:100vh"><h1>React 渲染失败</h1><pre>${String(e.message)}\n${String(e.stack || '')}</pre><button onclick="location.reload()" style="margin-top:16px;padding:8px 20px;background:#7c6fa8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px">重新加载</button></div>`
 }

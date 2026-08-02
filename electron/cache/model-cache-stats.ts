@@ -7,7 +7,7 @@
 import * as fs from 'fs'
 import { join } from 'path'
 
-interface ModelTok { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number }
+interface ModelTok { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number; missTokens?: number }
 type SessionStats = Record<string, Record<string, ModelTok>>
 
 const FILE = (() => {
@@ -65,12 +65,13 @@ export function recordRequest(sid: string, model: string, hit: boolean): void {
 }
 
 // 记录 usage: readT = 缓存命中读取; inputT = 输入总 token; writeT = 缓存写入 token(Anthropic cache_creation)
-export function recordTokens(sid: string, model: string, readT: number, inputT: number, writeT: number): void {
+export function recordTokens(sid: string, model: string, readT: number, inputT: number, writeT: number, missT?: number): void {
   if (!model) return
   const cur = ensure(sid || '_', model)
   cur.readTokens += readT || 0
   cur.inputTokens += inputT || 0
   cur.writeTokens += writeT || 0
+  if (typeof missT === 'number') cur.missTokens = (cur.missTokens || 0) + missT
   schedulePersist()
 }
 
@@ -84,7 +85,7 @@ export function getAll() {
     for (const m of Object.keys(sessions[sid])) {
       const c = sessions[sid][m]
       const a = perModel[m] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, hitReqs: 0, observedReqs: 0 }
-      a.requests += c.requests; a.readTokens += c.readTokens; a.inputTokens += c.inputTokens; a.writeTokens += c.writeTokens || 0
+      a.requests += c.requests; a.readTokens += c.readTokens; a.inputTokens += c.inputTokens; a.writeTokens += c.writeTokens || 0; a.missTokens = (a.missTokens || 0) + (c.missTokens || 0)
       a.hitReqs += c.hitReqs || 0; a.observedReqs += c.observedReqs || 0
       perModel[m] = a
     }

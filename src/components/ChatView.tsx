@@ -81,7 +81,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
           <div className="message-sender">黄泉</div>
           <div className="thinking-bubble" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span>{label}</span>
-            {detail ? <span style={{ color: 'var(--text-muted)', fontSize: 11, maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail}</span> : null}
+            {detail ? <span style={{ color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 2px)', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{detail}</span> : null}
             {phase === 'thinking' ? <span className="thinking-dots" /> : null}
           </div>
         </div>
@@ -94,7 +94,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       <div className="chat-header-tab">
         <button className={`tab-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => switchMode('chat')}>聊天</button>
         <button className={`tab-btn ${mode === 'work' ? 'active' : ''}`} onClick={() => switchMode('work')}>工作</button>
-        {workDir && mode === 'work' && <span style={{ fontSize: 10, color: '#9999AA', marginLeft: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }} title={workDir}>📁 {workDir.split(/[/\\]/).pop()}</span>}
+        {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }} title={workDir}>📁 {workDir.split(/[/\\]/).pop()}</span>}
       </div>
 
       {!hasProvider ? (
