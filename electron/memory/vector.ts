@@ -41,7 +41,7 @@ export function getEmbeddingConfig() { return embCfg ? { ...embCfg } : null }
 async function embedText(text: string): Promise<number[] | null> {
   if (!embCfg) return null
   try {
-    const net: any = require('electron').net
+    const net = require('electron').net
     const base = embCfg.baseUrl.replace(/\/+$/, '')
     const url = /\/v\d+$/i.test(base) ? base + '/embeddings' : base + '/v1/embeddings'
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -52,7 +52,7 @@ async function embedText(text: string): Promise<number[] | null> {
       signal: AbortSignal.timeout(30000),
     })
     if (!res.ok) return null
-    const data: any = await res.json()
+    const data = await res.json()
     const vec = data?.data?.[0]?.embedding
     if (!Array.isArray(vec) || vec.length === 0) return null
     return vec
@@ -161,7 +161,7 @@ export function initMemory(dataPath: string) {
       idf = data.idf || []
       if (data.vocab) vocabulary = new Map(Object.entries(data.vocab))
     }
-  } catch { /* fresh start */ }
+  } catch (e) { /* fresh start */ console.debug('[swallow]', e) }
 }
 
 export function addMemory(content: string, importance?: number): string {

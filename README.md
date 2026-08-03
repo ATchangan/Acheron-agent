@@ -22,7 +22,7 @@
 - 黑天鹅：视觉与设计，看图、配色、截图
 - 螺丝咕姆：全栈开发，代码、项目、架构
 
-姬子可以调用 `dispatch` 把子任务分给多个 Agent 并行执行，或者用 `handoff` 交接上下文。复杂任务一次对话里就能完成多 Agent 接力。
+v0.3.0 起每个 Agent 有真实的工具白名单和能力路由，子 Agent 之间上下文隔离，编队管理页可以编辑白名单并持久化。姬子可以调用 `dispatch` 把子任务分给多个 Agent 并行执行，或者用 `handoff` 交接上下文。
 
 ### 40+ 内置工具
 
@@ -39,12 +39,18 @@
 - 工作流：list_workflows、run_workflow（6 个内置模板）
 - 其他：show_card、bridge_notify、audit_log、watch_file、save_goal/list_goals、set_workdir、set_theme
 
-工具可以单独开关，有 LRU+TTL 缓存（读操作 30 秒、搜索 120 秒，写操作自动失效），每个工具还有独立的权限设置（deny / ask / full），不用一刀切。
+工具可以单独开关，有 LRU+TTL 缓存（读操作 30 秒、搜索 120 秒，写操作自动失效），每个工具还有独立的权限设置（deny / ask / full）。v0.3.0 新增插件执行层：插件通过 index.js 协议在 vm 沙箱里运行（require 白名单、10 秒超时、4KB 输出截断），插件工具可以直接注入给 LLM 调用。
 
 ### 记忆与上下文
 
 - 语义记忆：TF-IDF 向量化 + 余弦相似度检索，按重要度评分、每日衰减、有 Token 预算和自动遗忘上限（500 条）。v0.2.4 起嵌入引擎可配置，中文用 bigram 分词，检索更准
 - 上下文管理：中英混合 Token 估算，压力大时自动分层压缩（截断 → 摘要 → 激进压缩），自动适配不同模型的窗口大小（deepseek 1M / claude 200K / qwen 262K 等）
+
+### 视觉与媒体
+
+- 发图时自动判断：当前模型不支持视觉就自动切到可用的视觉模型（同供应商优先），支持就不切，没有可用模型会明确提示
+- 视觉任务走独立队列：识图类任务强制用「视觉理解」模型，不用纯文本模型硬看；调用失败自动顺位下一个，全部失败会给清晰报错；任务完成后自动切回主力模型
+- 对话里提到生图、生视频会自动调用媒体工具（策略页可关掉自动生成，改成明确要求才生成）
 
 ### 安全
 
@@ -52,13 +58,15 @@
 - L0-L4 风险分级：读文件 L0，普通写入 L1，终端命令 L2，系统路径写入 L3，删除和危险命令（rm -rf、format、shutdown 等黑名单）L4
 - 文件权限四档：full / sandbox（限工作目录）/ readonly / ask
 - 命令执行走 spawn + 白名单，会话 ID 白名单防路径穿越，Markdown 渲染全量转义防 XSS
+- 插件在 vm 沙箱里执行，require 白名单 + 超时 + 输出截断
 
 ### 其他
 
 - 独立浏览器窗口 + 悬浮提示，agent 浏览网页时你可以实时看到它在看什么
 - 6 套主题 + 皮肤系统（背景图自动提取主色调），窗口透明度、动画、字号都可调
 - 聊天/工作双模式，两种人设（黄泉完整人设 / 高效执行人设）都可以自己编辑
-- 自动更新：启动时检查 GitHub Releases，有新版本会提示（v0.2.4 新增）
+- 自动更新：启动时检查 GitHub Releases，有新版本会提示
+- 工作目录可以自定义，改完聊天右侧的文件树立即刷新；设置页和右侧面板都能快速切换工作目录
 - GPU 渲染自动识别（auto/gpu/cpu），流式渲染 40ms 节流，会话异步写盘
 
 ---
@@ -76,14 +84,17 @@ Acheron-agent/
 │   ├── scheduler/cron.ts      # 定时任务
 │   ├── security/permission.ts # L0-L4 风险分级
 │   ├── cache/                 # 工具结果缓存 + 模型缓存统计
-│   └── plugins/loader.ts      # 插件加载
+│   └── plugins/loader.ts      # 插件加载(vm 沙箱执行层)
 ├── src/                       # React 渲染进程
-│   ├── store/chat.ts          # 工具实现 + Agent 编队 + 权限检查
-│   ├── store/settings.ts      # 人设/主题/供应商设置
+│   ├── store/
+│   │   ├── chat.ts            # 工具实现 + Agent 编队 + 权限检查(模块化拆分)
+│   │   └── settings.ts        # 人设/主题/供应商设置
+│   ├── types.ts               # 全库统一类型来源(tsc strict 门禁)
 │   └── components/            # 聊天/设置/文件树/浏览器/悬浮窗等界面
 ├── resources/
 │   ├── skills/                # 4 组内置技能
 │   └── ishiki.md              # 黄泉人格定义
+├── docs/                      # 自检报告与开发文档
 └── .github/workflows/         # CI 自动构建(推 tag 自动出安装包)
 ```
 
@@ -98,7 +109,7 @@ Acheron-agent/
 ### 首次配置
 
 1. 打开「设置 → 供应商」，添加 LLM 服务商（DeepSeek / OpenAI / OpenAI Compatible / 本地 Ollama 等）
-2. 填 API Key 和 Base URL。Key 会用系统级 DPAPI 加密保存，不会明文写在磁盘上
+2. 填 API Key 和 Base URL。Key 会用系统级 DPAPI 加密保存，不会明文写在磁盘上。供应商面板会预填常用服务的 BaseURL 和 API 类型
 3. 「策略」页可以指定不同任务用哪个模型（主对话 / 长文本 / 代码 / 快速响应 / 视觉），不配就全自动
 4. 直接开始聊。默认就是黄泉人设
 
@@ -108,13 +119,27 @@ Acheron-agent/
 
 ```bash
 npm install
-npm run build         # 构建渲染层 + 主进程
+npm run build         # 构建渲染层 + 主进程(含 tsc 严格类型检查)
 npm run package:win   # 打包 NSIS 安装包
 ```
 
 ---
 
 ## 更新日志
+
+### v0.3.0 (2026-08-04)
+
+- 类型基础重构：types.ts 成为全库统一类型来源，tsc --noEmit（strict + noImplicitAny）纳入构建门禁，历史约 90 条类型错误清零
+- chat.ts 模块化拆分：主模块 + context / memory / router / subtask / runtime 六个模块
+- Agent 实体化：7 位 Agent 有真实工具白名单与能力路由，子 Agent 上下文隔离，编队管理页白名单可编辑、可持久化
+- 插件执行层：index.js 协议 + vm 沙箱（require 白名单、10s 超时、4KB 输出截断）+ 权限 ask 确认，插件工具注入 LLM
+- 全局 any 清零：显式 any 全库移除，错误信息统一提取
+- 工作目录自定义：exec_command 执行目录跟随设置，新路径自动创建；设置页改完文件树立即刷新（不再靠 5s 轮询）；「◎」气泡一键切换工作目录
+- 供应商面板：点击供应商自动预填默认 BaseURL / API 类型（只填空字段），切换供应商前自动保存当前配置
+- 图片需求自动切换：发图时模型不支持视觉则自动切到可用视觉模型（同供应商优先），无可用模型则提示
+- 媒体自动生成：对话中遇到生图/生视频需求自动调用 media_img / media_video 工具，策略页可关闭自动生成
+- 视觉任务强制队列：识图任务强制走「视觉理解」模型，失败自动顺位切换，任务完成自动切回主力模型
+- 图片调度修复（FIX-A~G）：9 种图片格式直读视觉链路、拖入图统一压缩（≤1568px / ≤1.5MB）、HEIC 转换提示、模型还原 finally 全覆盖、视觉误判兜底
 
 ### v0.2.4 (2026-08-03)
 

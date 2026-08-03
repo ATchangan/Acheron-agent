@@ -14,12 +14,12 @@ import { join } from 'path'
 const STATS_PATH = (() => {
   try { return join(require('electron').app.getPath('userData'), 'cache-stats.json') } catch { return '' }
 })()
-let statsTimer: any = null
+let statsTimer: ReturnType<typeof setTimeout> | null = null
 function persistStats() {
   if (!STATS_PATH || statsTimer) return
   statsTimer = setTimeout(() => {
     statsTimer = null
-    try { fs.writeFileSync(STATS_PATH, JSON.stringify({ hits, misses }, null, 2), 'utf-8') } catch { /* 忽略 */ }
+    try { fs.writeFileSync(STATS_PATH, JSON.stringify({ hits, misses }, null, 2), 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
   }, 2000)
 }
 function loadStats() {
@@ -28,7 +28,7 @@ function loadStats() {
     const d = JSON.parse(fs.readFileSync(STATS_PATH, 'utf-8'))
     if (typeof d.hits === 'number') hits = d.hits
     if (typeof d.misses === 'number') misses = d.misses
-  } catch { /* 忽略 */ }
+  } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
 }
 loadStats()
 

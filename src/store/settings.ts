@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { SettingsData, ProviderConfig } from '../global'
+import type { SettingsData, ProviderConfig, MediaProvider } from '../global'
+import type { GeneralSettings } from '../types'
 
 interface SettingsStore extends SettingsData {
   loaded: boolean
@@ -16,43 +17,97 @@ interface SettingsStore extends SettingsData {
   setAnimation: (on: boolean) => void
   setBgImage: (dataUrl: string | null) => void
   setBgOpacity: (v: number) => void
-  updateGeneral: (patch: Partial<Record<string, any>>) => void
+  updateGeneral: (patch: Partial<GeneralSettings>) => void
   // v0.2.1: 多媒体供应商
   addMediaProvider: (p: MediaProvider) => void
   removeMediaProvider: (id: string) => void
   updateMediaProvider: (id: string, data: Partial<MediaProvider>) => void
 }
 
-// ─── 从图片提取主色调 ────────────────────────────────
-function extractDominantColor(dataUrl: string): Promise<{ r: number; g: number; b: number }> {
+// ─── 从图片提取主色调(v0.2.5: 双主色 K-means 聚类) ────────────
+// 返回主色(簇0)与辅色(簇1, 色距不足时取簇2)
+export function extractSkinColors(dataUrl: string): Promise<{ primary: { r: number; g: number; b: number }; secondary: { r: number; g: number; b: number } }> {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
-      const canvas = document.createElement('canvas')
-      const size = 100; canvas.width = size; canvas.height = size
-      const ctx = canvas.getContext('2d')!
-      // 缩放并居中裁剪
-      const scale = Math.min(size / img.width, size / img.height)
-      const sw = img.width * scale, sh = img.height * scale
-      const sx = (size - sw) / 2, sy = (size - sh) / 2
-      ctx.drawImage(img, sx, sy, sw, sh)
-      // 采样中心 60% 区域
-      const data = ctx.getImageData(20, 20, 60, 60).data
-      let r = 0, g = 0, b = 0, n = 0
-      for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i+1]; b += data[i+2]; n++ }
-      resolve({ r: Math.round(r/n), g: Math.round(g/n), b: Math.round(b/n) })
+      try {
+        const size = 64
+        const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { resolve({ primary: { r: 107, g: 76, b: 154 }, secondary: { r: 124, g: 111, b: 168 } }); return }
+        ctx.drawImage(img, 0, 0, size, size)
+        const data = ctx.getImageData(0, 0, size, size).data
+        const pixels: number[][] = []
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 125) continue
+          pixels.push([data[i], data[i + 1], data[i + 2]])
+        }
+        if (pixels.length < 10) { resolve({ primary: { r: 107, g: 76, b: 154 }, secondary: { r: 124, g: 111, b: 168 } }); return }
+        // K-means k=6, 迭代 ≤ 20(64x64=4096 像素足够快)
+        const k = 6
+        const centroids: number[][] = []
+        for (let j = 0; j < k; j++) centroids.push([...pixels[Math.floor(j * pixels.length / k)]])
+        const assign: number[] = new Array(pixels.length).fill(0)
+        for (let it = 0; it < 20; it++) {
+          for (let i = 0; i < pixels.length; i++) {
+            let best = 0, bd = Infinity
+            for (let c = 0; c < k; c++) {
+              const d = (pixels[i][0] - centroids[c][0]) ** 2 + (pixels[i][1] - centroids[c][1]) ** 2 + (pixels[i][2] - centroids[c][2]) ** 2
+              if (d < bd) { bd = d; best = c }
+            }
+            assign[i] = best
+          }
+          let moved = 0
+          for (let c = 0; c < k; c++) {
+            const members = pixels.filter((_, i) => assign[i] === c)
+            if (!members.length) continue
+            const nr = Math.round(members.reduce((s, p) => s + p[0], 0) / members.length)
+            const ng = Math.round(members.reduce((s, p) => s + p[1], 0) / members.length)
+            const nb = Math.round(members.reduce((s, p) => s + p[2], 0) / members.length)
+            if (Math.abs(nr - centroids[c][0]) + Math.abs(ng - centroids[c][1]) + Math.abs(nb - centroids[c][2]) > 0) moved++
+            centroids[c] = [nr, ng, nb]
+          }
+          if (!moved) break
+        }
+        const sizes = centroids.map((_, c) => pixels.filter((_, i) => assign[i] === c).length)
+        const order = [...centroids.keys()].sort((a, b) => sizes[b] - sizes[a])
+        const primary = centroids[order[0]]
+        let secondary = centroids[order[1]]
+        const dist = Math.sqrt((primary[0] - secondary[0]) ** 2 + (primary[1] - secondary[1]) ** 2 + (primary[2] - secondary[2]) ** 2)
+        if (dist < 30 && order.length > 2) secondary = centroids[order[2]]
+        resolve({ primary: { r: primary[0], g: primary[1], b: primary[2] }, secondary: { r: secondary[0], g: secondary[1], b: secondary[2] } })
+      } catch { resolve({ primary: { r: 107, g: 76, b: 154 }, secondary: { r: 124, g: 111, b: 168 } }) }
     }
-    img.onerror = () => resolve({ r: 107, g: 76, b: 154 })
+    img.onerror = () => resolve({ primary: { r: 107, g: 76, b: 154 }, secondary: { r: 124, g: 111, b: 168 } })
     img.src = dataUrl
   })
 }
 
-// 调整颜色的亮度和饱和度
-function adjustColor(r: number, g: number, b: number, lightnessFactor: number): string {
-  const lr = Math.min(255, Math.max(0, Math.round(r * lightnessFactor)))
-  const lg = Math.min(255, Math.max(0, Math.round(g * lightnessFactor)))
-  const lb = Math.min(255, Math.max(0, Math.round(b * lightnessFactor)))
-  return `rgb(${lr},${lg},${lb})`
+// v0.2.5: WCAG 相对亮度对比度校正 —— 目标 C ≥ 3:1(与背景比), 不达标沿亮度轴步进 ±12%(≤8 次)
+export function fixContrast(rgb: { r: number; g: number; b: number }, bgRgb: { r: number; g: number; b: number }): { r: number; g: number; b: number } {
+  const lin = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4) }
+  const lum = (c: { r: number; g: number; b: number }) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+  const contrast = (a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }) => {
+    const la = lum(a), lb = lum(b)
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+  }
+  if (contrast(rgb, bgRgb) >= 3) return rgb
+  let cur = { ...rgb }
+  const bgL = lum(bgRgb)
+  const dir = lum(cur) > bgL ? 1 : -1 // 向更亮/更暗方向提
+  for (let i = 0; i < 8; i++) {
+    const step = 12 / 100
+    const f = 1 + dir * step * (i + 1)
+    cur = { r: Math.min(255, Math.max(0, Math.round(cur.r * f))), g: Math.min(255, Math.max(0, Math.round(cur.g * f))), b: Math.min(255, Math.max(0, Math.round(cur.b * f))) }
+    if (contrast(cur, bgRgb) >= 3) return cur
+  }
+  // 仍不达标 → 取对比度更高的黑/白
+  return lum(cur) > 0.5 ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 }
+}
+
+// 兼容旧调用: 单主色(簇0)
+function extractDominantColor(dataUrl: string): Promise<{ r: number; g: number; b: number }> {
+  return extractSkinColors(dataUrl).then(c => c.primary)
 }
 
 // v0.2.2-fix: 背景图压缩 —— Chromium 对 CSS 自定义属性值有大小限制（~1MB 量级），
@@ -87,6 +142,27 @@ function applySkin(dataUrl: string | null) {
   } else {
     r.style.removeProperty('--bg-image')
     r.removeAttribute('data-bg')
+  }
+}
+
+// v0.2.5-fix: 清理皮肤写入的内联变量(applySkinTextColor 的 10 个 + 主色/辅色)——
+// 清除皮肤/卸载时调用, 否则内联残留(优先级最高)会覆盖主题 CSS, 导致切主题无效
+export function clearSkinInlineVars() {
+  const r = document.documentElement.style
+  const vars = ['--text-primary', '--text-secondary', '--text-muted', '--border', '--bg-elevated',
+    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary']
+  for (const v of vars) r.removeProperty(v)
+  // 重放自定义主题覆盖(若有) —— 避免把用户自定义配色也一并清掉
+  const g = useSettingsStore.getState().general
+  const cc = g.customColors || g.customTheme
+  if (cc) {
+    const rs = document.documentElement.style
+    if (cc.bg) rs.setProperty('--bg-root', cc.bg)
+    if (cc.surface) rs.setProperty('--bg-surface', cc.surface)
+    if (cc.card) rs.setProperty('--bg-card', cc.card)
+    if (cc.accent) rs.setProperty('--accent', cc.accent)
+    if (cc.text) rs.setProperty('--text-primary', cc.text)
+    if (cc.border) rs.setProperty('--border', cc.border)
   }
 }
 
@@ -172,9 +248,9 @@ export const DEFAULT_WORK_PERSONA = `高效执行模式。严格遵循以下工�
 
 export const useSettingsStore = create<SettingsStore>((set, get) => {
   // v0.2.1: 保存防抖，防止快速操作触发写盘风暴
-  let saveTimer: any = null
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
   const debouncedSave = () => {
-    clearTimeout(saveTimer)
+    if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       const { loaded: _, load: __, save: ___, ...data } = get()
       window.huangquan.settings.save(data as SettingsData).catch(e => console.error('[SETTINGS] save error:', e))
@@ -207,33 +283,38 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       if (!data.general?.workPersona) { data.general.workPersona = DEFAULT_WORK_PERSONA; filled = true }
       set({ ...data, loaded: true })
       if (filled) { window.huangquan.settings.save(data as SettingsData).catch(() => {}) }
-      const g = data.general as any
+      const g = data.general
       if (g.bgImage) {
         // v0.2.2-fix: 旧版可能存了超大图（CSS 变量写入失败），加载时压缩迁移
         const compressed = await compressImage(g.bgImage)
         if (compressed !== g.bgImage) {
           set((s) => ({ general: { ...s.general, bgImage: compressed } }))
-          window.huangquan.settings.save({ ...get(), general: { ...get().general, bgImage: compressed } } as any).catch(() => {})
+          window.huangquan.settings.save({ ...get(), general: { ...get().general, bgImage: compressed } }).catch(() => {})
         }
         applySkin(compressed)
+        // v0.2.5: 恢复皮肤遮罩档位
+        const mask = (g.skinMask === 'light' || g.skinMask === 'dark') ? g.skinMask : 'medium'
+        document.documentElement.style.setProperty('--bg-mask', mask === 'light' ? 'rgba(0,0,0,.15)' : mask === 'dark' ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.35)')
       }
       if (g.skinColors) {
         const sc = g.skinColors
         document.documentElement.style.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
-        document.documentElement.style.setProperty('--accent', adjustColor(sc.r, sc.g, sc.b, 1.0))
-        document.documentElement.style.setProperty('--accent-dim', adjustColor(sc.r, sc.g, sc.b, 0.8))
-        document.documentElement.style.setProperty('--border-glow', adjustColor(sc.r, sc.g, sc.b, 0.4))
+        // v0.2.5: 辅色恢复 + 解耦(不再覆盖 --accent/--accent-dim/--border-glow)
+        if (g.skinSecondary) document.documentElement.style.setProperty('--skin-secondary', g.skinSecondary)
         // v0.2.3-fix: 启动时也应用文字色自适应(亮图深字/暗图浅字)
         applySkinTextColor(sc)
+      } else {
+        // v0.2.5-fix: 无皮肤时兜底清理内联残留(历史版本清除皮肤后未清理, 导致主题切换被内联覆盖)
+        clearSkinInlineVars()
       }
     } catch { set({ loaded: true }) }
     // v0.2.3-fix(可用性): logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
     try {
-      const lv = (get().general as any)?.logLevel || 'info'
+      const lv = (get().general)?.logLevel || 'info'
       if (lv === 'silent') { console.log = () => {}; console.warn = () => {}; console.error = () => {} }
       else if (lv === 'error') { console.log = () => {}; console.warn = () => {} }
       else if (lv === 'warn') { console.log = () => {} }
-    } catch { /* 忽略 */ }
+    } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
   },
 
   save: async () => {
@@ -244,10 +325,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   addProvider: (p) => { set((s) => ({ providers: [...s.providers, p] })); debouncedSave() },
   removeProvider: (id) => { set((s) => ({ providers: s.providers.filter((p) => p.id !== id) })); debouncedSave() },
   updateProvider: (id, data) => { set((s) => ({ providers: s.providers.map((p) => (p.id === id ? { ...p, ...data } : p)) })); debouncedSave() },
-  setTheme: (theme) => { set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
+  // v0.2.5: 主题白名单(与 App.tsx THEME_WHITELIST 一致, 校验非法主题名)
+  setTheme: (theme) => { if (!['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn', 'custom'].includes(theme)) return; set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
   setMode: (mode) => { set((s) => ({ general: { ...s.general, mode } })); debouncedSave() },
   setWorkDir: (dir) => { set((s) => ({ general: { ...s.general, workDir: dir } })); debouncedSave() },
-  setOpacity: (v) => { set((s) => ({ general: { ...s.general, opacity: v } })); debouncedSave(); (window as any).huangquan?.window?.setOpacity?.(v) },
+  setOpacity: (v) => { set((s) => ({ general: { ...s.general, opacity: v } })); debouncedSave(); window.huangquan?.window?.setOpacity?.(v) },
   setCustomTheme: (colors) => {
     set((s) => ({ general: { ...s.general, theme: 'custom', customColors: colors } })); debouncedSave()
     if (colors.bg) document.documentElement.style.setProperty('--bg-root', colors.bg)
@@ -261,18 +343,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     set((s) => ({ general: { ...s.general, bgImage: finalUrl || undefined } })); debouncedSave()
     if (finalUrl) {
       applySkin(finalUrl)
-      const c = await extractDominantColor(finalUrl)
-      // 直接应用提取结果，避免重复提取
+      // v0.2.5: 双主色提取(主色→skin-accent, 辅色→skin-secondary) —— 与主题解耦: 不再覆盖 --accent/--accent-dim/--border-glow
+      const c = await extractSkinColors(finalUrl)
       const r = document.documentElement
-      r.style.setProperty('--skin-accent', `${c.r},${c.g},${c.b}`)
-      r.style.setProperty('--accent', adjustColor(c.r, c.g, c.b, 1.0))
-      r.style.setProperty('--accent-dim', adjustColor(c.r, c.g, c.b, 0.8))
-      r.style.setProperty('--border-glow', adjustColor(c.r, c.g, c.b, 0.4))
-      applySkinTextColor(c)
-      set((s) => ({ general: { ...s.general, skinColors: { r: c.r, g: c.g, b: c.b } } })); debouncedSave()
+      r.style.setProperty('--skin-accent', `${c.primary.r},${c.primary.g},${c.primary.b}`)
+      r.style.setProperty('--skin-secondary', `${c.secondary.r},${c.secondary.g},${c.secondary.b}`)
+      applySkinTextColor(c.primary)
+      set((s) => ({ general: { ...s.general, skinColors: { r: c.primary.r, g: c.primary.g, b: c.primary.b }, skinSecondary: `${c.secondary.r},${c.secondary.g},${c.secondary.b}` } })); debouncedSave()
     } else {
       applySkin(null)
-      set((s) => ({ general: { ...s.general, skinColors: undefined } })); debouncedSave()
+      // v0.2.5-fix: 清除皮肤时必须清理文字/背景自适应写入的内联变量(否则内联残留覆盖主题, 切主题无效)
+      clearSkinInlineVars()
+      set((s) => ({ general: { ...s.general, skinColors: undefined, skinSecondary: undefined } })); debouncedSave()
     }
   },
   setBgOpacity: (v) => {
@@ -280,9 +362,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     // v0.2.2-fix: 同步写 CSS 变量 —— 蒙版不透明度 = 1 - 背景透明度
     document.documentElement.style.setProperty('--bg-mask-opacity', String(1 - v))
   },
-  updateGeneral: (patch: Partial<Record<string, any>>) => { set((s) => ({ general: { ...s.general, ...patch } })); debouncedSave() },
+  updateGeneral: (patch: Partial<GeneralSettings>) => { set((s) => ({ general: { ...s.general, ...patch } })); debouncedSave() },
   // v0.2.1: 多媒体供应商
-  addMediaProvider: (p) => { set((s) => ({ mediaProviders: [...(s.mediaProviders || []), p] })); debouncedSave() },
+  addMediaProvider: (p: MediaProvider) => { set((s) => ({ mediaProviders: [...(s.mediaProviders || []), p] })); debouncedSave() },
   removeMediaProvider: (id) => { set((s) => ({ mediaProviders: (s.mediaProviders || []).filter(p => p.id !== id) })); debouncedSave() },
-  updateMediaProvider: (id, data) => { set((s) => ({ mediaProviders: (s.mediaProviders || []).map(p => p.id === id ? { ...p, ...data } : p) })); debouncedSave() },
+  updateMediaProvider: (id, data: Partial<MediaProvider>) => { set((s) => ({ mediaProviders: (s.mediaProviders || []).map(p => p.id === id ? { ...p, ...data } : p) })); debouncedSave() },
 }})

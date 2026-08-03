@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { errMsg } from '../utils/safe'
 
 // v0.2.6: 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
 
@@ -15,12 +16,13 @@ const iconFor = (name: string): string => {
   return map[ext] || '📄'
 }
 
-const C = { text: 'var(--text-primary)', muted: 'var(--text-muted)', border: 'var(--border)', hover: 'var(--bg-hover)', green: '#48c98a', red: '#ff6b6b', blue: '#6ba8ff' }
+const C = { text: 'var(--text-primary)', muted: 'var(--text-muted)', border: 'var(--border)', hover: 'var(--bg-hover)', green: 'var(--success)', red: 'var(--danger)', blue: 'var(--accent)' }
 
 export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFile }: {
   root: string; depth?: number; onChanged?: () => void; onNewDir?: () => void; onNewFile?: () => void
 }) {
-  const [expanded, setExpanded] = useState(depth < 2)
+  // v0.3.0: 根节点(工作目录)默认折叠, 子目录展开后仍默认展开 —— 点击展开
+  const [expanded, setExpanded] = useState(depth === 0 ? false : depth < 2)
   const [items, setItems] = useState<FsItem[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -42,7 +44,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
         list.sort((a: FsItem, b: FsItem) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
         cacheRef.current.set(root, { list, ts: Date.now() })
         setItems(list)
-      } catch { /* 目录暂时不可读则静默跳过 */ }
+      } catch (e) { /* 目录暂时不可读则静默跳过 */ console.debug('[swallow]', e) }
     }, 5000)
     return () => clearInterval(timer)
   }, [expanded, hasLoaded, root])
@@ -58,7 +60,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
       list.sort((a: FsItem, b: FsItem) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
       cacheRef.current.set(root, { list, ts: Date.now() })
       setItems(list)
-    } catch (e: any) { setErr(String(e?.message || e)) }
+    } catch (e: unknown) { setErr(errMsg(e)) }
     setLoading(false)
   }
 
@@ -85,7 +87,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
     const r = await window.huangquan.computer.remove(path)
     if (!r.ok) { alert('删除失败: ' + r.error) } else { cacheRef.current.delete(root); await load(); onChanged?.() }
   }
-  const doOpen = async (path: string) => { try { await window.huangquan.computer.openFile(path) } catch { /* 忽略 */ } }
+  const doOpen = async (path: string) => { try { await window.huangquan.computer.openFile(path) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
 
   // v0.2.6: Electron 原生右键菜单
   const onCtx = async (e: React.MouseEvent, path: string, name: string, isDir: boolean) => {

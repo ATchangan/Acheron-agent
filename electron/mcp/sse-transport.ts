@@ -6,11 +6,11 @@
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => {
   try {
     const net = require('electron').net
-    return net.fetch(args[0] as any, args[1] as any)
+    return net.fetch(args[0] as string, args[1] as never)
   } catch {
-    return fetch(args[0] as any, args[1] as any)
+    return fetch(args[0] as string, args[1] as RequestInit)
   }
-}) as any
+}) as typeof fetch
 
 interface MCPServerConfig {
   name: string
@@ -99,7 +99,7 @@ export async function connectSSE(config: MCPServerConfig): Promise<MCPTool[]> {
 
     if (toolsRes.ok) {
       const toolsData = await toolsRes.json()
-      session.tools = (toolsData.result?.tools || []).map((t: any) => ({
+      session.tools = (toolsData.result?.tools || []).map((t: { name?: string; description?: string; inputSchema?: unknown }) => ({
         name: t.name,
         description: t.description || '',
         inputSchema: t.inputSchema || {},
@@ -108,9 +108,9 @@ export async function connectSSE(config: MCPServerConfig): Promise<MCPTool[]> {
 
     sseSessions.set(config.name, session)
     return session.tools
-  } catch (e: any) {
+  } catch (e: unknown) {
     session.connected = false
-    throw new Error(`MCP SSE connect failed: ${e.message}`)
+    throw new Error(`MCP SSE connect failed: ${(e instanceof Error ? e.message : String(e))}`)
   }
 }
 
@@ -150,7 +150,7 @@ export async function callSSETool(serverName: string, toolName: string, args: Re
 
   const content = data.result?.content
   if (Array.isArray(content)) {
-    return content.map((c: any) => c.text || JSON.stringify(c)).join('\n')
+    return content.map((c: { text?: string }) => c.text || JSON.stringify(c)).join('\n')
   }
   return JSON.stringify(content || data.result)
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { errMsg } from '../utils/safe'
 
 /* ─── 黄泉符文工坊 · 类型 & 常量 ──────────────────────────── */
 
@@ -166,7 +167,7 @@ try {
     console.log(\`  \${icon} \${f} (\${stat.size} bytes)\`);
   });
 } catch (e) {
-  console.error(\`❌ 错误: \${e.message}\`);
+  console.error(\`❌ 错误: \${errMsg(e)}\`);
 }`,
   },
   {
@@ -304,7 +305,7 @@ const S = {
   } as React.CSSProperties,
 
   subtitle: {
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: 'var(--text-secondary)',
     marginTop: '2px',
   } as React.CSSProperties,
@@ -324,10 +325,10 @@ const S = {
     padding: '4px 12px',
     borderRadius: '5px',
     border: 'none',
-    background: active ? 'rgba(124,111,168,.20)' : 'transparent',
+    background: active ? 'rgba(var(--skin-accent),.20)' : 'transparent',
     color: active ? '#7c6fa8' : '#7777AA',
     cursor: 'pointer',
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     fontWeight: active ? (600 as const) : (400 as const),
     transition: 'all .12s',
     whiteSpace: 'nowrap' as const,
@@ -346,7 +347,7 @@ const S = {
     background: 'rgba(124,111,168,.12)',
     color: color || '#B8B8D0',
     cursor: 'pointer',
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     transition: 'all .12s',
     whiteSpace: 'nowrap' as const,
   }),
@@ -358,7 +359,7 @@ const S = {
     background: '#7c6fa8',
     color: '#FFFFFF',
     cursor: 'pointer',
-    fontSize: '12px',
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     fontWeight: 600 as const,
     transition: 'all .12s',
     whiteSpace: 'nowrap' as const,
@@ -389,7 +390,7 @@ const S = {
   } as React.CSSProperties,
 
   editorLabel: {
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: 'var(--text-secondary)',
     fontWeight: 600 as const,
   } as React.CSSProperties,
@@ -412,7 +413,7 @@ const S = {
     padding: '10px 4px 10px 0',
     overflow: 'hidden',
     textAlign: 'right' as const,
-    fontSize: '12px',
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
     color: 'var(--text-muted)',
     lineHeight: '1.6',
@@ -426,7 +427,7 @@ const S = {
     border: 'none',
     color: 'var(--text-primary)',
     padding: '10px 14px',
-    fontSize: '13px',
+    fontSize: 'var(--ui-font-size)',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
     lineHeight: '1.6',
     resize: 'none' as const,
@@ -451,13 +452,13 @@ const S = {
   } as React.CSSProperties,
 
   outputLabel: {
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     color: 'var(--text-secondary)',
     fontWeight: 600 as const,
   } as React.CSSProperties,
 
   outputDuration: {
-    fontSize: '10px',
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     color: 'var(--accent)',
     marginLeft: '8px',
   } as React.CSSProperties,
@@ -469,8 +470,8 @@ const S = {
     borderRadius: '8px',
     padding: '10px 14px',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
-    fontSize: '12px',
-    color: '#48c98a',
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
+    color: 'var(--success)',
     lineHeight: '1.5',
     overflow: 'auto',
     whiteSpace: 'pre-wrap' as const,
@@ -508,13 +509,13 @@ const S = {
   } as React.CSSProperties,
 
   historyTitle: {
-    fontSize: '10px',
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     color: 'var(--text-secondary)',
     fontWeight: 600 as const,
   } as React.CSSProperties,
 
   historyClear: {
-    fontSize: '10px',
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     color: 'var(--text-muted)',
     background: 'none',
     border: 'none',
@@ -529,7 +530,7 @@ const S = {
     borderBottom: '1px solid #262830',
     cursor: 'pointer',
     transition: 'all .1s',
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
   } as React.CSSProperties,
 
   historyLang: (lang: Lang): React.CSSProperties => {
@@ -541,7 +542,7 @@ const S = {
       bash: '#89E051',
     }
     return {
-      fontSize: '10px',
+      fontSize: 'calc(var(--ui-font-size) - 3px)',
       padding: '1px 6px',
       borderRadius: '3px',
       background: 'rgba(0,0,0,.25)',
@@ -559,12 +560,12 @@ const S = {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
     flex: 1,
-    fontSize: '11px',
+    fontSize: 'calc(var(--ui-font-size) - 2px)',
     fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
   } as React.CSSProperties,
 
   historyTime: {
-    fontSize: '10px',
+    fontSize: 'calc(var(--ui-font-size) - 3px)',
     color: 'var(--text-muted)',
     whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
@@ -580,14 +581,14 @@ const S = {
     borderRadius: '8px',
     padding: '6px 0',
     minWidth: '200px',
-    boxShadow: '0 8px 24px rgba(0,0,0,.5)',
+    boxShadow: '0 8px 24px var(--overlay)',
     marginTop: '4px',
   } as React.CSSProperties,
 
   templateItem: {
     padding: '6px 14px',
     cursor: 'pointer',
-    fontSize: '12px',
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     color: 'var(--text-primary)',
     border: 'none',
     background: 'none',
@@ -607,9 +608,9 @@ const S = {
     color: 'var(--text-primary)',
     padding: '8px 16px',
     borderRadius: '8px',
-    fontSize: '12px',
+    fontSize: 'calc(var(--ui-font-size) - 1px)',
     zIndex: 100,
-    boxShadow: '0 4px 16px rgba(0,0,0,.5)',
+    boxShadow: '0 4px 16px var(--overlay)',
     transition: 'opacity .2s',
   } as React.CSSProperties,
 }
@@ -653,7 +654,7 @@ export default function CodeView() {
           try {
             const json = fact.slice('[codehist]'.length).trim()
             histEntries.push(JSON.parse(json))
-          } catch { /* skip malformed */ }
+          } catch (e) { /* skip malformed */ console.debug('[swallow]', e) }
         }
       }
       histEntries.sort((a, b) => b.timestamp - a.timestamp)
@@ -720,7 +721,7 @@ export default function CodeView() {
     try {
       let result = ''
       // 尝试 codebox sandbox，回退到 exec
-      const codebox = (window.huangquan.computer as any).codebox as
+      const codebox = (window.huangquan.computer.codebox) as
         ((l: string, c: string) => Promise<string>) | undefined
 
       if (lang === 'powershell') {
@@ -777,15 +778,15 @@ export default function CodeView() {
         timestamp: Date.now(),
       }
       await persistHistory(entry)
-    } catch (e: any) {
+    } catch (e: unknown) {
       const elapsed = Math.round((performance.now() - startTime))
       setDuration(elapsed)
-      setOutput(`❌ 执行错误:\n${e?.message || e?.toString?.() || '未知错误'}`)
+      setOutput(`❌ 执行错误:\n${errMsg(e)?.toString?.() || '未知错误'}`)
 
       const entry: HistoryEntry = {
         lang,
         code,
-        output: `❌ ${e?.message || '未知错误'}`,
+        output: `❌ ${errMsg(e) || '未知错误'}`,
         duration: elapsed,
         timestamp: Date.now(),
       }
@@ -818,8 +819,8 @@ export default function CodeView() {
       setOutput('')
       setDuration(null)
       showToast(`📂 已打开: ${path.split(/[/\\]/).pop()}`)
-    } catch (e: any) {
-      showToast(`⚠️ 打开失败: ${e?.message || '未知错误'}`)
+    } catch (e: unknown) {
+      showToast(`⚠️ 打开失败: ${errMsg(e) || '未知错误'}`)
     }
   }, [showToast])
 
@@ -830,8 +831,8 @@ export default function CodeView() {
       if (!filename) return
       await window.huangquan.computer.writeFile(filename, code)
       showToast(`💾 已保存: ${filename}`)
-    } catch (e: any) {
-      showToast(`⚠️ 保存失败: ${e?.message || '未知错误'}`)
+    } catch (e: unknown) {
+      showToast(`⚠️ 保存失败: ${errMsg(e) || '未知错误'}`)
     }
   }, [code, lang, showToast])
 
@@ -937,7 +938,7 @@ export default function CodeView() {
           {/* 模板按钮 */}
           <div style={{ position: 'relative' as const }} ref={templateBtnRef}>
             <button
-              style={S.actionBtn('#4dc9f6')}
+              style={S.actionBtn('var(--accent)')}
               onClick={() => setShowTemplates(v => !v)}
             >
               📋 模板
@@ -949,7 +950,7 @@ export default function CodeView() {
                     key={i}
                     style={S.templateItem}
                     onClick={() => applyTemplate(tpl)}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,111,168,.15)')}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(var(--skin-accent),.15)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                   >
                     {tpl.label}
@@ -993,7 +994,7 @@ export default function CodeView() {
             <span style={S.editorLabel}>
               📝 {LANGS.find(l => l.id === lang)?.icon} {LANGS.find(l => l.id === lang)?.label} 编辑器
             </span>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)' }}>
               {code.length} 字符 · {lineCount} 行 · Ctrl+Enter 运行
             </span>
           </div>
@@ -1062,7 +1063,7 @@ export default function CodeView() {
                 key={`${entry.timestamp}-${i}`}
                 style={S.historyItem}
                 onClick={() => loadFromHistory(entry)}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,111,168,.08)')}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(var(--skin-accent),.08)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'none')}
               >
                 <span style={S.historyLang(entry.lang)}>
@@ -1083,7 +1084,7 @@ export default function CodeView() {
         {!showHistory && history.length > 0 && (
           <div style={{ textAlign: 'center' as const, padding: '4px', flexShrink: 0 }}>
             <button
-              style={{ ...S.actionBtn(), fontSize: '10px' }}
+              style={{ ...S.actionBtn(), fontSize: 'calc(var(--ui-font-size) - 3px)' }}
               onClick={() => setShowHistory(true)}
             >
               📜 显示历史 ({history.length})

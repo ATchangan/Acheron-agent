@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useSettingsStore } from '../store/settings'
-import { DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA } from '../store/settings'
+import { C, S, Toggle, NumSetting, StepSetting, SegSetting, stepBtn } from './settings-ui'
+
+import { DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA, extractSkinColors, clearSkinInlineVars } from '../store/settings'
+import type { MediaProvider, ProviderConfig, MemoryData } from '../global'
+import type { GeneralSettings } from '../types'
 import { updateContextLimit, useChatStore } from '../store/chat'
-import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info } from 'lucide-react'
+import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal } from 'lucide-react'
+import { errMsg } from '../utils/safe'
 
 const PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = {
   'DeepSeek': { type: 'OpenAI Compatible', url: 'https://api.deepseek.com' },
@@ -34,13 +39,47 @@ const PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = 
   '即梦Jimeng': { type: 'OpenAI Compatible', url: 'https://ark.cn-beijing.volces.com/api/v3' },
 }
 const AI_TYPES = ['OpenAI Compatible', 'Azure OpenAI', 'Anthropic Claude', 'Google Gemini']
+// v0.2.5: 主题卡片元数据(6 套预设) —— 色点 = 背景/强调/文字
+const THEME_META = [
+  { id: 'dark', label: '暗夜', dots: ['#15171c', '#5e7c96', '#e0e2e8'] },
+  { id: 'light', label: '浅色', dots: ['#f4f2ec', '#7a6a55', '#2a2a28'] },
+  { id: 'black', label: '极黑', dots: ['#0e0e0e', '#8a8f98', '#e4e4e4'] },
+  { id: 'huangquan', label: '黄泉', dots: ['#121014', '#c0455a', '#7e6a9c'] },
+  { id: 'bloodmoon', label: '血月', dots: ['#171013', '#b23a4a', '#e8dde0'] },
+  { id: 'dawn', label: '晨曦', dots: ['#f6f1e8', '#a08454', '#2e2a22'] },
+]
+const THEME_IDS = THEME_META.map(t => t.id)
+// 与 App.tsx resolveTheme 一致的当前主题解析(旧 themePreset 迁移)
+function currentTheme(g: GeneralSettings): string {
+  if (THEME_IDS.includes(g.theme)) return g.theme
+  if (g.theme === 'custom' || g.customColors || g.customTheme) return 'custom'
+  const legacy: Record<string, string> = { 'system': 'dark', 'dark-tech': 'dark', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'dark', 'high-contrast': 'black' }
+  return legacy[g.themePreset || ''] || 'dark'
+}
 const GROUPS: Record<string, string[]> = {
-  '国内云平台': ['DeepSeek', '通义千问', '智谱', 'Kimi', '豆包(火山方舟)', 'MiniMax', '文心一言', '讯飞星火', '百川', '零一万物', 'SiliconFlow', '即梦Jimeng'],
-  '国际平台': ['OpenAI', 'Claude', 'Gemini', 'OpenRouter', 'Groq', 'Mistral', 'xAI Grok', 'Perplexity', 'Together', 'NVIDIA NIM', 'Agnes'],
+  // v0.2.4: 精简 —— 只保留主流平台(其他平台可用「+ 自定义」添加)
+  '国内云平台': ['DeepSeek', '通义千问', '智谱', 'Kimi', '豆包(火山方舟)', '文心一言'],
+  '国际平台': ['OpenAI', 'Claude', 'Gemini'],
   // v0.2.2: 本地工具单独分组
   '本地服务': ['Ollama', 'LM Studio', '自定义'],
 }
 // v0.2.1: 多媒体供应商预设（图片生成/视频生成/语音识别）
+// v0.2.4: 能力检测 —— 按模型名判断平台能力(多模态/文字/图片/视频/语音), 配置后分类展示
+const detectCaps = (models: string[]): string[] => {
+  const caps = new Set<string>()
+  for (const m of models || []) {
+    const ml = String(m).toLowerCase()
+    if (/gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(ml)) caps.add('多模态')
+    else if (/image|img|flux|dall|sdxl|\bsd-|mj-|seedream|cogview|wanx|kolors|ernie-vilg/i.test(ml)) caps.add('图片')
+    else if (/video|vid|seedance|kling|pika|runway|gen3|gen4|t2v/i.test(ml)) caps.add('视频')
+    else if (/asr|tts|whisper|voice|audio|iflytek/i.test(ml)) caps.add('语音')
+    else caps.add('文字')
+  }
+  if (caps.has('多模态')) caps.add('文字')
+  return [...caps]
+}
+const CAP_COLORS: Record<string, string> = { '多模态': '#a78bfa', '文字': '#60a5fa', '图片': '#34d399', '视频': '#fbbf24', '语音': '#f472b6' }
+
 const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean; img?: string[]; video?: string[]; audio?: string[] }> = {
   '即梦Jimeng': { type: 'multi', url: 'https://ark.cn-beijing.volces.com/api/v3', img: ['seedream-4.0', 'seedream-3.0', 'cogview-4'], video: ['seedance2.0', 'seedance2.0fast', 'doubao-seedance'] },
   'Agnes': { type: 'multi', url: 'https://apihub.agnes-ai.com/v1', img: ['agnes-image', 'agnes-flux'], video: ['agnes-video'], audio: ['agnes-asr'] },
@@ -62,217 +101,51 @@ const isLocalMedia = (name: string): boolean => {
   return /127\.0\.0\.1|localhost/i.test(pre.url) || !!pre.noKey
 }
 
-const C = { bg: 'var(--bg-root)', card: 'var(--bg-card)', input: 'var(--bg-elevated)', border: 'var(--border)', text: 'var(--text-primary)', label: 'var(--text-secondary)', muted: 'var(--text-muted)', accent: 'var(--accent)', accentBg: 'rgba(var(--skin-accent),0.08)', danger: '#E05252', green: '#48c98a', blue: '#6ba8ff' }
-const S = {
-  card: { background: C.card, border: '1px solid ' + C.border, borderRadius: 10, padding: '20px 22px', marginBottom: 'calc(var(--msg-gap, 12px) + 2px)' },
-  section: { fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid ' + C.border },
-  inp: { height: 38, background: C.input, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: '0 12px', width: '100%', boxSizing: 'border-box' as const, outline: 'none' },
-  num: { height: 38, background: C.input, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: '0 10px', width: 72, outline: 'none', textAlign: 'center' as const },
-  sel: { height: 38, background: C.input, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: '0 10px', outline: 'none', cursor: 'pointer' },
-  btn: (v: string) => ({ height: 34, padding: '0 18px', borderRadius: 7, border: v === 'ghost' ? '1px solid ' + C.border : 'none', cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, background: v === 'primary' ? C.accent : v === 'danger' ? C.danger : C.input, color: v === 'ghost' ? C.text : '#fff', whiteSpace: 'nowrap' as const }),
-  row: { marginBottom: 14 },
-  label: { fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: C.label, marginBottom: 5 },
-  hint: { fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginTop: 5, lineHeight: 1.5 },
-}
 
-// Toggle switch component (Hermes-style)
-const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }> = ({ checked, onChange, label, hint }) => (
-  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '8px 0' }}>
-    <div>
-      <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>{label}</div>
-      {hint && <div style={S.hint}>{hint}</div>}
-    </div>
-    <div onClick={() => onChange(!checked)} style={{ width: 42, height: 24, borderRadius: 12, background: checked ? C.accent : C.border, cursor: 'pointer', position: 'relative', transition: 'all .15s', flexShrink: 0 }}>
-      <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: checked ? 21 : 3, transition: 'all .15s' }} />
-    </div>
-  </div>
-)
-
-// Number input with label
-const NumSetting: React.FC<{ label: string; hint: string; value: number; min: number; max: number; unit: string; onChange: (v: number) => void }> = ({ label, hint, value, min, max, unit, onChange }) => (
-  <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-    <div style={{ flex: 1 }}>
-      <div style={S.label}>{label}</div>
-      <div style={S.hint}>{hint}</div>
-    </div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-      <input type="number" style={S.num} min={min} max={max} value={value} onChange={e => onChange(Math.max(min, Math.min(max, parseInt(e.target.value) || value)))} />
-      <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, whiteSpace: 'nowrap' }}>{unit}</span>
-    </div>
-  </div>
-)
-
-// v0.2.3: 步进器(- 值 +) —— 替代生硬的滑动条
-const stepBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 7, border: '1px solid ' + C.border, background: C.bg2 || 'transparent', color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 15, lineHeight: 1, transition: 'background .15s' }
-const StepSetting: React.FC<{ label: string; hint?: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void }> = ({ label, hint, value, min, max, step = 1, unit = '', onChange }) => (
-  <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-    <div style={{ flex: 1 }}>
-      <div style={S.label}>{label}</div>
-      {hint ? <div style={S.hint}>{hint}</div> : null}
-    </div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-      <button style={stepBtn} title="减小" onClick={() => onChange(Math.max(min, value - step))}><Minus size={14} /></button>
-      <span style={{ minWidth: 52, textAlign: 'center', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, whiteSpace: 'nowrap' }}>{value}{unit}</span>
-      <button style={stepBtn} title="增大" onClick={() => onChange(Math.min(max, value + step))}><Plus size={14} /></button>
-    </div>
-  </div>
-)
-
-// v0.2.3: 档位按钮组 —— 替代生硬的滑动条
-const SegSetting: React.FC<{ label: string; hint?: string; value: number; options: { v: number; label: string }[]; onChange: (v: number) => void }> = ({ label, hint, value, options, onChange }) => (
-  <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-    <div style={{ flex: 1 }}>
-      <div style={S.label}>{label}</div>
-      {hint ? <div style={S.hint}>{hint}</div> : null}
-    </div>
-    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-      {options.map(o => (
-        <button key={o.v} onClick={() => onChange(o.v)} style={{ padding: '5px 12px', borderRadius: 7, border: '1px solid ' + (o.v === value ? C.accent : C.border), background: o.v === value ? C.accentBg : 'transparent', color: o.v === value ? C.text : C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', cursor: 'pointer', transition: 'all .15s' }}>{o.label}</button>
-      ))}
-    </div>
-  </div>
-)
-
-export default function SettingsView({ onNavigate }: { onNavigate: (v: string) => void }) {
-  const { providers, general, addProvider, removeProvider, updateProvider } = useSettingsStore()
-
-  const [tab, setTab] = useState('models'); const [selIdx, setSelIdx] = useState(0); const [showNew, setShowNew] = useState(false)
-  // v0.2.6: 模型缓存统计(持久化)
-  // v0.2.3-fix(N25): 类型对齐 v4 数据模型
-  interface ModelStatV4 { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number }
-  const [modelStats, setModelStats] = useState<Record<string, ModelStatV4>>({})
-  const [newName, setNewName] = useState(''); const [newKey, setNewKey] = useState(''); const [newUrl, setNewUrl] = useState(''); const [newType, setNewType] = useState('OpenAI Compatible')
-  const [bgOp, setBgOp] = useState((general as any).bgOpacity ?? 0.7)
-  const hasBg = !!(general as any).bgImage
-  useEffect(() => { setBgOp((general as any).bgOpacity ?? 0.7) }, [(general as any)?.bgOpacity])
-  const [memF, setMemF] = useState<string[]>([]); const [loading, setLoading] = useState(false)
-  const [chatPersona, setChatPersona] = useState((general as any).chatPersona || '')
-  const [workPersona, setWorkPersona] = useState((general as any).workPersona || '')
-  // v0.2.1: 同步 store → state（预设切换/外部修改时 textarea 实时刷新）
-  useEffect(() => {
-    setChatPersona((general as any).chatPersona || '')
-    setWorkPersona((general as any).workPersona || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(general as any)?.chatPersona, (general as any)?.workPersona])
-  const [toast, setToast] = useState<string | null>(null)
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
-  const [pluginUrl, setPluginUrl] = useState('')
-  const [showPluginInput, setShowPluginInput] = useState(false)
-  const [modelInput, setModelInput] = useState<string | null>(null)
-  // v0.2.1: 视觉辅助模型配置弹窗
-  const [visionPrompt, setVisionPrompt] = useState(false)
-  const [visionPick, setVisionPick] = useState('')
-  const p = providers[selIdx] || providers[0]
-  const g = general as any
-  // v0.2.1: 多媒体供应商
+// v0.2.4: 媒体平台配置表单(供应商页内联显示, 不跳转) —— 样式与供应商表单对齐(DeepSeek 模板)
+const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => void }> = ({ mediaSelIdx, showToast }) => {
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
-  const addMediaProvider = useSettingsStore(s => s.addMediaProvider)
-  const removeMediaProvider = useSettingsStore(s => s.removeMediaProvider)
-  const updateMediaProvider = useSettingsStore(s => s.updateMediaProvider)
-  const [mediaSelIdx, setMediaSelIdx] = useState(0)
-  const [showNewMedia, setShowNewMedia] = useState(false)
-  const [newMediaName, setNewMediaName] = useState('')
-  const [newMediaKey, setNewMediaKey] = useState('')
-  const [newMediaUrl, setNewMediaUrl] = useState('')
-  const [newMediaType, setNewMediaType] = useState('multi')
-  const [imgInput, setImgInput] = useState<string | null>(null)
-  const [videoInput, setVideoInput] = useState<string | null>(null)
-  const [audioInput, setAudioInput] = useState<string | null>(null)
-  const mp = mediaProviders[mediaSelIdx] || mediaProviders[0]
-  // v0.2.1: MCP / 技能 章节
-  const [mcpServers, setMcpServers] = useState<any[]>([])
-  const [skillsList, setSkillsList] = useState<any[]>([])
-  const [mcpName, setMcpName] = useState(''); const [mcpCmd, setMcpCmd] = useState(''); const [mcpArgs, setMcpArgs] = useState('')
-  const [mcpSseName, setMcpSseName] = useState(''); const [mcpSseUrl, setMcpSseUrl] = useState('')
-  const [skillName, setSkillName] = useState(''); const [skillContent, setSkillContent] = useState('')
-  const [skillUrl, setSkillUrl] = useState('')
-  useEffect(() => {
-    if (tab === 'mcp') { window.huangquan.mcpList?.().then((s: any) => setMcpServers(s || [])).catch(() => setMcpServers([])) }
-    if (tab === 'skills') { window.huangquan.skills.list().then((s: any) => setSkillsList(s || [])).catch(() => setSkillsList([])) }
-    // v0.2.1: 引擎页自动加载真实存储统计
-    if (tab === 'stats') { window.huangquan.modelStats.get().then((d: any) => setModelStats(d?.models || {})).catch(() => setModelStats({})) }
-    if (tab === 'advanced') {
-      window.huangquan.storageStats().then((s: any) => { const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) }).catch(() => {})
-      // v0.2.6: 工具缓存命中率
-      window.huangquan.cacheStats().then((cs: any) => { save({ stat_cacheHits: cs?.hits || 0, stat_cacheMisses: cs?.misses || 0, stat_cacheRate: cs?.hit_rate || '0%' }) }).catch(() => {})
-    }
-  }, [tab])
-
-  const saveTimer = useRef<any>(null)
-  const save = (patch: Record<string, any>) => { useSettingsStore.setState(s => ({ general: { ...s.general, ...patch } })); clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
-  const toHex = (c: string) => (/^#[0-9a-fA-F]{6}$/.test(c || '') ? c : '#17181c')
-
-  // v0.2.3-fix(S1): 长期记忆计数用 state(不再在 JSX 里渲染 async IIFE -> [object Promise])
-  const [factsCount, setFactsCount] = useState(0)
-  useEffect(() => {
-    if (tab === 'memory') {
-      window.huangquan.memory.load().then((m: any) => { setMemF(m?.pinnedFacts || []); setFactsCount((m?.facts || []).length) }).catch(() => {})
-    }
-  }, [tab])
-
-  const selectProvider = (name: string) => {
-    const idx = providers.findIndex(x => x.name === name)
-    if (idx >= 0) { setSelIdx(idx); return }
-    const pre = PRESETS[name] || { type: 'OpenAI Compatible', url: '' }
-    addProvider({ id: 'auto_' + Date.now(), name, type: pre.type, apiKey: '', baseUrl: pre.url, models: [], selectedModel: '' })
-    setSelIdx(providers.length)
+  const mp = mediaProviders[mediaSelIdx]
+  const [loading, setLoading] = useState(false)
+  const [testSt, setTestSt] = useState<{ loading: boolean; ok?: boolean; msg?: string }>({ loading: false })
+  const [addField, setAddField] = useState<string | null>(null)
+  const [addVal, setAddVal] = useState('')
+  // v0.2.4: 读取结果弹窗 —— 按图片/视频/语音分类勾选, 勾选的才会添加
+  const [detModal, setDetModal] = useState<{ img: string[]; video: string[]; audio: string[]; rest: string[] } | null>(null)
+  const [detSel, setDetSel] = useState<Record<string, boolean>>({})
+  if (!mp) return <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>请选择供应商</div>
+  const up = (patch: Partial<MediaProvider>) => useSettingsStore.getState().updateMediaProvider(mp.id, patch)
+  // v0.3.0: 统一模板 —— 媒体平台模型合并为单列表(能力标签自动检测), 增删按能力归类写回
+  const capOfModel = (m: string): 'imgModels' | 'videoModels' | 'audioModels' => {
+    const caps = detectCaps([m])
+    if (caps.includes('图片')) return 'imgModels'
+    if (caps.includes('视频')) return 'videoModels'
+    if (caps.includes('语音')) return 'audioModels'
+    return 'imgModels'
   }
-
+  const allModels = [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])]
+  const rmModel = (m: string) => {
+    const f = capOfModel(m)
+    up({ [f]: (mp[f] || []).filter(x => x !== m) } as Partial<MediaProvider>)
+  }
+  const addModel = (name: string) => {
+    const f = capOfModel(name)
+    up({ [f]: [...(mp[f] || []), name] } as Partial<MediaProvider>)
+  }
+  // v0.2.4: 读取模型 —— detect 失败时回退官方预置模型(REST 生成 API 无 /models 接口)
   const fetchModels = async () => {
-    if (!p || !p.baseUrl) return; setLoading(true)
+    if (!mp.baseUrl) { showToast('请先填写 Base URL 再读取模型'); return }
+    setLoading(true)
     try {
-      // v0.2.2: detect 返回 { ok, models, error }，Anthropic 用 x-api-key 鉴权
-      const r: any = await window.huangquan.models.detect(p.baseUrl, p.apiKey, p.type === 'Anthropic Claude')
-      const models = (r?.ok ? r.models : []) as string[]
-      if (models.length) {
-        updateProvider(p.id, { models, selectedModel: models[0] })
-        // v0.2.1: 该供应商无视觉模型时，弹出视觉辅助模型配置提示
-        const hasVision = models.some((m: string) => /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(m.toLowerCase()))
-        if (!hasVision) {
-          const otherVision = providers.filter(pr => pr.id !== p.id).flatMap(pr => (pr.models || []).filter((m: string) => /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(m.toLowerCase())).map((m: string) => ({ id: pr.id, name: pr.name, m })))
-          if (otherVision.length) setVisionPrompt(true)
-          else showToast('该供应商无视觉模型；可稍后在多模型策略中配置视觉辅助模型')
-        }
-      } else showToast('读取失败：' + (r?.error || '未获取到模型列表'))
-    } catch { showToast('读取失败：请求异常') }
-    setLoading(false)
-  }
-
-  // v0.2.2: 多媒体供应商 —— 读取模型并按能力自动分类（图片/视频/语音）
-  const [mediaLoading, setMediaLoading] = useState(false)
-  // v0.2.2: 测试连接 —— 文字供应商 / 多媒体共用
-  const [testState, setTestState] = useState<{ key: string; loading: boolean; ok?: boolean; msg?: string }>({ key: '', loading: false })
-  // v0.2.3: 软件更新状态
-  const [upt, setUpt] = useState<any>({ checking: false, info: null, error: '', downloading: false, downloadInfo: null })
-  const testConnection = async (key: string, baseUrl: string, apiKey: string, isAnthropic?: boolean) => {
-    setTestState({ key, loading: true })
-
-    try {
-      const r: any = await window.huangquan.models.test(baseUrl, apiKey, isAnthropic ? { anthropic: true } : undefined)
-      setTestState({ key, loading: false, ok: !!r?.ok, msg: (r?.message || '测试完成') + (r?.latency ? '（' + r.latency + 'ms）' : '') })
-    } catch { setTestState({ key, loading: false, ok: false, msg: '测试请求失败' }) }
-  }
-  const fetchMediaModels = async () => {
-    if (!mp || !mp.baseUrl) { showToast('请先填写 Base URL'); return }
-    setMediaLoading(true)
-    try {
-      const r: any = await window.huangquan.models.detect(mp.baseUrl, mp.apiKey)
+      const r = await window.huangquan.models.detect(mp.baseUrl, mp.apiKey)
       if (!r?.ok) {
-        // v0.2.2: 平台不支持 /models 接口（可灵/即梦等 REST 生成 API）→ 回退官方预置模型
-        const pre = MEDIA_PRESETS[mp.name]
-        if (pre && ((pre.img || []).length || (pre.video || []).length || (pre.audio || []).length)) {
-          updateMediaProvider(mp.id, {
-            imgModels: pre.img || [], videoModels: pre.video || [], audioModels: pre.audio || [],
-            selectedImg: (pre.img || [])[0], selectedVideo: (pre.video || [])[0], selectedAudio: (pre.audio || [])[0],
-          })
-          showToast('接口不支持模型列表，已载入' + mp.name + '官方预置模型')
-        } else {
-          showToast('读取失败：' + (r?.error || '未获取到模型列表，请检查 Base URL / API Key'))
-        }
+        // v0.2.4: 读取后才有模型 —— 失败直接报错, 不再回退预置
+        showToast('读取失败：' + (r?.error || '未获取到模型列表，请检查 Base URL / API Key'))
+        setLoading(false)
         return
       }
       const all = r.models as string[]
-      if (!all || !all.length) { showToast('接口正常但未返回模型列表'); return }
+      if (!all || !all.length) { showToast('接口正常但未返回模型列表'); setLoading(false); return }
       const isImg = (m: string) => /image|dall|flux|stable|sdxl|midjourney|\bmj\b|imagen|draw|pic|art|绘画|文生图/i.test(m)
       const isVid = (m: string) => /video|sora|kling|可灵|runway|pika|veo|wanx?|pixeldance|moonvalley|genmo|hailuo|海螺|vidu|dreamina|即梦/i.test(m)
       const isAud = (m: string) => /tts|audio|whisper|speech|voice|suno|music|asr|stt|cosyvoice|字幕|语音|配音/i.test(m)
@@ -280,26 +153,276 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
       const videoModels = all.filter(isVid)
       const audioModels = all.filter(isAud)
       const rest = all.filter((m: string) => !isImg(m) && !isVid(m) && !isAud(m))
-      // 未匹配的模型归入图片组（生成类 API 通常以图片模型为主），避免丢失
-      updateMediaProvider(mp.id, {
-        imgModels: [...imgModels, ...rest],
-        videoModels,
-        audioModels,
-        selectedImg: imgModels[0] || rest[0] || undefined,
-        selectedVideo: videoModels[0] || undefined,
-        selectedAudio: audioModels[0] || undefined,
-      })
-      const parts = [imgModels.length + ' 图片', videoModels.length + ' 视频', audioModels.length + ' 语音']
-      showToast('读取成功：' + parts.join(' / ') + (rest.length ? '（' + rest.length + ' 个未分类归入图片）' : ''))
+      // v0.2.4: 读取后弹窗勾选 —— 不直接写入, 勾选的才会添加
+      setDetModal({ img: imgModels, video: videoModels, audio: audioModels, rest })
+      setDetSel({})
     } catch { showToast('读取失败：请检查网络或接口地址') }
-    setMediaLoading(false)
+    setLoading(false)
+  }
+  // v0.2.4: 测试连接
+  const testConn = async () => {
+    if (!mp.baseUrl) { showToast('请先填写 Base URL'); return }
+    setTestSt({ loading: true })
+    try {
+      const r = await window.huangquan.models.test(mp.baseUrl, mp.apiKey)
+      setTestSt({ loading: false, ok: !!r?.ok, msg: (r?.message || '测试完成') + (r?.latency ? '（' + r.latency + 'ms）' : '') })
+    } catch { setTestSt({ loading: false, ok: false, msg: '测试请求失败' }) }
+  }
+  const CAP_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
+    imgModels: { bg: 'rgba(52,211,153,.12)', fg: '#34d399', label: '图片' },
+    videoModels: { bg: 'rgba(251,191,36,.12)', fg: '#fbbf24', label: '视频' },
+    audioModels: { bg: 'rgba(244,114,182,.12)', fg: '#f472b6', label: '语音' },
+  }
+  return (
+    <div style={S.card}>
+    <div style={S.card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+        <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
+        <button style={S.btn('danger')} onClick={() => useSettingsStore.getState().removeMediaProvider(mp.id)}>删除</button>
+      </div>
+      <div style={S.row}><div style={S.label}>API Key{isLocalMedia(mp.name) ? '（本地服务无需）' : ''}</div>
+        <input style={S.inp} type="password" value={mp.apiKey || ''} placeholder={isLocalMedia(mp.name) ? '本地服务无需密钥' : 'sk-...'} onChange={e => up({ apiKey: e.target.value })} /></div>
+      <div style={S.row}><div style={S.label}>Base URL</div><input style={S.inp} value={mp.baseUrl || ''} placeholder="https://api.example.com/v1" onChange={e => up({ baseUrl: e.target.value })} /></div>
+      <div style={S.row}><div style={S.label}>API 类型</div><select style={S.sel} value={AI_TYPES.includes(mp.type) ? mp.type : 'OpenAI Compatible'} onChange={e => up({ type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+      <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>Headers</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="key=value" value={mp.headers || ''} onChange={e => up({ headers: e.target.value })} /></div>
+    </div>
+    <div style={S.card}>
+      <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
+      {allModels.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '12px 0' }}>暂无，点击"读取模型"从接口获取</div> : allModels.map((m: string, i: number) => {
+        const caps = detectCaps([m])
+        return <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+          <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
+          <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            {caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}
+          </span>
+          <button style={{ ...S.btn('ghost'), height: 28, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => rmModel(m)}>×</button>
+        </div>
+      })}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
+        {addField !== null ? <>
+          <input style={{...S.inp,width:200,height:30,fontSize: 'calc(var(--ui-font-size) - 2px)'}} placeholder="模型 ID..." value={addVal} onChange={e=>setAddVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&addVal.trim()){addModel(addVal.trim());setAddVal('');setAddField(null)}}} autoFocus />
+          <button style={{...S.btn('primary'),height:30}} onClick={()=>{if(addVal.trim()){addModel(addVal.trim());setAddVal('');setAddField(null)}}}>确认</button>
+          <button style={{...S.btn('ghost'),height:30}} onClick={()=>{setAddField(null);setAddVal('')}}>取消</button>
+        </> : <button style={S.btn('primary')} onClick={() => { setAddField('models'); setAddVal('') }}>添加模型</button>}
+        <button style={S.btn('ghost')} disabled={loading} onClick={fetchModels}>{loading ? '读取中...' : '读取模型'}</button>
+        <button style={S.btn('ghost')} disabled={testSt.loading} onClick={testConn}>{testSt.loading ? '测试中...' : '测试连接'}</button>
+        {testSt.msg && (
+          <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: testSt.ok ? 'var(--success)' : 'var(--danger)', marginLeft: 4 }}>{testSt.msg}</span>
+        )}
+      </div>
+    </div>
+    <div style={{ ...S.card, marginBottom: 0 }}>
+      <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, padding: '2px 0' }}>调度绑定已移至「策略」页 — 所有模型公用</div>
+    </div>
+
+      {/* v0.2.4: 读取结果弹窗 —— 按能力分类勾选, 勾选的才会添加 */}
+      {detModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetModal(null)}>
+          <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 12 }}>已从接口读取 {(detModal.img.length + detModal.video.length + detModal.audio.length + detModal.rest.length)} 个模型，勾选后点击「添加所选」才能使用</div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
+              {([['imgModels', '图片', CAP_STYLE.imgModels], ['videoModels', '视频', CAP_STYLE.videoModels], ['audioModels', '语音', CAP_STYLE.audioModels]] as const).map(([field, label, cap]) => {
+                const list = field === 'imgModels' ? [...detModal.img, ...detModal.rest] : field === 'videoModels' ? detModal.video : detModal.audio
+                if (!list.length) return null
+                return (
+                  <div key={field}>
+                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: cap.fg, margin: '8px 0 4px' }}>{label}</div>
+                    {list.map(m => (
+                      <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>
+                        <input type="checkbox" checked={!!detSel[m]} onChange={e => setDetSel(prev => ({ ...prev, [m]: e.target.checked }))} />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
+                        <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, flexShrink: 0, background: cap.bg, color: cap.fg, border: '1px solid ' + cap.bg }}>{label}{field === 'imgModels' && detModal.rest.includes(m) ? '·未分类' : ''}</span>
+                      </label>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button style={S.btn('ghost')} onClick={() => setDetModal(null)}>取消</button>
+              <button style={S.btn('primary')} disabled={!Object.values(detSel).some(Boolean)} onClick={() => {
+                const picked = Object.keys(detSel).filter(k => detSel[k])
+                const imgPick = picked.filter(m => detModal.img.includes(m) || detModal.rest.includes(m))
+                const vidPick = picked.filter(m => detModal.video.includes(m))
+                const audPick = picked.filter(m => detModal.audio.includes(m))
+                up({
+                  imgModels: [...new Set([...(mp.imgModels || []), ...imgPick])],
+                  videoModels: [...new Set([...(mp.videoModels || []), ...vidPick])],
+                  audioModels: [...new Set([...(mp.audioModels || []), ...audPick])],
+                })
+                setDetModal(null); setDetSel({})
+              }}>添加所选 ({Object.values(detSel).filter(Boolean).length})</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function SettingsView({ onNavigate }: { onNavigate: (v: string) => void }) {
+  const { providers, general, addProvider, removeProvider, updateProvider } = useSettingsStore()
+
+  // v0.2.4: 读取后才有模型 —— 一次性迁移: 清理与官方预置完全一致的模型(旧行为自动带上的, 未经过读取)
+  useEffect(() => {
+    try {
+      const same = (a: string[] | undefined, b: string[] | undefined) => {
+        const A = a || [], B = b || []
+        return A.length === B.length && A.every((x, i) => x === B[i])
+      }
+      ;(mediaProviders || []).forEach(mp => {
+        const pre = MEDIA_PRESETS[mp.name]
+        if (!pre) return
+        const patch: Parameters<typeof updateMediaProvider>[1] = {}
+        if (same(mp.imgModels, pre.img)) { patch.imgModels = []; patch.selectedImg = undefined }
+        if (same(mp.videoModels, pre.video)) { patch.videoModels = []; patch.selectedVideo = undefined }
+        if (same(mp.audioModels, pre.audio)) { patch.audioModels = []; patch.selectedAudio = undefined }
+        if (Object.keys(patch).length) updateMediaProvider(mp.id, patch)
+      })
+    } catch (e) { /* 迁移失败不影响使用 */ console.debug('[swallow]', e) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [tab, setTab] = useState('models'); const [selIdx, setSelIdx] = useState(0); const [showNew, setShowNew] = useState(false)
+  // v0.2.6: 模型缓存统计(持久化)
+  // v0.2.3-fix(N25): 类型对齐 v4 数据模型
+  interface ModelStatV4 { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number; missTokens?: number }
+  const [modelStats, setModelStats] = useState<Record<string, ModelStatV4>>({})
+  const [newName, setNewName] = useState(''); const [newKey, setNewKey] = useState(''); const [newUrl, setNewUrl] = useState(''); const [newType, setNewType] = useState('OpenAI Compatible')
+  const [bgOp, setBgOp] = useState(general.bgOpacity ?? 0.7)
+  const hasBg = !!general.bgImage
+  useEffect(() => { setBgOp(general.bgOpacity ?? 0.7) }, [general?.bgOpacity])
+  const [memF, setMemF] = useState<string[]>([]); const [loading, setLoading] = useState(false)
+  const [chatPersona, setChatPersona] = useState(general.chatPersona || '')
+  const [workPersona, setWorkPersona] = useState(general.workPersona || '')
+  // v0.2.1: 同步 store → state（预设切换/外部修改时 textarea 实时刷新）
+  useEffect(() => {
+    setChatPersona(general.chatPersona || '')
+    setWorkPersona(general.workPersona || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [general?.chatPersona, general?.workPersona])
+  const [toast, setToast] = useState<string | null>(null)
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
+  // v0.2.5-fix: 新建工作流改用应用内弹窗(Electron 不支持 prompt, 调用会抛错触发全局错误页)
+  const [wfModal, setWfModal] = useState(false)
+  const [wfName, setWfName] = useState('')
+  const [wfDesc, setWfDesc] = useState('')
+  const [pluginUrl, setPluginUrl] = useState('')
+  const [showPluginInput, setShowPluginInput] = useState(false)
+  const [modelInput, setModelInput] = useState<string | null>(null)
+  // v0.2.4: 读取模型结果弹窗 —— 按功能分类勾选, 勾选的模型才会添加
+  const [detectModal, setDetectModal] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
+  const [detectSel, setDetectSel] = useState<string[]>([])
+  // v0.2.1: 视觉辅助模型配置弹窗
+  const [visionPrompt, setVisionPrompt] = useState(false)
+  const [visionPick, setVisionPick] = useState('')
+  const p = providers[selIdx] || providers[0]
+  const g = general
+  // v0.2.1: 多媒体供应商
+  const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
+  const addMediaProvider = useSettingsStore(s => s.addMediaProvider)
+  const removeMediaProvider = useSettingsStore(s => s.removeMediaProvider)
+  const updateMediaProvider = useSettingsStore(s => s.updateMediaProvider)
+  const [mediaSelIdx, setMediaSelIdx] = useState(0)
+  // v0.2.1: MCP / 技能 章节
+  const [mcpServers, setMcpServers] = useState<{ name: string; cmd?: string; args?: string[]; tools?: string[]; status?: string }[]>([])
+  const [skillsList, setSkillsList] = useState<{ name: string; description?: string; path?: string }[]>([])
+  const [mcpName, setMcpName] = useState(''); const [mcpCmd, setMcpCmd] = useState(''); const [mcpArgs, setMcpArgs] = useState('')
+  const [mcpSseName, setMcpSseName] = useState(''); const [mcpSseUrl, setMcpSseUrl] = useState('')
+  const [skillName, setSkillName] = useState(''); const [skillContent, setSkillContent] = useState('')
+  const [skillUrl, setSkillUrl] = useState('')
+  useEffect(() => {
+    if (tab === 'mcp') { window.huangquan.mcpList?.().then((s) => setMcpServers(s || [])).catch(() => setMcpServers([])) }
+    if (tab === 'skills') { window.huangquan.skills.list().then((s) => setSkillsList(s || [])).catch(() => setSkillsList([])) }
+    // v0.2.1: 引擎页自动加载真实存储统计
+    if (tab === 'stats') { window.huangquan.modelStats.get().then((d) => setModelStats(d?.models || {})).catch(() => setModelStats({})) }
+    if (tab === 'advanced') {
+      window.huangquan.storageStats().then((s) => { const patch: Record<string, unknown> = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) }).catch(() => {})
+      // v0.2.6: 工具缓存命中率
+      window.huangquan.cacheStats().then((cs) => { save({ stat_cacheHits: cs?.hits || 0, stat_cacheMisses: cs?.misses || 0, stat_cacheRate: cs?.hit_rate || '0%' }) }).catch(() => {})
+    }
+  }, [tab])
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const save = (patch: Partial<GeneralSettings>) => { useSettingsStore.setState(s => ({ general: { ...s.general, ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
+  // v0.3.0 M4: 插件工具权限(放行/禁用)
+  const [pluginList, setPluginList] = useState<{ plugin: string; name: string; description: string }[]>([])
+  useEffect(() => { window.huangquan.plugins.tools().then((l) => setPluginList(Array.isArray(l) ? l : [])).catch(() => setPluginList([])) }, [])
+  const pluginPerm = (general?.pluginPerm) || {}
+  const cyclePluginPerm = (key: string) => {
+    const cur = pluginPerm[key] || 'ask'
+    const next = cur === 'allow' ? 'deny' : cur === 'deny' ? 'ask' : 'allow'
+    save({ pluginPerm: { ...pluginPerm, [key]: next } })
+  }
+  const toHex = (c: string) => (/^#[0-9a-fA-F]{6}$/.test(c || '') ? c : '#17181c')
+
+  // v0.2.3-fix(S1): 长期记忆计数用 state(不再在 JSX 里渲染 async IIFE -> [object Promise])
+  const [factsCount, setFactsCount] = useState(0)
+  useEffect(() => {
+    if (tab === 'memory') {
+      window.huangquan.memory.load().then((m) => { setMemF(m?.pinnedFacts || []); setFactsCount((m?.facts || []).length) }).catch(() => {})
+    }
+  }, [tab])
+
+  const selectProvider = (name: string) => {
+    // v0.3.0: 切换前保存当前供应商配置(手动修改立即落盘, 不丢失)
+    useSettingsStore.getState().save()
+    setMediaSelIdx(-1)
+    const idx = providers.findIndex(x => x.name === name)
+    if (idx >= 0) {
+      // v0.3.0: 自动加载默认 BaseURL/API 类型(仅空字段填充, 用户自定义优先)
+      const cur = providers[idx]
+      const pre = PRESETS[name]
+      if (pre && cur) {
+        const patch: Partial<ProviderConfig> = {}
+        if (!cur.baseUrl && pre.url) patch.baseUrl = pre.url
+        if (!cur.type && pre.type) patch.type = pre.type
+        if (Object.keys(patch).length) updateProvider(cur.id, patch)
+      }
+      setSelIdx(idx)
+      return
+    }
+    const pre = PRESETS[name] || { type: 'OpenAI Compatible', url: '' }
+    addProvider({ id: 'auto_' + Date.now(), name, type: pre.type, apiKey: '', baseUrl: pre.url, models: [], selectedModel: '' })
+    setSelIdx(providers.length)
+  }
+
+  const fetchModels = async () => {
+    if (!p) return
+    if (!p.baseUrl) { showToast('请先填写 Base URL 再读取模型'); return }
+    setLoading(true)
+    try {
+      // v0.2.2: detect 返回 { ok, models, error }，Anthropic 用 x-api-key 鉴权
+      // v0.2.4: 传入 API 类型 —— Azure / Gemini 走各自的模型列表接口
+      const r = await window.huangquan.models.detect(p.baseUrl, p.apiKey, { type: p.type })
+      const models = (r?.ok ? r.models : []) as string[]
+      if (models.length) {
+        // v0.2.4: 读取后弹窗勾选 —— 按功能分类展示, 勾选的模型才会加入
+        setDetectModal({ providerId: p.id, items: models.map((m: string) => ({ model: m, caps: detectCaps([m]) })) })
+        setDetectSel([])
+      } else showToast('读取失败：' + (r?.error || '未获取到模型列表'))
+    } catch { showToast('读取失败：请求异常') }
+    setLoading(false)
+  }
+
+  const [testState, setTestState] = useState<{ key: string; loading: boolean; ok?: boolean; msg?: string }>({ key: '', loading: false })
+  // v0.2.3: 软件更新状态
+  const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; downloadInfo: { ok?: boolean; error?: string; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, downloadInfo: null })
+  const testConnection = async (key: string, baseUrl?: string, apiKey?: string, isAnthropic?: boolean) => {
+    setTestState({ key, loading: true })
+
+    try {
+      const r = await window.huangquan.models.test(baseUrl || '', apiKey, isAnthropic ? { anthropic: true } : undefined)
+      setTestState({ key, loading: false, ok: !!r?.ok, msg: (r?.message || '测试完成') + (r?.latency ? '（' + r.latency + 'ms）' : '') })
+    } catch { setTestState({ key, loading: false, ok: false, msg: '测试请求失败' }) }
   }
 
   const TABS = [
     { key: 'models', icon: <Key size={15} />, label: '供应商' }, { key: 'strategy', icon: <SlidersHorizontal size={15} />, label: '策略' },
     { key: 'persona', icon: <UserRound size={15} />, label: '角色' },
     { key: 'memory', icon: <Database size={15} />, label: '记忆' }, { key: 'collab', icon: <Users size={15} />, label: '协作' },
-    { key: 'tools', icon: <Wrench size={15} />, label: '工具' }, { key: 'media', icon: <Film size={15} />, label: '多媒体' },
+    { key: 'tools', icon: <Wrench size={15} />, label: '工具' },
     { key: 'mcp', icon: <Puzzle size={15} />, label: 'MCP' }, { key: 'skills', icon: <BookOpen size={15} />, label: '技能' },
     { key: 'skin', icon: <Palette size={15} />, label: '外观' },
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
@@ -337,18 +460,82 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
           {tab === 'models' ? <>
             <div style={{ display: 'flex', height: '100%' }}>
               <div style={{ width: 160, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto' }}>
-                {Object.entries(GROUPS).map(([g, names]) => (
-                  <div key={g} style={{ marginBottom: 18 }}>
-                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, paddingLeft: 4 }}>{g}</div>
-                    {names.map(n => { const active = providers.findIndex(x => x.name === n) >= 0 && providers.findIndex(x => x.name === n) === selIdx
-                      return <div key={n} onClick={() => selectProvider(n)} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2 }}>{n}</div>
-                    })}
-                  </div>
-                ))}
-                <button style={{ ...S.btn('primary'), width: '100%', marginTop: 6 }} onClick={() => setShowNew(true)}>+ 自定义</button>
+                {(() => {
+                    // v0.2.4: 已配置平台按能力分类置顶, 未配置统一沉底
+                    const allNames = Object.values(GROUPS).flat()
+                    const allMediaNames = Object.keys(MEDIA_PRESETS)
+                    const capOrder = ['多模态', '文字', '图片', '视频', '语音']
+                    const cfgProvs = providers.filter(pp => !!pp.apiKey)
+                    const cfgMedias = mediaProviders.filter(mp => !!mp.apiKey)
+                    const capsOf = (kind: 'provider' | 'media', item: ProviderConfig | MediaProvider): string[] => {
+                      const models = kind === 'provider' ? ('models' in item ? (item.models || []) : []) : [...((item as MediaProvider).imgModels || []), ...((item as MediaProvider).videoModels || []), ...((item as MediaProvider).audioModels || [])]
+                      return detectCaps(models)
+                    }
+                    const mainCap = (caps: string[]) => capOrder.find(c => caps.includes(c)) || '文字'
+                    const row = (name: string, kind: 'provider' | 'media', cfg: boolean, caps: string[]) => {
+                      const active = kind === 'provider' ? (providers.findIndex(x => x.name === name) === selIdx && cfg) : (mediaProviders.findIndex(x => x.name === name) === mediaSelIdx && cfg)
+                      return <div key={kind + '::' + name} onClick={() => {
+                        if (kind === 'provider') selectProvider(name)
+                        else {
+                          // v0.3.0: 切换前保存当前供应商配置
+                          useSettingsStore.getState().save()
+                          setSelIdx(-1)
+                          const existing = mediaProviders.find(m => m.name === name)
+                          if (existing) {
+                            // v0.3.0: 自动加载默认 BaseURL(仅空字段, 用户自定义优先)
+                            const pre = MEDIA_PRESETS[name]
+                            if (pre && !existing.baseUrl && pre.url) useSettingsStore.getState().updateMediaProvider(existing.id, { baseUrl: pre.url })
+                            setMediaSelIdx(mediaProviders.indexOf(existing))
+                          }
+                          else { const pre = MEDIA_PRESETS[name]; if (pre) { const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: [] as string[], videoModels: [] as string[], audioModels: [] as string[] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) } }
+                        }
+                      }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                        <span style={{ display: 'flex', gap: 3, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{cfg ? caps.slice(0, 3).map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: CAP_COLORS[c] || C.text, background: 'rgba(150,150,160,0.13)', padding: '1px 5px', borderRadius: 8 }}>{c}</span>) : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted, background: 'rgba(150,150,160,0.13)', padding: '1px 6px', borderRadius: 8 }}>未配置</span>}</span>
+                      </div>
+                    }
+                    const groupTitle = (txt: string) => <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, paddingLeft: 4, marginTop: 10 }}>{txt}</div>
+                    const subTitle = (txt: string) => <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, fontWeight: 600, margin: '8px 0 4px', paddingLeft: 4 }}>{txt}</div>
+                    // 同名平台(供应商+媒体)合并为一个条目, 能力取并集
+                    const cfgByName = new Map<string, { name: string; kind: 'provider' | 'media'; caps: string[] }>()
+                    cfgProvs.forEach(pp => cfgByName.set(pp.name, { name: pp.name, kind: 'provider', caps: capsOf('provider', pp) }))
+                    cfgMedias.forEach(mp => {
+                      const existing = cfgByName.get(mp.name)
+                      const mcaps = capsOf('media', mp)
+                      if (existing) existing.caps = [...new Set([...existing.caps, ...mcaps])]
+                      else cfgByName.set(mp.name, { name: mp.name, kind: 'media', caps: mcaps })
+                    })
+                    const cfgItems = [...cfgByName.values()]
+                    // v0.2.4-fix: 自定义供应商(不在预设列表)未填 Key 时也要出现在未配置区, 否则点不到、无法读取模型
+                    const customUncfg = providers.filter(pp => !allNames.includes(pp.name) && !pp.apiKey).map(pp => pp.name)
+                    const uncfgNames = [...new Set([
+                      ...allNames.filter(n => n !== '自定义' && !providers.some(pp => pp.name === n && pp.apiKey)),
+                      ...allMediaNames.filter(n => !mediaProviders.some(mp => mp.name === n && mp.apiKey)),
+                      ...customUncfg,
+                    ])]
+                    return (
+                      <>
+                        {groupTitle('已配置')}
+                        {cfgItems.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '4px 10px 8px' }}>暂无已配置平台（填好 API Key 后自动分类置顶）</div>}
+                        {capOrder.map(g => cfgItems.filter(x => mainCap(x.caps) === g).length > 0 && (
+                          <div key={g}>
+                            {subTitle(g)}
+                            {cfgItems.filter(x => mainCap(x.caps) === g).map(x => row(x.name, x.kind, true, x.caps))}
+                          </div>
+                        ))}
+                        {groupTitle('未配置')}
+                        {uncfgNames.map(n => {
+                          // v0.2.4-fix: 自定义供应商不在预设名里, 按实际数据判定 kind(否则被当媒体, 点击无反应)
+                          const kind = providers.some(pp => pp.name === n) ? 'provider' : mediaProviders.some(mp => mp.name === n) ? 'media' : (allNames.includes(n) ? 'provider' : 'media')
+                          return row(n, kind, false, [])
+                        })}
+                        <button style={{ ...S.btn('primary'), width: '100%', marginTop: 6 }} onClick={() => setShowNew(true)}>+ 自定义</button>
+                      </>
+                    )
+                  })()}
               </div>
               <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-                {!p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>选择左侧服务商</div> : <>
+                {mediaSelIdx >= 0 ? <MediaForm mediaSelIdx={mediaSelIdx} showToast={showToast} /> : !p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>选择左侧供应商</div> : <>
                   <div style={S.card}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
                       <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
@@ -358,43 +545,42 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                       <input style={S.inp} type="password" value={p.apiKey || ''} placeholder={PRESETS[p.name]?.noKey ? '本地服务无需密钥' : 'sk-...'} onChange={e => updateProvider(p.id, { apiKey: e.target.value })} /></div>
                     <div style={S.row}><div style={S.label}>Base URL</div><input style={S.inp} value={p.baseUrl || ''} onChange={e => updateProvider(p.id, { baseUrl: e.target.value })} /></div>
                     <div style={S.row}><div style={S.label}>API 类型</div><select style={S.sel} value={p.type || 'OpenAI Compatible'} onChange={e => updateProvider(p.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                    <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>Headers</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="key=value" value={(p as any).headers || ''} onChange={e => updateProvider(p.id, { headers: e.target.value } as any)} /></div>
+                    <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>Headers</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="key=value" value={p.headers || ''} onChange={e => updateProvider(p.id, { headers: e.target.value })} /></div>
                   </div>
                   <div style={S.card}>
                     <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
                     {p.models.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '12px 0' }}>暂无，点击"读取模型"从接口获取</div> : p.models.map((m: string, i: number) => {
-                      // v0.2.1: 多媒体能力标注 —— 视觉模型可看懂图片
-                      const isMulti = /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava|audio|whisper|tts/i.test(m.toLowerCase())
+                      // v0.2.4: 功能标签 —— 按模型名检测能力(文字/图片/视频/语音/多模态), 右侧显示
+                      const caps = detectCaps([m])
                       return <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
                         <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
-                        <span title={isMulti ? '多媒体模型：可读文字 + 看懂图片' : '文字模型：仅文字'} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, flexShrink: 0, background: isMulti ? 'rgba(72,201,138,.12)' : 'rgba(255,255,255,.05)', color: isMulti ? '#48c98a' : '#63656f', border: '1px solid ' + (isMulti ? 'rgba(72,201,138,.3)' : 'rgba(255,255,255,.1)') }}>{isMulti ? '多媒体' : '文字'}</span>
-                        <select style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', width: 110, flexShrink: 0 }} value={p.selectedModel === m ? m : p.selectedModel || p.models[0]} onChange={e => { updateProvider(p.id, { selectedModel: e.target.value }); updateContextLimit(e.target.value) }}>{p.models.map(x => <option key={x} value={x}>{x}</option>)}</select>
-                        <button style={{ ...S.btn('ghost'), height: 28, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => updateProvider(p.id, { models: p.models.filter((_, j) => j !== i) } as any)}>×</button>
+                        <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                          {caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}
+                        </span>
+                        <button style={{ ...S.btn('ghost'), height: 28, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => updateProvider(p.id, { models: p.models.filter((_, j) => j !== i) })}>×</button>
                       </div>
                     })}
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
                       {modelInput !== null ? <>
-                        <input style={{...S.inp,width:200,height:30,fontSize: 'calc(var(--ui-font-size) - 2px)'}} placeholder="模型 ID..." value={modelInput} onChange={e=>setModelInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&modelInput.trim()){updateProvider(p.id,{models:[...p.models,modelInput.trim()]} as any);setModelInput(null)}}} autoFocus />
-                        <button style={{...S.btn('primary'),height:30}} onClick={()=>{if(modelInput.trim()){updateProvider(p.id,{models:[...p.models,modelInput.trim()]} as any);setModelInput(null)}}}>确认</button>
+                        <input style={{...S.inp,width:200,height:30,fontSize: 'calc(var(--ui-font-size) - 2px)'}} placeholder="模型 ID..." value={modelInput} onChange={e=>setModelInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&modelInput.trim()){updateProvider(p.id,{models:[...p.models,modelInput.trim()]});setModelInput(null)}}} autoFocus />
+                        <button style={{...S.btn('primary'),height:30}} onClick={()=>{if(modelInput.trim()){updateProvider(p.id,{models:[...p.models,modelInput.trim()]});setModelInput(null)}}}>确认</button>
                         <button style={{...S.btn('ghost'),height:30}} onClick={()=>setModelInput(null)}>取消</button>
                       </> : <button style={S.btn('primary')} onClick={() => setModelInput('')}>添加模型</button>}
                       <button style={S.btn('ghost')} disabled={loading} onClick={fetchModels}>{loading ? '读取中...' : '读取模型'}</button>
                       {/* v0.2.2: 测试连接 */}
                       <button style={S.btn('ghost')} disabled={testState.loading} onClick={() => testConnection('provider:' + p.id, p.baseUrl, p.apiKey, p.type === 'Anthropic Claude')}>{testState.loading && testState.key === 'provider:' + p.id ? '测试中...' : '测试连接'}</button>
                       {testState.key === 'provider:' + p.id && testState.msg && (
-                        <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: testState.ok ? '#48c98a' : '#ff4466', marginLeft: 4 }}>{testState.ok ? '' : ''}{testState.msg}</span>
+                        <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: testState.ok ? 'var(--success)' : 'var(--danger)', marginLeft: 4 }}>{testState.ok ? '' : ''}{testState.msg}</span>
                       )}
                     </div>
                   </div>
                   <div style={{ ...S.card, marginBottom: 0 }}>
-                    <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>调度绑定</div>
-                    <div style={S.row}><div style={S.label}>小模型</div><select style={S.sel} value={(p as any).smallModel || ''} onChange={e => updateProvider(p.id, { smallModel: e.target.value } as any)}><option value="">默认</option>{p.models.map((m: string) => <option key={m} value={m}>{m}</option>)}</select><div style={S.hint}>轻量任务</div></div>
-                    <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>大模型</div><select style={S.sel} value={(p as any).largeModel || ''} onChange={e => updateProvider(p.id, { largeModel: e.target.value } as any)}><option value="">默认</option>{p.models.map((m: string) => <option key={m} value={m}>{m}</option>)}</select><div style={S.hint}>复杂任务</div></div>
+                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, padding: '2px 0' }}>调度绑定已移至「策略」页 — 所有模型公用</div>
                   </div>
                 </>}
               </div>
             </div>
-            {showNew ? <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+            {showNew ? <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setShowNew(false)}>
               <div style={{ ...S.card, width: 380, padding: 24 }}>
                 <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 18 }}>自定义供应商</div>
                 <input style={{ ...S.inp, marginBottom: 10 }} placeholder="名称" value={newName} onChange={e => setNewName(e.target.value)} />
@@ -405,7 +591,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               </div>
             </div> : null}
             {/* v0.2.1: 视觉辅助模型配置弹窗 */}
-            {visionPrompt ? <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setVisionPrompt(false)}>
+            {visionPrompt ? <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setVisionPrompt(false)}>
               <div style={{ ...S.card, width: 420, padding: 24 }}>
                 <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 8 }}>该供应商无视觉模型</div>
                 <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 16 }}>当前供应商的模型仅支持文字。如需分析图片，请从其他已配置的供应商中选择一个视觉辅助模型：</div>
@@ -427,23 +613,33 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               {/* 多模型策略 —— 联动供应商（文字模型）与多媒体（图片/视频/语音模型） */}
               <div style={S.card}>
                 <div style={S.section}>多模型策略</div>
-                <div style={S.hint}>统一调度各能力模型：文字对话、视觉理解、图片生成、视频生成、语音识别，全部联动下方已配置的供应商与媒体平台</div>
+                <div style={S.hint}>统一调度各能力模型：文字对话、视觉理解、图片生成、视频生成、语音识别，全部联动下方已配置的供应商</div>
                 {/* 文字模型（联动供应商） */}
                 <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '10px 0 6px' }}>文字模型（联动供应商）</div>
-                <div style={S.row}><div style={S.label}>主对话模型</div><select style={S.sel} value={g.mainModel||''} onChange={e=>save({mainModel:e.target.value})}><option value="">跟随默认供应商</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>日常对话与任务执行</div></div>
+                {/* v0.3.0-fix: 主对话模型由聊天框右侧模型选择器指定(不在此重复设置), 输入框选择自动写入 */} 
+                <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>主对话模型</div><div style={S.hint}>由聊天输入框右侧模型选择器指定（选择即生效），此处不再单独设置</div></div>
                 <div style={S.row}><div style={S.label}>长文本模型</div><select style={S.sel} value={g.longTextModel||''} onChange={e=>save({longTextModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>文档分析 / 长上下文任务</div></div>
                 <div style={S.row}><div style={S.label}>代码模型</div><select style={S.sel} value={g.codeModel||''} onChange={e=>save({codeModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>代码生成 / 审查</div></div>
                 <div style={S.row}><div style={S.label}>快速响应模型</div><select style={S.sel} value={g.fastModel||''} onChange={e=>save({fastModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>简单任务 / 工具调度</div></div>
                 <Toggle checked={g.autoFastModel !== false} onChange={v=>save({autoFastModel:v})} label="简单任务自动使用快速模型" hint="Token < 2000 且 工具调用 ≤ 2 次时切换" />
+                {/* v0.2.4: 调度绑定 —— 所有模型公用（含自定义模型），全供应商模型可选 */}
+                <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '16px 0 6px' }}>调度绑定（所有模型公用，含自定义）</div>
+                <div style={S.row}><div style={S.label}>小模型</div><select style={S.sel} value={g.smallModel||''} onChange={e=>save({smallModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>轻量任务（简单问答 / 单步工具）</div></div>
+                <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>大模型</div><select style={S.sel} value={g.largeModel||''} onChange={e=>save({largeModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>复杂任务（多步骤 / 代码 / 文档）</div></div>
               </div>
               <div style={S.card}>
-                <div style={S.section}>视觉理解（联动供应商 + 多媒体）</div>
+                <div style={S.section}>视觉理解（联动供应商）</div>
                 <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 8 }}>勾选要用的视觉辅助模型（<b style={{color:C.text}}>顺序即优先级</b>）：优先尝试排在前面的，连不通自动切换下一个，全部失败会提示原因</div>
                 {(() => {
                   // v0.2.3: 候选池 = 已配置且有 key 的供应商 + 多媒体（模型名含视觉关键词）
                   const visCands: { id: string; label: string; pname: string; mname: string; keyed: boolean }[] = []
                   const pushFrom = (pname: string, models: string[], keyed: boolean) => {
-                    const hits = (models || []).filter((m: string) => /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava|agnes-image|seedream|cogview/i.test(m.toLowerCase()))
+                    // v0.3.0-fix: 能力校验 —— 区分 识图多模态/绘图模型/纯文本; 绘图模型(seedream/dall/flux/sdxl/cogview 等)禁止进入视觉理解列表
+                    const hits = (models || []).filter((m: string) => {
+                      const ml = m.toLowerCase()
+                      if (/(dall|flux|sdxl|stable-diffusion|seedream|cogview|imagen|midjourney|\bmj\b|draw|文生图|图片生成|image-gen|text2img|video-gen|sora|kling|runway|pika|veo)/.test(ml)) return false
+                      return /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|qwen2-vl|glm-4v|llava|yi-vision|internvl|deepseek-vl|step-1v|moonshot-v1|minimax-vl|识图|多模态/i.test(ml)
+                    })
                     hits.forEach((m: string) => { const id = pname + '::' + m; if (!visCands.some(c => c.id === id)) visCands.push({ id, label: pname + ' · ' + m, pname, mname: m, keyed }) })
                   }
                   providers.forEach(pr => pushFrom(pr.name, pr.models || [], !!pr.apiKey))
@@ -466,14 +662,16 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   }
                   return (
                     <div style={{ border: '1px solid ' + C.border, borderRadius: 8, padding: '6px 8px', maxHeight: 180, overflowY: 'auto', background: C.input }}>
-                      {visCands.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: 6 }}>暂无已配置的视觉模型候选（请先在 供应商/多媒体 中填入 API Key 并读取模型）</div>}
+                      {visCands.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: 6 }}>暂无已配置的视觉模型候选（请先在供应商中填入 API Key 并读取模型）</div>}
                       {visCands.map(c => {
                         const idx = curList.indexOf(c.id)
                         const on = idx >= 0
+                        // v0.3.0-fix: 失效检测 —— 模型已不在供应商 models 中(供应商被删/模型被移除)标记「已失效」
+                        const alive = providers.some(pr => pr.name === c.pname && (pr.models || []).includes(c.mname)) || mediaProviders.some(mp => mp.name === c.pname && [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])].includes(c.mname))
                         return (
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: on ? C.text : C.label }}>
                             <input type="checkbox" checked={on} onChange={() => toggleVis(c.id)} style={{ accentColor: C.accent }} />
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!c.keyed && <span style={{ color: '#ffaa00' }}>（未填Key）</span>}</span>
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!alive && <span style={{ color: 'var(--danger)' }}>（已失效）</span>}{!c.keyed && <span style={{ color: 'var(--warning)' }}>（未填Key）</span>}</span>
                             <span style={{ display: 'flex', gap: 2 }}>
                               <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, -1)} disabled={!on || idx === 0}>↑</button>
                               <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, 1)} disabled={!on || idx === curList.length - 1}>↓</button>
@@ -487,22 +685,26 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <Toggle checked={g.visionAutoSwitch !== false} onChange={v=>save({visionAutoSwitch:v})} label="自动切换" hint="视觉任务时自动切到视觉模型，完成后恢复原模型" />
               </div>
               <div style={S.card}>
-                <div style={S.section}>图片生成（联动多媒体）</div>
-                <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaImgProvider||''} onChange={e=>save({mediaImgProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.imgModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select><div style={S.hint}>选择多媒体平台中的图片生成供应商</div></div>
+                <div style={S.section}>图片生成（联动供应商）</div>
+                <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaImgProvider||''} onChange={e=>save({mediaImgProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.imgModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select><div style={S.hint}>选择供应商中的图片生成平台</div></div>
                 <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaImgModel||''} onChange={e=>save({mediaImgModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.imgModels||[]).length).flatMap(mp2 => (mp2.imgModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
                 <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaImgMode||'text2image'} onChange={e=>save({mediaImgMode:e.target.value})}><option value="text2image">文生图 text2image</option><option value="image2image">图生图 image2image</option></select></div>
                 <div style={S.row}><div style={S.label}>默认比例</div><select style={S.sel} value={g.mediaImgRatio||'1:1'} onChange={e=>save({mediaImgRatio:e.target.value})}>{[['1:1','1:1'],['16:9','16:9'],['9:16','9:16'],['4:3','4:3'],['3:4','3:4'],['3:2','3:2'],['2:3','2:3'],['21:9','21:9']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
                 <div style={S.row}><div style={S.label}>默认并发</div><input type="number" style={S.num} min={1} max={9} value={g.mediaImgConcurrency||1} onChange={e=>save({mediaImgConcurrency:parseInt(e.target.value)||1})} /><span style={S.hint}>一次生成张数（1~9）</span></div>
+                {/* v0.3.0: 自动生图开关 —— 对话中遇到生图需求自动调用, 无需用户明确要求 */}
+                <Toggle checked={g.autoMediaImg !== false} onChange={v=>save({autoMediaImg:v})} label="自动生图" hint="对话中遇到「画/生成一张图片」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
               </div>
               <div style={S.card}>
-                <div style={S.section}>视频生成（联动多媒体）</div>
+                <div style={S.section}>视频生成（联动供应商）</div>
                 <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaVideoProvider||''} onChange={e=>save({mediaVideoProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.videoModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
                 <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaVideoModel||''} onChange={e=>save({mediaVideoModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.videoModels||[]).length).flatMap(mp2 => (mp2.videoModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
                 <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaVideoMode||'text2video'} onChange={e=>save({mediaVideoMode:e.target.value})}><option value="text2video">文生视频 text2video</option><option value="image2video">图生视频 image2video</option></select></div>
                 <StepSetting label="默认时长" hint="视频生成默认时长" value={g.mediaVideoDuration||5} min={4} max={15} unit=" 秒" onChange={v => save({ mediaVideoDuration: v })} />
+                {/* v0.3.0: 自动生视频开关 —— 对话中遇到视频需求自动调用, 无需用户明确要求 */}
+                <Toggle checked={g.autoMediaVideo !== false} onChange={v=>save({autoMediaVideo:v})} label="自动生视频" hint="对话中遇到「生成/制作一个视频」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
               </div>
               <div style={S.card}>
-                <div style={S.section}>语音识别 / 合成（联动多媒体）</div>
+                <div style={S.section}>语音识别 / 合成（联动供应商）</div>
                 <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaAudioProvider||''} onChange={e=>save({mediaAudioProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.audioModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
                 <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaAudioModel||''} onChange={e=>save({mediaAudioModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.audioModels||[]).length).flatMap(mp2 => (mp2.audioModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
                 <Toggle checked={g.ttsEnabled !== false} onChange={v=>save({ttsEnabled:v})} label="启用语音合成 (TTS)" />
@@ -512,7 +714,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               <div style={S.card}>
                 <div style={S.section}>基础身份</div>
                 <div style={{ display: 'flex', gap: 16, marginBottom: 14, alignItems: 'center' }}>
-                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
                     {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
                   </div>
                   <div style={{ flex: 1 }}>
@@ -565,18 +767,18 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 </div>
                 <div style={{ marginTop: 10 }}>
                   <div style={S.label}>结构化偏好</div>
-                  {[['useTables','优先使用表格'],['useLists','优先使用列表'],['useEmoji','使用 Emoji 点缀'],['autoCopy','代码块一键复制']].map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
+                  {([['useTables','优先使用表格'],['useLists','优先使用列表'],['useEmoji','使用 Emoji 点缀'],['autoCopy','代码块一键复制']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
                 </div>
                 <div style={{ marginTop: 10 }}><div style={S.label}>称呼风格</div></div>
                 <div style={{ display:'flex',gap:4,flexWrap:'wrap' }}>
                   {['不称呼用户','"你"','"您"',(g.userAlias||'老板')].map(s => <label key={s} style={{ display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:4,border:'1px solid '+C.border,cursor:'pointer',fontSize: 'calc(var(--ui-font-size) - 4px)',color:(g.addressStyle||'你')===s?'#fff':C.muted,background:(g.addressStyle||'你')===s?C.accent:'transparent' }}><input type="radio" style={{display:'none'}} checked={(g.addressStyle||'你')===s} onChange={()=>save({addressStyle:s})}/>{s}</label>)}
                 </div>
                 <div style={{ marginTop: 10 }}><div style={S.label}>不确定表达</div></div>
-                {[['expressUncertainty','不确定时明确说"不确定"'],['askWhenMissing','信息不足时主动追问，不脑补'],['showConfidence','对关键事实标注置信度(高/中/低)']].map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
+                {([['expressUncertainty','不确定时明确说"不确定"'],['askWhenMissing','信息不足时主动追问，不脑补'],['showConfidence','对关键事实标注置信度(高/中/低)']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
                 <div style={{ marginTop: 4 }}><div style={S.label}>敏感话题处理</div></div>
-                {[['explainRefusal','拒绝回答时解释原因'],['neutralOnControversial','对争议话题保持中立']].map(([k,l]) => <Toggle key={k} checked={g[k] === true} onChange={v => save({ [k]: v })} label={l} />)}
+                {([['explainRefusal','拒绝回答时解释原因'],['neutralOnControversial','对争议话题保持中立']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] === true} onChange={v => save({ [k]: v })} label={l} />)}
                 <div style={{ marginTop: 4 }}><div style={S.label}>收尾习惯</div></div>
-                {[['noClosingPhrase','不添加固定收尾语'],['briefClosing','完成时简洁提示"完成"']].map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
+                {([['noClosingPhrase','不添加固定收尾语'],['briefClosing','完成时简洁提示"完成"']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
               </div>
               <div style={S.card}>
                 <div style={S.section}>输出格式</div>
@@ -620,7 +822,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
 <SegSetting label="压缩强度" hint="压缩时保留原文的程度" value={g.compactStrength ?? 1} onChange={v => save({ compactStrength: v })} options={[{ v: 0, label: '保留细节' }, { v: 1, label: '平衡' }, { v: 2, label: '激进' }]} />
                 <div style={S.hint}>{['保留更多原文，压缩比约30%','平衡：保留关键信息，压缩比约50%','仅保留核心结论，压缩比约80%'][g.compactStrength ?? 1]}</div>
                 <div style={{ marginTop:8 }}>
-                  {[['keepUserGoals','始终保留用户核心目标和约束'],['keepPendingTasks','始终保留未完成待办事项'],['keepDecisions','始终保留重要决策和原因'],['keepRecentRaw','保留最近5条消息原文']].map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
+                  {([['keepUserGoals','始终保留用户核心目标和约束'],['keepPendingTasks','始终保留未完成待办事项'],['keepDecisions','始终保留重要决策和原因'],['keepRecentRaw','保留最近5条消息原文']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
                 </div>
               </div>
               <div style={S.card}>
@@ -634,10 +836,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               </div>
               <div style={S.card}><div style={S.section}>置顶记忆</div>
                 <div style={S.hint}>跨会话持久化的事实，Agent 每次对话都会看到。按 Enter 添加。</div>
-                <input style={{ ...S.inp, marginTop: 10, marginBottom: 12 }} placeholder="添加置顶事实..." onKeyDown={async e => { if (e.key !== 'Enter') return; const v = (e.target as HTMLInputElement).value; if (!v) return; const m = await window.huangquan.memory.load(); (m as any).pinnedFacts = [...((m as any).pinnedFacts || []), v]; await window.huangquan.memory.save(m); setMemF([...(m as any).pinnedFacts || []]); (e.target as HTMLInputElement).value = '' }} />
+                <input style={{ ...S.inp, marginTop: 10, marginBottom: 12 }} placeholder="添加置顶事实..." onKeyDown={async e => { if (e.key !== 'Enter') return; const v = (e.target as HTMLInputElement).value; if (!v) return; const m = await window.huangquan.memory.load(); m.pinnedFacts = [...(m.pinnedFacts || []), v]; await window.huangquan.memory.save(m); setMemF([...(m.pinnedFacts || [])]); (e.target as HTMLInputElement).value = '' }} />
                 {memF.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', textAlign: 'center', padding: 20 }}>暂无置顶记忆</div> : memF.map((f, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: C.input, borderRadius: 7, marginBottom: 6 }}>
                   <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, flex: 1 }}>{f}</span>
-                  <button style={{ ...S.btn('danger'), height: 26, padding: '0 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={async () => { const m = await window.huangquan.memory.load(); (m as any).pinnedFacts.splice(i, 1); await window.huangquan.memory.save(m); setMemF([...(m as any).pinnedFacts || []]) }}>删除</button>
+                  <button style={{ ...S.btn('danger'), height: 26, padding: '0 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={async () => { const m = await window.huangquan.memory.load(); const pf = m.pinnedFacts || []; pf.splice(i, 1); m.pinnedFacts = pf; await window.huangquan.memory.save(m); setMemF([...(m.pinnedFacts || [])]) }}>删除</button>
                 </div>)}
               </div>
               <div style={S.card}>
@@ -645,15 +847,15 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.hint}>Agent 自动学习的事实和偏好。可浏览、搜索、删除。</div>
                 <div style={{ textAlign: 'right', marginBottom: 8 }}>
                   <button style={S.btn('ghost')} onClick={async () => {
-                    const m = await window.huangquan.memory.load().catch(() => ({}))
-                    const facts = (m as any).facts || []
+                    const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [] }))
+                    const facts = m.facts || []
                     if (!facts.length) { alert('暂无长期记忆') }
                     else { alert(facts.map((f: string, i: number) => (i + 1) + '. ' + f.slice(0, 200)).join('\n')) }
                   }}>浏览全部 ({factsCount})</button>
                   <button style={{ ...S.btn('danger'), marginLeft: 8 }} onClick={async () => {
                     if (!confirm('清空全部长期记忆？此操作不可撤销。')) return
                     const m = await window.huangquan.memory.load()
-                    ;(m as any).facts = []; await window.huangquan.memory.save(m)
+                    m.facts = []; await window.huangquan.memory.save(m)
                     alert('已清空')
                   }}>清空全部</button>
                 </div>
@@ -730,36 +932,36 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.section}>工作流模板</div>
                 <div style={S.hint}>预定义的多步骤任务自动化流程（运行后自动切到对话执行）</div>
                 {(() => {
-                  let custom: any[] = []
-                  try { custom = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]') } catch { /* ignore */ }
-                  const all: any[] = [
+                  let custom: { name: string; id: string; desc?: string; steps?: number }[] = []
+                  try { custom = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]') } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+                  const all: [string, string, string, number, boolean][] = [
                     ['代码审查流程','code-review','开发者提交→审查者审查→开发者修正',3,false],
                     ['部署检查清单','deploy-checklist','检查配置→构建→测试→打包→...',7,false],
                     ['每日总结','daily-summary','汇总今日工作+明日计划',1,false],
-                    ...custom.map((c: any) => [c.name, 'custom-' + c.id, c.desc, c.steps || 1, true]),
+                    ...custom.map((c: { name: string; id: string; desc?: string; steps?: number }) => [c.name, 'custom-' + c.id, c.desc || '', c.steps || 1, true] as [string, string, string, number, boolean]),
                   ]
-                  return all.map(([name,key,desc,steps,isCustom]: any[]) => <div key={key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid ' + C.border}}>
+                  return all.map(([name,key,desc,steps,isCustom]: [string, string, string, number, boolean]) => <div key={key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid ' + C.border}}>
                     <div><div style={{fontSize: 'calc(var(--ui-font-size) - 2px)',fontWeight:600,color:C.text}}>{name}{isCustom ? <span style={{fontSize: 'calc(var(--ui-font-size) - 4px)',color:C.muted}}> · 自定义</span> : null}</div><div style={S.hint}>{desc}（{steps}步）</div></div>
                     <div style={{display:'flex',gap:4}}>
                       <button style={{...S.btn('ghost'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 8px'}} onClick={() => { onNavigate('chat'); useChatStore.getState().send('执行工作流「' + name + '」：' + desc); setToast('工作流「' + name + '」已发送到对话执行') }}>运行</button>
-                      {isCustom ? <button style={{...S.btn('danger'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 8px'}} onClick={() => { const list = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]'); localStorage.setItem('hq_custom_wfs', JSON.stringify(list.filter((c: any) => 'custom-' + c.id !== key))); setToast('已删除自定义工作流'); setTab('collab'); }}>删除</button> : null}
+                      {isCustom ? <button style={{...S.btn('danger'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 8px'}} onClick={() => { const list = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]'); localStorage.setItem('hq_custom_wfs', JSON.stringify(list.filter((c: { id: string }) => 'custom-' + c.id !== key))); setToast('已删除自定义工作流'); setTab('collab'); }}>删除</button> : null}
                     </div>
                   </div>)
                 })()}
-                <div style={{textAlign:'right',marginTop:8}}><button style={S.btn('primary')} onClick={() => { const name = prompt('工作流名称：'); if (!name) return; const desc = prompt('任务描述（Agent 将按此执行）：') || name; const list = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]'); list.push({ id: Date.now().toString(36), name, desc, steps: 1 }); localStorage.setItem('hq_custom_wfs', JSON.stringify(list)); setToast('已创建自定义工作流「' + name + '」'); setTab('collab'); }}>+ 新建工作流</button></div>
+                <div style={{textAlign:'right',marginTop:8}}><button style={S.btn('primary')} onClick={() => { setWfName(''); setWfDesc(''); setWfModal(true) }}>+ 新建工作流</button></div>
               </div>
               <div style={S.card}>
                 <div style={S.section}>已安装技能</div>
                 <div style={S.hint}>可复用的知识/流程模块，由 Agent 自动学习或手动安装</div>
                 {(() => {
                   let removed: string[] = []
-                  try { removed = JSON.parse(localStorage.getItem('hq_removed_skills') || '[]') } catch { /* ignore */ }
-                  const list: any[] = [
+                  try { removed = JSON.parse(localStorage.getItem('hq_removed_skills') || '[]') } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+                  const list: string[][] = [
                     ['Code Review','内置','代码审查流程、检查清单、最佳实践'],
                     ['Project Manager','内置','项目进度追踪、里程碑管理、风险识别'],
                     ['部署检查清单','手动','来源: GitHub/xxx/deploy-checklist'],
                   ].filter(([n]) => !removed.includes(n))
-                  return list.length ? list.map(([name,src,desc]: any[]) => <div key={name} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid ' + C.border}}>
+                  return list.length ? list.map(([name,src,desc]: string[]) => <div key={name} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid ' + C.border}}>
                     <div><span style={{fontSize: 'calc(var(--ui-font-size) - 2px)',fontWeight:600,color:C.text}}>{name}</span><span style={{fontSize: 'calc(var(--ui-font-size) - 4px)',color:C.muted}}> · {src}</span></div>
                     <div style={{display:'flex',gap:4}}>
                       <button style={{...S.btn('ghost'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 6px'}} onClick={() => setToast(name + '：' + desc)}>查看</button>
@@ -769,178 +971,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 })()}
                 <div style={{display:'flex',gap:8,marginTop:10}}>
                   <button style={S.btn('primary')} onClick={async () => { const url = prompt('GitHub 仓库地址（https://...）：'); if (!url) return; setToast('正在安装...'); const r = await window.huangquan.skills.install(url.trim()); setToast(String(r)) }}>从 GitHub 安装</button>
-                  <button style={S.btn('ghost')} onClick={async () => { try { const path = await window.huangquan.skills.pickLocal(); if (!path) return; setToast('正在安装...'); const r = await window.huangquan.skills.installLocal(path); setToast(String(r)) } catch (e: any) { setToast('安装失败: ' + String(e?.message || e)) } }}>从本地安装</button>
+                  <button style={S.btn('ghost')} onClick={async () => { try { const path = await window.huangquan.skills.pickLocal(); if (!path) return; setToast('正在安装...'); const r = await window.huangquan.skills.installLocal(path); setToast(String(r)) } catch (e: unknown) { setToast('安装失败: ' + errMsg(e)) } }}>从本地安装</button>
                 </div>
               </div>
-            </div> : tab === 'media' ? <>
-              <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-                {/* 左侧：媒体供应商列表（预设平台直接显示） */}
-                <div style={{ width: 170, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto', background: C.card }}>
-                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, paddingLeft: 4 }}>媒体平台</div>
-                  {/* v0.2.2: 云端平台 */}
-                  {Object.keys(MEDIA_PRESETS).filter(n => !isLocalMedia(n)).map((name, i) => {
-                    const existing = mediaProviders.find(m => m.name === name)
-                    const idx = mediaProviders.indexOf(existing as any)
-                    const active = existing ? idx === mediaSelIdx : false
-                    return <div key={name} onClick={() => {
-                      if (existing) setMediaSelIdx(mediaProviders.indexOf(existing))
-                      else { const pre = MEDIA_PRESETS[name]; const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: pre.img || [], videoModels: pre.video || [], audioModels: pre.audio || [] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) }
-                    }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', marginBottom: 2, color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                      <span style={{ fontSize: 8, color: existing ? (active ? C.accent : '#48c98a') : C.muted }}>{existing ? (active ? '● 配置中' : '已配置') : '+ 添加'}</span>
-                    </div>
-                  })}
-                  {/* v0.2.2: 本地服务单独分组 */}
-                  {Object.keys(MEDIA_PRESETS).filter(n => isLocalMedia(n)).length > 0 && (
-                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, textTransform: 'uppercase', letterSpacing: 1, margin: '10px 0 4px', paddingLeft: 4 }}>本地服务</div>
-                  )}
-                  {Object.keys(MEDIA_PRESETS).filter(n => isLocalMedia(n)).map((name, i) => {
-                    const existing = mediaProviders.find(m => m.name === name)
-                    const idx = mediaProviders.indexOf(existing as any)
-                    const active = existing ? idx === mediaSelIdx : false
-                    return <div key={name} onClick={() => {
-                      if (existing) setMediaSelIdx(mediaProviders.indexOf(existing))
-                      else { const pre = MEDIA_PRESETS[name]; const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: pre.img || [], videoModels: pre.video || [], audioModels: pre.audio || [] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) }
-                    }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', marginBottom: 2, color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-                      <span style={{ fontSize: 8, color: existing ? (active ? C.accent : '#48c98a') : C.muted }}>{existing ? (active ? '● 配置中' : '已配置') : '+ 添加'}</span>
-                    </div>
-                  })}
-                  {mediaProviders.filter(m => !MEDIA_PRESETS[m.name]).map((m, i) => (
-                    <div key={m.id} onClick={() => setMediaSelIdx(mediaProviders.indexOf(m))} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', marginBottom: 2, color: mediaProviders.indexOf(m) === mediaSelIdx ? C.accent : C.text, background: mediaProviders.indexOf(m) === mediaSelIdx ? C.accentBg : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
-                      <span style={{ fontSize: 8, color: '#ffaa00' }}>自定义</span>
-                    </div>
-                  ))}
-                  <button style={{ ...S.btn('primary'), width: '100%', marginTop: 6 }} onClick={() => setShowNewMedia(true)}>+ 自定义平台</button>
-                </div>
-                {/* 右侧：选中供应商配置 */}
-                <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-                  {!mp ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>点击「+ 添加平台」添加媒体供应商<br />或选择左侧已添加的平台</div> : <>
-                    <div style={S.card}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-                        <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>{mp.name} · 服务配置</span>
-                        <button style={S.btn('danger')} onClick={() => removeMediaProvider(mp.id)}>删除</button>
-                      </div>
-                      <div style={S.row}><div style={S.label}>API Key</div><input style={S.inp} type="password" value={mp.apiKey || ''} placeholder="sk-..." onChange={e => updateMediaProvider(mp.id, { apiKey: e.target.value })} /></div>
-                      <div style={S.row}><div style={S.label}>Base URL</div><input style={S.inp} value={mp.baseUrl || ''} onChange={e => updateMediaProvider(mp.id, { baseUrl: e.target.value })} /></div>
-                      <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>能力类型</div>
-                        <select style={S.sel} value={mp.type || 'multi'} onChange={e => updateMediaProvider(mp.id, { type: e.target.value })}>
-                          <option value="image">图片生成</option><option value="video">视频生成</option>
-                          <option value="audio">语音识别/合成</option><option value="multi">综合（图+视频+语音）</option>
-                        </select>
-                        <div style={S.hint}>模型按能力自动分类展示</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-                        <button style={S.btn('primary')} disabled={mediaLoading} onClick={fetchMediaModels}>{mediaLoading ? '读取中...' : '读取模型'}</button>
-                        {/* v0.2.2: 测试连接 */}
-                        <button style={S.btn('ghost')} disabled={testState.loading} onClick={() => testConnection('media:' + mp.id, mp.baseUrl, mp.apiKey)}>{testState.loading && testState.key === 'media:' + mp.id ? '测试中...' : '测试连接'}</button>
-                        {testState.key === 'media:' + mp.id && testState.msg && (
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: testState.ok ? '#48c98a' : '#ff4466' }}>{testState.ok ? '' : ''}{testState.msg}</span>
-                        )}
-                        <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, width: '100%' }}>读取模型：自动从接口拉取并按 图片/视频/语音 分类；平台不支持列表接口时自动载入官方预置模型</span>
-                      </div>
-                    </div>
-                    {/* 图片生成模型 */}
-                    <div style={S.card}>
-                      <div style={S.section}>图片生成模型</div>
-                      {mp.imgModels?.length === 0 && <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '8px 0' }}>暂无图片生成模型</div>}
-                      {mp.imgModels?.map((m: string, i: number) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(124,111,168,.12)', color: C.accent, border: '1px solid rgba(124,111,168,.3)' }}>图片</span>
-                          <select style={{ ...S.sel, height: 28, fontSize: 'calc(var(--ui-font-size) - 2px)', width: 110, flexShrink: 0 }} value={mp.selectedImg === m ? m : mp.selectedImg || mp.imgModels[0]} onChange={e => updateMediaProvider(mp.id, { selectedImg: e.target.value })}>{mp.imgModels.map(x => <option key={x} value={x}>{x}</option>)}</select>
-                          <button style={{ ...S.btn('ghost'), height: 26, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => updateMediaProvider(mp.id, { imgModels: mp.imgModels.filter((_, j) => j !== i) })}>×</button>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-                        {imgInput !== null ? <>
-                          <input style={{ ...S.inp, width: 220, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型 ID..." value={imgInput} onChange={e => setImgInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && imgInput.trim()) { updateMediaProvider(mp.id, { imgModels: [...mp.imgModels, imgInput.trim()] }); setImgInput(null) } }} autoFocus />
-                          <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (imgInput?.trim()) { updateMediaProvider(mp.id, { imgModels: [...mp.imgModels, imgInput.trim()] }); setImgInput(null) } }}>确认</button>
-                          <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setImgInput(null)}>取消</button>
-                        </> : <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => setImgInput('')}>+ 添加图片模型</button>}
-                      </div>
-                    </div>
-                    {/* 视频生成模型 */}
-                    <div style={S.card}>
-                      <div style={S.section}>视频生成模型</div>
-                      {mp.videoModels?.length === 0 && <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '8px 0' }}>暂无视频生成模型</div>}
-                      {mp.videoModels?.map((m: string, i: number) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(72,201,138,.12)', color: '#48c98a', border: '1px solid rgba(72,201,138,.3)' }}>视频</span>
-                          <select style={{ ...S.sel, height: 28, fontSize: 'calc(var(--ui-font-size) - 2px)', width: 110, flexShrink: 0 }} value={mp.selectedVideo === m ? m : mp.selectedVideo || mp.videoModels[0]} onChange={e => updateMediaProvider(mp.id, { selectedVideo: e.target.value })}>{mp.videoModels.map(x => <option key={x} value={x}>{x}</option>)}</select>
-                          <button style={{ ...S.btn('ghost'), height: 26, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => updateMediaProvider(mp.id, { videoModels: mp.videoModels.filter((_, j) => j !== i) })}>×</button>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-                        {videoInput !== null ? <>
-                          <input style={{ ...S.inp, width: 220, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型 ID..." value={videoInput} onChange={e => setVideoInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && videoInput.trim()) { updateMediaProvider(mp.id, { videoModels: [...mp.videoModels, videoInput.trim()] }); setVideoInput(null) } }} autoFocus />
-                          <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (videoInput?.trim()) { updateMediaProvider(mp.id, { videoModels: [...mp.videoModels, videoInput.trim()] }); setVideoInput(null) } }}>确认</button>
-                          <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setVideoInput(null)}>取消</button>
-                        </> : <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => setVideoInput('')}>+ 添加视频模型</button>}
-                      </div>
-                    </div>
-                    {/* 语音识别模型 */}
-                    <div style={S.card}>
-                      <div style={S.section}>语音识别 / 合成模型</div>
-                      {mp.audioModels?.length === 0 && <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '8px 0' }}>暂无语音模型</div>}
-                      {mp.audioModels?.map((m: string, i: number) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
-                          <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(255,170,0,.12)', color: '#ffaa00', border: '1px solid rgba(255,170,0,.3)' }}>语音</span>
-                          <select style={{ ...S.sel, height: 28, fontSize: 'calc(var(--ui-font-size) - 2px)', width: 110, flexShrink: 0 }} value={mp.selectedAudio === m ? m : mp.selectedAudio || mp.audioModels[0]} onChange={e => updateMediaProvider(mp.id, { selectedAudio: e.target.value })}>{mp.audioModels.map(x => <option key={x} value={x}>{x}</option>)}</select>
-                          <button style={{ ...S.btn('ghost'), height: 26, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => updateMediaProvider(mp.id, { audioModels: mp.audioModels.filter((_, j) => j !== i) })}>×</button>
-                        </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-                        {audioInput !== null ? <>
-                          <input style={{ ...S.inp, width: 220, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型 ID..." value={audioInput} onChange={e => setAudioInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && audioInput.trim()) { updateMediaProvider(mp.id, { audioModels: [...mp.audioModels, audioInput.trim()] }); setAudioInput(null) } }} autoFocus />
-                          <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (audioInput?.trim()) { updateMediaProvider(mp.id, { audioModels: [...mp.audioModels, audioInput.trim()] }); setAudioInput(null) } }}>确认</button>
-                          <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setAudioInput(null)}>取消</button>
-                        </> : <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => setAudioInput('')}>+ 添加语音模型</button>}
-                      </div>
-                    </div>
-                    {/* 9.4 能力查询 */}
-                    <div style={S.card}>
-                      <div style={S.section}>能力查询</div>
-                      <div style={S.hint}>调用 media_describe-options 查看当前 provider / 模型 / 模式 / 参数支持情况</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button style={S.btn('primary')} onClick={async () => {
-                          try { const r = await (window.huangquan as any).mediaDescribe?.(); showToast(r ? String(r).slice(0, 200) : '能力查询：当前无媒体生成适配器，请先安装 jimeng-cli / Agnes 等工具') }
-                          catch { showToast('能力查询失败（适配器未安装）') }
-                        }}>查询支持能力</button>
-                        <button style={S.btn('ghost')} onClick={async () => {
-                          try { const r = await (window.huangquan as any).mediaDescribe?.({ local: true }); showToast(r ? String(r).slice(0, 200) : '本地视觉：请确认 LM Studio 已启动（http://localhost:1234/v1/models）') }
-                          catch { showToast('本地探测失败') }
-                        }}>探测本地视觉模型</button>
-                      </div>
-                    </div>
-                  </>}
-                </div>
-              </div>
-              {/* 添加媒体供应商弹窗 */}
-              {showNewMedia ? <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setShowNewMedia(false)}>
-                <div style={{ ...S.card, width: 400, padding: 24 }}>
-                  <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 14 }}>添加媒体平台</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                    {Object.keys(MEDIA_PRESETS).map(n => <button key={n} style={{ ...S.btn('ghost'), height: 28, fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => { const pre = MEDIA_PRESETS[n]; addMediaProvider({ id: 'media_' + Date.now(), name: n, type: pre.type, baseUrl: pre.url, imgModels: pre.img || [], videoModels: pre.video || [], audioModels: pre.audio || [] }); setShowNewMedia(false) }}>{n}</button>)}
-                  </div>
-                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginBottom: 8 }}>或自定义：</div>
-                  <input style={{ ...S.inp, marginBottom: 8 }} placeholder="平台名称" value={newMediaName} onChange={e => setNewMediaName(e.target.value)} />
-                  <input style={{ ...S.inp, marginBottom: 8 }} placeholder="API Key" value={newMediaKey} onChange={e => setNewMediaKey(e.target.value)} />
-                  <input style={{ ...S.inp, marginBottom: 8 }} placeholder="Base URL" value={newMediaUrl} onChange={e => setNewMediaUrl(e.target.value)} />
-                  <select style={{ ...S.sel, marginBottom: 14, width: '100%' }} value={newMediaType} onChange={e => setNewMediaType(e.target.value)}>
-                    <option value="image">图片生成</option><option value="video">视频生成</option>
-                    <option value="audio">语音识别/合成</option><option value="multi">综合</option>
-                  </select>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button style={S.btn('ghost')} onClick={() => setShowNewMedia(false)}>取消</button>
-                    <button style={S.btn('primary')} onClick={() => { if (!newMediaName) return; addMediaProvider({ id: 'media_' + Date.now(), name: newMediaName, type: newMediaType, apiKey: newMediaKey, baseUrl: newMediaUrl, imgModels: [], videoModels: [], audioModels: [] }); setShowNewMedia(false); setNewMediaName(''); setNewMediaKey(''); setNewMediaUrl('') }}>保存</button>
-                  </div>
-                </div>
-              </div> : null}
-            </> : tab === 'mcp' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+            </div> : tab === 'mcp' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>MCP 服务器（stdio）</div>
                 <div style={S.hint}>通过标准输入/输出协议连接本地 MCP 服务器，为 Agent 提供外部工具</div>
@@ -948,17 +982,17 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <input style={{ ...S.inp, flex: 1 }} placeholder="服务器名称" value={mcpName} onChange={e => setMcpName(e.target.value)} />
                   <input style={{ ...S.inp, flex: 1.5 }} placeholder="启动命令（如 npx / node）" value={mcpCmd} onChange={e => setMcpCmd(e.target.value)} />
                   <input style={{ ...S.inp, flex: 1.5 }} placeholder="参数（空格分隔，如 -y @modelcontextprotocol/server-filesystem C:/）" value={mcpArgs} onChange={e => setMcpArgs(e.target.value)} />
-                  <button style={S.btn('primary')} onClick={async () => { if (!mcpName || !mcpCmd) { showToast('请填写名称和命令'); return } const r = await window.huangquan.mcpConnect(mcpName, mcpCmd, mcpArgs.split(/\s+/).filter(Boolean)); showToast(typeof r === 'string' ? r : ('已连接：' + mcpName)); setMcpName(''); setMcpCmd(''); setMcpArgs(''); window.huangquan.mcpList?.().then((s: any) => setMcpServers(s || [])) }}>连接</button>
+                  <button style={S.btn('primary')} onClick={async () => { if (!mcpName || !mcpCmd) { showToast('请填写名称和命令'); return } const r = await window.huangquan.mcpConnect(mcpName, mcpCmd, mcpArgs.split(/\s+/).filter(Boolean)); showToast(typeof r === 'string' ? r : ('已连接：' + mcpName)); setMcpName(''); setMcpCmd(''); setMcpArgs(''); window.huangquan.mcpList?.().then((s) => setMcpServers(s || [])) }}>连接</button>
                 </div>
                 <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.text, margin: '8px 0 6px' }}>已连接服务器</div>
-                {mcpServers.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)' }}>暂无已连接的 MCP 服务器</div> : mcpServers.map((s: any, i: number) => (
+                {mcpServers.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)' }}>暂无已连接的 MCP 服务器</div> : mcpServers.map((s, i: number) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 6, background: C.input, marginBottom: 6, border: '1px solid ' + C.border }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, fontWeight: 600 }}>{s.name} <span style={{ color: (s as any).status === 'connected' ? '#48c98a' : '#ffaa00', fontSize: 'calc(var(--ui-font-size) - 4px)' }}>{(s as any).status || 'connected'}</span></div>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted }}>{(s as any).cmd || ''} {(s as any).args?.join(' ') || ''}</div>
-                      {(s as any).tools?.length > 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, marginTop: 2 }}>工具：{(s as any).tools.map((t: any) => t.name || t).join(', ').slice(0, 100)}</div>}
+                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, fontWeight: 600 }}>{s.name} <span style={{ color: s.status === 'connected' ? 'var(--success)' : 'var(--warning)', fontSize: 'calc(var(--ui-font-size) - 4px)' }}>{s.status || 'connected'}</span></div>
+                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted }}>{s.cmd || ''} {s.args?.join(' ') || ''}</div>
+                      {s.tools?.length ? <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, marginTop: 2 }}>工具：{s.tools.map((t: string | { name?: string }) => (typeof t === 'string' ? t : (t.name || ''))).join(', ').slice(0, 100)}</div> : null}
                     </div>
-                    <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px' }} onClick={async () => { try { await (window.huangquan as any).mcpDisconnect?.(s.name) } catch {} showToast('已断开 ' + s.name); window.huangquan.mcpList?.().then((x: any) => setMcpServers(x || [])) }}>断开</button>
+                    <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px' }} onClick={async () => { try { await (window.huangquan as { mcpDisconnect?: (n: string) => Promise<unknown> }).mcpDisconnect?.(s.name) } catch {} showToast('已断开 ' + s.name); window.huangquan.mcpList?.().then((x) => setMcpServers(x || [])) }}>断开</button>
                   </div>
                 ))}
               </div>
@@ -968,7 +1002,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input style={{ ...S.inp, flex: 1 }} placeholder="服务器名称" value={mcpSseName} onChange={e => setMcpSseName(e.target.value)} />
                   <input style={{ ...S.inp, flex: 2 }} placeholder="SSE URL（如 http://localhost:8080/sse）" value={mcpSseUrl} onChange={e => setMcpSseUrl(e.target.value)} />
-                  <button style={S.btn('primary')} onClick={async () => { if (!mcpSseName || !mcpSseUrl) { showToast('请填写名称和 URL'); return } const r = await window.huangquan.mcpSSEConnect(mcpSseName, mcpSseUrl); showToast(typeof r === 'string' ? r : ('已连接：' + mcpSseName + '（' + (r as any)?.length + ' 工具）')); setMcpSseName(''); setMcpSseUrl('') }}>连接</button>
+                  <button style={S.btn('primary')} onClick={async () => { if (!mcpSseName || !mcpSseUrl) { showToast('请填写名称和 URL'); return } const r = await window.huangquan.mcpSSEConnect(mcpSseName, mcpSseUrl); showToast(typeof r === 'string' ? r : ('已连接：' + mcpSseName + '（' + (Array.isArray(r) ? r.length : 0) + ' 工具）')); setMcpSseName(''); setMcpSseUrl('') }}>连接</button>
                 </div>
               </div>
               <div style={S.card}>
@@ -981,14 +1015,14 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               <div style={S.card}>
                 <div style={S.section}>已安装技能</div>
                 <div style={S.hint}>技能是注入到系统提示词的专项能力包（SKILL.md）</div>
-                {skillsList.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '10px 0' }}>暂无技能，可创建或从 GitHub 安装</div> : skillsList.map((sk: any, i: number) => (
+                {skillsList.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '10px 0' }}>暂无技能，可创建或从 GitHub 安装</div> : skillsList.map((sk, i: number) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 6, background: C.input, marginBottom: 6, border: '1px solid ' + C.border }}>
                     <div style={{ flex: 1, overflow: 'hidden' }}>
                       <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, fontWeight: 600 }}>{sk.name}</div>
                       <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sk.description}</div>
                     </div>
-                    <button style={{ ...S.btn('ghost'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={async () => { const c = await window.huangquan.skills.load(sk.path); showToast(c.slice(0, 120) + (c.length > 120 ? '…' : '')) }}>查看</button>
-                    <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 4 }} onClick={async () => { if (!confirm('删除技能 ' + sk.name + '？')) return; const r = await window.huangquan.skills.delete(sk.name); showToast(r === true ? '已删除' : String(r)); window.huangquan.skills.list().then((s: any) => setSkillsList(s || [])) }}>删除</button>
+                    <button style={{ ...S.btn('ghost'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={async () => { const c = await window.huangquan.skills.load(sk.path || ''); showToast(c.slice(0, 120) + (c.length > 120 ? '…' : '')) }}>查看</button>
+                    <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 4 }} onClick={async () => { if (!confirm('删除技能 ' + sk.name + '？')) return; const r = await window.huangquan.skills.delete(sk.name); showToast(r === true ? '已删除' : String(r)); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>删除</button>
                   </div>
                 ))}
               </div>
@@ -997,14 +1031,14 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <input style={{ ...S.inp, marginBottom: 8 }} placeholder="技能名称（英文/拼音）" value={skillName} onChange={e => setSkillName(e.target.value)} />
                 <textarea style={{ ...S.inp, height: 130, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 3px)', fontFamily: 'monospace', lineHeight: 1.5, marginBottom: 8 }} placeholder={'---\nname: 技能名\ndescription: 一句话描述\n---\n\n# 使用说明\n## 触发条件\n...' } value={skillContent} onChange={e => setSkillContent(e.target.value)} />
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button style={S.btn('primary')} onClick={async () => { if (!skillName.trim()) { showToast('请填写技能名称'); return } const r = await window.huangquan.skills.create(skillName.trim(), skillContent || '---\nname: ' + skillName + '\ndescription: ' + skillName + '\n---\n\n# ' + skillName); showToast(r === true ? '技能已创建' : String(r)); setSkillName(''); setSkillContent(''); window.huangquan.skills.list().then((s: any) => setSkillsList(s || [])) }}>创建技能</button>
+                  <button style={S.btn('primary')} onClick={async () => { if (!skillName.trim()) { showToast('请填写技能名称'); return } const r = await window.huangquan.skills.create(skillName.trim(), skillContent || '---\nname: ' + skillName + '\ndescription: ' + skillName + '\n---\n\n# ' + skillName); showToast(r === true ? '技能已创建' : String(r)); setSkillName(''); setSkillContent(''); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>创建技能</button>
                 </div>
               </div>
               <div style={S.card}>
                 <div style={S.section}>从 GitHub 安装</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input style={{ ...S.inp, flex: 1 }} placeholder="Git 仓库地址（如 https://github.com/user/skill）" value={skillUrl} onChange={e => setSkillUrl(e.target.value)} />
-                  <button style={S.btn('primary')} onClick={async () => { if (!skillUrl.trim()) { showToast('请输入 Git 地址'); return } const r = await window.huangquan.skills.install(skillUrl.trim()); showToast(r === 'ok' ? '技能安装成功' : String(r)); setSkillUrl(''); window.huangquan.skills.list().then((s: any) => setSkillsList(s || [])) }}>安装</button>
+                  <button style={S.btn('primary')} onClick={async () => { if (!skillUrl.trim()) { showToast('请输入 Git 地址'); return } const r = await window.huangquan.skills.install(skillUrl.trim()); showToast(r === 'ok' ? '技能安装成功' : String(r)); setSkillUrl(''); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>安装</button>
                 </div>
               </div>
             </div> : tab === 'stats' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
@@ -1048,13 +1082,13 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                             <tr key={m} style={{ borderBottom: '1px solid ' + C.border, color: C.text }}>
                               <td style={{ padding: '6px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m}>{m}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>{reqs}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#48c98a' }} title="命中缓存的请求数">{hitReqs}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#48c98a' }} title="请求级命中率(DeepSeek 自动缓存下通常接近 100%)">{reqRate}%</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#48c98a' }}>{fmtTok(readT)}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center', color: '#6ba8ff' }}>{fmtTok(writeT)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--success)' }} title="命中缓存的请求数">{hitReqs}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--success)' }} title="请求级命中率(DeepSeek 自动缓存下通常接近 100%)">{reqRate}%</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--success)' }}>{fmtTok(readT)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--accent)' }}>{fmtTok(writeT)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center', color: '#d98a5f' }}>{fmtTok(missT2)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fmtTok(inputT)}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: '#48c98a' }} title="缓存读取 token ÷ 输入总 token">{rate}{rate !== '—' ? '%' : ''}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }} title="缓存读取 token ÷ 输入总 token">{rate}{rate !== '—' ? '%' : ''}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                                 <button style={{ ...S.btn('ghost'), height: 20, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 6px' }} onClick={async () => { await window.huangquan.modelStats.resetOne(m); const s = await window.huangquan.modelStats.get(); setModelStats(s?.models || {}); }}>重置</button>
                               </td>
@@ -1074,7 +1108,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               <div style={S.card}><div style={S.section}>Agent 头像</div>
                 <div style={S.hint}>上传图片作为 Agent 头像，或使用 emoji 文字。留空默认"泉"。</div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
                     {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
                   </div>
                   <div style={{ flex: 1 }}>
@@ -1087,7 +1121,56 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   </div>
                 </div>
               </div>
-              <div style={S.card}><div style={S.section}>背景图片</div>
+              <div style={S.card}><div style={S.section}>主题（配色体系）</div>
+                <div style={S.hint}>6 套预设主题 + 自定义配色；主题只控制配色，与背景皮肤互相独立</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {THEME_META.map(t => {
+                    const active = currentTheme(g) === t.id
+                    return <div key={t.id} onClick={() => { save({ theme: t.id, themePreset: undefined }); useSettingsStore.getState().setTheme(t.id) }} style={{ padding: 10, borderRadius: 8, border: '1px solid ' + (active ? C.accent : C.border), cursor: 'pointer', background: active ? C.accentBg : 'transparent', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 6 }}>
+                        {t.dots.map(d => <span key={d} style={{ width: 13, height: 13, borderRadius: '50%', background: d, border: '1px solid rgba(150,150,160,.35)' }} />)}
+                      </div>
+                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text }}>{t.label}</div>
+                    </div>
+                  })}
+                  {(() => {
+                    const active = currentTheme(g) === 'custom'
+                    const cc = g.customColors || g.customTheme || {}
+                    const cdots = [cc.bg || '#17181c', cc.accent || '#7c6fa8', cc.text || '#e2e2e8']
+                    return <div onClick={() => { save({ theme: 'custom', themePreset: undefined }); useSettingsStore.getState().setTheme('custom') }} style={{ padding: 10, borderRadius: 8, border: '1px solid ' + (active ? C.accent : C.border), cursor: 'pointer', background: active ? C.accentBg : 'transparent', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 6 }}>
+                        {cdots.map(d => <span key={d} style={{ width: 13, height: 13, borderRadius: '50%', background: d, border: '1px solid rgba(150,150,160,.35)' }} />)}
+                      </div>
+                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text }}>自定义</div>
+                    </div>
+                  })()}
+                </div>
+                {currentTheme(g) === 'custom' && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed ' + C.border }}>
+                  <div style={S.hint}>实时预览（不落盘），点「应用」保存；「恢复默认」清除自定义回到暗夜</div>
+                  {([['背景', 'bg'], ['卡片', 'surface'], ['强调', 'accent'], ['文字', 'text']] as const).map(([cn, ck]) => {
+                    const cc = (g.customColors || g.customTheme || {})[ck]
+                    return <div key={ck} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label, width: 40, flexShrink: 0 }}>{cn}</span>
+                      <input type="color" value={toHex(cc || "")} onChange={e => {
+                        const next = { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value }
+                        const r = document.documentElement.style
+                        if (ck === 'bg') r.setProperty('--bg-root', e.target.value)
+                        else if (ck === 'surface') r.setProperty('--bg-surface', e.target.value)
+                        else if (ck === 'accent') r.setProperty('--accent', e.target.value)
+                        else if (ck === 'text') r.setProperty('--text-primary', e.target.value)
+                        save({ customColors: next })
+                      }} style={{ width: 36, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                      <input style={{ ...S.inp, flex: 1 }} value={cc || ''} placeholder="#RRGGBB" onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} />
+                    </div>
+                  })}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button style={S.btn('primary')} onClick={() => { save({ theme: 'custom', themePreset: undefined }); useSettingsStore.getState().setTheme('custom') }}>应用</button>
+                    <button style={S.btn('ghost')} onClick={() => { save({ theme: 'dark', themePreset: undefined, customColors: undefined }); useSettingsStore.getState().setTheme('dark'); clearSkinInlineVars() }}>恢复默认</button>
+                  </div>
+                </div>}
+              </div>
+                            <div style={{ borderTop: '1px dashed ' + C.border, margin: '18px 0' }} />
+<div style={S.card}><div style={S.section}>皮肤（背景叠加）</div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                   <input type="file" accept="image/*" style={{ display: 'none' }} id="bgImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { useSettingsStore.getState().setBgImage(r.result as string) }; r.readAsDataURL(f) }} />
                   <button style={S.btn('primary')} onClick={() => document.getElementById('bgImg')?.click()}>选择图片</button>
@@ -1101,30 +1184,26 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                     <button style={stepBtn} title="增大" onClick={() => { const v = Math.min(1, Math.round((bgOp + 0.05) * 100) / 100); setBgOp(v); useSettingsStore.getState().setBgOpacity(v) }}><Plus size={14} /></button>
                   </div>
                 </div>}
-              </div>
-              <div style={S.card}><div style={S.section}>主题预设<span style={{ float: 'right', fontWeight: 400, fontSize: 'calc(var(--ui-font-size) - 3px)' }}>(当前: { { 'system': '跟随系统', 'dark-tech': '暗色科技', 'light-warm': '浅色温润', 'deep-black': '深黑极简', 'forest': '护眼暗绿', 'high-contrast': '高对比度', 'custom': '自定义' }[g.themePreset] || '自定义' })</span></div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[
-                    ['跟随系统', 'system'],
-                    ['暗色科技', 'dark-tech'],
-                    ['浅色温润', 'light-warm'],
-                    ['深黑极简', 'deep-black'],
-                    ['护眼暗绿', 'forest'],
-                    ['高对比度', 'high-contrast'],
-                    ['自定义', 'custom'],
-                  ].map(([label, key]) => <div key={key} onClick={() => { if (key === 'custom') { save({ themePreset: 'custom', customColors: g.customColors || g.customTheme || { bg: '#17181c', surface: '#262830', accent: '#7c6fa8' } }) } else { save({ themePreset: key, customColors: undefined }) } }} style={{ padding: 12, borderRadius: 8, border: '1px solid ' + C.border, cursor: 'pointer', textAlign: 'center', background: (g.themePreset || '') === key ? C.accentBg : 'transparent' }}>
-                    <div style={{ fontSize: 18, marginBottom: 4 }}>{label.slice(0,2)}</div><div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: (g.themePreset || '') === key ? C.accent : C.muted }}>{label.slice(2)}</div>
-                  </div>)}
-                </div>
-                {(g.themePreset || '') === 'custom' && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed ' + C.border }}>
-                  <div style={S.hint}>自定义颜色将覆盖主题对应色值，支持 hex（#RRGGBB）或取色器</div>
-                  {[['背景', 'bg'], ['卡片', 'surface'], ['强调', 'accent']].map(([cn, ck]) => (
-                    <div key={ck} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label, width: 40, flexShrink: 0 }}>{cn}</span>
-                      <input type="color" value={toHex((g.customColors || g.customTheme || {})[ck])} onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} style={{ width: 36, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
-                      <input style={{ ...S.inp, flex: 1 }} value={(g.customColors || g.customTheme || {})[ck] || ''} placeholder="#RRGGBB" onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} />
-                    </div>
-                  ))}
+                {/* v0.2.5: 皮肤遮罩三档 + 辅色(与主题解耦) */}
+                {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>遮罩</span>
+                  {[['light', '亮', 'rgba(0,0,0,.15)'], ['medium', '中', 'rgba(0,0,0,.35)'], ['dark', '暗', 'rgba(0,0,0,.55)']].map(([k, label, v]) => {
+                    const on = (g.skinMask || 'medium') === k
+                    return <button key={k} onClick={() => { save({ skinMask: k }); document.documentElement.style.setProperty('--bg-mask', v) }} style={{ ...stepBtn, display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid ' + (on ? C.accent : C.border), color: on ? C.accent : C.text }}>
+                      <span style={{ width: 12, height: 12, borderRadius: '50%', background: v, border: '1px solid ' + C.border, display: 'inline-block' }} />{label}
+                    </button>
+                  })}
+                </div>}
+                {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>辅色</span>
+                  <span style={{ width: 18, height: 18, borderRadius: 4, background: g.skinSecondary ? 'rgb(' + g.skinSecondary + ')' : 'transparent', border: '1px solid ' + C.border }} />
+                  <button style={S.btn('ghost')} onClick={async () => {
+                    if (!g.bgImage) return
+                    const c = await extractSkinColors(g.bgImage)
+                    save({ skinSecondary: `${c.secondary.r},${c.secondary.g},${c.secondary.b}` })
+                    document.documentElement.style.setProperty('--skin-secondary', `${c.secondary.r},${c.secondary.g},${c.secondary.b}`)
+                    showToast('辅色已重新提取')
+                  }}>重新提取</button>
                 </div>}
               </div>
               <div style={S.card}><div style={S.section}>排版</div>
@@ -1140,7 +1219,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               <div style={S.card}>
                 <div style={S.section}>工具总览仪表盘</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {[
+                  {([
                     ['文件','filesystem',['read','write','edit','mkdir','ls','grep','find']],
                     ['Shell','shell',['exec_command','codebox']],
                     ['浏览器','browser',['browse','browse_screenshot','web_search','web_fetch']],
@@ -1153,8 +1232,8 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                     ['插件','plugins',[]],
                     ['定时','schedule',['schedule_task','list_schedules','watch_file','list_workflows','run_workflow']],
                     ['通知','notify',['bridge_notify','save_goal','list_goals','save_memory','recall_memory','audit_log']],
-                  ].map(([label,cat,tools]) => {
-                    const disabled = (g.disabledTools || []) as string[]
+                  ] as [string, string, string[]][]).map(([label,cat,tools]) => {
+                    const disabled = ((g.disabledTools || []) as string[])
                     const enabled = tools.filter(t => !disabled.includes(t))
                     const allOn = tools.length > 0 && enabled.length === tools.length
                     const anyOn = enabled.length > 0
@@ -1165,8 +1244,8 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                         else tools.forEach(t => { const i = d.indexOf(t); if (i >= 0) d.splice(i,1) })
                         save({ disabledTools: d })
                       }}>
-                      <div style={{ fontSize: 18, marginBottom: 2 }}>{label.slice(0,2)}</div>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: allOn ? C.accent : C.muted }}>{label.slice(2)}{tools.length === 0 ? ' (暂未实现)' : allOn ? ' ●' : anyOn ? ' ◐' : ' ○'}</div>
+                      <div style={{ fontSize: 'calc(var(--ui-font-size) + 5px)', marginBottom: 2, fontWeight: 600, color: C.text }}>{label}</div>
+                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: allOn ? C.accent : C.muted }}>{tools.length === 0 ? '(暂未实现)' : allOn ? '● 全部启用' : anyOn ? '◐ 部分启用' : '○ 未启用'}</div>
                     </div>
                   })}
                 </div>
@@ -1174,6 +1253,28 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('danger')} onClick={() => save({ disabledTools: ['read','write','edit','mkdir','ls','grep','find','exec_command','codebox','browse','browse_screenshot','web_search','web_fetch','screenshot','clipboard_read','clipboard_write','system_info','process_list','kill_process','read_image','import_doc','show_card','mcp_connect','mcp_call','schedule_task','list_schedules','watch_file','list_workflows','run_workflow','bridge_notify','save_goal','list_goals','save_memory','recall_memory','audit_log'] })}>全部禁用</button>
                   <button style={S.btn('ghost')} onClick={() => save({ disabledTools: [] })}>恢复默认</button>
                 </div>
+              </div>
+              {/* v0.3.0 M4: 插件工具权限(放行/禁用) */}
+              <div style={S.card}>
+                <div style={S.section}>插件工具 ({pluginList.length})</div>
+                <div style={S.hint}>插件工具运行在 vm 沙箱(文件仅限工作目录、命令受危险拦截)。默认首次调用弹确认, 此处可提前放行/禁用。点击行切换。</div>
+                {pluginList.length === 0 ? (
+                  <div style={S.hint}>暂无已安装插件工具(需插件目录含 index.js 实现)</div>
+                ) : pluginList.map(t => {
+                  const key = t.plugin + ':' + t.name
+                  const perm = pluginPerm[key] || 'ask'
+                  return (
+                    <div key={key} onClick={() => cyclePluginPerm(key)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 6, border: '1px solid ' + C.border, marginTop: 6, cursor: 'pointer' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>{t.plugin}/{t.name}</div>
+                        <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 3px)' }}>{(t.description || '').slice(0, 40)}</div>
+                      </div>
+                      <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: perm === 'allow' ? C.green : perm === 'deny' ? C.danger : C.accent, padding: '2px 10px', borderRadius: 10, border: '1px solid ' + (perm === 'allow' ? C.green : perm === 'deny' ? C.danger : C.accent) }}>
+                        {perm === 'allow' ? '🟢 放行' : perm === 'deny' ? '🔴 禁用' : '🟡 询问'}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
               <div style={S.card}>
                 <div style={S.section}>浏览器</div>
@@ -1205,8 +1306,8 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.row}><div style={S.label}>自动清洗广告</div><Toggle checked={g.webReadCleanAds !== false} onChange={v=>save({webReadCleanAds:v})} label="读取完成自动剔除广告/导航栏等冗余元素" /></div>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                  <button style={S.btn('primary')} onClick={() => { try { (window as any).huangquan?.web.showPanel() } catch {} }}>打开浏览器窗口</button>
-                  <button style={S.btn('primary')} onClick={() => { try { (window as any).huangquan?.web.read('https://example.com', 'text').then((raw: string) => { try { const r = JSON.parse(raw); alert(r.ok ? 'web_read 自检成功\n标题: ' + r.title + '\n正文长度: ' + (r.text||'').length : 'web_read 失败: ' + r.error) } catch { alert('web_read 返回异常: ' + String(raw).slice(0,200)) } }) } catch {} }}>web_read 自检</button>
+                  <button style={S.btn('primary')} onClick={() => { try { window.huangquan?.web.showPanel() } catch {} }}>打开浏览器窗口</button>
+                  <button style={S.btn('primary')} onClick={() => { try { window.huangquan?.web.read('https://example.com', 'text').then((raw: string) => { try { const r = JSON.parse(raw); alert(r.ok ? 'web_read 自检成功\n标题: ' + r.title + '\n正文长度: ' + (r.text||'').length : 'web_read 失败: ' + r.error) } catch { alert('web_read 返回异常: ' + String(raw).slice(0,200)) } }) } catch {} }}>web_read 自检</button>
                   <button style={S.btn('ghost')} onClick={() => { save({ browserHomeUrl: '', browserFloatPos: 'top-right', browserFloatTimeout: 30, browserSnapMs: 1200, webReadEnabled: true, webReadHeadless: true, webReadTimeout: 15000, webReadUA: '', webReadProxy: '', webReadAutoClose: true, webReadCleanAds: true, webReadCookies: '' }) }}>恢复默认</button>
                 </div>
               </div>
@@ -1264,14 +1365,14 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                       <button style={S.btn('ghost')} onClick={() => { setShowPluginInput(false); setPluginUrl('') }}>取消</button>
                     </div>
                   )}
-                  <button style={S.btn('ghost')} onClick={async () => { try { const plugins = await window.huangquan.plugins.scan(); showToast(plugins.length ? plugins.map((p: any) => p.name + ' v' + p.version).join(', ') : '暂无已安装插件') } catch { showToast('插件模块未加载') } }}>扫描已安装</button>
+                  <button style={S.btn('ghost')} onClick={async () => { try { const plugins = await window.huangquan.plugins.scan(); showToast(plugins.length ? plugins.map((p: { name: string; version: string }) => p.name + ' v' + p.version).join(', ') : '暂无已安装插件') } catch { showToast('插件模块未加载') } }}>扫描已安装</button>
                 </div>
               </div>
               <div style={S.card}>
                 <div style={S.section}>系统信息</div>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                   {[
-                    ['版本', 'v0.2.4'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
+                    ['版本', 'v0.3.0'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
                     ['构建', new Date().toLocaleDateString('zh-CN')], ['工具数', '27'],
                     ['Agent数', '7'], ['技能数', '4+']
                   ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}
@@ -1285,7 +1386,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <option value="auto">自动识别(推荐,自动探测GPU)</option><option value="gpu">强制 GPU 加速</option><option value="cpu">CPU 软件渲染(兼容)</option>
                 </select></div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                  <button style={S.btn('ghost')} onClick={async () => { try { const st = await (window as any).huangquan?.web.rendererStatus(); if (st) alert('渲染状态:\n模式: ' + st.mode + '\nGPU 加速: ' + st.gpuAcceleration + '\nWebGL: ' + st.webgl + '\nCanvas2D: ' + st.canvas2d) } catch {} }}>查看当前渲染状态</button>
+                  <button style={S.btn('ghost')} onClick={async () => { try { const st = await window.huangquan?.web.rendererStatus(); if (st) alert('渲染状态:\n模式: ' + st.mode + '\nGPU 加速: ' + st.gpuAcceleration + '\nWebGL: ' + st.webgl + '\nCanvas2D: ' + st.canvas2d) } catch {} }}>查看当前渲染状态</button>
                 </div>
               </div>
               <div style={S.card}>
@@ -1311,7 +1412,11 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={S.section}>路径与权限</div>
                 <div style={S.label}>工作目录</div>
                 <div style={S.hint}>Agent 默认读写文件的根目录</div>
-                <input style={{ ...S.inp, marginTop: 6 }} value={g.workDir || ''} placeholder="如 D:\桌面\黄泉工作台" onChange={e => save({ workDir: e.target.value })} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, position: 'relative' }}>
+                  <input style={{ ...S.inp, flex: 1 }} value={g.workDir || ''} placeholder="如 D:\桌面\黄泉工作台" onChange={e => save({ workDir: e.target.value })} />
+                  {/* v0.3.0: 「⋯」点一次直接打开系统选目录界面(选中即填入并保存) */}
+                  <span style={{ flexShrink: 0, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex' }} title="选择工作目录" onClick={async () => { const path = await window.huangquan.computer.selectDir(); if (path) save({ workDir: path }) }}><MoreHorizontal size={16} /></span>
+                </div>
                 <div style={{ marginTop: 14 }}><div style={S.label}>文件操作权限</div><div style={S.hint}>控制 Agent 对文件系统的操作范围</div></div>
                 <select style={{ ...S.sel, width: '100%', marginTop: 6 }} value={g.filePermission || 'full'} onChange={e => save({ filePermission: e.target.value })}>
                   <option value="full">完整权限 — 读写执行均可</option>
@@ -1377,15 +1482,15 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 {/* v0.2.6: 工具缓存命中率(总) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderTop: '1px solid ' + C.border }}>
                   <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted }}>工具缓存命中率(总)</div>
-                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 700, color: '#48c98a' }}>{g.stat_cacheRate || '—'} <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, fontWeight: 400 }}>({g.stat_cacheHits || 0} 命中 / {g.stat_cacheMisses || 0} 未中)</span></div>
+                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 700, color: 'var(--success)' }}>{g.stat_cacheRate || '—'} <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, fontWeight: 400 }}>({g.stat_cacheHits || 0} 命中 / {g.stat_cacheMisses || 0} 未中)</span></div>
                 </div>
 
                 </div>
                 <div style={{ textAlign: 'right', marginBottom: 8 }}>
-                  <button style={{ ...S.btn('ghost'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 8px' }} onClick={async () => { try { const s = await window.huangquan.storageStats(); const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; const cs = await window.huangquan.cacheStats(); patch['stat_cacheHits'] = cs?.hits || 0; patch['stat_cacheMisses'] = cs?.misses || 0; patch['stat_cacheRate'] = cs?.hit_rate || '0%'; save(patch); showToast('已刷新') } catch { showToast('统计失败') } }}>刷新</button>
+                  <button style={{ ...S.btn('ghost'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 8px' }} onClick={async () => { try { const s = await window.huangquan.storageStats(); const patch: Record<string, unknown> = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; const cs = await window.huangquan.cacheStats(); patch['stat_cacheHits'] = cs?.hits || 0; patch['stat_cacheMisses'] = cs?.misses || 0; patch['stat_cacheRate'] = cs?.hit_rate || '0%'; save(patch); showToast('已刷新') } catch { showToast('统计失败') } }}>刷新</button>
                 </div>
                 <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:10}}>
-                  <button style={S.btn('ghost')} onClick={async () => { try { await window.huangquan.cacheClear(); showToast('缓存已清除'); const s = await window.huangquan.storageStats(); const patch: any = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) } catch { showToast('清除失败') } }}>清除缓存</button>
+                  <button style={S.btn('ghost')} onClick={async () => { try { await window.huangquan.cacheClear(); showToast('缓存已清除'); const s = await window.huangquan.storageStats(); const patch: Record<string, unknown> = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) } catch { showToast('清除失败') } }}>清除缓存</button>
                   <button style={S.btn('danger')} onClick={async () => { if (!confirm('确定清空全部对话历史？此操作不可恢复')) return; try { await window.huangquan.sessions.clearAll(); showToast('对话历史已清空'); window.location.reload() } catch { showToast('操作失败') } }}>清除对话历史</button>
                   <button style={S.btn('danger')} onClick={async () => { if (!confirm('恢复出厂设置将重置全部配置（保留对话历史），确定？')) return; try { const ok = await window.huangquan.settings.reset(); showToast(ok ? '已恢复出厂设置，请重启应用' : '操作失败'); } catch { showToast('操作失败') } }}>恢复出厂设置</button>
                   <button style={S.btn('primary')} onClick={async () => { try { const workDir = g.workDir || ''; const path = await window.huangquan.sessions.export(g.exportFormat || 'md', workDir); showToast(path.startsWith('E:') ? path : ('已导出：' + path)) } catch { showToast('导出失败') } }}>导出对话历史</button>
@@ -1402,7 +1507,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
               <div style={S.card}>
                 <div style={S.section}>关于</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[['版本','v0.2.4'],['平台','黄泉Agent'],['Electron','32.x'],['React','18.3'],['Node','22.x']].map(([k,v]) => (
+                  {[['版本','v0.3.0'],['平台','黄泉Agent'],['Electron','32.x'],['React','18.3'],['Node','22.x']].map(([k,v]) => (
                     <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: C.text }}>{v}</div></div>
                   ))}
                 </div>
@@ -1413,9 +1518,9 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button style={S.btn('primary')} onClick={async () => {
                     setUpt({ ...upt, checking: true, info: null, error: '', downloading: false })
-                    const r = await window.huangquan.update.check().catch(() => ({ ok: false, error: '检查失败' }))
+                    const r = await window.huangquan.update.check().catch((): { ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } => ({ ok: false, error: '检查失败' }))
                     if (!r.ok) { setUpt({ ...upt, checking: false, error: r.error || '检查失败' }); return }
-                    setUpt({ ...upt, checking: false, info: r })
+                    setUpt({ ...upt, checking: false, info: { version: r.version, hasUpdate: r.hasUpdate, url: r.url, assets: r.assets, notes: r.notes, current: r.current } })
                   }} disabled={upt.checking}>{upt.checking ? '检查中…' : '检查更新'}</button>
                   {upt.info?.hasUpdate && <span style={{ color: C.green, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>发现新版本 v{upt.info.version}（当前 v{upt.info.current}）</span>}
                   {upt.info && !upt.info.hasUpdate && <span style={{ color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>已是最新版本 v{upt.info.current}</span>}
@@ -1426,7 +1531,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                     <div style={S.hint}>更新内容：{(upt.info.notes || '（无说明）').slice(0, 200)}</div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button style={S.btn('primary')} disabled={upt.downloading} onClick={async () => {
-                        const asset = (upt.info.assets || []).find((x: any) => /\.exe$/i.test(x.name)) || (upt.info.assets || [])[0]
+                        const asset = (upt.info?.assets || []).find((x: { name: string }) => /\.exe$/i.test(x.name)) || (upt.info?.assets || [])[0]
                         if (!asset) { setUpt({ ...upt, error: '发布页无安装包资产' }); return }
                         setUpt({ ...upt, downloading: true, error: '' })
                         const r = await window.huangquan.update.download(asset.url, asset.name).catch(() => ({ ok: false, error: '下载失败' }))
@@ -1435,7 +1540,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                       {upt.downloadInfo && (
                         <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.green }}>
                           已保存到 {upt.downloadInfo.path}
-                          <button style={{ ...S.btn('ghost'), marginLeft: 8 }} onClick={async () => { try { await window.huangquan.computer.openFile(upt.downloadInfo.path) } catch { /* 忽略 */ } }}>打开安装包</button>
+                          <button style={{ ...S.btn('ghost'), marginLeft: 8 }} onClick={async () => { try { await window.huangquan.computer.openFile(upt.downloadInfo?.path || '') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }}>打开安装包</button>
                         </span>
                       )}
                     </div>
@@ -1445,6 +1550,60 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
             </div> : null}
         </div>
       </div>
+      {/* v0.2.5-fix: 新建工作流弹窗(Electron prompt 不支持) */}
+      {wfModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setWfModal(false)}>
+          <div style={{ ...S.card, width: 420, padding: 24 }}>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 14 }}>新建工作流</div>
+            <div style={S.label}>名称</div>
+            <input style={{ ...S.inp, marginBottom: 10 }} value={wfName} placeholder="工作流名称" onChange={e => setWfName(e.target.value)} autoFocus />
+            <div style={S.label}>任务描述</div>
+            <textarea style={{ ...S.inp, minHeight: 60, resize: 'vertical', marginBottom: 14 }} value={wfDesc} placeholder="Agent 将按此执行（留空用名称）" onChange={e => setWfDesc(e.target.value)} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button style={S.btn('ghost')} onClick={() => setWfModal(false)}>取消</button>
+              <button style={S.btn('primary')} disabled={!wfName.trim()} onClick={() => {
+                const name = wfName.trim(); const desc = wfDesc.trim() || name
+                const list = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]')
+                list.push({ id: Date.now().toString(36), name, desc, steps: 1 })
+                localStorage.setItem('hq_custom_wfs', JSON.stringify(list))
+                setWfName(''); setWfDesc(''); setWfModal(false)
+                showToast('已创建自定义工作流「' + name + '」')
+              }}>创建</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* v0.2.4: 读取模型结果 —— 按功能分类勾选, 勾选的模型才会添加 */}
+      {detectModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal(null)}>
+          <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 12 }}>已从接口读取 {detectModal.items.length} 个模型，勾选后点击「添加所选」才能使用</div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
+              {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal.items.some(x => x.caps[0] === g)).map(g => (
+                <div key={g}>
+                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: CAP_COLORS[g] || C.text, margin: '8px 0 4px' }}>{g}</div>
+                  {detectModal.items.filter(x => x.caps[0] === g).map(x => (
+                    <label key={x.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>
+                      <input type="checkbox" checked={detectSel.includes(x.model)} onChange={e => { setDetectSel(prev => e.target.checked ? [...prev, x.model] : prev.filter(m => m !== x.model)) }} />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.model}</span>
+                      <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>{x.caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button style={S.btn('ghost')} onClick={() => setDetectModal(null)}>取消</button>
+              <button style={S.btn('primary')} disabled={!detectSel.length} onClick={() => {
+                const cur = providers.find(pp => pp.id === detectModal.providerId)
+                if (cur) updateProvider(cur.id, { models: [...new Set([...(cur.models || []), ...detectSel])] })
+                setDetectModal(null); setDetectSel([])
+              }}>添加所选 ({detectSel.length})</button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <div style={{ position:'fixed', bottom:20, left:'50%', transform:'translateX(-50%)', background:C.accent, color:'#fff', padding:'10px 18px', borderRadius:8, fontSize: 'calc(var(--ui-font-size) - 1px)', zIndex:9999 }}>{toast}</div>}
     </div>
   )

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSettingsStore } from '../store/settings'
+import { errMsg } from '../utils/safe'
 
 // v0.2.5: 实时浏览器面板 —— 轮询主进程无头浏览器截图,实时显示 agent 正在看的页面
 // 增强: 页面标题栏 / 复制URL / 主页按钮 / 刷新间隔设置即时生效 / 空状态与错误提示
@@ -10,9 +11,9 @@ export default function BrowserView() {
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const [copied, setCopied] = useState(false)
-  const pollRef = useRef<any>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const g = useSettingsStore(s => s.general) as any
+  const g = useSettingsStore(s => s.general)
   const snapMs = (g?.browserSnapMs as number) || 1200
   const homeUrl = (g?.browserHomeUrl as string) || ''
 
@@ -22,8 +23,8 @@ export default function BrowserView() {
     const full = /^https?:\/\//i.test(target) ? target : 'https://' + target
     setLoading(true); setErr('')
     try {
-      await (window as any).huangquan?.web.navigate(full)
-    } catch (e: any) { setErr(String(e?.message || e)); setLoading(false) }
+      await window.huangquan?.web.navigate(full)
+    } catch (e: unknown) { setErr(errMsg(e)); setLoading(false) }
   }
 
   const copyUrl = async () => {
@@ -40,7 +41,7 @@ export default function BrowserView() {
       ta.value = text
       ta.style.position = 'fixed'; ta.style.opacity = '0'
       document.body.appendChild(ta); ta.select()
-      try { document.execCommand('copy') } catch { /* ignore */ }
+      try { document.execCommand('copy') } catch (e) { /* ignore */ console.debug('[swallow]', e) }
       document.body.removeChild(ta)
     }
     setCopied(true); setTimeout(() => setCopied(false), 1500)
@@ -50,7 +51,7 @@ export default function BrowserView() {
   useEffect(() => {
     const tick = async () => {
       try {
-        const s = await (window as any).huangquan?.web.snapshot()
+        const s = await window.huangquan?.web.snapshot()
         if (s) {
           if (s.url && s.url !== 'about:blank') {
             setUrl(s.url)
@@ -60,7 +61,7 @@ export default function BrowserView() {
           if (s.title) setTitle(s.title)
           setLoading(!!s.loading)
         }
-      } catch { /* 静默 */ }
+      } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
     }
     tick()
     pollRef.current = setInterval(tick, snapMs)
@@ -82,15 +83,15 @@ export default function BrowserView() {
       {/* 工具栏 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid ' + C.border, background: C.card }}>
         <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>🌐 无头浏览器</span>
-        <button onClick={async () => { try { await (window as any).huangquan?.web.back() } catch {} }} title="后退" style={btn()}>←</button>
-        <button onClick={async () => { try { await (window as any).huangquan?.web.forward() } catch {} }} title="前进" style={btn()}>→</button>
-        <button onClick={async () => { try { await (window as any).huangquan?.web.reload() } catch {} }} title="刷新" style={btn()}>⟳</button>
+        <button onClick={async () => { try { await window.huangquan?.web.back() } catch {} }} title="后退" style={btn()}>←</button>
+        <button onClick={async () => { try { await window.huangquan?.web.forward() } catch {} }} title="前进" style={btn()}>→</button>
+        <button onClick={async () => { try { await window.huangquan?.web.reload() } catch {} }} title="刷新" style={btn()}>⟳</button>
         <button onClick={() => homeUrl && go(homeUrl)} title="打开主页(设置中的默认主页)" style={btn(!!homeUrl)}>⌂</button>
         <input ref={inputRef} defaultValue={url} placeholder="输入网址，回车访问"
           onKeyDown={e => { if (e.key === 'Enter') go() }}
           style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.input, color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)', outline: 'none' }} />
-        <button onClick={() => go()} style={{ height: 32, padding: '0 16px', borderRadius: 6, border: 'none', background: C.accent, color: '#fff', fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>访问</button>
-        <button onClick={copyUrl} title="复制当前网址" style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.input, color: copied ? '#48c98a' : C.text, fontSize: 'calc(var(--ui-font-size) - 2px)', cursor: 'pointer', whiteSpace: 'nowrap' }}>{copied ? '已复制 ✓' : '复制'}</button>
+        <button onClick={() => go()} style={{ height: 32, padding: '0 16px', borderRadius: 6, border: 'none', background: C.accent, color: 'var(--on-accent)', fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>访问</button>
+        <button onClick={copyUrl} title="复制当前网址" style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.input, color: copied ? 'var(--success)' : C.text, fontSize: 'calc(var(--ui-font-size) - 2px)', cursor: 'pointer', whiteSpace: 'nowrap' }}>{copied ? '已复制 ✓' : '复制'}</button>
       </div>
       {/* 页面标题栏 */}
       {(url || title) && (
@@ -108,7 +109,7 @@ export default function BrowserView() {
               {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
             </div>}
       </div>
-      {err && <div style={{ padding: '6px 14px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: '#ff6b6b', borderTop: '1px solid ' + C.border }}>⚠️ {err}</div>}
+      {err && <div style={{ padding: '6px 14px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--danger)', borderTop: '1px solid ' + C.border }}>⚠️ {err}</div>}
     </div>
   )
 }

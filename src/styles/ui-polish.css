@@ -20,10 +20,10 @@ html[data-bg] body {
   background-attachment: fixed;
 }
 
-/* 全屏磨砂蒙版层 — 统一压暗 + 磨砂 */
+/* 全屏磨砂蒙版层 — 统一压暗 + 磨砂(v0.2.5: 遮罩三档 token, 由皮肤设置控制) */
 html[data-bg] body::before {
   content: ''; position: fixed; inset: 0;
-  background: rgba(6,6,12,0.12);
+  background: var(--bg-mask, rgba(0,0,0,.35));
   pointer-events: none; z-index: 0;
 }
 
@@ -86,7 +86,7 @@ html[data-bg] .app-shell::before { background: none; }
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(ellipse at 50% 0%, rgba(var(--skin-accent),.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse at 50% 0%, var(--skin-accent-soft) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -100,7 +100,10 @@ html[data-bg] .app-shell::before { background: none; }
   font-size: calc(var(--ui-font-size) + 2px);
   font-weight: 700;
   letter-spacing: 1px;
-  color: var(--text-primary);
+  background: linear-gradient(135deg, var(--accent), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .brand-sub {
   font-size: calc(var(--ui-font-size) - 4px);
@@ -129,9 +132,12 @@ html[data-bg] .app-shell::before { background: none; }
   transform: translateX(2px);
 }
 .menu-item.active {
-  background: rgba(var(--skin-accent),.18);
+  background: var(--skin-accent-soft);
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--accent);
+}
+.menu-item.active:hover {
+  background: linear-gradient(90deg, var(--skin-accent-soft), transparent);
 }
 .menu-icon {
   font-size: calc(var(--ui-font-size) + 1px);
@@ -153,7 +159,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .session-item:hover { background: var(--bg-hover); }
 .session-item.active {
-  background: rgba(var(--skin-accent),.15);
+  background: var(--skin-accent-soft);
   border-left: 2px solid var(--accent);
 }
 .session-title {
@@ -172,7 +178,7 @@ html[data-bg] .app-shell::before { background: none; }
   opacity: .6;
   transform: scale(1);
 }
-.session-delete:hover { opacity: 1; color: #C23B22; }
+.session-delete:hover { opacity: 1; color: var(--danger); }
 
 /* === 右侧面板 === */
 .sidebar-right { 
@@ -182,14 +188,12 @@ html[data-bg] .app-shell::before { background: none; }
 /* === 消息气泡增强 === */
 .message-item { padding: 8px 0; }
 .message-assistant .message-body { 
-  border-left: 2px solid transparent; 
+  border-left: 2px solid var(--accent-dim); 
   padding-left: 12px; 
-}
-.message-assistant:hover .message-body { 
-  border-left-color: var(--accent-dim); 
+  background-image: linear-gradient(90deg, var(--skin-accent-soft), transparent 60%);
 }
 .message-user .message-body {
-  background: rgba(var(--skin-accent),.1);
+  background: var(--skin-accent-soft);
   border-radius: var(--radius-lg);
   padding: 8px 14px;
 }
@@ -210,7 +214,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .tab-btn.active { 
   position: relative; 
-  background: rgba(var(--skin-accent),.15);
+  background: var(--skin-accent-soft);
 }
 .tab-btn.active::after { 
   content: ''; 
@@ -239,7 +243,7 @@ html[data-bg] .app-shell::before { background: none; }
   color: var(--text-primary);
 }
 .window-controls .win-close:hover { 
-  background: #C23B22; 
+  background: var(--danger); 
   color: #fff; 
 }
 
@@ -264,7 +268,8 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .btn-primary:hover {
   background: var(--accent-purple);
-  box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--skin-accent-mid);
 }
 .btn-primary:active { transform: scale(.98); }
 .send-btn { 
@@ -299,7 +304,7 @@ html[data-bg] .app-shell::before { background: none; }
 
 /* === 错误栏增强 === */
 .error-bar { 
-  border-left: 3px solid #C23B22;
+  border-left: 3px solid var(--danger);
 }
 
 /* === Provider 卡片增强 === */
@@ -318,10 +323,10 @@ html[data-bg] .app-shell::before { background: none; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { 
-  background: var(--border-glow); 
+  background: var(--skin-accent-strong); 
   border-radius: 3px; 
 }
-::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
 /* === 空状态增强（黄泉主题） === */
@@ -332,6 +337,9 @@ html[data-bg] .app-shell::before { background: none; }
   0%,100% { transform: translateY(0); } 
   50% { transform: translateY(-6px); } 
 }
+
+/* === 选区 === */
+::selection { background: var(--selection); }
 
 /* === 主题切换过渡 === */
 [data-theme] { transition: background-color .3s ease; }
@@ -372,11 +380,11 @@ html[data-bg] .app-shell::before { background: none; }
   font-weight: 600;
   letter-spacing: .3px;
 }
-.hq-badge-success { background: rgba(45,106,79,.2); color: #48c98a; }
-.hq-badge-warning { background: rgba(212,175,55,.15); color: #D4AF37; }
-.hq-badge-danger { background: rgba(194,59,34,.15); color: #C23B22; }
-.hq-badge-info { background: rgba(var(--skin-accent),.2); color: var(--accent-purple); }
-.hq-badge-muted { background: rgba(var(--skin-accent),.1); color: var(--text-muted); }
+.hq-badge-success { background: var(--success-soft); color: var(--success); }
+.hq-badge-warning { background: var(--warning-soft); color: var(--warning); }
+.hq-badge-danger { background: var(--danger-soft); color: var(--danger); }
+.hq-badge-info { background: var(--skin-accent-mid); color: var(--accent-purple); }
+.hq-badge-muted { background: var(--skin-accent-soft); color: var(--text-muted); }
 
 /* === 输入框通用样式 === */
 .hq-input {
@@ -393,7 +401,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .hq-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(var(--skin-accent),.1);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--skin-accent-soft);
 }
 .hq-textarea {
   background: var(--bg-elevated);
@@ -412,7 +420,7 @@ html[data-bg] .app-shell::before { background: none; }
 }
 .hq-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(var(--skin-accent),.1);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--skin-accent-soft);
 }
 
 /* === 按钮组 === */
@@ -433,11 +441,11 @@ html[data-bg] .app-shell::before { background: none; }
   transition: all .12s ease;
 }
 .hq-btn:hover { background: var(--bg-hover); border-color: var(--border-glow); }
-.hq-btn.active { background: rgba(var(--skin-accent),.2); border-color: var(--accent); color: var(--accent-purple); }
+.hq-btn.active { background: var(--skin-accent-mid); border-color: var(--accent); color: var(--accent-purple); }
 .hq-btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
 .hq-btn-accent:hover { background: var(--accent-purple); }
-.hq-btn-danger { color: #C23B22; border-color: rgba(194,59,34,.3); }
-.hq-btn-danger:hover { background: rgba(194,59,34,.1); }
+.hq-btn-danger { color: var(--danger); border-color: var(--danger-soft); }
+.hq-btn-danger:hover { background: var(--danger-soft); }
 
 /* === 开关组件 === */
 .hq-toggle {
@@ -482,27 +490,27 @@ html[data-bg] .app-shell::before { background: none; }
   border-radius: 4px;
   font-size: calc(var(--ui-font-size) - 2px);
   font-weight: 500;
-  background: rgba(var(--skin-accent),.15);
+  background: var(--skin-accent-soft);
   color: var(--accent-purple);
-  border: 1px solid rgba(var(--skin-accent),.2);
+  border: 1px solid var(--skin-accent-mid);
 }
 
 /* === 终端/控制台输出 === */
 .hq-terminal {
-  background: #0a0a0f;
-  border: 1px solid #1a1a2e;
+  background: var(--bg-root);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 16px;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: calc(var(--ui-font-size) - 1px);
-  color: #48c98a;
+  color: var(--success);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-y: auto;
   max-height: 300px;
 }
-.hq-terminal.error { color: #C23B22; }
+.hq-terminal.error { color: var(--danger); }
 
 /* === 进度条 === */
 .hq-progress {
@@ -545,7 +553,7 @@ html[data-bg] .app-shell::before { background: none; }
   font-size: calc(var(--ui-font-size) - 4px);
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(var(--skin-accent),.3);
+  background: var(--skin-accent-mid);
   color: var(--accent-purple);
   font-weight: 700;
   letter-spacing: .5px;

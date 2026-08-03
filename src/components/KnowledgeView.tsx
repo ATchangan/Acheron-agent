@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
+import { errMsg } from '../utils/safe'
 
 /* ─── types ─── */
 
@@ -152,7 +153,7 @@ const S = {
   searchBtn: {
     padding: '7px 14px',
     background: 'var(--accent)',
-    color: '#fff',
+    color: 'var(--on-accent)',
     border: 'none',
     borderRadius: 'var(--radius)',
     cursor: 'pointer',
@@ -260,7 +261,7 @@ const S = {
   qaBtn: {
     padding: '7px 14px',
     background: 'var(--accent-purple)',
-    color: '#fff',
+    color: 'var(--on-accent)',
     border: 'none',
     borderRadius: 'var(--radius)',
     cursor: 'pointer',
@@ -325,7 +326,7 @@ export default function KnowledgeView() {
         try {
           const d = JSON.parse(f.slice(DOC_TAG.length))
           if (d && typeof d.name === 'string') parsed.push(d as DocMeta)
-        } catch { /* skip corrupt entries */ }
+        } catch (e) { /* skip corrupt entries */ console.debug('[swallow]', e) }
       }
       setDocs(parsed)
       const last =
@@ -333,9 +334,7 @@ export default function KnowledgeView() {
           ? new Date(Math.max(...parsed.map((d) => d.importedAt))).toLocaleString('zh-CN')
           : '暂无'
       setStats({ totalDocs: parsed.length, lastImport: last })
-    } catch {
-      /* ignore load errors */
-    }
+    } catch (e) { /* ignore load errors */ console.debug('[swallow]', e) }
   }, [])
 
   useEffect(() => {
@@ -367,7 +366,7 @@ export default function KnowledgeView() {
 
     try {
       // memory.importFile is a runtime extension
-      const api = window.huangquan.memory as any
+      const api = window.huangquan.memory
       if (typeof api.importFile !== 'function') {
         setImportMsg('❌ memory.importFile 不可用（请确认后端已启用向量记忆）')
         setImporting(false)
@@ -387,7 +386,7 @@ export default function KnowledgeView() {
           try {
             const content = await window.huangquan.computer.readFile(path)
             size = new Blob([content]).size
-          } catch { /* keep 0 */ }
+          } catch (e) { /* keep 0 */ console.debug('[swallow]', e) }
         }
 
         const doc: DocMeta = { name, path, importedAt: Date.now(), size }
@@ -402,8 +401,8 @@ export default function KnowledgeView() {
       } else {
         setImportMsg(`❌ ${name} 导入失败`)
       }
-    } catch (e: any) {
-      setImportMsg(`❌ 错误: ${e?.message || e}`)
+    } catch (e: unknown) {
+      setImportMsg(`❌ 错误: ${errMsg(e)}`)
     } finally {
       setImporting(false)
     }
@@ -420,9 +419,7 @@ export default function KnowledgeView() {
       mem.facts = mem.facts.filter((f) => f !== target)
       await window.huangquan.memory.save(mem)
       await loadDocs()
-    } catch {
-      /* ignore */
-    }
+    } catch (e) { /* ignore */ console.debug('[swallow]', e) }
   }
 
   /* ── search ── */
@@ -433,7 +430,7 @@ export default function KnowledgeView() {
     setSearching(true)
     setResults([])
     try {
-      const api = window.huangquan.memory as any
+      const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
         setResults([{ content: '❌ memory.search 不可用', score: 0 }])
         setSearching(false)
@@ -441,8 +438,8 @@ export default function KnowledgeView() {
       }
       const hits: SearchResult[] = await api.search(q)
       setResults(hits || [])
-    } catch (e: any) {
-      setResults([{ content: `❌ 搜索出错: ${e?.message || e}`, score: 0 }])
+    } catch (e: unknown) {
+      setResults([{ content: `❌ 搜索出错: ${errMsg(e)}`, score: 0 }])
     } finally {
       setSearching(false)
     }
@@ -456,7 +453,7 @@ export default function KnowledgeView() {
     setQaLoading(true)
     setQaA('')
     try {
-      const api = window.huangquan.memory as any
+      const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
         setQaA('❌ 语义搜索不可用，无法构建问答上下文。')
         setQaLoading(false)
@@ -485,8 +482,8 @@ export default function KnowledgeView() {
           context +
           `\n\n---\n💡 *提示：可连接 LLM 模型将上述上下文作为 system prompt 获得更精确回答*`
       )
-    } catch (e: any) {
-      setQaA(`❌ 问答出错: ${e?.message || e}`)
+    } catch (e: unknown) {
+      setQaA(`❌ 问答出错: ${errMsg(e)}`)
     } finally {
       setQaLoading(false)
     }
@@ -544,7 +541,7 @@ export default function KnowledgeView() {
                 color: importMsg.startsWith('✅')
                   ? 'var(--accent-green)'
                   : importMsg.startsWith('❌') || importMsg.startsWith('⚠️')
-                  ? '#ff6688'
+                  ? 'var(--danger)'
                   : 'var(--accent)',
               }}
             >

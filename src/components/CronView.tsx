@@ -1,13 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import type { CronJob, MemoryData } from '../global'
 
 // ─── 型 ──────────────────────────────────────────────
-interface CronJob {
-  id: string
-  expression: string
-  prompt: string
-  nextRun: number
-  enabled: boolean
-}
+
 
 interface TaskMeta {
   [id: string]: { name: string; lastRun: number | null }
@@ -42,7 +37,7 @@ const FILTER_TABS: { value: FilterTab; label: string }[] = [
 ]
 
 // ─── helper ──────────────────────────────────────────
-const api = (): any => (window as any).huangquan
+const api = () => window.huangquan
 
 function exprLabel(expr: string): string {
   const p = EXPR_PRESETS.find((e) => e.value === expr)
@@ -143,7 +138,7 @@ const S = {
   createTitle: {
     fontSize: '14px',
     fontWeight: 600 as const,
-    color: '#D4AF37',
+    color: 'var(--warning)',
     marginBottom: '12px',
     display: 'flex',
     alignItems: 'center',
@@ -246,7 +241,7 @@ const S = {
     borderRadius: '14px',
     border: '1px solid #4a4c58',
     background: 'rgba(212, 175, 55, 0.08)',
-    color: '#D4AF37',
+    color: 'var(--warning)',
     fontSize: '11px',
     cursor: 'pointer',
     whiteSpace: 'nowrap' as const,
@@ -263,7 +258,7 @@ const S = {
     padding: '5px 14px',
     borderRadius: '6px',
     border: 'none',
-    background: active ? 'rgba(124,111,168,.15)' : 'transparent',
+    background: active ? 'rgba(var(--skin-accent),.15)' : 'transparent',
     color: active ? '#7c6fa8' : '#9999AA',
     cursor: 'pointer',
     fontSize: '12px',
@@ -314,7 +309,7 @@ const S = {
     width: '8px',
     height: '8px',
     borderRadius: '50%',
-    background: enabled ? '#2D6A4F' : '#555',
+    background: enabled ? 'var(--success)' : '#555',
     flexShrink: 0,
   }),
   cardActions: {
@@ -341,7 +336,7 @@ const S = {
     borderRadius: '6px',
     border: '1px solid rgba(220,53,69,0.3)',
     background: 'transparent',
-    color: '#DC3545',
+    color: 'var(--danger)',
     fontSize: '14px',
     cursor: 'pointer',
     display: 'flex',
@@ -354,7 +349,7 @@ const S = {
     width: '42px',
     height: '24px',
     borderRadius: '12px',
-    background: on ? '#2D6A4F' : '#4a4c58',
+    background: on ? 'var(--success)' : '#4a4c58',
     cursor: 'pointer',
     transition: 'background .15s',
     border: 'none',
@@ -390,7 +385,7 @@ const S = {
   countdownBadge: {
     fontSize: '12px',
     fontWeight: 600 as const,
-    color: '#D4AF37',
+    color: 'var(--warning)',
     background: 'rgba(212,175,55,0.1)',
     border: '1px solid rgba(212,175,55,0.25)',
     borderRadius: '4px',
@@ -428,8 +423,8 @@ const S = {
     padding: '6px 18px',
     borderRadius: '6px',
     border: 'none',
-    background: '#DC3545',
-    color: '#fff',
+    background: 'var(--danger)',
+    color: 'var(--on-accent)',
     fontSize: '12px',
     fontWeight: 600 as const,
     cursor: 'pointer',
@@ -480,7 +475,7 @@ export default function CronView() {
       setTasks(jobs || [])
 
       // load meta from memory
-      const mem = await api().memory.load().catch(() => ({ facts: [] as string[] }))
+      const mem = await api().memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
       const metaFact = (mem.facts || []).find((f: string) => f.startsWith('[cron_meta]'))
       if (metaFact) {
         try {
@@ -504,11 +499,11 @@ export default function CronView() {
   const persistMeta = useCallback(async (next: TaskMeta) => {
     setMeta(next)
     try {
-      const mem = await api().memory.load().catch(() => ({ facts: [] as string[] }))
+      const mem = await api().memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
       const facts: string[] = (mem.facts || []).filter((f: string) => !f.startsWith('[cron_meta]'))
       facts.push('[cron_meta]' + JSON.stringify(next))
       await api().memory.save({ facts, summaries: mem.summaries || [] })
-    } catch { /* silent */ }
+    } catch (e) { /* silent */ console.debug('[swallow]', e) }
   }, [])
 
   // ── add ──
@@ -519,7 +514,7 @@ export default function CronView() {
     if (!name || !prompt || !expr) return
     setAdding(true)
     try {
-      const id: string = await api().cron.add(expr, prompt)
+      const cr = await api().cron.add(expr, prompt); const id: string = cr?.id || ''
       const nextMeta = { ...meta, [id]: { name, lastRun: null } }
       await persistMeta(nextMeta)
       setNewName('')
@@ -539,7 +534,7 @@ export default function CronView() {
     try {
       await api().cron.toggle(id)
       await load()
-    } catch { /* silent */ }
+    } catch (e) { /* silent */ console.debug('[swallow]', e) }
   }, [load])
 
   // ── remove ──
@@ -551,7 +546,7 @@ export default function CronView() {
       await persistMeta(nextMeta)
       setDelId(null)
       await load()
-    } catch { /* silent */ }
+    } catch (e) { /* silent */ console.debug('[swallow]', e) }
   }, [meta, persistMeta, load])
 
   // ── apply template ──
@@ -745,7 +740,7 @@ export default function CronView() {
                   {displayName}
                   {isEnabled && t.nextRun && (
                     <span style={S.countdownBadge}>
-                      ⏳ {countdown(t.nextRun)}
+                      ⏳ {countdown(Number(t.nextRun) || 0)}
                     </span>
                   )}
                 </div>
@@ -777,10 +772,10 @@ export default function CronView() {
                 </div>
                 <div style={S.metaItem}>
                   <span style={S.metaLabel}>下次</span>
-                  <span style={S.metaValue}>{t.nextRun ? fmtTime(t.nextRun) : '—'}</span>
+                  <span style={S.metaValue}>{t.nextRun ? fmtTime(Number(t.nextRun)) : '—'}</span>
                   {t.nextRun && (
-                    <span style={{ fontSize: '10px', color: '#D4AF37' }}>
-                      ({relativeTime(t.nextRun)})
+                    <span style={{ fontSize: '10px', color: 'var(--warning)' }}>
+                      ({relativeTime(Number(t.nextRun) || 0)})
                     </span>
                   )}
                 </div>
@@ -792,7 +787,7 @@ export default function CronView() {
                 </div>
                 <div style={S.metaItem}>
                   <span style={S.metaLabel}>状态</span>
-                  <span style={{ color: isEnabled ? '#2D6A4F' : '#9999AA', fontWeight: 600 }}>
+                  <span style={{ color: isEnabled ? 'var(--success)' : '#9999AA', fontWeight: 600 }}>
                     {isEnabled ? '⚡ 运行中' : '⏸ 已停用'}
                   </span>
                 </div>

@@ -16,12 +16,12 @@ const FILE = (() => {
 
 let sessions: SessionStats = {}
 let dirty = false
-let timer: any = null
+let timer: ReturnType<typeof setTimeout> | null = null
 
 function persist() {
   if (!FILE || !dirty) return
   dirty = false
-  try { fs.writeFileSync(FILE, JSON.stringify({ v: 4, sessions }, null, 2), 'utf-8') } catch { /* 忽略 */ }
+  try { fs.writeFileSync(FILE, JSON.stringify({ v: 4, sessions }, null, 2), 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
 }
 function schedulePersist() {
   dirty = true

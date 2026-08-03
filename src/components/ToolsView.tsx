@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { errMsg } from '../utils/safe'
 
 /* ─── Tool definitions (20 built-in) ─── */
 type Category = '文件' | '系统' | '网络' | '定时'
@@ -60,14 +61,14 @@ function loadPerms(): Record<string, PermissionLevel> {
   } catch { return {} }
 }
 function savePerms(p: Record<string, PermissionLevel>) {
-  try { localStorage.setItem(PERM_KEY, JSON.stringify(p)) } catch { /* quota */ }
+  try { localStorage.setItem(PERM_KEY, JSON.stringify(p)) } catch (e) { /* quota */ console.debug('[swallow]', e) }
 }
 
 const PERM_LABEL: Record<PermissionLevel, string> = { full: '允许', ask: '询问', deny: '禁止' }
 const PERM_COLOR: Record<PermissionLevel, string> = {
   full: 'var(--accent-green)',
   ask:  'var(--accent)',
-  deny: '#ff4466',
+  deny: 'var(--danger)',
 }
 
 /* ─── Component ─── */
@@ -117,8 +118,8 @@ export default function ToolsView() {
       setMcpStatus('✓ 已连接')
       setMcpName(''); setMcpCmd(''); setMcpArgs('')
       await refreshMcp()
-    } catch (e: any) {
-      setMcpStatus(`✗ ${e?.message || String(e)}`)
+    } catch (e: unknown) {
+      setMcpStatus(`✗ ${errMsg(e)}`)
     }
   }
 
@@ -129,7 +130,7 @@ export default function ToolsView() {
       // In practice the backend should handle this — here we optimistically
       // remove from the local list (backend state is authoritative on refresh)
       setServers(prev => prev.filter(s => s.name !== name))
-    } catch { /* best-effort */ }
+    } catch (e) { /* best-effort */ console.debug('[swallow]', e) }
   }
 
   /* ── test a tool ── */
@@ -144,8 +145,8 @@ export default function ToolsView() {
       else if (result && typeof result === 'object') text = JSON.stringify(result).slice(0, 200)
       else text = String(result ?? '(无输出)').slice(0, 200)
       setTestResult({ id: tool.id, ok: true, text })
-    } catch (e: any) {
-      setTestResult({ id: tool.id, ok: false, text: e?.message || String(e) })
+    } catch (e: unknown) {
+      setTestResult({ id: tool.id, ok: false, text: errMsg(e) })
     }
   }
 
@@ -196,7 +197,7 @@ export default function ToolsView() {
           <span>🔌 MCP 服务器 <b style={{ color: 'var(--text-primary)' }}>{mcpCount}</b></span>
           <span>📞 最近调用 <b style={{ color: 'var(--text-primary)' }}>{recentCalls}</b></span>
           {permDenied > 0 && (
-            <span style={{ color: '#ff4466' }}>🚫 已禁用 {permDenied}</span>
+            <span style={{ color: 'var(--danger)' }}>🚫 已禁用 {permDenied}</span>
           )}
         </div>
 
@@ -261,8 +262,8 @@ export default function ToolsView() {
                                 title={perm === 'deny' ? '已禁用' : perm === 'ask' ? '需询问' : '可用'}
                                 style={{
                                   display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                                  background: perm === 'deny' ? '#ff4466' : perm === 'ask' ? 'var(--accent)' : 'var(--accent-green)',
-                                  boxShadow: `0 0 6px ${perm === 'deny' ? '#ff4466' : perm === 'ask' ? 'var(--accent)' : 'var(--accent-green)'}`,
+                                  background: perm === 'deny' ? 'var(--danger)' : perm === 'ask' ? 'var(--accent)' : 'var(--accent-green)',
+                                  boxShadow: `0 0 6px ${perm === 'deny' ? 'var(--danger)' : perm === 'ask' ? 'var(--accent)' : 'var(--accent-green)'}`,
                                   flexShrink: 0,
                                 }}
                               />
@@ -289,8 +290,8 @@ export default function ToolsView() {
                               fontFamily: "'JetBrains Mono', monospace",
                               padding: '4px 8px',
                               borderRadius: 'var(--radius-sm)',
-                              background: testResult.ok ? 'rgba(72,201,138,.1)' : 'rgba(255,68,102,.1)',
-                              color: testResult.ok ? 'var(--accent-green)' : '#ff4466',
+                              background: testResult.ok ? 'var(--success-soft)' : 'var(--danger-soft)',
+                              color: testResult.ok ? 'var(--accent-green)' : 'var(--danger)',
                               maxHeight: 80, overflowY: 'auto',
                               whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                             }}>
@@ -339,7 +340,7 @@ export default function ToolsView() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button className="btn-primary" onClick={connectMcp}>连接</button>
-                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: mcpStatus.startsWith('✗') ? '#ff4466' : 'var(--accent-green)' }}>
+                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: mcpStatus.startsWith('✗') ? 'var(--danger)' : 'var(--accent-green)' }}>
                     {mcpStatus}
                   </span>
                 </div>
@@ -376,7 +377,7 @@ export default function ToolsView() {
             <section className="settings-section">
               <h3>模拟三级权限</h3>
               <p style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginBottom: 12 }}>
-                点击工具行切换权限级别：<span style={{ color: 'var(--accent-green)' }}>允许</span> → <span style={{ color: 'var(--accent)' }}>询问</span> → <span style={{ color: '#ff4466' }}>禁止</span>。权限保存至本地存储。
+                点击工具行切换权限级别：<span style={{ color: 'var(--accent-green)' }}>允许</span> → <span style={{ color: 'var(--accent)' }}>询问</span> → <span style={{ color: 'var(--danger)' }}>禁止</span>。权限保存至本地存储。
               </p>
               <div style={{ display: 'flex', gap: 12, marginBottom: 12, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>
                 <span>🟢 允许 {Object.values(perms).filter(v => v === 'full').length}</span>

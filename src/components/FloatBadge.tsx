@@ -5,20 +5,20 @@ import { useSettingsStore } from '../store/settings'
 // 位置由设置 browserFloatPos 控制: top-right(默认) / top-center / bottom-left / bottom-right
 export default function FloatBadge() {
   const [show, setShow] = useState(false)
-  const g = useSettingsStore(s => s.general) as any
+  const g = useSettingsStore(s => s.general)
   const pos = g?.browserFloatPos || 'top-right'
 
   useEffect(() => {
-    const unsub = (window as any).huangquan?.web.onFloat?.((d: { show: boolean }) => {
+    const unsub = window.huangquan?.web.onFloat?.((d: { show: boolean }) => {
       // v0.2.3-fix(N24): 实时读取开关设置, 不再闭包捕获初始快照
       const enabled = useSettingsStore.getState().general?.browserFloatEnabled !== false
       setShow(!!d.show && enabled)
     })
-    return () => { try { unsub?.() } catch { /* 忽略 */ } }
+    return () => { try { unsub?.() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
   }, [])
 
   if (!show) return null
-  const openPanel = () => { try { (window as any).huangquan?.web.showPanel() } catch { /* 静默 */ } }
+  const openPanel = () => { try { window.huangquan?.web.showPanel() } catch (e) { /* 静默 */ console.debug('[swallow]', e) } }
 
   const posStyle: Record<string, React.CSSProperties> = {
     'top-right': { top: 44, right: 16 },
@@ -36,8 +36,9 @@ export default function FloatBadge() {
         ...base,
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '8px 14px', borderRadius: 10, cursor: 'pointer',
-        background: 'rgba(20, 18, 40, 0.94)', border: '1px solid rgba(124, 92, 191, 0.65)',
-        boxShadow: '0 4px 18px rgba(0,0,0,0.45)', userSelect: 'none',
+        background: 'var(--bg-card)', border: '1px solid var(--border-glow)',
+        backdropFilter: 'blur(var(--blur))', WebkitBackdropFilter: 'blur(var(--blur))',
+        boxShadow: 'var(--shadow-2)', userSelect: 'none',
       }}
     >
       <span style={{ fontSize: 'calc(var(--ui-font-size) + 3px)', animation: 'floatSpin 1.6s linear infinite' }}>🌐</span>
@@ -45,7 +46,7 @@ export default function FloatBadge() {
         <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>Agent 正在使用浏览器</span>
         <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent-purple)', whiteSpace: 'nowrap' }}>点击查看实时画面</span>
       </div>
-      <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: '#48c98a', marginLeft: 4 }}>● 进行中</span>
+      <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--success)', marginLeft: 4 }}>● 进行中</span>
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { errMsg } from '../utils/safe'
 
 // ─── 型定義 ────────────────────────────────────────────
 interface PluginManifest {
@@ -41,7 +42,7 @@ const CATEGORY_HINT: Record<string, string> = {
   jin: '日常',
 }
 
-const YELLOW_RIVER = '#7c6fa8'
+const YELLOW_RIVER = 'var(--accent)'
 
 // ─── インラインスタイル ───────────────────────────────
 const s = {
@@ -53,7 +54,7 @@ const s = {
   } as React.CSSProperties,
   statChip: {
     fontSize: 'calc(var(--ui-font-size) - 1px)', padding: '4px 12px', borderRadius: 20, border: `1px solid ${YELLOW_RIVER}`,
-    color: 'var(--text-secondary)', background: 'rgba(124,111,168,0.08)', display: 'flex', alignItems: 'center', gap: 5,
+    color: 'var(--text-secondary)', background: 'rgba(var(--skin-accent),.08)', display: 'flex', alignItems: 'center', gap: 5,
   } as React.CSSProperties,
   actionRow: {
     display: 'flex', gap: 8, alignItems: 'center',
@@ -70,7 +71,7 @@ const s = {
   } as React.CSSProperties,
   pluginIcon: {
     width: 38, height: 38, borderRadius: 'var(--radius)',
-    background: `linear-gradient(135deg, ${YELLOW_RIVER}, #9488bc)`,
+    background: `linear-gradient(135deg, ${YELLOW_RIVER}, color-mix(in srgb, var(--accent) 60%, white))`,
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
     flexShrink: 0,
   } as React.CSSProperties,
@@ -121,10 +122,10 @@ const s = {
     transition: 'all .12s',
   }),
   msgSuccess: {
-    fontSize: 'calc(var(--ui-font-size) - 1px)', color: '#48c98a', marginTop: 8,
+    fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--success)', marginTop: 8,
   } as React.CSSProperties,
   msgError: {
-    fontSize: 'calc(var(--ui-font-size) - 1px)', color: '#ff6688', marginTop: 8,
+    fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--danger)', marginTop: 8,
   } as React.CSSProperties,
   emptyIcon: {
     fontSize: 40, marginBottom: 12, opacity: 0.4,
@@ -136,10 +137,10 @@ const s = {
 
 // ─── カテゴリ色 ──────────────────────────────────────
 const CAT_COLORS: Record<string, string> = {
-  oni: '#E85D75',
-  yokai: '#FFB347',
-  sen: '#4DC9F6',
-  jin: '#48c98a',
+  oni: 'var(--danger)',
+  yokai: 'var(--warning)',
+  sen: 'var(--accent)',
+  jin: 'var(--success)',
 }
 
 // ─── コンポーネント ────────────────────────────────────
@@ -183,7 +184,7 @@ export default function PluginsView() {
       // 保存済みのプラグイン設定を読込
       const memory = await window.huangquan.memory.load()
       const savedState: Record<string, PluginState> =
-        (memory as any).plugins || {}
+        (memory.plugins || {}) as Record<string, PluginState>
 
       const loaded: PluginInfo[] = []
       for (const dir of dirs) {
@@ -205,8 +206,8 @@ export default function PluginsView() {
         }
       }
       setPlugins(loaded)
-    } catch (e: any) {
-      setScanError(e?.message || 'プラグイン走査エラー')
+    } catch (e: unknown) {
+      setScanError(errMsg(e) || 'プラグイン走査エラー')
     } finally {
       setLoading(false)
     }
@@ -242,11 +243,9 @@ export default function PluginsView() {
       for (const p of list) {
         plugins[p.manifest.name] = { enabled: p.enabled, category: p.category }
       }
-      ;(memory as any).plugins = plugins
+      memory.plugins = plugins as Record<string, PluginState>
       await window.huangquan.memory.save(memory)
-    } catch {
-      /* best effort */
-    }
+    } catch (e) { /* best effort */ console.debug('[swallow]', e) }
   }
 
   // ── ローカルからインストール ──────────────────────
@@ -285,7 +284,7 @@ export default function PluginsView() {
               srcDir = `${localPath}/${e.name}`
               break
             }
-          } catch {}
+          } catch { /* 子目录读取失败跳过该候选 */ }
         }
       }
 
@@ -318,8 +317,8 @@ export default function PluginsView() {
       setInstallMsg('✅ インストール成功')
       setLocalPath('')
       await scanPlugins()
-    } catch (e: any) {
-      setInstallMsg(`❌ ${e?.message || 'インストール失敗'}`)
+    } catch (e: unknown) {
+      setInstallMsg(`❌ ${errMsg(e) || 'インストール失敗'}`)
     } finally {
       setInstalling(false)
     }
@@ -351,8 +350,8 @@ export default function PluginsView() {
         setGitUrl('')
         await scanPlugins()
       }
-    } catch (e: any) {
-      setInstallMsg(`❌ ${e?.message || 'クローン失敗'}`)
+    } catch (e: unknown) {
+      setInstallMsg(`❌ ${errMsg(e) || 'クローン失敗'}`)
     } finally {
       setInstalling(false)
     }
@@ -394,10 +393,10 @@ export default function PluginsView() {
           総数 <strong style={{ color: YELLOW_RIVER }}>{total}</strong>
         </span>
         <span style={s.statChip}>
-          启用 <strong style={{ color: '#48c98a' }}>{enabled}</strong>
+          启用 <strong style={{ color: 'var(--success)' }}>{enabled}</strong>
         </span>
         <span style={s.statChip}>
-          停用 <strong style={{ color: '#ff6688' }}>{disabled}</strong>
+          停用 <strong style={{ color: 'var(--danger)' }}>{disabled}</strong>
         </span>
       </div>
 

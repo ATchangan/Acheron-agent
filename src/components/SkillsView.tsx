@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useChatStore } from '../store/chat'
 import type { SkillMeta } from '../global'
+import { errMsg } from '../utils/safe'
 
 /* ─── 黄泉法术录 · 类型 & 常量 ──────────────────────────── */
 
@@ -19,11 +20,11 @@ const CAT_ICON: Record<Category, string> = {
   '自动化': '⚡',
 }
 const CAT_COLOR: Record<Category, string> = {
-  '工作流': '#4dc9f6',
-  '提示词': '#b388ff',
-  '知识': '#48c98a',
-  '工具': '#ffaa00',
-  '自动化': '#ff6b9d',
+  '工作流': 'var(--accent)',
+  '提示词': 'var(--accent-purple)',
+  '知识': 'var(--success)',
+  '工具': 'var(--warning)',
+  '自动化': 'var(--danger)',
 }
 
 /* ─── 辅助函数 ────────────────────────────────────────── */
@@ -119,8 +120,8 @@ export default function SkillsView() {
       setError('')
       const list: SkillMeta[] = await window.huangquan.skills.list()
       setSkills(list.map((s) => ({ ...s, category: inferCategory(s) })))
-    } catch (e: any) {
-      setError(e?.message || '无法加载技能列表')
+    } catch (e: unknown) {
+      setError(errMsg(e) || '无法加载技能列表')
     } finally {
       setLoading(false)
     }
@@ -141,8 +142,8 @@ export default function SkillsView() {
       setViewContent('')
       const content = await window.huangquan.skills.load(skill.path)
       setViewContent(content)
-    } catch (e: any) {
-      setViewContent(`> 加载失败: ${e?.message || '未知错误'}`)
+    } catch (e: unknown) {
+      setViewContent(`> 加载失败: ${errMsg(e) || '未知错误'}`)
     } finally {
       setViewLoading(false)
     }
@@ -166,8 +167,8 @@ export default function SkillsView() {
       resetCreateForm()
       await loadSkills()
       showToast(`✅ 法术「${newName.trim()}」已铭刻`)
-    } catch (e: any) {
-      setError(`保存失败: ${e?.message || '未知错误'}`)
+    } catch (e: unknown) {
+      setError(`保存失败: ${errMsg(e) || '未知错误'}`)
     } finally {
       setSaving(false)
     }
@@ -257,14 +258,14 @@ export default function SkillsView() {
               <div style={S.cardPath} title={skill.path}>{skill.path}</div>
                <div style={S.cardActions}>
                  <button className="btn-small" onClick={() => handleView(skill)}>📖 查看</button>
-                 <button className="btn-small" style={{ color: '#C23B22', borderColor: '#C23B22' }}
+                 <button className="btn-small" style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
                    onClick={async () => {
                      if (!confirm(`确定删除技能「${skill.name}」？`)) return
                      try {
                        const ok = await window.huangquan.skills.delete(skill.name)
                        if (ok === true) { showToast(`已删除「${skill.name}」`); loadSkills() }
                        else showToast('删除失败: ' + ok)
-                     } catch (e: any) { showToast('删除失败: ' + e.message) }
+                     } catch (e: unknown) { showToast('删除失败: ' + errMsg(e)) }
                    }}>🗑 删除</button>
                </div>
             </div>
@@ -439,8 +440,8 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    background: 'rgba(255,68,102,0.1)',
-    border: '1px solid rgba(255,68,102,0.35)',
+    background: 'var(--danger-soft)',
+    border: '1px solid var(--danger-soft)',
     color: '#ff6680',
     padding: '8px 14px',
     borderRadius: 'var(--radius)',
@@ -534,7 +535,7 @@ const S: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed',
     inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'var(--overlay)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

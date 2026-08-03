@@ -17,7 +17,8 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
   const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
   const endRef = useRef<HTMLDivElement>(null)
-  const hasProvider = providers.length > 0 && providers[0].apiKey
+  // v0.2.5-fix: 任一供应商已配置即可对话(原只检查 providers[0], 首个无 key 的供应商会挡住全部)
+  const hasProvider = providers.some(p => p.apiKey)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [session?.messages, stage])
 
@@ -25,17 +26,17 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
 
   // 消息过滤：单气泡模式下隐藏 tool 角色和纯 tool_calls 消息；多气泡模式下全部展示
   const msgs = session?.messages || []
-  const singleBubble = (useSettingsStore.getState().general as any).singleBubble !== false
+  const singleBubble = useSettingsStore.getState().general.singleBubble !== false
   // v0.2.1: 单气泡终极过滤 —— 隐藏 tool/tool_calls/空消息，且连续 assistant 合并为单条（UI 层兜底，杜绝多气泡）
   const displayMsgs = (() => {
     const out: typeof msgs = []
     for (const m of msgs) {
       // v0.2.3-fix: 工具过程(调用卡片+结果块)统一显示在「思考气泡」内, 单气泡模式消息流保持干净(只有用户+最终回答)
       if (m.role === 'tool') { if (!singleBubble) out.push(m); continue }
-      if (m.role === 'assistant' && (m as any).tool_calls && !m.content) { if (!singleBubble) out.push(m); continue }
-      if (m.role === 'assistant' && !m.content && !(m as any).tool_calls) continue
-      if (singleBubble && m.role === 'assistant' && !(m as any).tool_calls && out.length > 0 &&
-        out[out.length - 1].role === 'assistant' && !(out[out.length - 1] as any).tool_calls) {
+      if (m.role === 'assistant' && m.tool_calls && !m.content) { if (!singleBubble) out.push(m); continue }
+      if (m.role === 'assistant' && !m.content && !m.tool_calls) continue
+      if (singleBubble && m.role === 'assistant' && !m.tool_calls && out.length > 0 &&
+        out[out.length - 1].role === 'assistant' && !out[out.length - 1].tool_calls) {
         // 连续 assistant → 内容合并进上一条（单气泡, 卡片消息不参与合并）
         const prev = out[out.length - 1]
         const merged = ((prev.content || '') + '\n\n' + (m.content || '')).trim()
@@ -46,12 +47,12 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
     if (!singleBubble) {
       const toolNameById = new Map<string, string>()
       for (const m of msgs) {
-        if (m.role === 'assistant' && (m as any).tool_calls) {
-          for (const tc of (m as any).tool_calls || []) toolNameById.set(tc.id, tc.function?.name || '')
+        if (m.role === 'assistant' && m.tool_calls) {
+          for (const tc of m.tool_calls || []) toolNameById.set(tc.id || '', tc.function?.name || '')
         }
       }
       for (const m of out) {
-        if (m.role === 'tool') { const n = toolNameById.get((m as any).tool_call_id || ''); if (n) (m as any).toolName = n }
+        if (m.role === 'tool') { const n = toolNameById.get(m.tool_call_id || ''); if (n) m.toolName = n }
       }
     }
     return out

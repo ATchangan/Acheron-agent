@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import FileTree from './FileTree'
 import ResizeBar from './ResizeBar'
-import { Folder, FolderPlus, FilePlus, RefreshCw } from 'lucide-react'
+import { Folder, FolderPlus, FilePlus, RefreshCw, MoreHorizontal } from 'lucide-react'
 
 
 export default function RightPanel() {
@@ -13,13 +13,20 @@ export default function RightPanel() {
   const activeAgents = useChatStore(s => s.activeAgents)
   const workDir = useSettingsStore(s => s.general.workDir)
   // v0.2.3-opt: memUsed/memPct 由 sysPerf 实时提供(perf.memUsed/perf.memPct)
-  const [perf, setPerf] = useState<any>(null)
+  const [perf, setPerf] = useState<{ cpuPct: number; memPct: number; memUsed: number; memTotal: number; gpuPct: number; gpuName: string } | null>(null)
 
 
   // v0.2.6: 文件浏览器状态
   const [treeKey, setTreeKey] = useState(0)
   const [creating, setCreating] = useState<'dir' | 'file' | null>(null)
   const [createName, setCreateName] = useState('')
+
+  // v0.3.0: 工作目录变化时文件树立即刷新(设置页修改实时生效, 不依赖 5s 轮询)
+  const firstWd = useRef(true)
+  useEffect(() => {
+    if (firstWd.current) { firstWd.current = false; return }
+    setTreeKey(k => k + 1)
+  }, [workDir])
 
   const doCreate = async () => {
     if (!creating || !createName.trim()) { setCreating(null); return }
@@ -35,7 +42,7 @@ export default function RightPanel() {
   useEffect(() => {
     let alive = true
     const tick = async () => {
-      try { const p = await window.huangquan.computer.sysPerf(); if (alive) setPerf(p) } catch { /* 静默 */ }
+      try { const p = await window.huangquan.computer.sysPerf(); if (alive) setPerf(p) } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
     }
     tick()
     const iv = setInterval(tick, 2500)
@@ -50,13 +57,13 @@ export default function RightPanel() {
       <div className="right-top-name"><h3>黄泉</h3></div>
 
       {/* v0.2.1: 多Agent 协作实时面板 —— 常驻置顶，显示当前正在调用的 Agent（多个并发时全部显示） */}
-      <div className="sys-bar" style={{ marginBottom: 8, border: '1px solid rgba(124,111,168,.4)', background: 'rgba(124,111,168,.08)', borderRadius: 8, padding: '8px 10px' }}>
+      <div className="sys-bar" style={{ marginBottom: 8, border: '1px solid rgba(var(--skin-accent),.4)', background: 'rgba(var(--skin-accent),.08)', borderRadius: 8, padding: '8px 10px' }}>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: 'var(--accent)', marginBottom: 6, letterSpacing: 1 }}>协作调度</div>
         {streaming || executing ? (
           activeAgents.length > 0 ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {activeAgents.map(a => (
-                <span key={a} style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 'calc(var(--ui-font-size) - 1px)', background: 'rgba(124,111,168,.15)', border: '1px solid rgba(124,111,168,.3)', borderRadius: 10, padding: '2px 10px' }}>◉ {a}</span>
+                <span key={a} style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 'calc(var(--ui-font-size) - 1px)', background: 'rgba(var(--skin-accent),.15)', border: '1px solid rgba(var(--skin-accent),.3)', borderRadius: 10, padding: '2px 10px' }}>◉ {a}</span>
               ))}
             </div>
           ) : (
@@ -77,17 +84,19 @@ export default function RightPanel() {
       {/* 系统信息: CPU/RAM/GPU 实时占用 */}
       {perf && (
         <div className="sys-bar">
-          <div className="sys-item"><span className="sys-label">CPU</span><span style={{ color: perf.cpuPct > 80 ? '#ff6b6b' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
+          <div className="sys-item"><span className="sys-label">CPU</span><span style={{ color: perf.cpuPct > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
           <div className="sys-item"><span className="sys-label">RAM</span><span>{fmt(perf.memUsed)}/{fmt(perf.memTotal)} ({perf.memPct}%)</span></div>
-          <div className="sys-item" title={perf.gpuName ? '当前 GPU: ' + perf.gpuName : ''}><span className="sys-label">GPU</span><span style={{ color: (perf.gpuPct || 0) > 80 ? '#ff6b6b' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
+          <div className="sys-item" title={perf.gpuName ? '当前 GPU: ' + perf.gpuName : ''}><span className="sys-label">GPU</span><span style={{ color: (perf.gpuPct || 0) > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
         </div>
       )}
       {workDir && (
-        <div className="sys-bar" style={{ marginTop: 4, display: 'block' }}>
+        <div className="sys-bar" style={{ marginTop: 4, display: 'block', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
             <span className="sys-label" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workDir}><Folder size={12} style={{ marginRight: 2, flexShrink: 0 }} />工作目录</span>
-            <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: '#6ba8ff', cursor: 'pointer' }} title="新建文件夹" onClick={() => { setCreating('dir'); setCreateName('') }}><FolderPlus size={12} /></span>
-            <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: '#48c98a', cursor: 'pointer' }} title="新建文件" onClick={() => { setCreating('file'); setCreateName('') }}><FilePlus size={12} /></span>
+            {/* v0.3.0: ⋯ 点一次直接打开系统选目录界面(选中即切换并实时刷新文件树) */}
+            <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', cursor: 'pointer' }} title="选择工作目录" onClick={async () => { const path = await window.huangquan.computer.selectDir(); if (path) useSettingsStore.getState().setWorkDir(path) }}><MoreHorizontal size={13} /></span>
+            <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)', cursor: 'pointer' }} title="新建文件夹" onClick={() => { setCreating('dir'); setCreateName('') }}><FolderPlus size={12} /></span>
+            <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--success)', cursor: 'pointer' }} title="新建文件" onClick={() => { setCreating('file'); setCreateName('') }}><FilePlus size={12} /></span>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', cursor: 'pointer' }} title="刷新" onClick={() => setTreeKey(k => k + 1)}><RefreshCw size={12} /></span>
           </div>
           {creating && (
@@ -115,9 +124,9 @@ export default function RightPanel() {
         {terminal.slice(-20).reverse().map(t => (
           <div key={t.id} className="terminal-line">
             <span className="terminal-time">{new Date(t.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-            <span className="terminal-cmd" style={{ color: t.result.startsWith('E:') ? '#ff4466' : (t as any).risk === 'high' ? '#ffaa00' : 'var(--accent-green)' }}>{t.name}{(t as any).risk === 'high' ? ' ⚡' : ''}</span>
+            <span className="terminal-cmd" style={{ color: t.result.startsWith('E:') ? 'var(--danger)' : (t as { risk?: string }).risk === 'high' ? 'var(--warning)' : 'var(--accent-green)' }}>{t.name}{(t as { risk?: string }).risk === 'high' ? ' ⚡' : ''}</span>
             <span className="terminal-args">{JSON.stringify(t.args).slice(0, 60)}</span>
-            <pre className="terminal-out" style={{ color: t.result.startsWith('E:') ? '#ff4466' : 'var(--text-secondary)' }}>{(t.result || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').slice(0, 300)}</pre>
+            <pre className="terminal-out" style={{ color: t.result.startsWith('E:') ? 'var(--danger)' : 'var(--text-secondary)' }}>{(t.result || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').slice(0, 300)}</pre>
           </div>
         ))}
       </div>

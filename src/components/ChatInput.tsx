@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
+import type { MemoryData } from '../global'
 import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Lightbulb, Zap, Flame, Sparkles as SparklesIcon, Send, Square, ImagePlus, Gauge, Brain, Crown } from 'lucide-react'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
@@ -37,8 +38,8 @@ export default function ChatInput() {
   const [thinkOpen, setThinkOpen] = useState(false)
   const [memText, setMemText] = useState('')
   // v0.2.1: 权限/推理强度与设置持久化联动（不再是无效果本地状态）
-  const [perm, setPerm] = useState<FilePerm>((useSettingsStore.getState().general as any).filePermission || 'auto')
-  const [think, setThink] = useState<ThinkLevel>((useSettingsStore.getState().general as any).thinkLevel || 'medium')
+  const [perm, setPerm] = useState<string>(useSettingsStore.getState().general.filePermission || 'auto')
+  const [think, setThink] = useState<string>(useSettingsStore.getState().general.thinkLevel || 'medium')
   const send = useChatStore(s => s.send)
   // v0.2.3: 发送/停止按钮按"当前会话"判断 —— 聊天/工作会话独立, 其他会话在跑不影响本会话
   const cid = useChatStore(s => s.cid)
@@ -50,13 +51,37 @@ export default function ChatInput() {
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  const models = providers[0]?.models || []
-  const currentModel = providers[0]?.selectedModel || models[0] || '未配置'
+  // v0.2.4: 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
+  const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
+  const classifyModel = (m: string): 'text' | 'image' | 'video' | 'audio' => {
+    const ml = m.toLowerCase()
+    if (/image|img|flux|dall|sdxl|\bsd-|mj-|seedream|cogview|wanx|kolors|ernie-vilg/i.test(ml)) return 'image'
+    if (/video|vid|seedance|kling|pika|runway|gen3|gen4|t2v/i.test(ml)) return 'video'
+    if (/asr|tts|whisper|voice|audio|iflytek/i.test(ml)) return 'audio'
+    return 'text'
+  }
+  const cfgProviders = providers.filter(pp => !!pp.apiKey && (pp.models || []).length)
+  const cfgMedia = mediaProviders.filter(mp => !!mp.apiKey)
+  const modelItems: { key: string; label: string; group: 'text' | 'image' | 'video' | 'audio'; pid: string; model: string; isMedia: boolean }[] = []
+  cfgProviders.forEach(pp => (pp.models || []).forEach((m: string) => {
+    const g = classifyModel(m)
+    modelItems.push({ key: g === 'text' ? pp.id + '::' + m : g + '::' + pp.id + '::' + m, label: m, group: g, pid: pp.id, model: m, isMedia: false })
+  }))
+  cfgMedia.forEach(mp => {
+    const push = (ms: string[], kind: 'image' | 'video' | 'audio') => (ms || []).forEach((m: string) => modelItems.push({ key: kind + '::' + mp.id + '::' + m, label: m, group: kind, pid: mp.id, model: m, isMedia: true }))
+    push(mp.imgModels || [], 'image'); push(mp.videoModels || [], 'video'); push(mp.audioModels || [], 'audio')
+  })
+  const models = modelItems.map(x => x.key)
+  const gMain = useSettingsStore(s => (s.general).mainModel)
+  const defaultKey = (gMain && models.includes(gMain)) ? gMain : (models[0] || '')
+  const [modelSel, setModelSel] = useState(defaultKey)
+  const currentModel = modelSel || defaultKey || '未配置'
+  const curModelName = (currentModel.includes('::') ? currentModel.split('::').pop() : currentModel) || ''
   // v0.2.1: 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
-  const supportsVision = !currentModel || currentModel === '未配置' || /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(currentModel.toLowerCase())
+  const supportsVision = !currentModel || currentModel === '未配置' || /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(curModelName.toLowerCase())
   const visionAssist = !supportsVision
   const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
-  const ctxColor = ctxRatio > 0.9 ? '#ff4466' : ctxRatio > 0.7 ? '#ffaa00' : 'var(--accent)'
+  const ctxColor = ctxRatio > 0.9 ? 'var(--danger)' : ctxRatio > 0.7 ? 'var(--warning)' : 'var(--accent)'
 
   useEffect(() => {
     const ta = taRef.current
@@ -70,7 +95,7 @@ export default function ChatInput() {
   }, [])
   // v0.2.3-fix: 切换/新建会话时清空输入框与引用, 防止上个会话的文字残留到新会话
   useEffect(() => { setText(''); setQuote('') }, [cid])
-  useEffect(() => { if (currentModel && currentModel !== '未配置') updateContextLimit(currentModel) }, [currentModel])
+  useEffect(() => { if (currentModel && currentModel !== '未配置' && !currentModel.startsWith('img::') && !currentModel.startsWith('vid::') && !currentModel.startsWith('aud::')) updateContextLimit(curModelName) }, [currentModel, curModelName])
 
   const closeAll = () => { setCmdOpen(false); setMemOpen(false); setPermOpen(false); setThinkOpen(false) }
 
@@ -100,7 +125,7 @@ export default function ChatInput() {
     for (let i = 0; i < files.length; i++) {
       try {
         // v0.2.2-fix: Electron 32 移除了 File.path，改用 webUtils.getPathForFile
-        const p = (window as any).huangquan?.getPathForFile?.(files[i]) || (files[i] as any).path
+        const p = window.huangquan?.getPathForFile?.(files[i]) || (files[i] as File & { path?: string }).path
         let b = p ? await window.huangquan.computer.readImageBase64(p) : null
         // v0.2.3-fix: 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
         if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
@@ -127,13 +152,13 @@ export default function ChatInput() {
       const isAud = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)
       try {
         if (isImg) {
-          const p = (window as any).huangquan?.getPathForFile?.(f) || (f as any).path
+          const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
           let b = p ? await window.huangquan.computer.readImageBase64(p) : null
           // v0.2.3-fix: 拖入的图片同样压缩
           if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
           if (b) newImgs.push(b)
         } else {
-          const p = (window as any).huangquan?.getPathForFile?.(f) || (f as any).path
+          const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
           if (p) newAtts.push({ name: f.name, path: p, size: f.size, kind: isVid ? 'video' : isAud ? 'audio' : 'file' })
         }
       } catch (err) { console.warn('[ChatInput] 拖入文件处理失败:', f.name, err) }
@@ -144,7 +169,7 @@ export default function ChatInput() {
 
   const saveMemory = async () => {
     if (!memText.trim()) return
-    const m = await window.huangquan.memory.load().catch(() => ({ facts: [] as string[], summaries: [] as any[] }))
+    const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
     m.facts.push(memText.trim())
     await window.huangquan.memory.save(m)
     setMemText(''); setMemOpen(false)
@@ -157,7 +182,7 @@ export default function ChatInput() {
   return (
     <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
       {/* v0.2.2: 拖拽遮罩 */}
-      {dragOver && <div style={{ position: 'absolute', inset: 0, zIndex: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,111,168,0.18)', border: '2px dashed var(--accent)', borderRadius: 10, pointerEvents: 'none', fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 600, color: 'var(--accent)' }}>松开鼠标 · 添加图片 / 视频 / 文件</div>}
+      {dragOver && <div style={{ position: 'absolute', inset: 0, zIndex: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(var(--skin-accent),.18)', border: '2px dashed var(--accent)', borderRadius: 10, pointerEvents: 'none', fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 600, color: 'var(--accent)' }}>松开鼠标 · 添加图片 / 视频 / 文件</div>}
       {/* v0.2.2: 引用内容（显示在输入框上方，类似图片预览） */}
       {quote && (
         <div className="quote-preview" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, padding: '8px 12px', borderRadius: 8, borderLeft: '3px solid var(--accent)', background: 'var(--bg-card)', fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto' }}>
@@ -224,7 +249,7 @@ export default function ChatInput() {
 
           {/* 文件权限 */}
           <div className="dropdown-wrap">
-            <IconBtn title={`文件权限: ${PERM_LABELS[perm]}`} onClick={() => { closeAll(); setPermOpen(!permOpen) }}>{PERM_ICONS[perm]}</IconBtn>
+            <IconBtn title={`文件权限: ${PERM_LABELS[perm as FilePerm] || perm}`} onClick={() => { closeAll(); setPermOpen(!permOpen) }}>{PERM_ICONS[perm as FilePerm] || '⚙'}</IconBtn>
             {permOpen && (
               <div className="dropdown-menu">
                 {(Object.keys(PERM_ICONS) as FilePerm[]).map(k => (
@@ -238,7 +263,7 @@ export default function ChatInput() {
 
           {/* 推理强度 */}
           <div className="dropdown-wrap">
-            <IconBtn title={`推理强度: ${think}`} onClick={() => { closeAll(); setThinkOpen(!thinkOpen) }}>{THINK_ICONS[think]}</IconBtn>
+            <IconBtn title={`推理强度: ${think}`} onClick={() => { closeAll(); setThinkOpen(!thinkOpen) }}>{THINK_ICONS[think as ThinkLevel] || '🧠'}</IconBtn>
             {thinkOpen && (
               <div className="dropdown-menu">
                 {(Object.keys(THINK_ICONS) as ThinkLevel[]).map(k => (
@@ -259,7 +284,7 @@ export default function ChatInput() {
             transition: 'all .12s',
           }} onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={handleImagePick} />
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,image/avif,image/heic" multiple hidden onChange={handleImagePick} />
             <Camera size={16} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
           </label>
         </div>
@@ -267,7 +292,7 @@ export default function ChatInput() {
         <div className="input-right">
           {/* Agent 选择器 */}
           <select className="model-select" style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '4px 8px', maxWidth: 80, height: 28, borderRadius: 5 }}
-            onChange={e => { const v = e.target.value; (window as any).__huangquan_agent = v; (window as any).__huangquan_agent_manual = v !== '' }}
+            onChange={e => { const v = e.target.value; window.__huangquan_agent = v; window.__huangquan_agent_manual = v !== '' }}
             defaultValue="">
             <option value="">自动</option>
             <option value="姬子">☕ 主控</option>
@@ -279,13 +304,28 @@ export default function ChatInput() {
             <option value="螺丝咕姆">🤖 开发</option>
           </select>
 
-          {/* 模型选择器 */}
+          {/* 模型选择器 —— 按能力分类(文字/图片/视频/语音), 选择自动写入对应设置 */}
           {models.length > 0 ? (
             <select className="model-select" value={currentModel} onChange={e => {
-              const idx = models.indexOf(e.target.value)
-              if (idx >= 0 && providers[0]) useSettingsStore.getState().updateProvider(providers[0].id, { selectedModel: e.target.value })
-            }} style={{ height: 28, borderRadius: 5 }}>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
-          ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{currentModel}</span>}
+              const v = e.target.value
+              setModelSel(v)
+              const item = modelItems.find(x => x.key === v)
+              if (!item) return
+              if (item.group === 'text') {
+                useSettingsStore.getState().updateGeneral({ mainModel: v })
+                useSettingsStore.getState().updateProvider(item.pid, { selectedModel: item.model })
+              } else {
+                const mp = mediaProviders.find(x => x.id === item.pid)
+                if (item.group === 'image') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedImg: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaImgProvider: mp.name }) }
+                if (item.group === 'video') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedVideo: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaVideoProvider: mp.name }) }
+                if (item.group === 'audio') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedAudio: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaAudioProvider: mp.name }) }
+              }
+            }} style={{ height: 28, borderRadius: 5, maxWidth: 140 }}>{(['text', 'image', 'video', 'audio'] as const).filter(g => modelItems.some(x => x.group === g)).map(g => (
+              <optgroup key={g} label={g === 'text' ? '文字' : g === 'image' ? '图片' : g === 'video' ? '视频' : '语音'}>
+                {modelItems.filter(x => x.group === g).map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+              </optgroup>
+            ))}</select>
+          ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>}
 
           {/* Token 用量环 */}
           <svg width="28" height="28" style={{ flexShrink: 0 }}>

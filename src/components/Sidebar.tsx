@@ -16,6 +16,7 @@ const BrowserIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="
 
 const NAV_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
   { id: 'chat', icon: <ChatIcon />, label: '对话' },
+  { id: 'agents', icon: <AgentIcon />, label: 'Agent 编队' },
   { id: 'browser', icon: <BrowserIcon />, label: '浏览器' },
   { id: 'settings', icon: <SettingsIcon />, label: '设置' },
 ]
@@ -44,7 +45,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
       <div className="sidebar-top-bar">
         <span className="brand-text">黄泉</span>
         <div className="sidebar-top-actions">
-          <button onClick={create} title="新对话" aria-label="新对话" style={{ minWidth: 36, height: 36, padding: '0 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 8, fontSize: 'var(--ui-font-size)', fontWeight: 600, transition: 'all .12s' }}
+          <button onClick={create} title="新对话" aria-label="新对话" style={{ minWidth: 36, height: 36, padding: '0 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--on-accent)', borderRadius: 8, fontSize: 'var(--ui-font-size)', fontWeight: 600, transition: 'all .12s' }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
             onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -61,7 +62,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             className={`menu-item ${currentView === item.id ? 'active' : ''}`}
             onClick={() => {
               // v0.2.3: 浏览器导航 -> 打开独立浏览器窗口
-              if (item.id === 'browser') { try { (window as any).huangquan?.web.showPanel() } catch {} return }
+              if (item.id === 'browser') { try { window.huangquan?.web.showPanel() } catch {} return }
               onNavigate(item.id)
             }}
             role="button"
@@ -89,8 +90,8 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleSwitch(s.id)}
               >
                 <span className="session-title" title={s.title}>{s.title}</span>
-                <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: (s.mode || 'work') === 'work' ? '#6ba8ff' : '#48c98a', border: '1px solid currentColor', borderRadius: 4, padding: '0 4px', marginLeft: 6, flexShrink: 0, opacity: 0.85 }}>{(s.mode || 'work') === 'work' ? '工作' : '聊天'}</span>
-                {(s as any).busy && <span className="session-busy" title="该会话正在工作中，可切换到其他会话独立使用">● 工作中</span>}
+                <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: (s.mode || 'work') === 'work' ? 'var(--accent)' : 'var(--success)', border: '1px solid currentColor', borderRadius: 4, padding: '0 4px', marginLeft: 6, flexShrink: 0, opacity: 0.85 }}>{(s.mode || 'work') === 'work' ? '工作' : '聊天'}</span>
+                {s.busy && <span className="session-busy" title="该会话正在工作中，可切换到其他会话独立使用">● 工作中</span>}
                 <button className="session-delete" onClick={e => { e.stopPropagation(); del(s.id) }}
                   title="删除会话" aria-label="删除会话"
                   style={{ width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 'calc(var(--ui-font-size) + 1px)' }}>

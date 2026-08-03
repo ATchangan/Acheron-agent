@@ -47,18 +47,18 @@ export default function MessageItem({ message, streaming }: Props) {
   const saveEdit = () => { const v = editText.trim(); if (v && v !== message.content) resendFrom(message.id, v); setEditing(false) }
   const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
   const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
-  const cardMaxHeight = useSettingsStore(s => (s.general as any).cardMaxHeight || 500)
+  const cardMaxHeight = useSettingsStore(s => (s.general).cardMaxHeight || 500)
   // v0.2.3: TTS 语音朗读(Windows SAPI)
-  const ttsEnabled = useSettingsStore(s => (s.general as any).ttsEnabled !== false)
-  const ttsRate = useSettingsStore(s => (s.general as any).ttsRate || 1)
+  const ttsEnabled = useSettingsStore(s => (s.general).ttsEnabled !== false)
+  const ttsRate = useSettingsStore(s => (s.general).ttsRate || 1)
   const [ttsBusy, setTtsBusy] = useState(false)
   const speakText = async () => {
     if (ttsBusy || !message.content) return
     setTtsBusy(true)
-    try { await window.huangquan.tts.speak(message.content.replace(/[#*`>|\-\[\](){}]/g, '').slice(0, 300), ttsRate) } catch { /* 忽略 */ }
+    try { await window.huangquan.tts.speak(message.content.replace(/[#*`>|\-\[\](){}]/g, '').slice(0, 300), ttsRate) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     setTtsBusy(false)
   }
-  const showTimestamps = useSettingsStore(s => (s.general as any).showTimestamps || 'hover')
+  const showTimestamps = useSettingsStore(s => (s.general).showTimestamps || 'hover')
   const [selected, setSelected] = useState(false)
   const isUser = message.role === 'user'
   const timeText = new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -77,7 +77,7 @@ export default function MessageItem({ message, streaming }: Props) {
       ta.value = text
       ta.style.position = 'fixed'; ta.style.opacity = '0'
       document.body.appendChild(ta); ta.select()
-      try { document.execCommand('copy') } catch { /* ignore */ }
+      try { document.execCommand('copy') } catch (e) { /* ignore */ console.debug('[swallow]', e) }
       document.body.removeChild(ta)
     }
     setCopied(true); setTimeout(() => setCopied(false), 2000)
@@ -98,17 +98,18 @@ export default function MessageItem({ message, streaming }: Props) {
   }, [sendQuote])
 
   if (message.role === 'tool') {
-    const truncated = message.content.length > 300 ? message.content.slice(0, 300) + '...' : message.content
-    const isError = message.content.startsWith('E:')
-    const toolId = (message as any).tool_call_id || ''
+    const c = message.content || ''
+    const truncated = c.length > 300 ? c.slice(0, 300) + '...' : c
+    const isError = c.startsWith('E:')
+    const toolId = message.tool_call_id || ''
     const shortId = toolId.replace(/^(call_|c_)/, '').slice(0, 8) || 'tool'
     // v0.2.3-fix: 显示关联工具名(如 ✓ write), 不再只显示 call id 缩写
     const toolName = message.toolName || shortId
     return (
       <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
         <div className="message-body">
-          <div className="tool-call-block" style={{ borderColor: isError ? '#ff4466' : 'var(--accent-green)', background: isError ? 'rgba(255,68,102,.05)' : 'rgba(72,201,138,.05)' }}>
-            <div className="tool-call-header" style={{ color: isError ? '#ff4466' : 'var(--accent-green)' }}>{isError ? '✗ Error(' + toolName + ')' : '✓ ' + toolName}</div>
+          <div className="tool-call-block" style={{ borderColor: isError ? 'var(--danger)' : 'var(--accent-green)', background: isError ? 'var(--danger-soft)' : 'var(--success-soft)' }}>
+            <div className="tool-call-header" style={{ color: isError ? 'var(--danger)' : 'var(--accent-green)' }}>{isError ? '✗ Error(' + toolName + ')' : '✓ ' + toolName}</div>
             <pre className="tool-call-output">{truncated}</pre>
           </div>
         </div>
@@ -123,13 +124,13 @@ export default function MessageItem({ message, streaming }: Props) {
     return (
       <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
         <div className="message-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {toolCalls.map((tc: any, i: number) => {
-            const fn = tc.function
+          {toolCalls.map((tc: { id?: string; type?: string; function?: { name?: string; arguments?: string } }, i: number) => {
+            const fn = tc.function || { name: '', arguments: '' }
             let args = ''
             try { args = JSON.stringify(JSON.parse(fn.arguments || '{}'), null, 2) } catch { args = fn.arguments || '' }
             const inline = args.replace(/\n/g, ' ').trim()
             return (
-              <details key={i} className="tool-call-block" style={{ borderColor: 'var(--accent-green)', background: 'rgba(72,201,138,.05)' }} open={args.length <= 60}>
+              <details key={i} className="tool-call-block" style={{ borderColor: 'var(--accent-green)', background: 'var(--success-soft)' }} open={args.length <= 60}>
                 <summary className="tool-call-header" style={{ color: 'var(--accent-green)', cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ whiteSpace: 'nowrap' }}>🔧 {fn.name}</span>
                   {inline && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 'calc(var(--ui-font-size) - 2px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{inline.length > 50 ? inline.slice(0, 50) + '…' : inline}</span>}
@@ -169,7 +170,7 @@ export default function MessageItem({ message, streaming }: Props) {
             <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', userSelect: 'none' }}>
               💭 {streaming ? '反思中…' : '反思内容(点击展开)'}
             </summary>
-            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,111,168,.08)', border: '1px solid rgba(124,111,168,.25)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{reflect}</div>
+            <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 8, background: 'rgba(var(--skin-accent),.08)', border: '1px solid rgba(var(--skin-accent),.25)', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{reflect}</div>
           </details>
         )}
         {cards.map((card, i) => (
@@ -196,7 +197,7 @@ export default function MessageItem({ message, streaming }: Props) {
         {message.attachments?.length ? (
           <div className="message-attachments">
             {message.attachments.map((a, i) => (
-              <span key={i} className="message-attachment" title={a.path} onClick={() => { try { window.huangquan.computer.openFile(a.path) } catch {} }}>
+              <span key={i} className="message-attachment" title={a.path} onClick={() => { try { window.huangquan.computer.openFile(a.path) } catch (e) { console.debug('[swallow]', e) } }}>
                 {a.kind === 'video' ? '🎬' : a.kind === 'audio' ? '🎵' : '📄'} {a.name}
               </span>
             ))}
@@ -228,7 +229,7 @@ export default function MessageItem({ message, streaming }: Props) {
                   {message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
                   {(message.usage || message.meta?.taskTokens) && (() => {
                     // v0.2.3: 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
-                    const total = message.meta?.taskTokens || message.usage.total_tokens || (message.usage.prompt_tokens + message.usage.completion_tokens)
+                    const total = message.meta?.taskTokens || message.usage?.total_tokens || ((message.usage?.prompt_tokens || 0) + (message.usage?.completion_tokens || 0))
                     const speed = message.meta?.duration ? Math.round(message.usage?.completion_tokens || 0 / (message.meta.duration / 1000)) : 0
                     return <span title={message.meta?.taskTokens ? '本任务总消耗(主 Agent + 全部子 Agent)' : '本次回复消耗 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全Agent)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
                   })()}

@@ -19,7 +19,7 @@ export default function ResizeBar({ varName, storeKey, min = 140, max = 420, edg
         const w = Math.max(min, Math.min(max, parseFloat(saved)))
         if (w > 0) document.documentElement.style.setProperty(varName, w + 'px')
       }
-    } catch { /* 忽略 */ }
+    } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -37,7 +37,7 @@ export default function ResizeBar({ varName, storeKey, min = 140, max = 420, edg
       const dir = edge === 'left' ? -1 : 1
       const w = Math.max(min, Math.min(max, startRef.current.w + dir * dx))
       document.documentElement.style.setProperty(varName, w + 'px')
-      try { localStorage.setItem(storeKey, String(w)) } catch { /* 忽略 */ }
+      try { localStorage.setItem(storeKey, String(w)) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     }
     const onUp = () => {
       startRef.current = null
@@ -56,7 +56,7 @@ export default function ResizeBar({ varName, storeKey, min = 140, max = 420, edg
       onDoubleClick={() => {
         const def = varName === '--right-w' ? 280 : 200
         document.documentElement.style.setProperty(varName, def + 'px')
-        try { localStorage.setItem(storeKey, String(def)) } catch { /* 忽略 */ }
+        try { localStorage.setItem(storeKey, String(def)) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       }}
       title="拖动调整宽度(双击恢复默认)"
       style={{
@@ -66,7 +66,7 @@ export default function ResizeBar({ varName, storeKey, min = 140, max = 420, edg
         background: 'transparent',
         transition: 'background .15s',
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(124,111,168,0.25)' }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(var(--skin-accent),.25)' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
     />
   )

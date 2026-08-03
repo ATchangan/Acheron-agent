@@ -1,26 +1,26 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // ─── v0.2.1: 安全参数清洗——消除 Proxy、循环引用等不可序列化对象导致的 IPC 报错 ──
-function safeArg(obj: any): any {
+function safeArg(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj
   if (typeof obj !== 'object') return obj
   // 始终通过 JSON 往返消除 Proxy 包装器
   try { return JSON.parse(JSON.stringify(obj)) } catch {
     // 慢速路径：手动深拷贝，跳过不可序列化属性
     const seen = new WeakSet()
-    const clone = (o: any): any => {
+    const clone = (o: unknown): unknown => {
       if (o === null || typeof o !== 'object') return o
-      if (seen.has(o)) return '[Circular]'
+      if (typeof o === 'object' && o !== null && seen.has(o)) return '[Circular]'
       seen.add(o)
       if (Array.isArray(o)) return o.map(clone)
-      const r: Record<string, any> = {}
-      for (const k of Object.keys(o)) {
+      const r: Record<string, unknown> = {}
+      for (const k of Object.keys(o as Record<string, unknown>)) {
         try {
-          const v = o[k]
+          const v = (o as Record<string, unknown>)[k]
           const t = typeof v
           if (t === 'function' || t === 'symbol') continue
           r[k] = clone(v)
-        } catch { /* skip */ }
+        } catch (e) { /* skip */ console.debug('[swallow]', e) }
       }
       return r
     }
@@ -80,14 +80,17 @@ contextBridge.exposeInMainWorld('huangquan', {
     tools: () => ipcRenderer.invoke('plugins:tools'),
     install: (url: string) => ipcRenderer.invoke('plugins:install', url),
     delete: (name: string) => ipcRenderer.invoke('plugins:delete', name),
+    // v0.3.0 M4: 插件工具执行(vm 沙箱)
+    exec: (plugin: string, tool: string, args: Record<string, unknown>) => ipcRenderer.invoke('plugins:exec', { plugin, tool, args }),
   },
   mcpConnect: (name: string, cmd: string, args: string[]) => ipcRenderer.invoke('mcp:connect', name, cmd, args),
-  mcpCall: (server: string, tool: string, a: any) => ipcRenderer.invoke('mcp:call', server, tool, a),
+  mcpCall: (server: string, tool: string, a: Record<string, unknown>) => ipcRenderer.invoke('mcp:call', server, tool, a),
   mcpList: () => ipcRenderer.invoke('mcp:list'),
   mcpSSEConnect: (name: string, url: string, headers?: Record<string,string>) => ipcRenderer.invoke('mcp:sse:connect', name, url, headers),
-  mcpSSECall: (server: string, tool: string, args: any) => ipcRenderer.invoke('mcp:sse:call', server, tool, args),
+  mcpSSECall: (server: string, tool: string, args: Record<string, unknown>) => ipcRenderer.invoke('mcp:sse:call', server, tool, args),
   mcpSSEList: () => ipcRenderer.invoke('mcp:sse:list'),
   mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => ipcRenderer.invoke('media:describe', opts),
+    mediaGen: (opts: { kind: 'img' | 'video'; prompt: string; providerId?: string; model?: string; ratio?: string; duration?: number }) => ipcRenderer.invoke('media:gen', opts),
   tts: { speak: (text: string, rate?: number) => ipcRenderer.invoke('tts:speak', text, rate) },
   getPaths: () => ipcRenderer.invoke('get:paths'),
   update: {
@@ -116,6 +119,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     selectFile: () => ipcRenderer.invoke('computer:selectFile'),
     selectDir: () => ipcRenderer.invoke('computer:selectDir'),
     readImageBase64: (path: string) => ipcRenderer.invoke('computer:readImageBase64', path),
+    readFileAsDataUrl: (path: string) => ipcRenderer.invoke('computer:readFileAsDataUrl', path),
     grep: (dir: string, pattern: string) => ipcRenderer.invoke('computer:grep', dir, pattern),
     find: (dir: string, glob: string) => ipcRenderer.invoke('computer:find', dir, glob),
     screenshot: () => ipcRenderer.invoke('computer:screenshot'),
@@ -154,7 +158,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     },
   },
   models: {
-    detect: (baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => ipcRenderer.invoke('models:detect', baseUrl, apiKey, opts),
+    detect: (baseUrl: string, apiKey: string, opts?: { anthropic?: boolean; type?: string }) => ipcRenderer.invoke('models:detect', baseUrl, apiKey, opts),
     // v0.2.2: 测试连接
     test: (baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => ipcRenderer.invoke('models:test', baseUrl, apiKey, opts),
   },
@@ -180,19 +184,15 @@ contextBridge.exposeInMainWorld('huangquan', {
       const h = (_: unknown, d: { content: string; done: boolean; requestId?: string }) => cb(d)
       ipcRenderer.on('llm:chunk', h); return () => ipcRenderer.removeListener('llm:chunk', h)
     },
-    onError: (cb: (e: any) => void) => {
+    onError: (cb: (e: unknown) => void) => {
       const h = (_: unknown, e: any) => cb(e)
       ipcRenderer.on('llm:error', h); return () => ipcRenderer.removeListener('llm:error', h)
     },
-    onToolCall: (cb: (tc: any) => void) => {
+    onToolCall: (cb: (tc: unknown) => void) => {
       const h = (_: unknown, tc: any) => cb(tc)
       ipcRenderer.on('llm:toolCall', h); return () => ipcRenderer.removeListener('llm:toolCall', h)
     },
-    onToolCallDone: (cb: (d: any) => void) => {
-      const h = (_: unknown, d: any) => cb(d)
-      ipcRenderer.on('llm:toolCallDone', h); return () => ipcRenderer.removeListener('llm:toolCallDone', h)
-    },
-    onUsage: (cb: (u: any) => void) => {
+    onUsage: (cb: (u: unknown) => void) => {
       const h = (_: unknown, u: any) => cb(u)
       ipcRenderer.on('llm:usage', h); return () => ipcRenderer.removeListener('llm:usage', h)
     },
