@@ -6,6 +6,9 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: write    # 允许 action-gh-release 发布/更新 Release(默认只读会报 Resource not accessible)
+
 jobs:
   build-win:
     name: Windows 构建打包
@@ -41,4 +44,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release/*.exe
-          generate_release_notes: true
+          overwrite: true
+          # 不用 generate_release_notes: 需要额外权限,且 release 说明由项目维护
