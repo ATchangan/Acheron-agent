@@ -11,6 +11,8 @@ import { errMsg } from '../utils/safe'
 import AboutTab from './settings/AboutTab'
 import StatsTab from './settings/StatsTab'
 import SkinTab from './settings/SkinTab'
+import McpTab from './settings/McpTab'
+import SkillsTab from './settings/SkillsTab'
 
 const PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = {
   'DeepSeek': { type: 'OpenAI Compatible', url: 'https://api.deepseek.com' },
@@ -327,16 +329,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const removeMediaProvider = useSettingsStore(s => s.removeMediaProvider)
   const updateMediaProvider = useSettingsStore(s => s.updateMediaProvider)
   const [mediaSelIdx, setMediaSelIdx] = useState(0)
-  // v0.2.1: MCP / 技能 章节
-  const [mcpServers, setMcpServers] = useState<{ name: string; cmd?: string; args?: string[]; tools?: string[]; status?: string }[]>([])
-  const [skillsList, setSkillsList] = useState<{ name: string; description?: string; path?: string }[]>([])
-  const [mcpName, setMcpName] = useState(''); const [mcpCmd, setMcpCmd] = useState(''); const [mcpArgs, setMcpArgs] = useState('')
-  const [mcpSseName, setMcpSseName] = useState(''); const [mcpSseUrl, setMcpSseUrl] = useState('')
-  const [skillName, setSkillName] = useState(''); const [skillContent, setSkillContent] = useState('')
-  const [skillUrl, setSkillUrl] = useState('')
   useEffect(() => {
-    if (tab === 'mcp') { window.huangquan.mcpList?.().then((s) => setMcpServers(s || [])).catch(() => setMcpServers([])) }
-    if (tab === 'skills') { window.huangquan.skills.list().then((s) => setSkillsList(s || [])).catch(() => setSkillsList([])) }
     if (tab === 'advanced') {
       window.huangquan.storageStats().then((s) => { const patch: Record<string, unknown> = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; save(patch) }).catch(() => {})
       // v0.2.6: 工具缓存命中率
@@ -972,74 +965,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('ghost')} onClick={async () => { try { const path = await window.huangquan.skills.pickLocal(); if (!path) return; setToast('正在安装...'); const r = await window.huangquan.skills.installLocal(path); setToast(String(r)) } catch (e: unknown) { setToast('安装失败: ' + errMsg(e)) } }}>从本地安装</button>
                 </div>
               </div>
-            </div> : tab === 'mcp' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}>
-                <div style={S.section}>MCP 服务器（stdio）</div>
-                <div style={S.hint}>通过标准输入/输出协议连接本地 MCP 服务器，为 Agent 提供外部工具</div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                  <input style={{ ...S.inp, flex: 1 }} placeholder="服务器名称" value={mcpName} onChange={e => setMcpName(e.target.value)} />
-                  <input style={{ ...S.inp, flex: 1.5 }} placeholder="启动命令（如 npx / node）" value={mcpCmd} onChange={e => setMcpCmd(e.target.value)} />
-                  <input style={{ ...S.inp, flex: 1.5 }} placeholder="参数（空格分隔，如 -y @modelcontextprotocol/server-filesystem C:/）" value={mcpArgs} onChange={e => setMcpArgs(e.target.value)} />
-                  <button style={S.btn('primary')} onClick={async () => { if (!mcpName || !mcpCmd) { showToast('请填写名称和命令'); return } const r = await window.huangquan.mcpConnect(mcpName, mcpCmd, mcpArgs.split(/\s+/).filter(Boolean)); showToast(typeof r === 'string' ? r : ('已连接：' + mcpName)); setMcpName(''); setMcpCmd(''); setMcpArgs(''); window.huangquan.mcpList?.().then((s) => setMcpServers(s || [])) }}>连接</button>
-                </div>
-                <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.text, margin: '8px 0 6px' }}>已连接服务器</div>
-                {mcpServers.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)' }}>暂无已连接的 MCP 服务器</div> : mcpServers.map((s, i: number) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 6, background: C.input, marginBottom: 6, border: '1px solid ' + C.border }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, fontWeight: 600 }}>{s.name} <span style={{ color: s.status === 'connected' ? 'var(--success)' : 'var(--warning)', fontSize: 'calc(var(--ui-font-size) - 4px)' }}>{s.status || 'connected'}</span></div>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted }}>{s.cmd || ''} {s.args?.join(' ') || ''}</div>
-                      {s.tools?.length ? <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, marginTop: 2 }}>工具：{s.tools.map((t: string | { name?: string }) => (typeof t === 'string' ? t : (t.name || ''))).join(', ').slice(0, 100)}</div> : null}
-                    </div>
-                    <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px' }} onClick={async () => { try { await (window.huangquan as { mcpDisconnect?: (n: string) => Promise<unknown> }).mcpDisconnect?.(s.name) } catch {} showToast('已断开 ' + s.name); window.huangquan.mcpList?.().then((x) => setMcpServers(x || [])) }}>断开</button>
-                  </div>
-                ))}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>MCP 服务器（SSE）</div>
-                <div style={S.hint}>通过 HTTP SSE 端点连接远程 MCP 服务器</div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input style={{ ...S.inp, flex: 1 }} placeholder="服务器名称" value={mcpSseName} onChange={e => setMcpSseName(e.target.value)} />
-                  <input style={{ ...S.inp, flex: 2 }} placeholder="SSE URL（如 http://localhost:8080/sse）" value={mcpSseUrl} onChange={e => setMcpSseUrl(e.target.value)} />
-                  <button style={S.btn('primary')} onClick={async () => { if (!mcpSseName || !mcpSseUrl) { showToast('请填写名称和 URL'); return } const r = await window.huangquan.mcpSSEConnect(mcpSseName, mcpSseUrl); showToast(typeof r === 'string' ? r : ('已连接：' + mcpSseName + '（' + (Array.isArray(r) ? r.length : 0) + ' 工具）')); setMcpSseName(''); setMcpSseUrl('') }}>连接</button>
-                </div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>MCP 行为配置</div>
-                <Toggle checked={g.mcpAutoReconnect !== false} onChange={v=>save({mcpAutoReconnect:v})} label="断线自动重连" />
-                <Toggle checked={g.mcpAutoConnectOnStart === true} onChange={v=>save({mcpAutoConnectOnStart:v})} label="启动时自动连接全部 MCP 服务器" />
-                <div style={S.row}><div style={S.label}>启动超时</div><input type="number" style={S.num} value={g.mcpTimeout||10} onChange={e=>save({mcpTimeout:parseInt(e.target.value)||10})} /><span style={S.hint}>秒</span></div>
-              </div>
-            </div> : tab === 'skills' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}>
-                <div style={S.section}>已安装技能</div>
-                <div style={S.hint}>技能是注入到系统提示词的专项能力包（SKILL.md）</div>
-                {skillsList.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '10px 0' }}>暂无技能，可创建或从 GitHub 安装</div> : skillsList.map((sk, i: number) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 6, background: C.input, marginBottom: 6, border: '1px solid ' + C.border }}>
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, fontWeight: 600 }}>{sk.name}</div>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sk.description}</div>
-                    </div>
-                    <button style={{ ...S.btn('ghost'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={async () => { const c = await window.huangquan.skills.load(sk.path || ''); showToast(c.slice(0, 120) + (c.length > 120 ? '…' : '')) }}>查看</button>
-                    <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 4 }} onClick={async () => { if (!confirm('删除技能 ' + sk.name + '？')) return; const r = await window.huangquan.skills.delete(sk.name); showToast(r === true ? '已删除' : String(r)); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>删除</button>
-                  </div>
-                ))}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>创建技能</div>
-                <input style={{ ...S.inp, marginBottom: 8 }} placeholder="技能名称（英文/拼音）" value={skillName} onChange={e => setSkillName(e.target.value)} />
-                <textarea style={{ ...S.inp, height: 130, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 3px)', fontFamily: 'monospace', lineHeight: 1.5, marginBottom: 8 }} placeholder={'---\nname: 技能名\ndescription: 一句话描述\n---\n\n# 使用说明\n## 触发条件\n...' } value={skillContent} onChange={e => setSkillContent(e.target.value)} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button style={S.btn('primary')} onClick={async () => { if (!skillName.trim()) { showToast('请填写技能名称'); return } const r = await window.huangquan.skills.create(skillName.trim(), skillContent || '---\nname: ' + skillName + '\ndescription: ' + skillName + '\n---\n\n# ' + skillName); showToast(r === true ? '技能已创建' : String(r)); setSkillName(''); setSkillContent(''); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>创建技能</button>
-                </div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>从 GitHub 安装</div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input style={{ ...S.inp, flex: 1 }} placeholder="Git 仓库地址（如 https://github.com/user/skill）" value={skillUrl} onChange={e => setSkillUrl(e.target.value)} />
-                  <button style={S.btn('primary')} onClick={async () => { if (!skillUrl.trim()) { showToast('请输入 Git 地址'); return } const r = await window.huangquan.skills.install(skillUrl.trim()); showToast(r === 'ok' ? '技能安装成功' : String(r)); setSkillUrl(''); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>安装</button>
-                </div>
-              </div>
-            </div> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+            </div> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>工具总览仪表盘</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
