@@ -249,5 +249,12 @@ export function buildContextualMessages(
   }
   // 暴露最近一次 system prompt(验证思考模式/人设等接线)
   try { window.__lastSp = sp || '' /* 供 check-prefix-stable.mjs 使用 */ } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+  // v0.3.1 M4: 序列断言 —— 返回前校验 assistant(tool_calls) 后必须紧跟 tool 消息(插话重排正确性兜底)
+  for (let i = 0; i < d.length - 1; i++) {
+    const cur = d[i]
+    if (cur.role === 'assistant' && cur.tool_calls && d[i + 1].role !== 'tool') {
+      console.log('[序列校验] 相邻消息非法: assistant(tool_calls) 后是 ' + d[i + 1].role + ' (位置 ' + i + '), 插话重排可能被破坏')
+    }
+  }
   return sp ? [{ role: 'system', content: sp }, ...d] : d
 }
