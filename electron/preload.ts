@@ -185,15 +185,15 @@ contextBridge.exposeInMainWorld('huangquan', {
       ipcRenderer.on('llm:chunk', h); return () => ipcRenderer.removeListener('llm:chunk', h)
     },
     onError: (cb: (e: unknown) => void) => {
-      const h = (_: unknown, e: any) => cb(e)
+      const h = (_: unknown, e: unknown) => cb(e)
       ipcRenderer.on('llm:error', h); return () => ipcRenderer.removeListener('llm:error', h)
     },
     onToolCall: (cb: (tc: unknown) => void) => {
-      const h = (_: unknown, tc: any) => cb(tc)
+      const h = (_: unknown, tc: unknown) => cb(tc)
       ipcRenderer.on('llm:toolCall', h); return () => ipcRenderer.removeListener('llm:toolCall', h)
     },
     onUsage: (cb: (u: unknown) => void) => {
-      const h = (_: unknown, u: any) => cb(u)
+      const h = (_: unknown, u: unknown) => cb(u)
       ipcRenderer.on('llm:usage', h); return () => ipcRenderer.removeListener('llm:usage', h)
     },
   },
