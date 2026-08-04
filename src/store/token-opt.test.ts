@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outputLimit, sessionTokens, foldToolRounds } from './context'
+import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages } from './context'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
 
@@ -64,5 +64,76 @@ describe('0.3.2 T6 foldToolRounds 历史轮次折叠', () => {
     msgs.pop()
     const out = foldToolRounds(msgs)
     expect(out).toBe(msgs)
+  })
+})
+
+describe('0.3.3 T3 buildTaskArchives 跨任务归档', () => {
+  function taskBlock(prefix: string, rounds: number): Message[] {
+    const out: Message[] = [{ id: prefix + 'u', role: 'user', content: '任务 ' + prefix, timestamp: 1 }]
+    for (let i = 0; i < rounds; i++) {
+      out.push({ id: prefix + 'a' + i, role: 'assistant', content: null, timestamp: i + 2, tool_calls: [{ id: prefix + 'tc' + i, type: 'function', function: { name: 'read', arguments: JSON.stringify({ path: 'D:/x/' + prefix + i + '.txt' }) } }] })
+      out.push({ id: prefix + 't' + i, role: 'tool', content: 'result', timestamp: i + 2, tool_call_id: prefix + 'tc' + i })
+    }
+    out.push({ id: prefix + 'aend', role: 'assistant', content: '任务 ' + prefix + ' 已完成，文件保存路径 D:/x/out-' + prefix + '.txt', timestamp: 99 })
+    return out
+  }
+
+  it('最早任务块满足条件时归档, keep 只留后续块', () => {
+    const msgs = [...taskBlock('A', 3), ...taskBlock('B', 2)]
+    const r = buildTaskArchives(msgs)
+    expect(r.archives.length).toBe(1)
+    expect(r.archives[0].goal).toContain('任务 A')
+    expect(r.archives[0].outputs).toContain('D:/x/A0.txt')
+    expect(r.keep[0].role).toBe('user')
+    expect(String(r.keep[0].content)).toContain('任务 B')
+  })
+
+  it('条件不足(消息少/工具少/单块)不归档', () => {
+    expect(buildTaskArchives(taskBlock('A', 1)).archives.length).toBe(0)
+    const short = [taskBlock('A', 3)[0], ...taskBlock('B', 2)]
+    expect(buildTaskArchives(short).archives.length).toBe(0)
+  })
+})
+
+describe('0.3.3 T1/T2 图片降级与参数截断(buildContextualMessages 全链路)', () => {
+  const gSnap = { mode: 'work', maxTokens: 4000, taskArchive: false } as GeneralSettings
+  const opts = { gSnap, cl: 8000, spIshiki: 'x', spFallback: 'x', onAgentRoute: () => {}, agent: '姬子' }
+
+  it('历史轮次图片降级为文字, 最新用户消息带图保留原图', () => {
+    const msgs: Message[] = [
+      { id: 'u1', role: 'user', content: '看这张图', timestamp: 1, images: ['data:image/png;base64,AAAA'] },
+      { id: 'a1', role: 'assistant', content: '看到了', timestamp: 2 },
+      { id: 'u2', role: 'user', content: '继续', timestamp: 3 },
+    ]
+    const d = buildContextualMessages(msgs, true, opts)
+    const u1 = d.find(m => m.role === 'user' && Array.isArray(m.content))!
+    const parts = u1.content as { type: string; text?: string; image_url?: { url: string } }[]
+    // u1 是历史轮次 → 图降级为文字
+    expect(parts.some(p => p.type === 'image_url')).toBe(false)
+    expect(parts.some(p => p.type === 'text' && String(p.text).includes('[图片省略'))).toBe(true)
+
+    const msgs2: Message[] = [
+      { id: 'u1', role: 'user', content: '看这张图', timestamp: 1, images: ['data:image/png;base64,AAAA'] },
+      { id: 'u2', role: 'user', content: '再看这张', timestamp: 3, images: ['data:image/png;base64,BBBB'] },
+    ]
+    const d2 = buildContextualMessages(msgs2, true, opts)
+    const last = d2[d2.length - 1]!
+    const parts2 = last.content as { type: string; image_url?: { url: string } }[]
+    expect(parts2.some(p => p.type === 'image_url')).toBe(true)
+  })
+
+  it('历史 tool_calls 超长参数截断, path 定位字段全量保留', () => {
+    const long = 'x'.repeat(3000)
+    const msgs: Message[] = [
+      { id: 'u1', role: 'user', content: '写文件', timestamp: 1 },
+      { id: 'a1', role: 'assistant', content: null, timestamp: 2, tool_calls: [{ id: 'tc1', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'D:/keep.txt', content: long }) } }] },
+      { id: 't1', role: 'tool', content: 'ok', timestamp: 3, tool_call_id: 'tc1' },
+    ]
+    const d = buildContextualMessages(msgs, false, opts)
+    const asst = d.find(m => m.role === 'assistant' && m.tool_calls)!
+    const args = JSON.parse(asst.tool_calls![0].function.arguments) as Record<string, string>
+    expect(args.path).toBe('D:/keep.txt')
+    expect(args.content).toContain('…[省略')
+    expect(args.content!.length).toBeLessThan(300)
   })
 })

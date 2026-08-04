@@ -85,6 +85,77 @@ export function foldToolRounds(msgs: Message[], maxRounds = 8, foldCount = 4): M
   ]
 }
 
+// v0.3.3 T2: 历史 tool_calls 参数截断 —— 定位类字段全量保留, 超长内容字段截断 + 省略标记
+const ARG_KEEP = new Set([
+  'path', 'name', 'dirPath', 'glob', 'pattern', 'query', 'url', 'pid',
+  'id', 'agent', 'agent_name', 'expression', 'tool', 'key', 'fileId',
+  'workflow_id', 'server', 'offset', 'limit', 'lang', 'mode',
+])
+const ARG_SLIM_LEN = 200
+function slimArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(args || {})) {
+    if (typeof v === 'string' && v.length > ARG_SLIM_LEN && !ARG_KEEP.has(k)) {
+      out[k] = v.slice(0, ARG_SLIM_LEN) + '…[省略' + (v.length - ARG_SLIM_LEN) + '字]'
+    } else if (Array.isArray(v) && v.length > 20 && v.every(x => typeof x === 'string')) {
+      out[k] = v.slice(0, 20) + '…[省略' + (v.length - 20) + '项]'
+    } else out[k] = v
+  }
+  return out
+}
+// 消息中 tool_calls.arguments 为 JSON 字符串, 解析后截断再序列化; 解析失败原样保留
+function slimToolCallArgs(tc: { id?: string; type: string; function: { name: string; arguments: string } }): { id?: string; type: string; function: { name: string; arguments: string } } {
+  try {
+    const parsed = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>
+    return { ...tc, function: { ...tc.function, arguments: JSON.stringify(slimArgs(parsed)) } }
+  } catch { return tc }
+}
+
+// v0.3.3 T3: 跨任务归档 —— 任务块(以 user 消息为界)满足条件时, 最早块整体折叠为归档记录
+export interface TaskArchive {
+  goal: string
+  conclusion: string
+  outputs: string[]
+  tools: string
+  ts: number
+}
+export function buildTaskArchives(msgs: Message[]): { keep: Message[]; archives: TaskArchive[] } {
+  const blocks: Message[][] = []
+  let cur: Message[] = []
+  for (const m of msgs) {
+    if (m.role === 'user') { if (cur.length) blocks.push(cur); cur = [m] }
+    else cur.push(m)
+  }
+  if (cur.length) blocks.push(cur)
+  const archives: TaskArchive[] = []
+  let keep = msgs
+  let blockIdx = 0
+  // 归档条件(缺一不可): 最早块 ≥6 消息 且 ≥2 次工具调用 且存在 ≥2 个任务块
+  while (blocks.length - blockIdx >= 2) {
+    const b = blocks[blockIdx]
+    if (b.length < 6 || b.filter(m => m.role === 'tool').length < 2) break
+    const goal = (b.find(m => m.role === 'user')?.content || '').slice(0, 80)
+    const lastAsst = [...b].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 50)
+    const conclusion = lastAsst ? String(lastAsst.content).replace(/\n/g, ' ').slice(0, 100) : ''
+    const outputs = [...new Set(
+      b
+        .filter(m => m.role === 'assistant' && m.tool_calls)
+        .flatMap(m => (m.tool_calls || []).map(tc => { try { return (JSON.parse(tc.function.arguments || '{}') as { path?: unknown }).path } catch { return undefined } }))
+        .filter((p): p is string => typeof p === 'string' && p.length > 0)
+    )].slice(0, 5)
+    const toolAgg = new Map<string, number>()
+    for (const m of b) if (m.role === 'assistant' && m.tool_calls) for (const tc of m.tool_calls) {
+      const tname = tc.function?.name || '?'
+      toolAgg.set(tname, (toolAgg.get(tname) || 0) + 1)
+    }
+    const tools = [...toolAgg.entries()].slice(0, 8).map(([n, c]) => `${n}(${c})`).join(' ')
+    archives.push({ goal, conclusion, outputs, tools, ts: Date.now() })
+    blockIdx++
+    keep = blocks[blockIdx] ? msgs.slice(msgs.indexOf(blocks[blockIdx][0])) : msgs.slice(msgs.length)
+  }
+  return { keep, archives }
+}
+
 function getModelContextLimit(modelName: string): number {
   const m = modelName.toLowerCase()
   // 百万级
@@ -223,6 +294,10 @@ export function buildContextualMessages(
   let earlySummary = ''
   // v0.3.2 T6: 先折叠旧工具轮次再限长(折叠只作用于最旧完整轮次对)
   let list = foldToolRounds(msgs)
+  // v0.3.3 T3: 跨任务归档(先折叠后归档; 归档开关默认开)
+  const archiveRes = opts.gSnap.taskArchive === false ? { keep: list, archives: [] as TaskArchive[] } : buildTaskArchives(list)
+  list = archiveRes.keep
+  const archives = archiveRes.archives
   if (list.length > MAX_HISTORY_MSGS) {
     const early = list.slice(0, -MAX_HISTORY_MSGS)
     const uN = early.filter(m => m.role === 'user').length
@@ -234,6 +309,22 @@ export function buildContextualMessages(
   // v0.3.1 插话序列修复: _inject 插话消息分离 —— 重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
   const injectMsgs = list.filter(m => m._inject)
   const normalMsgs = list.filter(m => !m._inject)
+  // v0.3.3 T1: 历史图片降级预处理 —— 逆序扫描统计每个 url 是否为"最后一次出现"; 最新 user 消息 id 用于保护规则
+  const imgIsLatest = new Map<string, boolean>()
+  const imgSeenRev = new Set<string>()
+  for (let k = list.length - 1; k >= 0; k--) {
+    const mm = list[k]
+    if (mm.role === 'user' && mm.images?.length) {
+      const inMsg = new Set<string>()
+      for (const img of mm.images) {
+        if (inMsg.has(img)) continue
+        inMsg.add(img)
+        if (!imgSeenRev.has(img)) { imgSeenRev.add(img); imgIsLatest.set(img, true) }
+        else imgIsLatest.set(img, false)
+      }
+    }
+  }
+  const lastUserMsgId = [...list].reverse().find(m => m.role === 'user')?.id
   for (const m of normalMsgs) {
     if (m.role === 'tool') {
       // 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
@@ -247,9 +338,25 @@ export function buildContextualMessages(
       }
       d.push({ role: 'tool', content: body, tool_call_id: m.tool_call_id || 'c_' + uuidv4().slice(0, 8) })
     }
-    else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: m.tool_calls })
+    // v0.3.3 T2: 历史 tool_calls 参数截断(定位字段全量, 超长内容截断+标记; 已执行结果不受影响)
+    else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: m.tool_calls.map(slimToolCallArgs) })
     // 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
-    else if (m.role === 'user' && m.images?.length && withImages) { const parts: VisionContent[] = [{ type: 'text', text: m.content || '' }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
+    // v0.3.3 T1: 同图历史轮次降级为文字(最新用户消息带图永远保留原图)
+    else if (m.role === 'user' && m.images?.length && withImages) {
+      const parts: VisionContent[] = [{ type: 'text', text: m.content || '' }]
+      const msgIsLatestUser = m.id === lastUserMsgId
+      const inMsg = new Set<string>()
+      for (const img of m.images) {
+        if (inMsg.has(img)) continue
+        inMsg.add(img)
+        if (imgIsLatest.get(img) === true && msgIsLatestUser) {
+          parts.push({ type: 'image_url', image_url: { url: img } })
+        } else {
+          parts.push({ type: 'text', text: '[图片省略: 前文轮次已发送过此图, 内容已在前文消费。如需重看, 请让用户重新发送或基于已有描述继续]' })
+        }
+      }
+      d.push({ role: 'user', content: parts })
+    }
     else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
   }
   // v0.3.1 插话序列修复: _inject 消息追加到序列末尾(与正常 user 消息同构, 图片类按 withImages 处理)
@@ -273,6 +380,10 @@ export function buildContextualMessages(
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
   if (currentMode === 'work') sp += '\n' + buildWorkflowsBlock(lastUserText)
   sp += '\n' + memoryBlock(lastUserText)
+  // v0.3.3 T3: 归档记录追加 system 尾部(最多 5 条, 每条含目标/结论/产出物/工具)
+  if (archives.length) {
+    sp += '\n## 任务归档\n' + archives.slice(-5).map(a => `- 目标: ${a.goal} | 结论: ${a.conclusion} | 产出物: ${a.outputs.join(', ') || '无'} | 工具: ${a.tools}`).join('\n') + '\n(如需早期细节请用工具重新读取或 recall_memory)\n'
+  }
   // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
   let agentRole = collabOff ? null : (opts.agent || window.__huangquan_agent)

@@ -158,6 +158,8 @@ export interface GeneralSettings {
   mcpTimeout?: number
   autoMediaImg?: boolean
   autoMediaVideo?: boolean
+  // v0.3.3 T3: 跨任务归档开关(默认开启, 0.3.5 并入性能开关区)
+  taskArchive?: boolean
   mediaImgProvider?: string
   mediaImgModel?: string
   mediaImgMode?: string
