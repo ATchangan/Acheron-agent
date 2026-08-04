@@ -7,7 +7,7 @@ import { recordEpisodic } from './memory'
 import { runTool, setCached } from './runtime'
 import { getTaskGenFor } from './session-state'
 import { resolveModel } from './model-pick'
-import { hasInterjectForSid, drainInterjections } from './interject'
+import { hasInterjectForSid, drainInterjections, peekInterjectKind } from './interject'
 import type { S } from './chat-send'
 
 export interface ToolCallItem {
@@ -48,6 +48,12 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     }
     // 用户终止/插话 —— 任务代号失效则立即停止
     if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
+    // v0.3.1 M2: 改向熔断 —— 用户发改向指令(别做了/重新来/换一个等)时, 工具链中途跳出
+    if (peekInterjectKind(sid) === 'retarget') {
+      console.log('[插话] 检测到改向指令, 熔断当前工具链')
+      toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
+      break
+    }
     // 熔断检测
     const meltLimit = gSnap.meltdownLimit || 3
     const rc = new Map(); for (const t of toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
