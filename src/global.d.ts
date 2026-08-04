@@ -198,6 +198,12 @@ export interface SessionData {
   updatedAt?: string
   mode?: string
   busy?: boolean // v0.2.3: 该会话是否正在工作中（独立于其他会话）
+  // v0.3.1 会话修复: 会话级并发状态（FIX-1/2/8/16, 取代全局 window.__huangquan_agent / 全局 streaming / 全局 taskGen）
+  agent?: string          // 当前 Agent（路由/handoff 写入, 会话隔离）
+  agentManual?: boolean   // 用户手动选择（手动模式下不自动路由覆盖）
+  activeAgents?: string[] // 协作链记录（会话隔离）
+  streaming?: boolean     // 会话级流式状态（与 busy 对称）
+  resumeTimer?: number    // 自动续跑 setTimeout 句柄（stop/新任务时 clearTimeout）
 }
 export interface Message {
   id: string
