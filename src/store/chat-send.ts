@@ -12,7 +12,7 @@ import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, task
 import { normalizeImage } from '../utils/image'
 import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelResume } from './session-state'
 import { pickModels, resolveModel } from './model-pick'
-import { pushInterject, hasInterjectForSid, drainInterjections } from './interject'
+import { pushInterject, hasInterjectForSid, clearInterjectForSid } from './interject'
 import { runToolRound } from './chat-round'
 import type { CallResult } from './chat-round'
 import { createCallLLM } from './chat-llm'
@@ -54,11 +54,6 @@ export interface S {
   cur: () => SessionData | undefined
 }
 
-// 插话补充队列 —— 工作中插话=给当前任务补充指令，任务不中断，下一轮执行时注入
-// 插话队列带会话归属 —— 多会话并发时插话只被本会话消费, 防串台
-let pendingInterject: { sid: string; text: string }[] = []
-export const clearInterjectForSid = (sid: string) => { pendingInterject = pendingInterject.filter(x => x.sid !== sid) }
-
 // v0.3.1 块 I: send 主逻辑(从 chat.ts 拆出, 行为零变化)
 export async function runSend(
   deps: { set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>), replace?: boolean) => void; get: () => S },
@@ -84,8 +79,8 @@ export async function runSend(
     const prefix = inToolWork
       ? `（用户在工作执行中插话补充。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。请结合当前进度理解用户意图并调整后续操作。）\n`
       : `（用户在回复中插话补充。以下是补充指令。）\n`
-    // 用户消息立即上屏
-    const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
+    // 用户消息立即上屏(_inject 标记: 构建上下文时重排到末尾, 保证 API 消息序列合法)
+    const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments, _inject: true }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, interjectMsg] } : x) }))
     // 补充指令进入队列，当前任务继续执行
     pushInterject(sid, prefix + content)
@@ -219,11 +214,8 @@ export async function runSend(
       // 2. 创建空的 assistant 占位（每轮一个新气泡位）
       aid = uuidv4()
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
-      // 消费插话补充（第 2 轮起）—— 作为 user 消息注入，Agent 继续任务时可见
-      if (roundNum > 1 && hasInterjectForSid(sid)) {
-        const inject = drainInterjections(sid)!
-        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
-      }
+      // 消费插话补充（第 2 轮起）—— 可见性由 _inject 标记条承担(构建时重排到末尾, 不再重复注入消息)
+      // (v0.3.1 插话序列修复: 原注入逻辑删除, 防止 user 消息插队在 assistant(tool_calls) 与 tool 结果之间)
 
       const rid1 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
       guard(rid1)
@@ -297,6 +289,9 @@ export async function runSend(
       }
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, activeAgents: undefined } : x) }))
+    // v0.3.1 插话序列修复 D2: 任务收尾清除 _inject 标记(插话消息转普通, 位置在末尾——序列仍合法)
+    set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m._inject ? { ...m, _inject: false } : m) } : x) }))
+    clearInterjectForSid(sid)
     set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
     maybeAutoResume({ sid, myGen, taskGenBySid, get, set: set as (partial: unknown, replace?: boolean) => void })
     const toSave = get().sessions.find(x => x.id === sid)

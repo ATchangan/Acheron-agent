@@ -80,11 +80,8 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
       for (const tc of res.tcs) { const { r } = await runOne(tc); set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } }) }
     }
 
-    // 工具执行中用户插话 → 补充立即注入（作为 user 消息），下一轮 LLM 可见
-    while (hasInterjectForSid(sid) && myGen === getTaskGenFor(taskGenBySid, sid)) {
-      const inject = drainInterjections(sid)!
-      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
-    }
+    // 工具执行中用户插话 → 可见性由 _inject 标记条承担(构建时重排到末尾)
+    // (v0.3.1 插话序列修复: 原注入逻辑删除, 防止 user 消息插队在 assistant(tool_calls) 与 tool 结果之间)
 
     // 多模型策略 —— 代码类任务切 codeModel，文档/总结类切 longTextModel
     const toolNames = res.tcs.map((tc: ToolCallItem) => tc.name)

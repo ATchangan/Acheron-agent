@@ -64,6 +64,8 @@ export interface Message {
   // 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
   meta?: { ttft?: number; duration?: number; taskTokens?: number }
   _toolLog?: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[]
+  // v0.3.1 插话序列修复: 插话消息标记 —— 构建上下文时重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
+  _inject?: boolean
 }
 // v0.3.0 M1: 用量数据结构(含 DeepSeek 缓存口径字段)
 export interface UsageData {

@@ -163,7 +163,10 @@ export function buildContextualMessages(
     earlySummary = `\n[前文摘要] 早期 ${early.length} 条消息已归档(约 ${uN} 轮用户交互, ${tN} 次工具调用)${uLast ? ', 最近话题: ' + String(uLast.content).replace(/\s+/g, ' ').slice(0, 60) : ''}。如需早期细节请用 recall_memory 或让用户补充。`
   }
   const list = msgs.length > MAX_HISTORY_MSGS ? msgs.slice(-MAX_HISTORY_MSGS) : msgs
-  for (const m of list) {
+  // v0.3.1 插话序列修复: _inject 插话消息分离 —— 重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
+  const injectMsgs = list.filter(m => m._inject)
+  const normalMsgs = list.filter(m => !m._inject)
+  for (const m of normalMsgs) {
     if (m.role === 'tool') {
       // 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
       const c = m.content || ''
@@ -179,6 +182,16 @@ export function buildContextualMessages(
     // 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
     else if (m.role === 'user' && m.images?.length && withImages) { const parts: VisionContent[] = [{ type: 'text', text: m.content || '' }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
     else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
+  }
+  // v0.3.1 插话序列修复: _inject 消息追加到序列末尾(与正常 user 消息同构, 图片类按 withImages 处理)
+  for (const im of injectMsgs) {
+    if (im.images?.length && withImages) {
+      const parts: VisionContent[] = [{ type: 'text', text: im.content || '' }]
+      im.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } }))
+      d.push({ role: 'user', content: parts })
+    } else {
+      d.push({ role: 'user', content: im.content || ' ' })
+    }
   }
   // 每次发送时根据当前模式重建系统提示词
   const gSnap = opts.gSnap
