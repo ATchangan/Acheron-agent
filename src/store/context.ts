@@ -66,8 +66,9 @@ export function sessionTokens(msgs: Message[]): { input: number; output: number 
 }
 
 // v0.3.2 T5: workflows 按需注入 —— 命中触发词注入完整模板列表, 未命中只保留一行引导(两种形态, 前缀缓存可接受)
-function buildWorkflowsBlock(userMsg: string): string {
-  const need = Object.values(WORKFLOWS).some(w => w.triggers.some(t => userMsg.includes(t)))
+// v0.3.5 T2: workflowLazy 关闭时恒注入完整列表(0.3.0 行为)
+function buildWorkflowsBlock(userMsg: string, forceFull = false): string {
+  const need = forceFull || Object.values(WORKFLOWS).some(w => w.triggers.some(t => userMsg.includes(t)))
   return need
     ? '## 工作流模板\n' + Object.entries(WORKFLOWS).map(([id, w]) => `- ${id}: ${w.name} [触发: ${w.triggers.join('/')}]`).join('\n') + '\n'
     : '## 工作流\n支持 run_workflow 自动化模板, 输入 list_workflows 查看\n'
@@ -110,6 +111,14 @@ export function foldToolRounds(msgs: Message[], maxRounds = 8, foldCount = 4): M
     { id: uuidv4(), role: 'user' as const, content: summary, timestamp: Date.now() },
     ...msgs.slice(foldEnd),
   ]
+}
+
+// v0.3.5 T1: 工具结果瘦身共享函数(0.3.2 T3 阈值 1500, 头尾 800/500; 并行护栏复用)
+export function slimToolResult(c: string, head = 800, tail = 500): string {
+  if (c.length <= 1500) return c
+  const mid = c.slice(head, -tail)
+  const keyLines = mid.split('\n').filter((l: string) => /error|exception|failed|warning|fatal|E:/.test(l)).slice(0, 15).join('\n')
+  return c.slice(0, head) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-tail)
 }
 
 // v0.3.3 T2: 历史 tool_calls 参数截断 —— 定位类字段全量保留, 超长内容字段截断 + 省略标记
@@ -320,9 +329,12 @@ export function buildContextualMessages(
   // 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
   let earlySummary = ''
   // v0.3.2 T6: 先折叠旧工具轮次再限长(折叠只作用于最旧完整轮次对)
-  let list = foldToolRounds(msgs)
+  // v0.3.5 T2: roundFold 开关关闭时跳过折叠(0.3.1 行为)
+  let list = opts.gSnap.perf?.roundFold === false ? msgs : foldToolRounds(msgs)
   // v0.3.3 T3: 跨任务归档(先折叠后归档; 归档开关默认开)
-  const archiveRes = opts.gSnap.taskArchive === false ? { keep: list, archives: [] as TaskArchive[] } : buildTaskArchives(list)
+  // v0.3.5 T2: 开关迁移到 perf.taskArchive, 兼容旧 taskArchive 字段
+  const archiveEnabled = (opts.gSnap.perf?.taskArchive ?? opts.gSnap.taskArchive) !== false
+  const archiveRes = archiveEnabled ? buildTaskArchives(list) : { keep: list, archives: [] as TaskArchive[] }
   list = archiveRes.keep
   const archives = archiveRes.archives
   if (list.length > MAX_HISTORY_MSGS) {
@@ -357,26 +369,23 @@ export function buildContextualMessages(
       // 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
       const c = m.content || ''
       let body = c
-      // v0.3.2 T3: 瘦身阈值 3000→1500, 头尾 1500/800 → 800/500(截断策略不变, 更早触发; 信息调度纪律段已训练取回行为)
-      if (c.length > 1500) {
-        const mid = c.slice(800, -500)
-        const keyLines = mid.split('\n').filter((l: string) => /error|exception|failed|warning|fatal|E:/.test(l)).slice(0, 15).join('\n')
-        body = c.slice(0, 800) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-500)
-      }
+      // v0.3.2 T3: 结果瘦身(>1500 截断, 头尾 800/500 + 关键行); v0.3.5 T2: resultSlim 开关关闭时原样保留
+      if (opts.gSnap.perf?.resultSlim !== false && c.length > 1500) body = slimToolResult(c)
       d.push({ role: 'tool', content: body, tool_call_id: m.tool_call_id || 'c_' + uuidv4().slice(0, 8) })
     }
-    // v0.3.3 T2: 历史 tool_calls 参数截断(定位字段全量, 超长内容截断+标记; 已执行结果不受影响)
-    else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: m.tool_calls.map(slimToolCallArgs) })
+    // v0.3.3 T2: 历史 tool_calls 参数截断(定位字段全量, 超长内容截断+标记; 已执行结果不受影响); v0.3.5 T2: argSlim 开关
+    else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: opts.gSnap.perf?.argSlim === false ? m.tool_calls : m.tool_calls.map(slimToolCallArgs) })
     // 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
     // v0.3.3 T1: 同图历史轮次降级为文字(最新用户消息带图永远保留原图)
     else if (m.role === 'user' && m.images?.length && withImages) {
       const parts: VisionContent[] = [{ type: 'text', text: m.content || '' }]
       const msgIsLatestUser = m.id === lastUserMsgId
+      const imgDowngrade = opts.gSnap.perf?.imgDowngrade !== false
       const inMsg = new Set<string>()
       for (const img of m.images) {
         if (inMsg.has(img)) continue
         inMsg.add(img)
-        if (imgIsLatest.get(img) === true && msgIsLatestUser) {
+        if (!imgDowngrade || (imgIsLatest.get(img) === true && msgIsLatestUser)) {
           parts.push({ type: 'image_url', image_url: { url: img } })
         } else {
           parts.push({ type: 'text', text: '[图片省略: 前文轮次已发送过此图, 内容已在前文消费。如需重看, 请让用户重新发送或基于已有描述继续]' })
@@ -388,7 +397,8 @@ export function buildContextualMessages(
   }
   // v0.3.1 插话序列修复: _inject 消息追加到序列末尾(与正常 user 消息同构, 图片类按 withImages 处理)
   // v0.3.4 T3: 多段文本插话合并为单条注入(编号 + 全量保留; 超长 >1500 前段合并 + 末段独立; 带图插话不合并防丢图)
-  if (injectMsgs.length > 1 && injectMsgs.every(im => !im.images?.length)) {
+  // v0.3.5 T2: interjectMerge 开关关闭时每段独立
+  if (injectMsgs.length > 1 && opts.gSnap.perf?.interjectMerge !== false && injectMsgs.every(im => !im.images?.length)) {
     const total = injectMsgs.reduce((s, x) => s + String(x.content || '').length, 0)
     let inject: string
     if (total <= 1500) {
@@ -419,7 +429,8 @@ export function buildContextualMessages(
   // v0.3.2 T4/T5: 动态段统一追加 system 尾部(顺序固定: workflows → 记忆), 头部区块保持字节级稳定(供应商前缀缓存)
   const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
-  if (currentMode === 'work') sp += '\n' + buildWorkflowsBlock(lastUserText)
+  // v0.3.5 T2: workflowLazy 关闭时恒注入完整工作流列表
+  if (currentMode === 'work') sp += '\n' + buildWorkflowsBlock(lastUserText, opts.gSnap.perf?.workflowLazy === false)
   sp += '\n' + memoryBlock(lastUserText)
   // v0.3.3 T3: 归档记录追加 system 尾部(最多 5 条, 每条含目标/结论/产出物/工具)
   if (archives.length) {

@@ -85,8 +85,9 @@ export function getActiveTools(agentName?: string): ToolSpec[] {
   // v0.3.0 M4: 插件工具并入(有 index.js 实现的插件, plugin_ 前缀防冲突)
   const merged = [...TOOLS, ...PLUGIN_TOOLS]
   // v0.3.2 T1: Agent 白名单裁剪(主请求; 子任务在 subtask.ts 用同一函数, 过滤基为 TOOLS 不含插件——现状保持)
+  // v0.3.5 T2: toolWhitelist 开关关闭时返回全量(0.3.1 行为)
   // ⚠ 顺序锁定: filter 保序(TOOLS 原序 + PLUGIN_TOOLS 原序) —— 禁止 sort/Set 去重, 破坏顺序会打断供应商前缀缓存
-  const filtered = agentName ? filterToolsByAgent(merged, agentName) : merged
+  const filtered = agentName && useSettingsStore.getState().general.perf?.toolWhitelist !== false ? filterToolsByAgent(merged, agentName) : merged
   // 协作模式=关闭 时彻底禁用多 Agent 协作工具(handoff/dispatch/list_agents)
   const collabMode = String(useSettingsStore.getState().general.collabMode || '自动')
   // v0.3.0: 媒体自动调用开关(策略页可调) —— 关闭则不注入生成工具

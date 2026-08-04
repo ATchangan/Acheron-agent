@@ -5,6 +5,7 @@ import type { GeneralSettings } from '../types'
 import { updateContextLimit } from './context'
 import { recordEpisodic } from './memory'
 import { runTool, setCached } from './runtime'
+import { slimToolResult } from './context'
 import { getTaskGenFor } from './session-state'
 import { resolveModel } from './model-pick'
 import { hasInterjectForSid, drainInterjections, peekInterjectKind } from './interject'
@@ -86,6 +87,15 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
       const pResults = await Promise.all(readTcs.map(runOne))
       results.push(...pResults)
       for (const tc of writeTcs) { results.push(await runOne(tc)) }
+      // v0.3.5 T1: 并行结果总量护栏 —— 总字符 >6000 且结果 >4 个时, 按长度降序保留前 4 个全量, 其余瘦身(terminal 仍保留完整版)
+      if (gSnap.perf?.parallelCap !== false) {
+        const totalLen = results.reduce((s, x) => s + x.r.length, 0)
+        if (totalLen > 6000 && results.length > 4) {
+          const ranked = [...results].sort((a, b) => b.r.length - a.r.length)
+          const keepFull = new Set(ranked.slice(0, 4))
+          for (const x of results) if (!keepFull.has(x)) x.r = slimToolResult(x.r)
+        }
+      }
       for (const { tc, r } of results) {
         set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } })
       }

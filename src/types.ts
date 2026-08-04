@@ -160,6 +160,20 @@ export interface GeneralSettings {
   autoMediaVideo?: boolean
   // v0.3.3 T3: 跨任务归档开关(默认开启, 0.3.5 并入性能开关区)
   taskArchive?: boolean
+  // v0.3.5 T2: token 优化系列统一开关(默认全开, 单点可回退; undefined 视为 true)
+  perf?: {
+    toolWhitelist?: boolean  // 0.3.2 T1 工具白名单注入
+    resultSlim?: boolean     // 0.3.2 T3 结果瘦身 1500
+    memoryTrim?: boolean     // 0.3.2 T4 记忆裁剪
+    workflowLazy?: boolean   // 0.3.2 T5 workflows 按需
+    roundFold?: boolean      // 0.3.2 T6 轮次折叠
+    outputCap?: boolean      // 0.3.2 T7 输出上限分级
+    imgDowngrade?: boolean   // 0.3.3 T1 图片降级
+    argSlim?: boolean        // 0.3.3 T2 参数截断
+    taskArchive?: boolean    // 0.3.3 T3 跨任务归档(迁移: perf.taskArchive ?? 旧 taskArchive 字段)
+    parallelCap?: boolean    // 0.3.5 T1 并行护栏
+    interjectMerge?: boolean // 0.3.4 T3 插话合并
+  }
   mediaImgProvider?: string
   mediaImgModel?: string
   mediaImgMode?: string

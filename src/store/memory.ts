@@ -76,18 +76,20 @@ function scoreOverlap(content: string, userMsg: string): number {
 // v0.3.2 T4: 动态段移出 buildPrompt, 由构建层尾部注入(前缀缓存友好); 总量护栏 2500 字符按 置顶>长期>情景 裁尾部
 export function memoryBlock(userMsg?: string): string {
   const { pinned, facts, summaries } = globalMemoryCache
+  // v0.3.5 T2: memoryTrim 开关关闭时回退 0.3.0 全量注入(最近 10 条/3 条, 无护栏)
+  const trim = useSettingsStore.getState().general.perf?.memoryTrim !== false
   const parts: string[] = []
   if (pinned.length) parts.push('## 置顶记忆（用户手动固定,跨会话长期生效）\n' + pinned.slice(-10).map((f, i) => `${i + 1}. ${String(f).slice(0, 300)}`).join('\n'))
   if (facts.length) {
     // 按与最近用户消息的关键词重合度取 top5; 无 userMsg 或全零重合时退回最近 5 条
-    const scored = userMsg
+    const scored = trim && userMsg
       ? [...facts].map(f => ({ f: String(f), s: scoreOverlap(String(f), userMsg) })).sort((a, b) => b.s - a.s).map(x => x.f)
-      : facts.map(String)
-    parts.push('## 长期记忆\n' + scored.slice(-5).map((f, i) => `${i + 1}. ${f.slice(0, 200)}`).join('\n'))
+      : facts.map(String).slice(-10)
+    parts.push('## 长期记忆\n' + (trim ? scored.slice(-5) : scored).map((f, i) => `${i + 1}. ${f.slice(0, 200)}`).join('\n'))
   }
-  if (summaries.length) parts.push('## 近期情景摘要\n' + summaries.slice(-2).map((s: { content: string }, i: number) => `${i + 1}. ${(s.content || '').slice(0, 200)}`).join('\n'))
+  if (summaries.length) parts.push('## 近期情景摘要\n' + (trim ? summaries.slice(-2) : summaries.slice(-3)).map((s: { content: string }, i: number) => `${i + 1}. ${(s.content || '').slice(0, 200)}`).join('\n'))
   // 总量护栏 2500 字符: 置顶全量保留, 按 长期→情景 从尾部裁剪
-  while (parts.join('\n\n').length > 2500 && parts.length > 1) parts.pop()
+  if (trim) while (parts.join('\n\n').length > 2500 && parts.length > 1) parts.pop()
   const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
   return parts.length ? '\n' + parts.join('\n\n') + tail : ''
 }

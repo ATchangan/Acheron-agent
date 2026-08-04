@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale } from './context'
+import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
 
@@ -190,5 +190,45 @@ describe('0.3.4 T3 多段插话合并', () => {
     ]
     const d = buildContextualMessages(msgs, false, opts)
     expect(String(d[d.length - 1]!.content)).toBe('单独补充')
+  })
+})
+
+describe('0.3.5 T1 slimToolResult 并行结果护栏共享函数', () => {
+  it('超长截断保留头尾+关键行', () => {
+    const long = 'x'.repeat(1000) + '\nerror: boom\n' + 'y'.repeat(1000)
+    const out = slimToolResult(long)
+    expect(out).toContain('[已截断')
+    expect(out).toContain('[关键行]')
+    expect(out).toContain('error: boom')
+  })
+  it('≤1500 原样返回', () => {
+    expect(slimToolResult('short')).toBe('short')
+  })
+})
+
+describe('0.3.5 T2 perf 开关接线', () => {
+  it('resultSlim=false 时超长工具结果原样保留', () => {
+    const gSnap = { mode: 'work', maxTokens: 4000, taskArchive: false, perf: { resultSlim: false } } as GeneralSettings
+    const opts = { gSnap, cl: 8000, spIshiki: 'x', spFallback: 'x', onAgentRoute: () => {}, agent: '姬子' }
+    const long = 'z'.repeat(3000)
+    const msgs: Message[] = [
+      { id: 'u1', role: 'user', content: '读文件', timestamp: 1 },
+      { id: 'a1', role: 'assistant', content: null, timestamp: 2, tool_calls: [{ id: 'tc1', type: 'function', function: { name: 'read', arguments: '{}' } }] },
+      { id: 't1', role: 'tool', content: long, timestamp: 3, tool_call_id: 'tc1' },
+    ]
+    const d = buildContextualMessages(msgs, false, opts)
+    const tool = d.find(m => m.role === 'tool')!
+    expect(String(tool.content)).toBe(long)
+  })
+  it('perf.taskArchive=false 迁移开关生效(旧字段不设)', () => {
+    const gSnap = { mode: 'work', maxTokens: 4000, perf: { taskArchive: false } } as GeneralSettings
+    const opts = { gSnap, cl: 8000, spIshiki: 'x', spFallback: 'x', onAgentRoute: () => {}, agent: '姬子' }
+    const msgs: Message[] = [
+      { id: 'u1', role: 'user', content: '任务 A', timestamp: 1 },
+      { id: 'a1', role: 'assistant', content: '结果', timestamp: 2 },
+      { id: 'u2', role: 'user', content: '任务 B', timestamp: 3 },
+    ]
+    const d = buildContextualMessages(msgs, false, opts)
+    expect(d.filter(m => m.role === 'system').some(m => String(m.content).includes('任务归档'))).toBe(false)
   })
 })
