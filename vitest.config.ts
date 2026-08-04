@@ -6,7 +6,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'electron/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      include: ['src/store/session-state.ts', 'src/store/context.ts', 'src/components/plan-utils.ts', 'src/components/code-data.ts', 'src/store/constants.ts'],
+      include: ['src/store/session-state.ts', 'src/components/plan-utils.ts', 'src/store/model-pick.ts', 'src/store/interject.ts'],
       reporter: ['text', 'json-summary'],
     },
   },
