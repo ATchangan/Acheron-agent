@@ -16,6 +16,7 @@ import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelRes
 // v0.3.1 块 C/D: 会话级任务代号表 + send 幂等指纹(模块级, 串行入口安全)
 const taskGenBySid: Record<string, number> = {}
 let lastSendFp = ''; let lastSendTs = 0
+let lastMidSave = 0 // v0.3.1 D3: 长任务中途保存时间戳
 import { refreshPluginTools } from './plugins'
 
 // v0.3.0 M5: 工具调用循环中的扁平工具项(组件收集, 非 API delta)
@@ -200,6 +201,12 @@ export const useChatStore = create<S>((set, get) => ({
       return
     }
     const myGen = nextTaskGenFor(taskGenBySid, sid) // v0.3.1 C2: 会话级任务代号(仅本会话失效)
+    // v0.3.1 D2: send 幂等去重(同一内容 500ms 内重复发送直接忽略)
+    const fpD = content + '|' + (images || []).join('|')
+    const nowD = Date.now()
+    if (lastSendFp === fpD && nowD - lastSendTs < 500) return
+    lastSendFp = fpD; lastSendTs = nowD
+
     // v0.2.3: 标记本会话为忙碌（侧栏"工作中"指示灯 + 独立并发）
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: true } : x) }))
     // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
@@ -498,6 +505,12 @@ export const useChatStore = create<S>((set, get) => ({
         // 3. 工具调用循环（熔断+计时+重试+并行+单气泡整合）
         toolLog = []
         for (let r = 0; res.tcs.length > 0 && r < (gSnap.maxToolRounds || 50); r++) {
+          // v0.3.1 D3: 长任务中途保存(每 5 轮或 30s, 走保存队列不阻塞)
+          if (r > 0 && (r % 5 === 0 || Date.now() - lastMidSave > 30000)) {
+            lastMidSave = Date.now()
+            const curMs = get().sessions.find(x => x.id === sid)
+            if (curMs) window.huangquan.sessions.save(curMs).catch(() => {})
+          }
           // v0.2.1: 用户终止/插话 —— 任务代号失效则立即停止
           if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
           // 熔断检测
@@ -560,7 +573,8 @@ export const useChatStore = create<S>((set, get) => ({
         const finalSession = get().sessions.find(x => x.id === sid)
         if (finalSession) {
           // v0.2.1: 合并本轮所有 assistant 文本 → 单一气泡（工具循环中间轮的文字并入最终回复）
-          const lastUserIdx = finalSession.messages.map(m => m.id).lastIndexOf(userMsg.id)
+          // v0.3.1 D1: 清空边界 = 任务起始消息(userMsg.id 首次出现)之后的所有中间 assistant 文本(插话 user 消息不破坏边界)
+      const lastUserIdx = finalSession.messages.map(m => m.id).indexOf(userMsg.id)
           const thisRound = lastUserIdx >= 0 ? finalSession.messages.slice(lastUserIdx) : finalSession.messages
           const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
           const llmText = res.text || ''; const hasTools = toolLog.length > 0

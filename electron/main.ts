@@ -478,17 +478,50 @@ ipcMain.handle('sessions:list', () => {
 // v0.2.3-security: 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
 const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
 ipcMain.handle('sessions:load', (_e, id: string) => {
-  try { if (!SAFE_ID.test(String(id || ''))) return { id, title: '新对话', messages: [] }; const p = join(sessionsDir, id + '.json'); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : { id, title: '新对话', messages: [] } }
-  catch { return { id, title: '新对话', messages: [] } }
+  // v0.3.1 FIX-7: 加载失败可感知(loadError 标记; 渲染层不覆盖内存版本)
+  if (!SAFE_ID.test(String(id || ''))) return { id, title: '新对话', messages: [], loadError: 'invalid-id' }
+  const p = join(sessionsDir, id + '.json')
+  try {
+    if (!fs.existsSync(p)) { sessionMeta.delete(id); return { id, title: '新对话', messages: [], loadError: 'missing' } }
+    return JSON.parse(fs.readFileSync(p, 'utf-8'))
+  } catch (e) {
+    console.error('[SESSIONS] load error:', id, e instanceof Error ? e.message : String(e))
+    return { id, title: '（加载失败）', messages: [], loadError: 'corrupt' }
+  }
 })
+// v0.3.1 E: 每会话串行保存队列 + meta 与写盘绑定(FIX-4/5/7)
+const saveQueues = new Map<string, Promise<void>>()
+const pendingSaves = new Map<string, string>()   // id → 最新 content(防堆积合并)
+function enqueueSave(id: string, content: string): void {
+  pendingSaves.set(id, content)
+  if (saveQueues.has(id)) return               // 已有队列在跑, 合并等待
+  const run = async () => {
+    while (pendingSaves.has(id)) {
+      const latest = pendingSaves.get(id)!; pendingSaves.delete(id)
+      try {
+        await fs.promises.writeFile(join(sessionsDir, id + '.json'), latest, 'utf-8')
+        let mt: { title?: string; messageCount?: number } = {}
+        try { mt = JSON.parse(latest) } catch { /* 忽略 */ }
+        sessionMeta.set(id, {
+          title: String(mt.title || '新对话').slice(0, 60), messageCount: (mt.messageCount || 0) as number,
+          updatedAt: new Date().toISOString(),
+        })                                       // FIX-5: meta 仅在写盘成功后更新
+      } catch (e) {
+        console.error('[SESSIONS] save error:', e instanceof Error ? e.message : String(e))
+        // 写盘失败: meta 不更新(防幽灵会话)
+      }
+    }
+    saveQueues.delete(id)
+  }
+  saveQueues.set(id, run())
+}
 ipcMain.handle('sessions:save', (_e, s) => {
   // v0.2.1: 安全序列化防止循环引用导致 IPC 克隆报错
-  // v0.2.5-opt: 异步写盘避免阻塞主进程(大会话含图片 base64 可达数 MB)
+  const id = String(s?.id || '')
+  if (!SAFE_ID.test(id)) return false
   const safe = safeClone(s) as { id?: string; title?: string; messages?: { length?: number } }
   const content = JSON.stringify({ ...safe, updatedAt: new Date().toISOString() })
-  fs.promises.writeFile(join(sessionsDir, safe.id + '.json'), content, 'utf-8').catch((e: unknown) => console.error('[SESSIONS] save error:', e instanceof Error ? e.message : String(e)))
-  // v0.2.3: 更新元数据缓存(避免下次 list 全量解析)
-  sessionMeta.set(String(safe.id || ''), { title: safe.title || '新对话', messageCount: safe.messages?.length || 0, updatedAt: new Date().toISOString() })
+  enqueueSave(id, content)
   return true
 })
 ipcMain.handle('sessions:delete', (_e, id: string) => { try { if (!SAFE_ID.test(String(id || ''))) return false; fs.unlinkSync(join(sessionsDir, id + '.json')); sessionMeta.delete(id) } catch (e) { /* ok */ console.debug('[swallow]', e) }; return true })
