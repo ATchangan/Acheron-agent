@@ -1,7 +1,7 @@
 ﻿import React, { useState } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S } from '../settings-ui'
-import { MEDIA_PRESETS, AI_TYPES, CAP_COLORS, detectCaps } from './ModelsTab'
+import { MEDIA_PRESETS, AI_TYPES, CAP_COLORS, detectCaps } from './consts'
 
 // v0.3.1 块 H: 媒体平台配置表单(从 ModelsTab 拆出, 行为零变化)
 const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => void }> = ({ mediaSelIdx, showToast }) => {
