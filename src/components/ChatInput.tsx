@@ -3,6 +3,7 @@ import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
 import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Lightbulb, Zap, Flame, Sparkles as SparklesIcon, Send, Square, ImagePlus, Gauge, Brain, Crown } from 'lucide-react'
+import { api } from '../services/ipc'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
 type ThinkLevel = 'off' | 'quick' | 'medium' | 'deep' | 'extreme' | 'ultra'
@@ -125,8 +126,8 @@ export default function ChatInput() {
     for (let i = 0; i < files.length; i++) {
       try {
         // Electron 32 移除了 File.path，改用 webUtils.getPathForFile
-        const p = window.huangquan?.getPathForFile?.(files[i]) || (files[i] as File & { path?: string }).path
-        let b = p ? await window.huangquan.computer.readImageBase64(p) : null
+        const p = api?.getPathForFile?.(files[i]) || (files[i] as File & { path?: string }).path
+        let b = p ? await api.computer.readImageBase64(p) : null
         // 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
         if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
         if (b) imgs.push(b)
@@ -152,13 +153,13 @@ export default function ChatInput() {
       const isAud = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)
       try {
         if (isImg) {
-          const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
-          let b = p ? await window.huangquan.computer.readImageBase64(p) : null
+          const p = api?.getPathForFile?.(f) || (f as File & { path?: string }).path
+          let b = p ? await api.computer.readImageBase64(p) : null
           // 拖入的图片同样压缩
           if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
           if (b) newImgs.push(b)
         } else {
-          const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
+          const p = api?.getPathForFile?.(f) || (f as File & { path?: string }).path
           if (p) newAtts.push({ name: f.name, path: p, size: f.size, kind: isVid ? 'video' : isAud ? 'audio' : 'file' })
         }
       } catch (err) { console.warn('[ChatInput] 拖入文件处理失败:', f.name, err) }
@@ -169,9 +170,9 @@ export default function ChatInput() {
 
   const saveMemory = async () => {
     if (!memText.trim()) return
-    const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
+    const m = await api.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
     m.facts.push(memText.trim())
-    await window.huangquan.memory.save(m)
+    await api.memory.save(m)
     setMemText(''); setMemOpen(false)
   }
 

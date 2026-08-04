@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import type { Message } from '../global'
+import { api } from '../services/ipc'
 
 interface Props { message: Message; streaming?: boolean }
 
@@ -55,7 +56,7 @@ export default function MessageItem({ message, streaming }: Props) {
   const speakText = async () => {
     if (ttsBusy || !message.content) return
     setTtsBusy(true)
-    try { await window.huangquan.tts.speak(message.content.replace(/[#*`>|\-\[\](){}]/g, '').slice(0, 300), ttsRate) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+    try { await api.tts.speak(message.content.replace(/[#*`>|\-\[\](){}]/g, '').slice(0, 300), ttsRate) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     setTtsBusy(false)
   }
   const showTimestamps = useSettingsStore(s => (s.general).showTimestamps || 'hover')
@@ -197,7 +198,7 @@ export default function MessageItem({ message, streaming }: Props) {
         {message.attachments?.length ? (
           <div className="message-attachments">
             {message.attachments.map((a, i) => (
-              <span key={i} className="message-attachment" title={a.path} onClick={() => { try { window.huangquan.computer.openFile(a.path) } catch (e) { console.debug('[swallow]', e) } }}>
+              <span key={i} className="message-attachment" title={a.path} onClick={() => { try { api.computer.openFile(a.path) } catch (e) { console.debug('[swallow]', e) } }}>
                 {a.kind === 'video' ? '🎬' : a.kind === 'audio' ? '🎵' : '📄'} {a.name}
               </span>
             ))}
