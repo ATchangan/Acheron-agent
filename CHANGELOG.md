@@ -1,5 +1,12 @@
 # 更新日志
 
+## v0.3.5 发布前修复（2026-08-05）
+- **关于页版本号动态化**：修复 0.3.2~0.3.5 关于页硬编码显示 v0.3.1 的问题
+  - 新增 `app:info` IPC（主进程 `app.getVersion()` + `process.versions`）
+  - preload 暴露 `appInfo`，AboutTab 动态显示 版本/Electron/React/Node
+  - 同步修复 Node 版本硬编码 22.x（实际 Electron 32 内置 Node 20.18.1）
+- 新增版本验证工具：`scripts/verify-cdp.cjs`（CDP 页面健康检查 + 截图 + 关于页校验）+ `scripts/launch-verify.ps1`
+
 ## v0.3.5（2026-08-04）
 
 ### Token 优化 ④ 可控层（系列收官）
