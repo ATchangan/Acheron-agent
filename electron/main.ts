@@ -10,6 +10,7 @@ import { registerCronIpc } from './ipc/cron'
 import { registerWindowIpc } from './ipc/window'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
+import { registerMiscIpc } from './ipc/misc'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -347,21 +348,6 @@ function createTray() {
   ]))
   tray.on('click', () => mainWindow?.show())
 }
-
-// ─── 窗口控制 IPC ─────────────────────────────────
-// v0.2.6: 渲染状态查询(设置 → 引擎 → 渲染加速)
-ipcMain.handle('renderer:status', () => {
-  try {
-    const st = app.getGPUFeatureStatus()
-    const gst = st as unknown as Record<string, string | undefined>
-    return {
-      mode: rendererMode,
-      gpuAcceleration: gst?.gpuAcceleration || (st?.webgl === 'enabled' ? 'hardware_accelerated' : 'software_only'),
-      webgl: st?.webgl || 'unknown',
-      canvas2d: st?.['2d_canvas'] || 'unknown',
-    }
-  } catch { return { mode: rendererMode, gpuAcceleration: 'unknown', webgl: 'unknown', canvas2d: 'unknown' } }
-})
 // ─── 设置/会话 ─────────────────────────────────────
 function dirSize(dir: string): number {
   let total = 0
@@ -381,18 +367,6 @@ function fmtSize(b: number): string {
   if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB'
   return (b / 1073741824).toFixed(2) + ' GB'
 }
-ipcMain.handle('storage:stats', () => {
-  try {
-    return {
-      sessions: fmtSize(dirSize(join(userDataPath, 'sessions'))),
-      memory: fmtSize(fs.existsSync(join(userDataPath, 'memory.json')) ? fs.statSync(join(userDataPath, 'memory.json')).size : 0),
-      plugins: fmtSize(dirSize(join(userDataPath, 'plugins'))),
-      cache: fmtSize(dirSize(join(userDataPath, 'cache'))),
-      workspace: fmtSize(dirSize(join(userDataPath, 'workspace'))),
-      settings: fmtSize(fs.existsSync(settingsPath) ? fs.statSync(settingsPath).size : 0),
-    }
-  } catch { return { sessions: '0 B', memory: '0 B', plugins: '0 B', cache: '0 B', workspace: '0 B', settings: '0 B' } }
-})
 
 // v0.2.3: 会话元数据缓存 —— 避免 list 时全量解析大会话文件(大会话含图片可达数 MB)
 const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string }>()
@@ -408,20 +382,6 @@ function buildSessionMeta() {
     } catch (e) { /* 损坏文件跳过 */ console.debug('[swallow]', e) }
   }
 }
-// v0.2.3-fix: 会话巡检 —— 返回磁盘上所有会话文件 id(供渲染层对账清理孤儿数据)
-ipcMain.handle('settings:reset', () => {
-  try {
-    const defaults = { providers: [], mediaProviders: [], general: { mode: 'work', theme: 'dark', agentName: '黄泉' } }
-    fs.writeFileSync(settingsPath, JSON.stringify(defaults, null, 2), 'utf-8')
-    return true
-  } catch { return false }
-})
-
-// ─── 人格定义 ──────────────────────────────────────
-ipcMain.handle('ishiki:load', () => {
-  try { const p = join(resourcesDir, 'ishiki.md'); return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '' }
-  catch { return '' }
-})
 
 // ─── Skills 系统 ───────────────────────────────────
 // ─── 记忆系统 ──────────────────────────────────────
@@ -432,6 +392,7 @@ registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk
 registerModelStatsIpc()
 registerMcpIpc()
 registerCacheIpc()
+registerMiscIpc({ settingsPath, userDataPath, resourcesDir, skillsDir, workspaceDir, dirSize, fmtSize })
 registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
 registerCronIpc()
@@ -889,18 +850,6 @@ ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
   return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
 })
 
-// ─── v0.2.3: TTS 语音合成(Windows SAPI 内置, 离线可用) ──
-ipcMain.handle('tts:speak', async (_e, text: string, rate?: number) => {
-  const t = String(text || '').trim().replace(/['"\\]/g, '').slice(0, 300)
-  if (!t) return false
-  const r = Math.max(0.5, Math.min(3, Number(rate) || 1))
-  const speed = Math.round((r - 1) * 10) // SAPI Rate: -10..10
-  const ps = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = ${speed}; $s.Speak('${t}'); $s.Dispose()`
-  return new Promise<boolean>(resolve => {
-    exec(`powershell -NoProfile -Command "${ps}"`, { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 64 }, (err) => resolve(!err))
-  })
-})
-
 // ─── 浏览器 / 搜索 / 模型探测 ──────────────────────
 ipcMain.handle('models:detect', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean; type?: string }) => {
   try {
@@ -995,8 +944,6 @@ ipcMain.handle('models:test', async (_e, baseUrl: string, apiKey: string, opts?:
 // ─── v0.2.5: 无头浏览器网页解析工具 web_read (Playwright + 系统 Edge/Chrome) ──
 // v0.2.3-opt: web_read 10s 同 URL 缓存(重复访问零导航)
 const webReadCache = new Map<string, { ts: number; result: string }>()
-ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
-
 // ─── v0.2.3: 自动更新 —— GitHub Releases 版本检查 + 安装包下载 ──
 const UPDATE_REPO = 'ATchangan/Acheron-agent'
 function currentVersion(): string {
