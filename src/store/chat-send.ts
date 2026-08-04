@@ -14,11 +14,14 @@ import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelRes
 import { pickModels, resolveModel } from './model-pick'
 import { pushInterject, hasInterjectForSid, drainInterjections } from './interject'
 import { runToolRound } from './chat-round'
+import type { CallResult } from './chat-round'
+import { createCallLLM } from './chat-llm'
+import { maybeAutoResume, checkSendIdempotent } from './resume-ops'
+import { buildUserMessage } from './chat-user-msg'
 import { refreshPluginTools } from './plugins'
 
 // v0.3.1 块 C/D: 会话级任务代号表 + send 幂等指纹(模块级, 串行入口安全)
 export const taskGenBySid: Record<string, number> = {}
-let lastSendFp = ''; let lastSendTs = 0
 let lastMidSave = 0 // v0.3.1 D3: 长任务中途保存时间戳
 
 // v0.3.0 M5: 工具调用循环中的扁平工具项(组件收集, 非 API delta)
@@ -91,9 +94,7 @@ export async function runSend(
   const myGen = nextTaskGenFor(taskGenBySid, sid) // v0.3.1 C2: 会话级任务代号(仅本会话失效)
   // v0.3.1 D2: send 幂等去重(同一内容 500ms 内重复发送直接忽略)
   const fpD = content + '|' + (images || []).join('|')
-  const nowD = Date.now()
-  if (lastSendFp === fpD && nowD - lastSendTs < 500) return
-  lastSendFp = fpD; lastSendTs = nowD
+  if (checkSendIdempotent(fpD)) return
 
   // v0.2.3: 标记本会话为忙碌（侧栏"工作中"指示灯 + 独立并发）
   set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: true } : x) }))
@@ -130,62 +131,14 @@ export async function runSend(
   const curS0 = get().sessions.find(x => x.id === sid)
   if (curS0?.agent) recordAgent(curS0.agent)
 
-  // v0.2.2: 附件（视频/音频/文档）描述拼入消息内容，agent 可用 read_file 等工具读取
-  if (attachments && attachments.length) {
-    const attachLines = attachments.map(a => `- [${a.kind}] ${a.name}（${(a.size / 1024).toFixed(0)} KB，路径: ${a.path}）`)
-    content = content + (content ? '\n\n' : '') + '【用户拖入的附件】\n' + attachLines.join('\n') + '\n如需查看内容，请用 read_file 等工具读取上述路径。'
-  }
-
-  // v0.3.0 FIX-A: 图片路径直读 —— 消息含图片文件路径时, 主进程读为 dataURL 并入 images(支持 9 格式)
-  // 共享路径变量(供 A1 直读与后续 isVisualTask 判定使用)
-  const imgPathRe = /[\w\u4e00-\u9fa5\\\/:\.\- ]+\.(?:png|jpe?g|webp|gif|bmp|svg|avif|heic)/i
-  const imgPathMatch = (content || '').match(imgPathRe)
-  if (!images?.length && imgPathMatch) {
-    const pathTxtA = imgPathMatch[0].trim()
-    const raw = await window.huangquan.computer.readFileAsDataUrl(pathTxtA)
-    if (raw && !raw.startsWith('E:')) {
-      const norm = await normalizeImage(raw)
-      if (norm && !norm.startsWith('E:')) images = [norm]
-      else content = content + '\n\n[图片处理失败: ' + String(norm).replace(/^E:/, '') + ']'
-    } else {
-      content = content + '\n\n[图片读取失败: ' + String(raw).replace(/^E:/, '') + '。请确认路径正确或直接拖入图片。]'
-    }
-  } else if (images?.length) {
-    // 拖入图统一压缩(一处覆盖全部后续分支)
-    const normed = await Promise.all(images.map((im: string) => normalizeImage(im).catch(() => 'E:decode-failed')))
-    const ok = normed.filter((x: string) => x && !x.startsWith('E:'))
-    const failN = normed.length - ok.length
-    images = ok as string[]
-    if (failN > 0) content = content + (content ? '\n\n' : '') + '[' + failN + ' 张图片无法解析, 已忽略]'
-  }
-
-  // 1. 追加用户消息到 store —— 立即上屏（不再等视觉分析，避免界面停留初始状态）
-  // images 保留原始图片（聊天框 UI 显示）；API 是否传图由 withImages=isVisionModel(model) 决定
-  const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
-// v0.2.3: 本任务 token 基线(主 Agent + 全部子 Agent 消耗都计入 sessTok, 任务结束时算增量)
-const tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number }> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
-  const userMsgId = userMsg.id
-  set(s => {
-    const session = s.sessions.find(x => x.id === sid)!
-    // v0.2.1: 会话标题自动取第一条消息（避免一直显示 "New Chat"）
-    const isNewChat = !session.title || session.title === 'New Chat' || session.title === 'Chat'
-    const title = isNewChat ? content.replace(/\s+/g, ' ').trim().slice(0, 24) + (content.trim().length > 24 ? '…' : '') : session.title
-    return { sessions: s.sessions.map(x => x.id === sid ? { ...session, title, messages: [...session.messages, userMsg] } : x), streaming: s.cid === sid ? true : s.streaming, executing: s.cid === sid ? true : s.executing, error: null }
-  })
-
-  // v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时，用视觉模型分析图片并转为文本描述
-  // 无论视觉分析是否成功，主模型不支持视觉就不向 API 传图（否则 API 400: unknown variant image_url）
-  // 用户消息已先上屏，分析完成后更新该消息 content（追加分析结果）
-  // 视觉任务(发图/识图) —— 强制优先【视觉理解】队列模型(策略页配置, 按优先级), 队列空回退自动候选;
-  // 调用失败自动顺位下一个; 全部失败清晰报错; 禁止纯文本模型处理图像
-  // v0.3.0 FIX-F: 视觉任务判定(收紧) —— 发图/路径/明确看图表述; 无图无路径的宽正则命中 → 不切模型并提示
-  let isVisualTask = !!(images && images.length) || !!imgPathMatch
-    || /(看(一?下|看)?.*(图|照片|截图)|(图|照片|截图).*(什么|内容|识别|分析|描述|里(有|是)什么)|识别.*(图|照片|截图)|视觉理解|图片里|图像里|这张图|这张照片|这个截图)/i.test(content)
-  // FIX-F 兜底: 正则命中但 无图 且 无路径 → 不切模型, 提示发图(零 LLM 请求)
-  if (isVisualTask && !images?.length && !imgPathMatch) {
-    content = content + '\n\n[未检测到图片。如需看图, 请直接拖入图片或提供图片路径。]'
-    isVisualTask = false
-  }
+  // 用户消息构建 + 视觉任务判定(拆至 chat-user-msg.ts, 行为零变化)
+  const um = await buildUserMessage({ sid, get, set: set as (partial: unknown, replace?: boolean) => void }, content, images, attachments)
+  content = um.content; images = um.images
+  const userMsg = um.userMsg
+  const userMsgId = um.userMsgId
+  const tokBase = um.tokBase
+  let isVisualTask = um.isVisualTask
+  const imgPathMatch = um.imgPathMatch
   // 任务开始前保存主力模型(视觉任务结束后 finally 还原)
   const origP = curP, origModel = model
   let switchedVision = false   // 事实标记: 是否真的切换过视觉模型
@@ -244,84 +197,8 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
   }
 
 
-  type CallResult = { text: string; tcs: ToolCallItem[] }
-  const callLLM = (aid: string, ridArg?: string): Promise<CallResult> =>
-    new Promise((resolve, reject) => {
-      const cbs: (() => void)[] = []; let text = ''; const tcs: ToolCallItem[] = []
-      // v0.2.3: 多会话并发 —— 每次调用独立 requestId，只收自己的流式事件
-      // v0.2.3: rid 由外部传入(超时 abort 可精确对应同一请求)
-      const rid = ridArg || ('r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
-      // v0.2.2: 记录 TTFT(首字延迟) / 总时长 / token 用量
-      const t0 = Date.now(); let firstChunkAt = 0; let usage: UsageData | null = null
-      cbs.push(window.huangquan.llm.onUsage(u => {
-        if (u && u.requestId && u.requestId !== rid) return
-        // v0.2.6: 按模型单价估算本次消费金额
-        if (u) {
-          // v0.2.6: 用量归一化(监控方案): 兼容 DeepSeek/OpenAI/Anthropic 缓存字段
-          // read: prompt_cache_hit_tokens | prompt_tokens_details.cached_tokens | cache_read_input_tokens
-          // write: cache_creation_input_tokens(Anthropic 写入缓存, 单独统计)
-          const readT = u.prompt_cache_hit_tokens || u.prompt_tokens_details?.cached_tokens || u.cache_read_input_tokens || 0
-          const missT = u.prompt_cache_miss_tokens || 0
-          const writeT = u.cache_creation_input_tokens || 0
-          const inputT = u.prompt_tokens || u.input_tokens || 0
-          usage = { ...u, _readTokens: readT, _inputTokens: inputT, _writeTokens: writeT }
-          // v0.2.6: 同一次请求的 usage 只统计/累加一次(流式 usage 可能多次到达, 防重复)
-          if (!costedReqs.has(rid)) {
-            // v0.2.3: 防止无限增长(每 500 条裁剪一半)
-            if (costedReqs.size > 500) { const arr = [...costedReqs]; costedReqs.clear(); for (const x of arr.slice(-250)) costedReqs.add(x) }
-            costedReqs.add(rid)
-            const sid2 = get().cid || ''
-            // 持久化埋点(主进程, 会话×模型)
-            try {
-              window.huangquan.modelStats?.recordRequest(sid2, model, readT > 0)
-              if (readT > 0 || inputT > 0 || writeT > 0) window.huangquan.modelStats?.recordTokens(sid2, model, readT, inputT, writeT, missT)
-            } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-            // 前端镜像(右侧面板实时显示)
-            if (sid2) set(s => {
-              const ss = s.sessTok[sid2] || {}
-              const c2 = ss[model] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, hitReqs: 0 }
-              return { sessTok: { ...s.sessTok, [sid2]: { ...ss, [model]: { requests: c2.requests + 1, readTokens: c2.readTokens + readT, inputTokens: c2.inputTokens + inputT, writeTokens: c2.writeTokens + writeT, hitReqs: c2.hitReqs + (readT > 0 ? 1 : 0) } } } }
-            })
-          }
-        } else { usage = u }
-      }))
-      // v0.2.5-opt: 流式渲染节流 —— 40ms 内合并多次 chunk 再 set, 避免每个 token 全量重渲染
-      let flushTimer: ReturnType<typeof setTimeout> | null = null
-      const flushText = () => {
-        flushTimer = null
-        const cur = text
-        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: cur } : m) } : x), streaming: s.cid === sid ? true : s.streaming }))
-      }
-      cbs.push(window.huangquan.llm.onChunk(d => {
-        if (d.requestId && d.requestId !== rid) return // 其他会话的流，忽略
-        if (!firstChunkAt && d.content) firstChunkAt = Date.now()
-        text += d.content
-        if (!flushTimer) flushTimer = setTimeout(flushText, 40)
-        if (d.done) {
-          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
-          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: text } : m) } : x), streaming: s.cid === sid ? false : s.streaming }))
-          cbs.forEach(f => f())
-          const ttft = firstChunkAt ? firstChunkAt - t0 : (Date.now() - t0)
-          const duration = Date.now() - t0
-          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: text, usage: usage || m.usage, meta: { ttft, duration } } : m) } : x) }))
-          if (!text && !tcs.length) { reject(new Error('模型返回空响应，请检查 API 配置或切换模型')); return } resolve({ text, tcs })
-        }
-      }))
-      cbs.push(window.huangquan.llm.onError((e: unknown) => {
-        const em = e as { error?: string; requestId?: string }
-        const errMsg = typeof e === 'string' ? e : (em?.error || String(e))
-        if (em && em.requestId && em.requestId !== rid) return // 其他会话的错误，忽略
-        cbs.forEach(f => f()); reject(new Error(errMsg))
-      }))
-      // 工具参数解析失败不再完全静默 —— console.warn 便于排查
-      cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { console.warn('[黄泉Agent] 工具参数解析失败:', tc?.function?.name, String(tc?.function?.arguments || '').slice(0, 100)) } }))
-      const cur = get().sessions.find(x => x.id === sid)!
-      const msgs = buildContextualMessages(cur.messages, isVisionModel(model), { gSnap, cl: get().cl, spIshiki: get().spIshiki, spFallback: get().sp, agent: cur.agent, onAgentRoute: (role) => { if (role) { set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, agent: role as string, activeAgents: (x.activeAgents || []).includes(role as string) ? x.activeAgents : [...(x.activeAgents || []), role as string] } : x) })); try { window.__huangquan_agent = role as string } catch (e) { /* ignore */ console.debug('[swallow]', e) } } } })
-      // v0.2: 更新上下文用量
-      const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as VisionContent[]).reduce((t:number,p:VisionContent) => t + ((p as { text?: string }).text?.length || 0), 0) : 0), 0)
-      set({ cu: estCu })
-      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
-    })
+  const callLLM = createCallLLM({ sid, gSnap, get, set, getModel: () => model, getCurP: () => curP })
+
 
   try {
     // 每次 LLM 调用独立超时保护 —— v0.2.3: 只中止当前请求(requestId), 不再误杀其他会话并发请求
@@ -421,39 +298,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, activeAgents: undefined } : x) }))
     set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
-    // 任务结束瞬间发送的消息(走了插话分支但任务已退出)自动续跑 —— 解决"每个窗口只能发一次指令"
-    // v0.3.1 C4: 会话级句柄(scheduleResume) + 触发前校验(代号未变 + 无新消息指纹)
-    try {
-      const ss2 = get().sessions.find(x => x.id === sid)
-      if (ss2) {
-        const msgs2 = ss2.messages
-        let lu = -1, la = -1
-        for (let k = msgs2.length - 1; k >= 0; k--) {
-          if (msgs2[k].role === 'user' && lu < 0) lu = k
-          if (msgs2[k].role === 'assistant' && la < 0) la = k
-        }
-        if (lu > la && lu >= 0 && !ss2.streaming && !get().executing) {
-          const pm = msgs2[lu]
-          const fp = (pm.content || '') + '|' + (pm.images || []).join('|')
-          const now = Date.now()
-          if (lastSendFp === fp && now - lastSendTs < 500) { /* 重复消息, 跳过续跑 */ }
-          else {
-            lastSendFp = fp; lastSendTs = now
-            const sched = scheduleResume(ss2, () => {
-              const cur2 = get().sessions.find(x => x.id === sid)
-              if (!cur2) return
-              const lu2 = (() => { for (let k = cur2.messages.length - 1; k >= 0; k--) if (cur2.messages[k].role === 'user') return k; return -1 })()
-              const pm2 = lu2 >= 0 ? cur2.messages[lu2] : undefined
-              const fp2 = ((pm2?.content || '') + '|' + (pm2?.images || []).join('|'))
-              if (myGen === getTaskGenFor(taskGenBySid, sid) && fp2 === fp && !cur2.streaming) {
-                get().send(pm2?.content || '', pm2?.images, pm2?.attachments).catch(() => {})
-              }
-            }, 300)
-            set(s => ({ sessions: s.sessions.map(x => x.id === sid ? sched : x) }))
-          }
-        }
-      }
-    } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+    maybeAutoResume({ sid, myGen, taskGenBySid, get, set: set as (partial: unknown, replace?: boolean) => void })
     const toSave = get().sessions.find(x => x.id === sid)
     if (toSave) { window.huangquan.sessions.save(safeIPC(toSave)); autoExtractMemory(sid, get().sessions).catch(() => {}) }
   } catch (e: unknown) {
