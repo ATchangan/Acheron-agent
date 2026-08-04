@@ -14,6 +14,7 @@ import { registerMiscIpc } from './ipc/misc'
 import { registerModelsIpc } from './ipc/models'
 import { registerUpdateIpc } from './ipc/update'
 import { registerMediaIpc } from './ipc/media'
+import { registerBrowserIpc } from './ipc/browser'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -308,20 +309,6 @@ function showBrowserFloat() {
   if (floatHideTimer) clearTimeout(floatHideTimer)
   floatHideTimer = setTimeout(hideBrowserFloat, timeoutMs)
 }
-ipcMain.handle('browser:showPanel', () => { showBrowserPanel(); hideBrowserFloat(); return true })
-// v0.2.3-debug: 窗口诊断
-ipcMain.handle('browser:debug', () => {
-  const out: Record<string, unknown> = {}
-  const bwAll = BrowserWindow.getAllWindows()
-  out.all = bwAll.map((w: BrowserWindow) => {
-    const p = w.getParentWindow()
-    return { id: w.id, title: w.getTitle(), visible: w.isVisible(), bounds: w.getBounds(), parent: p ? p.id : null, alwaysOnTop: w.isAlwaysOnTop() }
-  })
-  return out
-})
-ipcMain.handle('browser:showFloat', () => { showBrowserFloat(); return true })
-ipcMain.handle('browser:hideFloat', () => { hideBrowserFloat(); return true })
-
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 900, minHeight: 600,
@@ -752,82 +739,7 @@ const waitLoad = (wc: Electron.WebContents, ms = 15000): Promise<void> =>
     wc.once('did-finish-load', onLoad)
     wc.once('did-fail-load', onFail)
   })
-
-ipcMain.handle('browser:navigate', async (_e, url: string) => {
-  const bw = getBrowserWin(); const wc = bw.webContents
-  try {
-    if (wc.getURL() === url) return 'ok'
-    ;(wc as unknown as { __loadStart: number }).__loadStart = Date.now()
-    await wc.loadURL(url)
-  } catch (e) { /* 继续 */ console.debug('[swallow]', e) }
-  browserCurUrl = wc.getURL() || url
-  return 'ok'
-})
-ipcMain.handle('browser:back', async () => {
-  const bw = getBrowserWin(); const wc = bw.webContents
-  if (wc.canGoBack()) wc.goBack()
-  browserCurUrl = wc.getURL() || browserCurUrl
-  return browserCurUrl
-})
-ipcMain.handle('browser:forward', async () => {
-  const bw = getBrowserWin(); const wc = bw.webContents
-  if (wc.canGoForward()) wc.goForward()
-  browserCurUrl = wc.getURL() || browserCurUrl
-  return browserCurUrl
-})
-ipcMain.handle('browser:reload', async () => {
-  const bw = getBrowserWin(); const wc = bw.webContents
-  wc.reload()
-  return wc.getURL() || browserCurUrl
-})
-ipcMain.handle('browser:current', () => {
-  const bw = getBrowserWin()
-  if (bw && !bw.isDestroyed()) browserCurUrl = bw.webContents.getURL() || browserCurUrl
-  return browserCurUrl
-})
-// v0.2.3: 实时快照 —— 前端轮询此接口显示 agent 正在看的页面
-// v0.2.3-fix: Windows 上隐藏窗口 capturePage 返回空 —— 截图时临时显示窗口再隐藏
-ipcMain.handle('browser:snapshot', async () => {
-  let bw: BrowserWindow | null = null
-  try {
-    bw = getBrowserWin(); const wc = bw.webContents
-    if (!wc || wc.isDestroyed()) return { url: browserCurUrl, img: '', loading: false }
-    const curUrl = wc.getURL() || browserCurUrl
-    if (wc.isLoading() && Date.now() - (wc as unknown as { __loadStart: number }).__loadStart < 15000) return { url: curUrl, img: '', loading: true }
-    if (wc.isLoading()) return { url: curUrl, img: '', loading: false }
-    const wasVisible = bw.isVisible()
-    if (!wasVisible) { bw.showInactive(); await new Promise(r => setTimeout(r, 120)) }
-    const img = await wc.capturePage()
-    if (!wasVisible) bw.hide()
-    let title = ''
-    try { title = await wc.executeJavaScript('document.title') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    return { url: curUrl, img: img.toDataURL(), loading: false, title: title || '' }
-  } catch { if (bw && !bw.isDestroyed()) bw.hide(); return { url: browserCurUrl, img: '', loading: false, title: '' } }
-})
-// v0.2.3: agent 工具调用 —— 打开页面并返回文本内容（保持旧 browse 语义）
-ipcMain.handle('browser:open', async (_e, url: string) => {
-  showBrowserFloat() // v0.2.3: agent 使用浏览器时弹出悬浮提示
-  const bw = getBrowserWin(); const wc = bw.webContents
-  try { await wc.loadURL(url) } catch (e) { /* 继续 */ console.debug('[swallow]', e) }
-  await waitLoad(wc)
-  browserCurUrl = wc.getURL() || url
-  try {
-    const title = await wc.executeJavaScript('document.title')
-    const text = await wc.executeJavaScript('document.body.innerText')
-    return `${title}\n\n${String(text || '').slice(0, 10000)}`
-  } catch { return '(load error)' }
-})
-// v0.2.3: agent 工具调用 —— 截取当前页面（保持旧 browse_screenshot 语义）
-ipcMain.handle('browser:screenshot', async (_e, url?: string) => {
-  showBrowserFloat() // v0.2.3: agent 使用浏览器时弹出悬浮提示
-  const bw = getBrowserWin(); const wc = bw.webContents
-  if (url && url !== 'about:blank') { try { await wc.loadURL(url) } catch (e) { /* 继续 */ console.debug('[swallow]', e) } await waitLoad(wc) }
-  browserCurUrl = wc.getURL() || url || browserCurUrl
-  try {
-    const img = await wc.capturePage()
-    return img.toDataURL()
-  } catch { return '' }
-})
+registerBrowserIpc({ getBrowserWin, waitLoad, getCurUrl: () => browserCurUrl, setCurUrl: (u) => { browserCurUrl = u }, showBrowserPanel, showBrowserFloat, hideBrowserFloat })
 // ─── 剪贴板 ─────────────────────────────────────
 ipcMain.handle('computer:clipboardRead', () => { try{return require('electron').clipboard.readText()}catch{return''} })
 ipcMain.handle('computer:clipboardWrite', (_e,text:string) => { try{require('electron').clipboard.writeText(text);return true}catch{return false} })
