@@ -1,4 +1,4 @@
-// src/types.ts —— 全库类型唯一来源(v0.3.0 M1)
+﻿// src/types.ts —— 全库类型唯一来源(v0.3.0 M1)
 // 职责: 核心数据结构定义。禁止在别处重复定义同名 interface。
 // 迁移自 global.d.ts 的 GeneralSettings + 方案新增 ToolSpec/AgentDef/SubTaskCtx
 
@@ -87,16 +87,16 @@ export interface GeneralSettings {
   ragAutoSave?: boolean
   ttsEnabled?: boolean
   ttsRate?: number
-  // v0.2.4: 调度绑定(所有模型公用, 含自定义模型)
+  // 调度绑定(所有模型公用, 含自定义模型)
   smallModel?: string
   largeModel?: string
-  // v0.2.5: 皮肤系统(与主题解耦)
+  // 皮肤系统(与主题解耦)
   skinMask?: string
   skinSecondary?: string
   themePreset?: string
   // v0.3.0 M3: Agent 覆盖(AgentsView 白名单/模型偏好/记忆范围编辑)
   agentOverrides?: Record<string, Partial<AgentDef>>
-  // v0.2.5+: 运行期字段(人设/皮肤/浏览器/记忆/提示词注入等)
+  // +: 运行期字段(人设/皮肤/浏览器/记忆/提示词注入等)
   rolePreset?: string
   browserFloatEnabled?: boolean
   browserFloatPos?: string

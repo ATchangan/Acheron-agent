@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react'
+﻿import React, { useEffect, useRef } from 'react'
 
-// v0.2.3: 侧栏自由拖拽调宽 —— 拖动边缘调整 --sidebar-w / --right-w, 宽度持久化到 localStorage
+// 侧栏自由拖拽调宽 —— 拖动边缘调整 --sidebar-w / --right-w, 宽度持久化到 localStorage
 // 用法: <ResizeBar varName="--sidebar-w" storeKey="hq_sidebar_w" min={140} max={420} edge="right" />
 export default function ResizeBar({ varName, storeKey, min = 140, max = 420, edge = 'right' }: {
   varName: string

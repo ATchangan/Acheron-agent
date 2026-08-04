@@ -1,4 +1,4 @@
-// electron/scheduler/cron.ts — 定时任务调度器
+﻿// electron/scheduler/cron.ts — 定时任务调度器
 import * as fs from 'fs'
 import { join } from 'path'
 
@@ -35,7 +35,7 @@ function checkJobs(sendFn: (prompt: string) => void) {
     if (!job.enabled) continue
     if (now >= job.nextRun) {
       sendFn(job.prompt)
-      // v0.2.1: 基于计划时间（job.nextRun）计算下一次触发，避免漂移累积
+      // 基于计划时间（job.nextRun）计算下一次触发，避免漂移累积
       const next = parseCron(job.expression, job.nextRun)
       if (next) { job.nextRun = next.getTime(); changed = true }
     }

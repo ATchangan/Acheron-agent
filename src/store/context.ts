@@ -1,6 +1,6 @@
-// src/store/context.ts —— token 估算/分层压缩/提示词组装(v0.3.0 M2)
+﻿// src/store/context.ts —— token 估算/分层压缩/提示词组装(v0.3.0 M2)
 // 职责: 上下文构建与压缩。estimateTokens/getModelContextLimit/updateContextLimit/isVisionModel/buildPrompt/buildContextualMessages
-// 迁移自 chat.ts(v0.2.5) —— 行为未改
+// 迁移自 chat.ts() —— 行为未改
 import { v4 as uuidv4 } from 'uuid'
 import { useSettingsStore } from './settings'
 import { useAgents } from './agents'
@@ -72,7 +72,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
   const identity = '## 身份\n' + ishiki.slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
   const userInfo = '## 用户\n称呼：老板。专注代码与办公场景的全能助手。\n'
-  // v0.2.3: 聊天人设/工作人设严格隔离 —— 聊天模式只用 chatPersona(未设置用聊天默认人格), 工作模式只用 workPersona(未设置用工作默认人格), 互不混用
+  // 聊天人设/工作人设严格隔离 —— 聊天模式只用 chatPersona(未设置用聊天默认人格), 工作模式只用 workPersona(未设置用工作默认人格), 互不混用
   const gp = useSettingsStore.getState().general
   const defaultChatPersona = '轻松自然的聊天伙伴。语气温和自然，像朋友一样交流，适当回应情绪，言简意赅；不堆砌术语，不主动调用工具，除非用户明确要求。'
   const defaultWorkPersona = '务实执行型全能代码办公助手。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / AI建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。'
@@ -82,7 +82,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const appearance = '## 外观\n银白长发，额前黑红尖角，血色瞳光。暗黑紧身战斗装束，红色纹路蔓延。手持冷峻短剑，慵懒却危险。哥特融合未来感的暗黑美学。\n'
   const publicIshiki = '## 边界\n对外部访客保持礼貌与边界。不透露用户隐私。不确定的事坦诚说明，不编造。\n'
   const tools = '## 可用工具\n你拥有工具调用能力(read/write/exec_command/grep/find/ls/web_read 等),需要时自动调用,无需请示。\n'
-  // v0.2.3: 思考模式真实接线 —— 每挡注入不同的思考要求(off/quick 简化, deep/extreme/ultra 强化推理)
+  // 思考模式真实接线 —— 每挡注入不同的思考要求(off/quick 简化, deep/extreme/ultra 强化推理)
   const thinkLevel = String(useSettingsStore.getState().general.thinkLevel || 'medium')
   const thinkReq: Record<string, string> = {
     off: '## 思考要求\n直接作答,不展示推理过程,保持简洁。\n',
@@ -94,7 +94,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
   }
   const think = thinkReq[thinkLevel] || ''
   const pinned = '## 固定规则\n- 所有产出保存到工作台目录，按任务创建独立文件夹\n- 代码需求同步配套接口文档、部署说明、测试用例\n- 批量重复任务优先自动化脚本\n- 输出完毕自行核查事实/逻辑/计算错误\n'
-  // v0.2.6: 时间戳移到 prompt 最末尾 —— 保持前缀稳定, 最大化 DeepSeek 缓存命中
+  // 时间戳移到 prompt 最末尾 —— 保持前缀稳定, 最大化 DeepSeek 缓存命中
   const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
   // v0.2: 多Agent编队
   const multiAgent = '## 多Agent编队\n你属于黄泉Agent编队的一员。编队成员：\n' +
@@ -106,7 +106,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
   
   const base = yuan + identity + userInfo + persona + appearance + tools + think + pinned + env
 
-  // 自定义人设覆盖 + v0.2.1: 动态设置
+  // 自定义人设覆盖 + 动态设置
   const cp = cfg.chatPersona
   const wp = cfg.workPersona
   const agentName = cfg.agentName || '黄泉'
@@ -122,17 +122,17 @@ export function buildPrompt(mode: string, ishiki: string): string {
     multiAgent + workflows + 
     (wp ? '## 自定义工作人设\n' + wp + '\n\n' : '## 任务闭环流程（静默执行）\n1. 接收任务 → 2. 拆解步骤 → 3. 静默调用工具 → 4. 生成文件 → 5. 全部完成后一次性输出最终结果\n- 工具执行期间严禁输出任何文字，所有中间日志仅写入右侧终端面板\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n- 用 exec_command 调 PowerShell: Invoke-WebRequest -Uri \"URL\" -OutFile \"路径\"\n- 不要用 web_fetch 下载文件\n\n## 最终回复格式（硬性约束，必须严格遵守）\n成功场景必须包含以下全部字段，缺一不可：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败场景必须输出：\n任务结果：任务执行失败\n失败原因：用通俗语言解释报错原因\n建议方案：给出解决办法\n\n严禁使用\"操作完成\"、\"搞定\"、\"OK\"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天对话框')
   
-  // v0.2.1: 自定义系统提示词 + 语言指令接入运行时
+  // 自定义系统提示词 + 语言指令接入运行时
   const g2 = useSettingsStore.getState().general
   const langMap: Record<string, string> = { zh: '始终使用简体中文回复', 'zh-tw': '始终使用繁体中文回复', en: 'always reply in English', ja: '常に日本語で回答してください', auto: '自动检测用户语言并以此回复', match: '始终使用与用户提问相同的语言回复' }
   const langInstr = langMap[g2?.language ?? ''] ? '\n【语言要求】' + langMap[g2.language || ''] : ''
-  // v0.2.6: 信息调度纪律 —— 省钱不降智(分层读取/保真截断/可回溯/输出纪律)
+  // 信息调度纪律 —— 省钱不降智(分层读取/保真截断/可回溯/输出纪律)
   const tokenDiscipline = '\n## 信息调度纪律（重要）\n' +
     '- 大文件/长输出被截断是采样而非错误: 先 ls/grep/read+offset 定位关键段再精读, 需要细节用 read offset/limit 或 grep 从源头取回, 严禁凭记忆编造内容\n' +
     '- 数字/代码/报错信息/用户约束必须逐字保真, 禁止约等于或转述\n' +
     '- 回复结论前置, 不重复用户原话, 修改只贴改动部分, 输出用标题/列表/表格/代码块\n' +
     '- 被截断的内容需要完整版时, 主动用工具按路径/行号/关键词取回\n'
-  // v0.2.3: 全局记忆注入（置顶/长期/情景摘要,所有会话共享）
+  // 全局记忆注入（置顶/长期/情景摘要,所有会话共享）
   const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + memoryBlock()
   if (g2?.customSystemPrompt) {
     const inj = g2.customSystemPrompt
@@ -149,11 +149,11 @@ export function buildPrompt(mode: string, ishiki: string): string {
 export function buildContextualMessages(
   msgs: Message[],
   withImages: boolean,
-  opts: { gSnap: GeneralSettings; cl: number; spIshiki: string; spFallback: string; onAgentRoute: (role: string | null) => void }
+  opts: { gSnap: GeneralSettings; cl: number; spIshiki: string; spFallback: string; onAgentRoute: (role: string | null) => void; agent?: string }
 ): LLMMessage[] {
   const d: LLMMessage[] = []
-  // v0.2.6: 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
-  // v0.2.3-fix: 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
+  // 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
+  // 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
   let earlySummary = ''
   if (msgs.length > MAX_HISTORY_MSGS) {
     const early = msgs.slice(0, -MAX_HISTORY_MSGS)
@@ -163,9 +163,12 @@ export function buildContextualMessages(
     earlySummary = `\n[前文摘要] 早期 ${early.length} 条消息已归档(约 ${uN} 轮用户交互, ${tN} 次工具调用)${uLast ? ', 最近话题: ' + String(uLast.content).replace(/\s+/g, ' ').slice(0, 60) : ''}。如需早期细节请用 recall_memory 或让用户补充。`
   }
   const list = msgs.length > MAX_HISTORY_MSGS ? msgs.slice(-MAX_HISTORY_MSGS) : msgs
-  for (const m of list) {
+  // v0.3.1 插话序列修复: _inject 插话消息分离 —— 重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
+  const injectMsgs = list.filter(m => m._inject)
+  const normalMsgs = list.filter(m => !m._inject)
+  for (const m of normalMsgs) {
     if (m.role === 'tool') {
-      // v0.2.6: 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
+      // 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
       const c = m.content || ''
       let body = c
       if (c.length > 3000) {
@@ -176,41 +179,51 @@ export function buildContextualMessages(
       d.push({ role: 'tool', content: body, tool_call_id: m.tool_call_id || 'c_' + uuidv4().slice(0, 8) })
     }
     else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: m.tool_calls })
-    // v0.2.3-fix: 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
+    // 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
     else if (m.role === 'user' && m.images?.length && withImages) { const parts: VisionContent[] = [{ type: 'text', text: m.content || '' }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
     else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
+  }
+  // v0.3.1 插话序列修复: _inject 消息追加到序列末尾(与正常 user 消息同构, 图片类按 withImages 处理)
+  for (const im of injectMsgs) {
+    if (im.images?.length && withImages) {
+      const parts: VisionContent[] = [{ type: 'text', text: im.content || '' }]
+      im.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } }))
+      d.push({ role: 'user', content: parts })
+    } else {
+      d.push({ role: 'user', content: im.content || ' ' })
+    }
   }
   // 每次发送时根据当前模式重建系统提示词
   const gSnap = opts.gSnap
   const currentMode = gSnap.mode || 'work'
-  // v0.2.3: 使用独立保存的 ishiki(不再从 sp 反推 —— sp 含技能列表/动态内容会污染身份段)
+  // 使用独立保存的 ishiki(不再从 sp 反推 —— sp 含技能列表/动态内容会污染身份段)
   const ishiki = opts.spIshiki || opts.spFallback.replace(/\n##.+/s, '')
   let sp = buildPrompt(currentMode, ishiki) + earlySummary
   // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
-  let agentRole = collabOff ? null : window.__huangquan_agent
+  let agentRole = collabOff ? null : (opts.agent || window.__huangquan_agent)
   // 自动检测：根据用户最后一条消息内容匹配最合适的 Agent
   if (!agentRole) {
     const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
     const txt = (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '').toLowerCase()
-    if (txt) { agentRole = routeAgent(txt) || undefined; try { window.__routeDebug = JSON.stringify({ role: agentRole || null, txt: txt.slice(0, 40), collab: gSnap.collabMode }) } catch (e) { /* ignore */ console.debug('[swallow]', e) } }
+    if (txt) { agentRole = routeAgent(txt) || undefined }
   }
-  // v0.2.1: 路由确定的 Agent 记入协作状态
-  if (agentRole && !window.__huangquan_agent) {
+  // 路由确定的 Agent 记入协作状态
+  if (agentRole && !opts.agent && !window.__huangquan_agent) {
     opts.onAgentRoute(agentRole)
   }
   if (agentRole) {
     const ag = useAgents()[agentRole]
     if (ag) sp += '\n\n## 当前身份\n' + ag.icon + ' ' + agentRole + ' — ' + ag.role + '\n' + ag.prompt +
       '\n可用工具: ' + ag.tools.join(', ')
-    // v0.2.1: 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个 Agent
+    // 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个 Agent
     if (agentRole === '姬子') {
       sp += '\n\n【调度铁律】只有涉及多个专业领域的复杂任务（如代码+文档、设计+开发、分析+总结、开发+测试+审查）才调用 dispatch 分发；简单任务（单步问答、简短说明、单个文件操作、闲聊等）一律直接完成，绝对禁止 dispatch 或 handoff，不得小题大做。'
     }
   }
-  // v0.2.6: 时间戳放绝对最末尾 —— 保持前缀稳定, 最大化缓存命中(动态内容永不打断前缀)
+  // 时间戳放绝对最末尾 —— 保持前缀稳定, 最大化缓存命中(动态内容永不打断前缀)
   sp += '\n## 当前时间\n' + new Date().toLocaleString('zh-CN')
-  // v0.2: 上下文压缩（v0.2.1: 接入 compactStrategy/compactMsgCount/compactTokenLimit/compactStrength 设置）
+  // v0.2: 上下文压缩（接入 compactStrategy/compactMsgCount/compactTokenLimit/compactStrength 设置）
   const gComp = gSnap
   const compStrategy = gComp.compactStrategy || 'auto'
   const msgLimit = gComp.compactMsgCount || COMPACT_MSG_DEFAULT
@@ -234,7 +247,19 @@ export function buildContextualMessages(
       return [{ role: 'system', content: sp + '\n\n' + summary }, ...keep]
     }
   }
-  // v0.2.3-debug: 暴露最近一次 system prompt(验证思考模式/人设等接线)
-  try { window.__lastSp = sp || '' } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+  // 暴露最近一次 system prompt(验证思考模式/人设等接线)
+  try { window.__lastSp = sp || '' /* 供 check-prefix-stable.mjs 使用 */ } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+  // v0.3.1 M4: 序列断言 —— 返回前校验 assistant(tool_calls) 后必须紧跟 tool 消息(插话重排正确性兜底)
+  assertAlternates(d)
   return sp ? [{ role: 'system', content: sp }, ...d] : d
+}
+
+// v0.3.1 M4: 序列断言(可测函数) —— 违规时输出 [序列校验] 告警
+export function assertAlternates(d: LLMMessage[]): void {
+  for (let i = 0; i < d.length - 1; i++) {
+    const cur = d[i]
+    if (cur.role === 'assistant' && cur.tool_calls && d[i + 1].role !== 'tool') {
+      console.log('[序列校验] 相邻消息非法: assistant(tool_calls) 后是 ' + d[i + 1].role + ' (位置 ' + i + '), 插话重排可能被破坏')
+    }
+  }
 }

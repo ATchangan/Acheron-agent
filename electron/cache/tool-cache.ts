@@ -1,4 +1,4 @@
-// electron/cache/tool-cache.ts — 工具结果缓存
+﻿// electron/cache/tool-cache.ts — 工具结果缓存
 // 灵感来源：LangChain Cache / Claude Prompt Caching
 //
 // 缓存策略：
@@ -10,7 +10,7 @@ import * as crypto from 'crypto'
 import * as fs from 'fs'
 import { join } from 'path'
 
-// v0.2.6: 缓存统计持久化 —— 跨重启累计命中率
+// 缓存统计持久化 —— 跨重启累计命中率
 const STATS_PATH = (() => {
   try { return join(require('electron').app.getPath('userData'), 'cache-stats.json') } catch { return '' }
 })()
@@ -60,7 +60,7 @@ const CACHEABLE = new Set([
 const MAX_ENTRIES = 500
 
 function hashArgs(args: Record<string, unknown>): string {
-  // v0.2.3: JSON 序列化, 避免对象参数 [object Object] 碰撞
+  // JSON 序列化, 避免对象参数 [object Object] 碰撞
   const sorted = Object.keys(args).sort().map(k => `${k}=${JSON.stringify(args[k])}`).join('&')
   return crypto.createHash('md5').update(sorted).digest('hex').slice(0, 12)
 }

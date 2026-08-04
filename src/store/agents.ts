@@ -1,5 +1,5 @@
-// src/store/agents.ts — 多 Agent 角色定义(纯数据)
-// v0.2.4: 从 chat.ts 拆分, 降低单文件复杂度
+﻿// src/store/agents.ts — 多 Agent 角色定义(纯数据)
+// 从 chat.ts 拆分, 降低单文件复杂度
 // v0.3.0 M3: AgentDef 实体化 —— tools 真实白名单('*'=全工具) + capabilities + memoryScope + model 偏好
 import type { AgentDef } from '../types'
 import { useSettingsStore } from './settings'

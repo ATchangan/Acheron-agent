@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+﻿import React, { useState, useEffect, useCallback } from 'react'
 import { useChatStore } from '../store/chat'
 import type { SkillMeta } from '../global'
 import { errMsg } from '../utils/safe'
@@ -45,7 +45,7 @@ function buildSkillPath(name: string, category: Category): string {
   return `skills/${dir}/${slug}.md`
 }
 
-// v0.2.3-security: 所有捕获组先 escapeHtml 再包标签 —— 修复 XSS(此前 heading/inline-code/link/img 原样注入)
+// 所有捕获组先 escapeHtml 再包标签 —— 修复 XSS(此前 heading/inline-code/link/img 原样注入)
 function renderMarkdown(src: string): string {
   let html = src
   const esc = escapeHtml

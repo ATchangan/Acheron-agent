@@ -1,4 +1,4 @@
-// electron/mcp/client.ts — MCP 协议客户端 (stdio transport)
+﻿// electron/mcp/client.ts — MCP 协议客户端 (stdio transport)
 // 支持连接本地 MCP 服务器，发现和调用工具
 
 import { spawn, ChildProcess } from 'child_process'
@@ -19,7 +19,7 @@ function sendRPC(server: MCPServer, method: string, params: Record<string, unkno
     if (!proc.stdin || proc.stdin.destroyed) { reject(new Error('Process not running')); return }
     
     const cleanup = () => { clearTimeout(timeout); proc.stdout?.removeListener('line', onLine) }
-    // v0.2.3-fix(P25): 超时/完成都要移除监听器, 防止泄漏
+    // 超时/完成都要移除监听器, 防止泄漏
     const timeout = setTimeout(() => { cleanup(); reject(new Error('MCP timeout')) }, 10000)
     const onLine = (line: string) => {
       try {
@@ -35,7 +35,7 @@ function sendRPC(server: MCPServer, method: string, params: Record<string, unkno
 export async function connectServer(name: string, command: string, args: string[] = []): Promise<MCPTool[]> {
   try {
     const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] })
-    // v0.2.4-fix: spawn error 监听 —— 命令不存在(ENOENT)等启动失败时优雅返回错误, 防止冒泡为 uncaughtException
+    // spawn error 监听 —— 命令不存在(ENOENT)等启动失败时优雅返回错误, 防止冒泡为 uncaughtException
     const spawnError = new Promise<never>((_, rej) => { proc.on('error', (e: Error) => rej(new Error('MCP 启动失败: ' + (e instanceof Error ? e.message : String(e))))) })
     const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity })
     const server: MCPServer = { name, command, args, process: proc, tools: [], reqId: 0 }

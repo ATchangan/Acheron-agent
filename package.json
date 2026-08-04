@@ -1,6 +1,6 @@
 {
   "name": "huangquan-agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "黄泉Agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -10,7 +10,8 @@
     "start": "electron .",
     "package:win": "npm run build && electron-builder --win --config electron-builder.yml",
     "package:mac": "npm run build && electron-builder --mac --config electron-builder.yml",
-    "package:linux": "npm run build && electron-builder --linux --config electron-builder.yml"
+    "package:linux": "npm run build && electron-builder --linux --config electron-builder.yml",
+    "test": "vitest run"
   },
   "dependencies": {
     "lucide-react": "^1.28.0",
@@ -29,6 +30,7 @@
     "@types/react-dom": "^18.3.0",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^9.0.0",
     "electron": "^32.0.0",
     "electron-builder": "^25.0.0",

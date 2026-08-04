@@ -1,5 +1,5 @@
-// src/store/constants.ts — 纯数据常量(缓存 TTL/工作流模板/视觉模型提示/路由领域词)
-// v0.2.4: 从 chat.ts 拆分, 降低单文件复杂度
+﻿// src/store/constants.ts — 纯数据常量(缓存 TTL/工作流模板/视觉模型提示/路由领域词)
+// 从 chat.ts 拆分, 降低单文件复杂度
 // v0.3.0 M2: 魔法数字统一(取值=现有代码实际值, 禁止顺手优化)
 export const MAX_HISTORY_MSGS = 40        // 历史消息硬上限
 export const SUB_ROUND_LIMIT = 8           // dispatch 子任务轮次上限

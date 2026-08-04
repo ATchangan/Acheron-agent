@@ -1,5 +1,5 @@
-// src/utils/safe.ts — IPC 参数序列化安全工具(渲染层)
-// v0.2.4: 从 chat.ts 抽取, 单一来源
+﻿// src/utils/safe.ts — IPC 参数序列化安全工具(渲染层)
+// 从 chat.ts 抽取, 单一来源
 
 export function safeIPC(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj

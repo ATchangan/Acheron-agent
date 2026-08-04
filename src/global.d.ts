@@ -1,13 +1,12 @@
-export {}
+﻿export {}
 import type { GeneralSettings } from './types'
+import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, VisionContent, LLMChatParams, LLMMessage, ToolDef, ToolCallDelta, SearchResult, CronJob, MediaProvider, ProviderConfig, Message } from './types/domain'
 
 declare global {
   interface Window {
     // v0.3.0 M5: 运行时调试属性(原 window 断言逃逸, 集中声明)
     __lastSp?: string
-    __lastModel?: string
-    __routeDebug?: string
-    __huangquan_agent?: string
+        __huangquan_agent?: string
     __huangquan_agent_manual?: boolean
     __watchState?: Record<string, string>
     huangquan: {
@@ -159,124 +158,4 @@ declare global {
   }
 }
 
-export interface SettingsData { providers: ProviderConfig[]; mediaProviders?: MediaProvider[]; general: GeneralSettings }
-// v0.2.1: 多媒体供应商（图片生成/视频生成/语音识别）
-export interface MediaProvider {
-  id: string
-  name: string
-  apiKey?: string
-  baseUrl?: string
-  headers?: string
-  type: string            // API 类型(OpenAI Compatible 等)
-  imgModels: string[]     // 图片生成模型
-  videoModels: string[]   // 视频生成模型
-  audioModels: string[]   // 语音识别/合成模型
-  selectedImg?: string
-  selectedVideo?: string
-  selectedAudio?: string
-}
-export interface ProviderConfig {
-  id: string
-  name: string
-  type: string
-  apiKey: string
-  baseUrl?: string
-  models: string[]
-  selectedModel?: string
-  headers?: string
-}
-export interface SessionMeta {
-  id: string
-  title: string
-  messageCount: number
-  updatedAt: string
-}
-export interface SessionData {
-  id: string
-  title: string
-  messages: Message[]
-  updatedAt?: string
-  mode?: string
-  busy?: boolean // v0.2.3: 该会话是否正在工作中（独立于其他会话）
-}
-export interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string | null
-  timestamp: number
-  tool_call_id?: string
-  reasoning_content?: string
-  images?: string[]
-  // v0.2.2: 拖拽/上传的附件（视频/音频/文档等非图片文件）
-  attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]
-  // v0.2.3: 工具调用声明(工具卡片渲染用)与工具名(结果块关联用)
-  tool_calls?: { id?: string; type: string; function: { name: string; arguments: string } }[]
-  toolName?: string
-  usage?: UsageData
-  // v0.2.2: 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
-  meta?: { ttft?: number; duration?: number; taskTokens?: number }
-  _toolLog?: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[]
-}
-// v0.3.0 M1: 用量数据结构(含 DeepSeek 缓存口径字段)
-export interface UsageData {
-  prompt_tokens?: number
-  completion_tokens?: number
-  total_tokens?: number
-  prompt_cache_hit_tokens?: number
-  prompt_cache_miss_tokens?: number
-  prompt_tokens_details?: { cached_tokens?: number }
-  cache_read_input_tokens?: number
-  cache_creation_input_tokens?: number
-  input_tokens?: number
-  requestId?: string
-  // v0.2.6: 前端镜像统计字段(不入盘)
-  _readTokens?: number
-  _inputTokens?: number
-  _writeTokens?: number
-}
-export interface SkillMeta { name: string; path: string; description: string }
-export interface MemoryData { facts: string[]; summaries: { content: string; timestamp: number }[]; pinnedFacts?: string[]; episodic?: { op: string; path: string; status: string; ts: number }[]; goals?: { goal: string; status: string; steps?: unknown[]; created?: number }[]; plugins?: Record<string, { enabled: boolean; category: string }> }
-export interface FileItem { name: string; isDirectory: boolean; size: number }
-export interface SystemInfo {
-  platform: string; arch: string; hostname: string
-  cpus: number; totalMemory: number; freeMemory: number
-  uptime: number; homeDir: string; workspaceDir: string
-}
-export interface ChunkData { content: string; done: boolean; requestId?: string }
-export interface VisionContent {
-  type: 'text' | 'image_url'
-  text?: string
-  image_url?: { url: string }
-}
-export interface LLMChatParams {
-  provider: string
-  model: string
-  apiKey: string
-  baseUrl?: string
-  messages: LLMMessage[]
-  temperature?: number
-  tools?: ToolDef[]
-  headers?: string | Record<string, string>
-  requestId?: string
-  max_tokens?: number
-}
-export interface LLMMessage {
-  role: string
-  content?: string | null | VisionContent[]
-  tool_call_id?: string
-  tool_calls?: { id?: string; type: string; function: { name: string; arguments: string } }[]
-  reasoning_content?: string
-}
-export interface ToolDef {
-  type: 'function'
-  function: { name: string; description: string; parameters: Record<string, unknown> }
-}
-export interface ToolCallDelta {
-  index?: number
-  id?: string
-  type?: string
-  function?: { name?: string; arguments?: string }
-  requestId?: string
-}
-export interface SearchResult { content: string; score: number }
-export interface CronJob { id: string; expression: string; prompt: string; enabled: boolean; lastRun?: string; nextRun?: string }
+export * from './types/domain'

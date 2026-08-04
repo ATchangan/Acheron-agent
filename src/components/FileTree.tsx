@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+﻿import React, { useEffect, useRef, useState } from 'react'
 import { errMsg } from '../utils/safe'
 
-// v0.2.6: 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
+// 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
 
 interface FsItem { name: string; isDirectory: boolean; size: number }
 
@@ -29,10 +29,10 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
   const [hovered, setHovered] = useState('')
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
-  // v0.2.3-opt: 目录列表缓存(3s 新鲜度) —— 展开/刷新不再每次都 IPC 重读
+  // 目录列表缓存(3s 新鲜度) —— 展开/刷新不再每次都 IPC 重读
   const cacheRef = useRef<Map<string, { list: FsItem[]; ts: number }>>(new Map())
 
-  // v0.2.6: 工作目录实时刷新 —— 展开后每 5s 静默重读(不闪 loading, 保持展开状态), agent 写文件后自动可见
+  // 工作目录实时刷新 —— 展开后每 5s 静默重读(不闪 loading, 保持展开状态), agent 写文件后自动可见
   const hasLoaded = items !== null
   useEffect(() => {
     if (!expanded || !hasLoaded) return
@@ -64,7 +64,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
     setLoading(false)
   }
 
-  // v0.2.6: 展开状态自动加载内容(初始展开的根目录直接显示内容, 无需点击)
+  // 展开状态自动加载内容(初始展开的根目录直接显示内容, 无需点击)
   useEffect(() => {
     if (expanded && !items && !loading) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,7 +89,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
   }
   const doOpen = async (path: string) => { try { await window.huangquan.computer.openFile(path) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
 
-  // v0.2.6: Electron 原生右键菜单
+  // Electron 原生右键菜单
   const onCtx = async (e: React.MouseEvent, path: string, name: string, isDir: boolean) => {
     e.preventDefault(); e.stopPropagation()
     const action = await window.huangquan.computer.contextMenu({ path, isDir, isWorkDir: depth === 0 })

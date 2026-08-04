@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
@@ -33,7 +33,7 @@ const WinBtn: React.FC<{ onClick: () => void; danger?: boolean; children: React.
   </button>
 )
 
-// v0.2.5: 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
+// 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
 const THEME_WHITELIST = ['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn']
 const LEGACY_THEME: Record<string, string> = { 'system': 'dark', 'dark-tech': 'dark', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'dark', 'high-contrast': 'black' }
 function resolveTheme(g: GeneralSettings): string {
@@ -46,7 +46,7 @@ function resolveTheme(g: GeneralSettings): string {
 
 function applyAppearance(g: GeneralSettings) {
   const r = document.documentElement.style
-  // v0.2.5: 主题 = data-theme 6 套 CSS token 块(不再内联变量)
+  // 主题 = data-theme 6 套 CSS token 块(不再内联变量)
   document.documentElement.setAttribute('data-theme', resolveTheme(g))
   // Custom theme colors override (from settings)
   const customTheme = g.customColors || g.customTheme
@@ -59,12 +59,12 @@ function applyAppearance(g: GeneralSettings) {
     if (ct.text) r.setProperty('--text-primary', ct.text)
     if (ct.border) r.setProperty('--border', ct.border)
   }
-  // v0.2.5: 皮肤与主题解耦 —— 皮肤只提供 --skin-accent/--skin-secondary/文字自适应, 不覆盖主题强调色
+  // 皮肤与主题解耦 —— 皮肤只提供 --skin-accent/--skin-secondary/文字自适应, 不覆盖主题强调色
   if (g.bgImage && g.skinColors) {
     const sc = g.skinColors
     r.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
     if (g.skinSecondary) r.setProperty('--skin-secondary', g.skinSecondary)
-    // v0.2.3-fix: 字体颜色按图片亮度自适应(亮图深字/暗图浅字) —— 防主题预设覆盖皮肤文字色
+    // 字体颜色按图片亮度自适应(亮图深字/暗图浅字) —— 防主题预设覆盖皮肤文字色
     const luma = (0.299 * sc.r + 0.587 * sc.g + 0.114 * sc.b) / 255
     if (luma > 0.55) {
       r.setProperty('--text-primary', '#1c1d21')
@@ -103,7 +103,7 @@ function applyAppearance(g: GeneralSettings) {
 export default function App() {
   const [view, setView] = useState<View>('chat')
 
-  // v0.2.3: hash 路由 —— #browser = 独立无头浏览器窗口; #float = 悬浮窗; 其余 = 主窗口
+  // hash 路由 —— #browser = 独立无头浏览器窗口; #float = 悬浮窗; 其余 = 主窗口
   const [routeHash, setRouteHash] = useState<string>(window.location.hash || '')
   useEffect(() => {
     const onHash = () => setRouteHash(window.location.hash || '')
@@ -137,13 +137,13 @@ export default function App() {
     // 恢复动效
     const anim = (settings.general).animation
     document.documentElement.style.setProperty('--anim-duration', anim === false ? '0s' : '0.2s')
-    // v0.2.1: 应用外观设置
+    // 应用外观设置
     const g = settings.general
     applyAppearance(g)
   }, [])
 
-  // v0.2.1: 实时监听外观设置变更
-  // v0.2.3: 跟随系统 —— 系统深浅色切换时实时重应用(system 预设)
+  // 实时监听外观设置变更
+  // 跟随系统 —— 系统深浅色切换时实时重应用(system 预设)
   useEffect(() => {
     const unsub = useSettingsStore.subscribe(s => {
       applyAppearance(s.general)
@@ -192,7 +192,7 @@ export default function App() {
         {renderView()}
       </div>
       {view === 'chat' && <RightPanel />}
-      {/* v0.2.4: agent 使用浏览器时的主窗口内横幅提示 */}
+      {/* agent 使用浏览器时的主窗口内横幅提示 */}
       <FloatBadge />
     </div>
   )

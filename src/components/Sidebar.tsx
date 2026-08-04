@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+﻿import React, { useMemo } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import type { View } from '../App'
@@ -30,7 +30,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
   const mode = useSettingsStore(s => s.general.mode || 'work')
   const setMode = useSettingsStore(s => s.setMode)
 
-  // v0.2.3-fix: 显示全部会话(不按模式过滤) —— 删除会话后聊天框不再"残留"其他模式的会话消息(删光=空白)
+  // 显示全部会话(不按模式过滤) —— 删除会话后聊天框不再"残留"其他模式的会话消息(删光=空白)
   const filtered = sessions
 
   const handleSwitch = (id: string) => {
@@ -61,7 +61,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             key={item.id}
             className={`menu-item ${currentView === item.id ? 'active' : ''}`}
             onClick={() => {
-              // v0.2.3: 浏览器导航 -> 打开独立浏览器窗口
+              // 浏览器导航 -> 打开独立浏览器窗口
               if (item.id === 'browser') { try { window.huangquan?.web.showPanel() } catch {} return }
               onNavigate(item.id)
             }}

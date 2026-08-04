@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react'
+﻿import React, { useState, useRef, useEffect } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
 import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Lightbulb, Zap, Flame, Sparkles as SparklesIcon, Send, Square, ImagePlus, Gauge, Brain, Crown } from 'lucide-react'
+import { api } from '../services/ipc'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
 type ThinkLevel = 'off' | 'quick' | 'medium' | 'deep' | 'extreme' | 'ultra'
@@ -27,21 +28,21 @@ const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.R
 export default function ChatInput() {
   const [text, setText] = useState('')
   const [images, setImages] = useState<string[]>([])
-  // v0.2.2: 拖拽附件（视频/音频/文档等非图片）
+  // 拖拽附件（视频/音频/文档等非图片）
   const [attachments, setAttachments] = useState<{ name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]>([])
   const [dragOver, setDragOver] = useState(false)
-  // v0.2.2: 引用内容（显示在输入框上方，像图片预览）
+  // 引用内容（显示在输入框上方，像图片预览）
   const [quote, setQuote] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [memOpen, setMemOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
   const [thinkOpen, setThinkOpen] = useState(false)
   const [memText, setMemText] = useState('')
-  // v0.2.1: 权限/推理强度与设置持久化联动（不再是无效果本地状态）
+  // 权限/推理强度与设置持久化联动（不再是无效果本地状态）
   const [perm, setPerm] = useState<string>(useSettingsStore.getState().general.filePermission || 'auto')
   const [think, setThink] = useState<string>(useSettingsStore.getState().general.thinkLevel || 'medium')
   const send = useChatStore(s => s.send)
-  // v0.2.3: 发送/停止按钮按"当前会话"判断 —— 聊天/工作会话独立, 其他会话在跑不影响本会话
+  // 发送/停止按钮按"当前会话"判断 —— 聊天/工作会话独立, 其他会话在跑不影响本会话
   const cid = useChatStore(s => s.cid)
   const allSessions = useChatStore(s => s.sessions)
   const curBusy = allSessions.find(x => x.id === cid)?.busy || false
@@ -51,7 +52,7 @@ export default function ChatInput() {
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  // v0.2.4: 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
+  // 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const classifyModel = (m: string): 'text' | 'image' | 'video' | 'audio' => {
     const ml = m.toLowerCase()
@@ -77,7 +78,7 @@ export default function ChatInput() {
   const [modelSel, setModelSel] = useState(defaultKey)
   const currentModel = modelSel || defaultKey || '未配置'
   const curModelName = (currentModel.includes('::') ? currentModel.split('::').pop() : currentModel) || ''
-  // v0.2.1: 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
+  // 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
   const supportsVision = !currentModel || currentModel === '未配置' || /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(curModelName.toLowerCase())
   const visionAssist = !supportsVision
   const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
@@ -87,13 +88,13 @@ export default function ChatInput() {
     const ta = taRef.current
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px' }
   }, [text])
-  // v0.2.2: 接收消息引用（全选引入 / 右键选中文字引入）
+  // 接收消息引用（全选引入 / 右键选中文字引入）
   useEffect(() => {
     const h = (e: Event) => { const d = (e as CustomEvent).detail; if (typeof d === 'string' && d.trim()) setQuote(d.trim()) }
     window.addEventListener('huangquan-quote', h)
     return () => window.removeEventListener('huangquan-quote', h)
   }, [])
-  // v0.2.3-fix: 切换/新建会话时清空输入框与引用, 防止上个会话的文字残留到新会话
+  // 切换/新建会话时清空输入框与引用, 防止上个会话的文字残留到新会话
   useEffect(() => { setText(''); setQuote('') }, [cid])
   useEffect(() => { if (currentModel && currentModel !== '未配置' && !currentModel.startsWith('img::') && !currentModel.startsWith('vid::') && !currentModel.startsWith('aud::')) updateContextLimit(curModelName) }, [currentModel, curModelName])
 
@@ -101,7 +102,7 @@ export default function ChatInput() {
 
   const handleSend = async () => {
     const t = text.trim()
-    // v0.2.3-fix: busy 时不拦截 —— 执行中发送=插话补充指令(send 内部处理), 终止后也可立即发新指令
+    // busy 时不拦截 —— 执行中发送=插话补充指令(send 内部处理), 终止后也可立即发新指令
     if (!t && !images.length) return
     if (t.startsWith('/')) {
       const cmd = t.slice(1); setText(''); closeAll()
@@ -113,7 +114,7 @@ export default function ChatInput() {
     setText('')
     const imgs = images.length ? [...images] : undefined
     const atts = attachments.length ? [...attachments] : undefined
-    // v0.2.2: 引用内容拼入消息
+    // 引用内容拼入消息
     const quoted = quote ? `> ${quote.replace(/\n/g, '\n> ')}\n\n` : ''
     setImages([]); setAttachments([]); setQuote(null)
     await send((quoted + t).trim() || (imgs?.length ? '分析图片' : '请处理我拖入的文件'), imgs, atts)
@@ -124,10 +125,10 @@ export default function ChatInput() {
     const imgs: string[] = []
     for (let i = 0; i < files.length; i++) {
       try {
-        // v0.2.2-fix: Electron 32 移除了 File.path，改用 webUtils.getPathForFile
-        const p = window.huangquan?.getPathForFile?.(files[i]) || (files[i] as File & { path?: string }).path
-        let b = p ? await window.huangquan.computer.readImageBase64(p) : null
-        // v0.2.3-fix: 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
+        // Electron 32 移除了 File.path，改用 webUtils.getPathForFile
+        const p = api?.getPathForFile?.(files[i]) || (files[i] as File & { path?: string }).path
+        let b = p ? await api.computer.readImageBase64(p) : null
+        // 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
         if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
         if (b) imgs.push(b)
       } catch (e) { console.warn('[ChatInput] 图片读取失败:', e) }
@@ -136,7 +137,7 @@ export default function ChatInput() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  // v0.2.2: 拖拽上传 —— 图片走 base64 通道，视频/音频/文档走附件通道
+  // 拖拽上传 —— 图片走 base64 通道，视频/音频/文档走附件通道
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
@@ -152,13 +153,13 @@ export default function ChatInput() {
       const isAud = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'opus', 'wma'].includes(ext)
       try {
         if (isImg) {
-          const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
-          let b = p ? await window.huangquan.computer.readImageBase64(p) : null
-          // v0.2.3-fix: 拖入的图片同样压缩
+          const p = api?.getPathForFile?.(f) || (f as File & { path?: string }).path
+          let b = p ? await api.computer.readImageBase64(p) : null
+          // 拖入的图片同样压缩
           if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
           if (b) newImgs.push(b)
         } else {
-          const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
+          const p = api?.getPathForFile?.(f) || (f as File & { path?: string }).path
           if (p) newAtts.push({ name: f.name, path: p, size: f.size, kind: isVid ? 'video' : isAud ? 'audio' : 'file' })
         }
       } catch (err) { console.warn('[ChatInput] 拖入文件处理失败:', f.name, err) }
@@ -169,9 +170,9 @@ export default function ChatInput() {
 
   const saveMemory = async () => {
     if (!memText.trim()) return
-    const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
+    const m = await api.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
     m.facts.push(memText.trim())
-    await window.huangquan.memory.save(m)
+    await api.memory.save(m)
     setMemText(''); setMemOpen(false)
   }
 
@@ -181,9 +182,9 @@ export default function ChatInput() {
 
   return (
     <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
-      {/* v0.2.2: 拖拽遮罩 */}
+      {/* 拖拽遮罩 */}
       {dragOver && <div style={{ position: 'absolute', inset: 0, zIndex: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(var(--skin-accent),.18)', border: '2px dashed var(--accent)', borderRadius: 10, pointerEvents: 'none', fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 600, color: 'var(--accent)' }}>松开鼠标 · 添加图片 / 视频 / 文件</div>}
-      {/* v0.2.2: 引用内容（显示在输入框上方，类似图片预览） */}
+      {/* 引用内容（显示在输入框上方，类似图片预览） */}
       {quote && (
         <div className="quote-preview" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, padding: '8px 12px', borderRadius: 8, borderLeft: '3px solid var(--accent)', background: 'var(--bg-card)', fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto' }}>
           <span style={{ flexShrink: 0, fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>引用</span>
@@ -202,7 +203,7 @@ export default function ChatInput() {
         </div>
       )}
 
-      {/* v0.2.2: 附件（视频/音频/文档）预览 */}
+      {/* 附件（视频/音频/文档）预览 */}
       {!!attachments.length && (
         <div className="image-attach-preview">
           {attachments.map((a, i) => (
@@ -275,7 +276,7 @@ export default function ChatInput() {
             )}
           </div>
 
-          {/* v0.2.3: 语音输入按钮已移除 —— Web Speech API 在 Electron 不可用 */}
+          {/* 语音输入按钮已移除 —— Web Speech API 在 Electron 不可用 */}
 
           {/* 图片上传 */}
           <label title={supportsVision ? '上传图片' : (visionAssist ? '上传图片（自动用视觉辅助模型分析）' : '上传图片')} style={{

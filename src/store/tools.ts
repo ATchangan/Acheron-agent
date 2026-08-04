@@ -1,5 +1,5 @@
-// src/store/tools.ts — 工具 Schema 定义(纯数据)
-// v0.2.4: 从 chat.ts 拆分, 降低单文件复杂度
+﻿// src/store/tools.ts — 工具 Schema 定义(纯数据)
+// 从 chat.ts 拆分, 降低单文件复杂度
 // v0.3.0 M1: TOOLS 类型化为 ToolSpec[](结构本身已符合, 仅补类型标注)
 import type { ToolSpec } from '../types'
 

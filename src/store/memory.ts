@@ -1,6 +1,6 @@
-// src/store/memory.ts —— 记忆读写/自动提取/缓存刷新(v0.3.0 M2)
+﻿// src/store/memory.ts —— 记忆读写/自动提取/缓存刷新(v0.3.0 M2)
 // 职责: recordEpisodic/autoExtractMemory/refreshMemoryCache/memoryBlock
-// 迁移自 chat.ts(v0.2.5) —— 行为未改
+// 迁移自 chat.ts() —— 行为未改
 import { safeIPC } from '../utils/safe'
 import { useSettingsStore } from './settings'
 import type { SessionData, MemoryData } from '../global'
@@ -29,7 +29,7 @@ export async function recordEpisodic(name: string, args: Record<string, unknown>
 }
 
 export async function autoExtractMemory(sid: string, sessions: SessionData[]) {
-  // v0.2.3-fix: 隐私开关(autoMemoryEnabled, 默认开启) + 原文截断收敛(150 字/条)
+  // 隐私开关(autoMemoryEnabled, 默认开启) + 原文截断收敛(150 字/条)
   try {
     const am = useSettingsStore.getState().general?.autoMemoryEnabled
     if (am === false) return
@@ -46,7 +46,7 @@ export async function autoExtractMemory(sid: string, sessions: SessionData[]) {
   } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
 }
 
-// v0.2.3: 全局记忆缓存 —— 置顶记忆/长期记忆对所有会话共享（启动时加载,发送时刷新）
+// 全局记忆缓存 —— 置顶记忆/长期记忆对所有会话共享（启动时加载,发送时刷新）
 let globalMemoryCache: { pinned: string[]; facts: string[]; summaries: { content: string }[] } = { pinned: [], facts: [], summaries: [] }
 export async function refreshMemoryCache() {
   try {
@@ -58,7 +58,7 @@ export async function refreshMemoryCache() {
     }
   } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
 }
-// v0.2.3: 记忆注入段 —— 置顶记忆(全量) + 长期记忆(最近20条) + 情景摘要(最近5条)
+// 记忆注入段 —— 置顶记忆(全量) + 长期记忆(最近20条) + 情景摘要(最近5条)
 export function memoryBlock(): string {
   const { pinned, facts, summaries } = globalMemoryCache
   const parts: string[] = []
