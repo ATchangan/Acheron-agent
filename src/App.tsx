@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
@@ -64,7 +64,7 @@ function applyAppearance(g: GeneralSettings) {
     const sc = g.skinColors
     r.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
     if (g.skinSecondary) r.setProperty('--skin-secondary', g.skinSecondary)
-    // v0.2.3-fix: 字体颜色按图片亮度自适应(亮图深字/暗图浅字) —— 防主题预设覆盖皮肤文字色
+    // 字体颜色按图片亮度自适应(亮图深字/暗图浅字) —— 防主题预设覆盖皮肤文字色
     const luma = (0.299 * sc.r + 0.587 * sc.g + 0.114 * sc.b) / 255
     if (luma > 0.55) {
       r.setProperty('--text-primary', '#1c1d21')

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+﻿import React, { useEffect, useRef, useState } from 'react'
 import { useSettingsStore } from '../store/settings'
 import { errMsg } from '../utils/safe'
 
@@ -28,7 +28,7 @@ export default function BrowserView() {
   }
 
   const copyUrl = async () => {
-    // v0.2.3-fix: clipboard 需焦点, 失焦时回退 execCommand
+    // clipboard 需焦点, 失焦时回退 execCommand
     const text = url || inputRef.current?.value || ''
     try {
       if (navigator.clipboard && document.hasFocus()) {

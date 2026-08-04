@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, StepSetting } from '../settings-ui'
 
@@ -31,7 +31,7 @@ export default function StrategyTab() {
         {(() => {
           const visCands: { id: string; label: string; pname: string; mname: string; keyed: boolean }[] = []
           const pushFrom = (pname: string, models: string[], keyed: boolean) => {
-            // v0.3.0-fix: 能力校验 —— 区分 识图多模态/绘图模型/纯文本; 绘图模型(seedream/dall/flux/sdxl/cogview 等)禁止进入视觉理解列表
+            // 能力校验 —— 区分 识图多模态/绘图模型/纯文本; 绘图模型(seedream/dall/flux/sdxl/cogview 等)禁止进入视觉理解列表
             const hits = (models || []).filter((m: string) => {
               const ml = m.toLowerCase()
               if (/(dall|flux|sdxl|stable-diffusion|seedream|cogview|imagen|midjourney|\bmj\b|draw|文生图|图片生成|image-gen|text2img|video-gen|sora|kling|runway|pika|veo)/.test(ml)) return false

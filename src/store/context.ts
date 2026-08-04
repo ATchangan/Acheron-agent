@@ -1,4 +1,4 @@
-// src/store/context.ts —— token 估算/分层压缩/提示词组装(v0.3.0 M2)
+﻿// src/store/context.ts —— token 估算/分层压缩/提示词组装(v0.3.0 M2)
 // 职责: 上下文构建与压缩。estimateTokens/getModelContextLimit/updateContextLimit/isVisionModel/buildPrompt/buildContextualMessages
 // 迁移自 chat.ts(v0.2.5) —— 行为未改
 import { v4 as uuidv4 } from 'uuid'
@@ -153,7 +153,7 @@ export function buildContextualMessages(
 ): LLMMessage[] {
   const d: LLMMessage[] = []
   // v0.2.6: 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
-  // v0.2.3-fix: 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
+  // 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
   let earlySummary = ''
   if (msgs.length > MAX_HISTORY_MSGS) {
     const early = msgs.slice(0, -MAX_HISTORY_MSGS)
@@ -176,7 +176,7 @@ export function buildContextualMessages(
       d.push({ role: 'tool', content: body, tool_call_id: m.tool_call_id || 'c_' + uuidv4().slice(0, 8) })
     }
     else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: m.tool_calls })
-    // v0.2.3-fix: 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
+    // 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
     else if (m.role === 'user' && m.images?.length && withImages) { const parts: VisionContent[] = [{ type: 'text', text: m.content || '' }]; m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } })); d.push({ role: 'user', content: parts }) }
     else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
   }

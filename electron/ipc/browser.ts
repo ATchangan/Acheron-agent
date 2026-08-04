@@ -1,4 +1,4 @@
-// electron/ipc/browser.ts —— 浏览器域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/browser.ts —— 浏览器域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain, BrowserWindow } from 'electron'
 
 export function registerBrowserIpc(deps: {
@@ -59,7 +59,7 @@ export function registerBrowserIpc(deps: {
     return getCurUrl()
   })
   // v0.2.3: 实时快照 —— 前端轮询此接口显示 agent 正在看的页面
-  // v0.2.3-fix: Windows 上隐藏窗口 capturePage 返回空 —— 截图时临时显示窗口再隐藏
+  // Windows 上隐藏窗口 capturePage 返回空 —— 截图时临时显示窗口再隐藏
   ipcMain.handle('browser:snapshot', async () => {
     let bw: BrowserWindow | null = null
     try {

@@ -1,4 +1,4 @@
-// electron/ipc/models.ts —— 模型探测域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/models.ts —— 模型探测域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 
 export function registerModelsIpc(deps: {
@@ -10,7 +10,7 @@ export function registerModelsIpc(deps: {
     try {
       let base = (baseUrl || '').replace(/\/+$/, '')
       if (!base) return { ok: false, error: '请先填写 Base URL' }
-      // v0.2.2-fix: Anthropic(Claude) 鉴权是 x-api-key 而非 Bearer —— 按 baseUrl / key 前缀自动识别
+      // Anthropic(Claude) 鉴权是 x-api-key 而非 Bearer —— 按 baseUrl / key 前缀自动识别
       // v0.2.4: 支持 Azure OpenAI / Google Gemini 模型列表接口
       const isAnthropic = !!(opts?.type === 'Anthropic Claude' || opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
       const isAzure = !!opts?.type?.includes('Azure') || /openai\.azure\.com/i.test(base)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+﻿import React, { useState, useEffect, useCallback } from 'react'
 
 export default function MemoryView() {
   const [pinnedFacts, setPinnedFacts] = useState<string[]>([])
@@ -15,7 +15,7 @@ export default function MemoryView() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  // v0.2.3-fix(N23): 记忆读写失败不再产生未处理 rejection
+  // 记忆读写失败不再产生未处理 rejection
   const addPinned = async () => {
     if (!newPinned.trim()) return
     try {

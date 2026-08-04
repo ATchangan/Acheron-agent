@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+﻿import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // ─── v0.2.1: 安全参数清洗——消除 Proxy、循环引用等不可序列化对象导致的 IPC 报错 ──
 function safeArg(obj: unknown): unknown {
@@ -29,7 +29,7 @@ function safeArg(obj: unknown): unknown {
 }
 
 contextBridge.exposeInMainWorld('huangquan', {
-  // v0.2.2-fix: Electron 32 移除了 File.path，必须用 webUtils.getPathForFile 获取真实路径
+  // Electron 32 移除了 File.path，必须用 webUtils.getPathForFile 获取真实路径
   getPathForFile: (f: File) => webUtils.getPathForFile(f),
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),

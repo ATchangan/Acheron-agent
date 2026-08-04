@@ -1,4 +1,4 @@
-// src/store/subtask.ts —— dispatch 子任务并行执行(v0.3.0 M2)
+﻿// src/store/subtask.ts —— dispatch 子任务并行执行(v0.3.0 M2)
 // 职责: 子任务并行(subRounds 循环)/结果汇总。runDispatch 迁移自 chat.ts runTool 的 dispatch case(行为未改)
 // 注意: 依赖 chat.ts 的 useChatStore(运行时循环依赖, 函数体内延迟解析, 安全)
 import { useAgents } from './agents'
@@ -22,7 +22,7 @@ export async function runDispatch(
         const ishiki = useChatStore.getState().sp ? useChatStore.getState().sp.replace(/\n##.+/s, '') : ''
         // v0.2.4: 任务快照优先 —— 用户任务中改设置不影响本次分发
         const cfg = snapCfg || await window.huangquan.settings.load()
-        // v0.2.5-fix: 已配置供应商优先(原 providers[0] 可能无 key, 分发失败)
+        // 已配置供应商优先(原 providers[0] 可能无 key, 分发失败)
         const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) return 'E:未配置 Provider，无法分发'
         const model = p.selectedModel || p.models[0] || ''
         const out: string[] = []
@@ -36,7 +36,7 @@ export async function runDispatch(
           if (!ag) return { agent: t.agent, task: t.task, error: 'unknown agent' }
           // v0.3.0 M3: 上下文隔离 —— 子 Agent 只含身份+任务, 不拼接全局历史/记忆/工具列表
           const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
-          // v0.2.3-fix: 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)
+          // 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)
           const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
           const agTools = (ag.tools.includes('*') ? TOOLS : TOOLS.filter((tt: ToolSpec) => ag.tools.includes(tt.function.name))).filter((tt: ToolSpec) => !COLLAB_TOOLS.includes(tt.function.name))
           const rid = 'sub' + Date.now() + '_' + tasks.indexOf(t) + '_' + Math.random().toString(36).slice(2, 6)
@@ -51,7 +51,7 @@ export async function runDispatch(
             const step = () => {
               subRounds++
               if (subRounds > SUB_ROUND_LIMIT) { resolve(subText || '(子任务轮次上限)'); return }
-              // v0.2.3-fix: 防御性清理 —— 丢弃孤儿 tool 消息(前面不是带 tool_calls 的 assistant), 防止 DeepSeek 400
+              // 防御性清理 —— 丢弃孤儿 tool 消息(前面不是带 tool_calls 的 assistant), 防止 DeepSeek 400
               const clean: LLMMessage[] = []
               for (const mm of subMsgs) {
                 if (mm.role === 'tool') {
@@ -89,7 +89,7 @@ export async function runDispatch(
               cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; if (tc?.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) }))
               cbs.push(window.huangquan.llm.onError((e: unknown) => {
                 if (settled) return; settled = true; cbs.forEach(f => f())
-                // v0.2.3-fix: 用户终止任务后不重试(终止由 taskGen 变化标记)
+                // 用户终止任务后不重试(终止由 taskGen 变化标记)
                 if (getTaskGen() !== dispStartGen) { resolve('已终止'); return }
                 const em = e as { error?: string }
                 const msg = typeof e === 'string' ? e : (em?.error || errMsg(e) || JSON.stringify(e))

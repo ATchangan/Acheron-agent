@@ -1,4 +1,4 @@
-// electron/ipc/memory.ts —— 记忆域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/memory.ts —— 记忆域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
@@ -51,7 +51,7 @@ export function registerMemoryIpc(deps: {
   })
   ipcMain.handle('memory:save', (_e, memory) => {
     // v0.2.1: 安全序列化防止循环引用
-    // v0.2.3-fix: 异步写盘不阻塞主进程
+    // 异步写盘不阻塞主进程
     fs.promises.writeFile(memoryPath, JSON.stringify(safeClone(memory), null, 2), 'utf-8').catch(() => {})
     return true
   })
@@ -64,7 +64,7 @@ export function registerMemoryIpc(deps: {
   ipcMain.handle('memory:importFile', async (_e, filePath: string) => {
     try {
       if (!fs.existsSync(filePath)) return false
-      // v0.2.3-fix(可用性): ragChunkSize/ragThreshold/ragAutoSave 设置接入
+      // ragChunkSize/ragThreshold/ragAutoSave 设置接入
       let g: Record<string, unknown> = {}
       try { g = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       const chunkSize = Math.max(100, Number(g.ragChunkSize) || 600)

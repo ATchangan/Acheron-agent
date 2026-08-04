@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+﻿import { create } from 'zustand'
 import type { SettingsData, ProviderConfig, MediaProvider } from '../global'
 import type { GeneralSettings } from '../types'
 
@@ -110,7 +110,7 @@ function extractDominantColor(dataUrl: string): Promise<{ r: number; g: number; 
   return extractSkinColors(dataUrl).then(c => c.primary)
 }
 
-// v0.2.2-fix: 背景图压缩 —— Chromium 对 CSS 自定义属性值有大小限制（~1MB 量级），
+// 背景图压缩 —— Chromium 对 CSS 自定义属性值有大小限制（~1MB 量级），
 // 超长 dataURL 写入 --bg-image 会静默失败导致背景图不显示；同时压缩避免 settings.json 膨胀
 export function compressImage(dataUrl: string, maxSide = 1920, quality = 0.82): Promise<string> {
   return new Promise((resolve) => {
@@ -145,7 +145,7 @@ function applySkin(dataUrl: string | null) {
   }
 }
 
-// v0.2.5-fix: 清理皮肤写入的内联变量(applySkinTextColor 的 10 个 + 主色/辅色)——
+// 清理皮肤写入的内联变量(applySkinTextColor 的 10 个 + 主色/辅色)——
 // 清除皮肤/卸载时调用, 否则内联残留(优先级最高)会覆盖主题 CSS, 导致切主题无效
 export function clearSkinInlineVars() {
   const r = document.documentElement.style
@@ -166,7 +166,7 @@ export function clearSkinInlineVars() {
   }
 }
 
-// v0.2.3-fix: 字体颜色按图片亮度自适应 —— 亮图深色字, 暗图浅色字
+// 字体颜色按图片亮度自适应 —— 亮图深色字, 暗图浅色字
 function applySkinTextColor(c: { r: number; g: number; b: number }) {
   const r = document.documentElement
   const luma = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255
@@ -285,7 +285,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       if (filled) { window.huangquan.settings.save(data as SettingsData).catch(() => {}) }
       const g = data.general
       if (g.bgImage) {
-        // v0.2.2-fix: 旧版可能存了超大图（CSS 变量写入失败），加载时压缩迁移
+        // 旧版可能存了超大图（CSS 变量写入失败），加载时压缩迁移
         const compressed = await compressImage(g.bgImage)
         if (compressed !== g.bgImage) {
           set((s) => ({ general: { ...s.general, bgImage: compressed } }))
@@ -301,14 +301,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
         document.documentElement.style.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
         // v0.2.5: 辅色恢复 + 解耦(不再覆盖 --accent/--accent-dim/--border-glow)
         if (g.skinSecondary) document.documentElement.style.setProperty('--skin-secondary', g.skinSecondary)
-        // v0.2.3-fix: 启动时也应用文字色自适应(亮图深字/暗图浅字)
+        // 启动时也应用文字色自适应(亮图深字/暗图浅字)
         applySkinTextColor(sc)
       } else {
-        // v0.2.5-fix: 无皮肤时兜底清理内联残留(历史版本清除皮肤后未清理, 导致主题切换被内联覆盖)
+        // 无皮肤时兜底清理内联残留(历史版本清除皮肤后未清理, 导致主题切换被内联覆盖)
         clearSkinInlineVars()
       }
     } catch { set({ loaded: true }) }
-    // v0.2.3-fix(可用性): logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
+    // logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
     try {
       const lv = (get().general)?.logLevel || 'info'
       if (lv === 'silent') { console.log = () => {}; console.warn = () => {}; console.error = () => {} }
@@ -338,7 +338,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   },
   setAnimation: (on) => { set((s) => ({ general: { ...s.general, animation: on } })); debouncedSave(); document.documentElement.style.setProperty('--anim-duration', on ? '0.2s' : '0s') },
   setBgImage: async (dataUrl) => {
-    // v0.2.2-fix: 先压缩再保存/应用（大图否则 CSS 变量写入失败 + 设置文件膨胀）
+    // 先压缩再保存/应用（大图否则 CSS 变量写入失败 + 设置文件膨胀）
     const finalUrl = dataUrl ? await compressImage(dataUrl) : null
     set((s) => ({ general: { ...s.general, bgImage: finalUrl || undefined } })); debouncedSave()
     if (finalUrl) {
@@ -352,14 +352,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       set((s) => ({ general: { ...s.general, skinColors: { r: c.primary.r, g: c.primary.g, b: c.primary.b }, skinSecondary: `${c.secondary.r},${c.secondary.g},${c.secondary.b}` } })); debouncedSave()
     } else {
       applySkin(null)
-      // v0.2.5-fix: 清除皮肤时必须清理文字/背景自适应写入的内联变量(否则内联残留覆盖主题, 切主题无效)
+      // 清除皮肤时必须清理文字/背景自适应写入的内联变量(否则内联残留覆盖主题, 切主题无效)
       clearSkinInlineVars()
       set((s) => ({ general: { ...s.general, skinColors: undefined, skinSecondary: undefined } })); debouncedSave()
     }
   },
   setBgOpacity: (v) => {
     set((s) => ({ general: { ...s.general, bgOpacity: v } })); debouncedSave()
-    // v0.2.2-fix: 同步写 CSS 变量 —— 蒙版不透明度 = 1 - 背景透明度
+    // 同步写 CSS 变量 —— 蒙版不透明度 = 1 - 背景透明度
     document.documentElement.style.setProperty('--bg-mask-opacity', String(1 - v))
   },
   updateGeneral: (patch: Partial<GeneralSettings>) => { set((s) => ({ general: { ...s.general, ...patch } })); debouncedSave() },

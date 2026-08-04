@@ -1,4 +1,4 @@
-// electron/ipc/skills.ts —— 技能域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/skills.ts —— 技能域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain, dialog } from 'electron'
 import * as fs from 'fs'
 import { join, resolve } from 'path'
@@ -29,7 +29,7 @@ export function registerSkillsIpc(deps: {
       return skills
     } catch { return [] }
   })
-  // v0.2.3-fix: 只允许读取技能目录内的文件(防越权读取任意路径)
+  // 只允许读取技能目录内的文件(防越权读取任意路径)
   ipcMain.handle('skills:load', (_e, path: string) => {
     try {
       const p = String(path || '')

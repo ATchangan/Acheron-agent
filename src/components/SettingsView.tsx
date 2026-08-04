@@ -66,7 +66,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   // v0.2.6: 模型缓存统计(持久化)
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
-  // v0.2.5-fix: 新建工作流改用应用内弹窗(Electron 不支持 prompt, 调用会抛错触发全局错误页)
+  // 新建工作流改用应用内弹窗(Electron 不支持 prompt, 调用会抛错触发全局错误页)
   const [wfModal, setWfModal] = useState(false)
   const [wfName, setWfName] = useState('')
   const [wfDesc, setWfDesc] = useState('')
@@ -122,7 +122,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
           {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'about' ? <AboutTab /> : null}
         </div>
       </div>
-      {/* v0.2.5-fix: 新建工作流弹窗(Electron prompt 不支持) */}
+      {/* 新建工作流弹窗(Electron prompt 不支持) */}
       {wfModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setWfModal(false)}>
           <div style={{ ...S.card, width: 420, padding: 24 }}>

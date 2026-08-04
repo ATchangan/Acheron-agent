@@ -1,4 +1,4 @@
-// electron/memory/vector.ts — 语义记忆系统 v2
+﻿// electron/memory/vector.ts — 语义记忆系统 v2
 // TF-IDF 向量化 + 余弦相似度 + 重要性评分 + Token预算 + 衰减 + 自动遗忘
 
 import * as fs from 'fs'
@@ -71,7 +71,7 @@ function normalizeVectors() {
   if (changed) dirty = true
 }
 
-// v0.2.3-fix: 中文按双字滑动窗口(bigram)切分 —— 提升 TF-IDF 对中文语义的区分度
+// 中文按双字滑动窗口(bigram)切分 —— 提升 TF-IDF 对中文语义的区分度
 function tokenize(text: string): string[] {
   const latin = text.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(t => t.length > 0)
   const cnChars = text.match(/[\u4e00-\u9fff]/g) || []
@@ -150,7 +150,7 @@ function cleanStale() {
 
 let _inited = false
 export function initMemory(dataPath: string) {
-  // v0.2.3-fix(P14): 幂等 —— main.ts 启动预加载 + getVM 懒加载会重复调用, 避免重复读盘
+  // 幂等 —— main.ts 启动预加载 + getVM 懒加载会重复调用, 避免重复读盘
   if (_inited) return
   _inited = true
   memPath = dataPath

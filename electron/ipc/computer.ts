@@ -1,4 +1,4 @@
-// electron/ipc/computer.ts —— 电脑控制域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/computer.ts —— 电脑控制域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain, shell, dialog, BrowserWindow, clipboard } from 'electron'
 import * as fs from 'fs'
 import { join, dirname, extname } from 'path'
@@ -337,7 +337,7 @@ ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
     const tmpDir = join(userDataPath, 'codebox')
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
     const ext = lang === 'python' ? '.py' : lang === 'node' ? '.js' : '.txt'
-    // v0.2.3-fix(P24): 随机后缀防并发冲突; 顺带清理 60s 前残留的临时文件
+    // 随机后缀防并发冲突; 顺带清理 60s 前残留的临时文件
     const fp = join(tmpDir, 'codebox_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + ext)
     try { for (const f of fs.readdirSync(tmpDir)) { if (f.startsWith('codebox_') && Date.now() - fs.statSync(join(tmpDir, f)).mtimeMs > 60000) { try { fs.unlinkSync(join(tmpDir, f)) } catch (e) { console.debug('[swallow]', e) } } } } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     fs.writeFileSync(fp, code, 'utf-8')

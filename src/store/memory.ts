@@ -1,4 +1,4 @@
-// src/store/memory.ts —— 记忆读写/自动提取/缓存刷新(v0.3.0 M2)
+﻿// src/store/memory.ts —— 记忆读写/自动提取/缓存刷新(v0.3.0 M2)
 // 职责: recordEpisodic/autoExtractMemory/refreshMemoryCache/memoryBlock
 // 迁移自 chat.ts(v0.2.5) —— 行为未改
 import { safeIPC } from '../utils/safe'
@@ -29,7 +29,7 @@ export async function recordEpisodic(name: string, args: Record<string, unknown>
 }
 
 export async function autoExtractMemory(sid: string, sessions: SessionData[]) {
-  // v0.2.3-fix: 隐私开关(autoMemoryEnabled, 默认开启) + 原文截断收敛(150 字/条)
+  // 隐私开关(autoMemoryEnabled, 默认开启) + 原文截断收敛(150 字/条)
   try {
     const am = useSettingsStore.getState().general?.autoMemoryEnabled
     if (am === false) return

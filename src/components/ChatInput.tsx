@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+﻿import React, { useState, useRef, useEffect } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
@@ -93,7 +93,7 @@ export default function ChatInput() {
     window.addEventListener('huangquan-quote', h)
     return () => window.removeEventListener('huangquan-quote', h)
   }, [])
-  // v0.2.3-fix: 切换/新建会话时清空输入框与引用, 防止上个会话的文字残留到新会话
+  // 切换/新建会话时清空输入框与引用, 防止上个会话的文字残留到新会话
   useEffect(() => { setText(''); setQuote('') }, [cid])
   useEffect(() => { if (currentModel && currentModel !== '未配置' && !currentModel.startsWith('img::') && !currentModel.startsWith('vid::') && !currentModel.startsWith('aud::')) updateContextLimit(curModelName) }, [currentModel, curModelName])
 
@@ -101,7 +101,7 @@ export default function ChatInput() {
 
   const handleSend = async () => {
     const t = text.trim()
-    // v0.2.3-fix: busy 时不拦截 —— 执行中发送=插话补充指令(send 内部处理), 终止后也可立即发新指令
+    // busy 时不拦截 —— 执行中发送=插话补充指令(send 内部处理), 终止后也可立即发新指令
     if (!t && !images.length) return
     if (t.startsWith('/')) {
       const cmd = t.slice(1); setText(''); closeAll()
@@ -124,10 +124,10 @@ export default function ChatInput() {
     const imgs: string[] = []
     for (let i = 0; i < files.length; i++) {
       try {
-        // v0.2.2-fix: Electron 32 移除了 File.path，改用 webUtils.getPathForFile
+        // Electron 32 移除了 File.path，改用 webUtils.getPathForFile
         const p = window.huangquan?.getPathForFile?.(files[i]) || (files[i] as File & { path?: string }).path
         let b = p ? await window.huangquan.computer.readImageBase64(p) : null
-        // v0.2.3-fix: 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
+        // 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
         if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
         if (b) imgs.push(b)
       } catch (e) { console.warn('[ChatInput] 图片读取失败:', e) }
@@ -154,7 +154,7 @@ export default function ChatInput() {
         if (isImg) {
           const p = window.huangquan?.getPathForFile?.(f) || (f as File & { path?: string }).path
           let b = p ? await window.huangquan.computer.readImageBase64(p) : null
-          // v0.2.3-fix: 拖入的图片同样压缩
+          // 拖入的图片同样压缩
           if (b && b.length > 400 * 1024) b = await compressImage(b, 1280, 0.8)
           if (b) newImgs.push(b)
         } else {

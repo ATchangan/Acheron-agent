@@ -1,4 +1,4 @@
-// src/store/runtime.ts —— 工具循环/中断令牌/工具执行(v0.3.0 M2)
+﻿// src/store/runtime.ts —— 工具循环/中断令牌/工具执行(v0.3.0 M2)
 // 职责: runTool 及工具分支/analyzeWithVision/taskGen 中断令牌/工具缓存
 // 迁移自 chat.ts(v0.2.5) —— 行为未改
 // 注意: 依赖 chat.ts 的 useChatStore(运行时循环依赖, 函数体内延迟解析, 安全)
@@ -80,7 +80,7 @@ function checkFilePermission(name: string, args: Record<string, unknown>): strin
 
 export function getActiveTools(): ToolSpec[] {
   const raw = useSettingsStore.getState().general.disabledTools
-  // v0.2.3-fix(P4-2): 未显式配置时默认禁用高风险 workflow 工具(LLM 输出直接执行 JS, 已限 8KB+严格模式, 仍需人工开启)
+  // 未显式配置时默认禁用高风险 workflow 工具(LLM 输出直接执行 JS, 已限 8KB+严格模式, 仍需人工开启)
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   // v0.3.0 M4: 插件工具并入(有 index.js 实现的插件, plugin_ 前缀防冲突)
   const merged = [...TOOLS, ...PLUGIN_TOOLS]
@@ -193,7 +193,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
     // v0.2.1: 文件权限检查
     const permErr = checkFilePermission(name, a)
     if (permErr) return permErr
-    // v0.2.3: 每工具权限表(ToolsView 配置)接入 —— v0.2.3-fix(T1): IPC API 名 → agent 工具名映射
+    // v0.2.3: 每工具权限表(ToolsView 配置)接入 —— IPC API 名 → agent 工具名映射
     // ToolsView 的 BUILTIN_TOOLS 用 IPC 名(readFile/exec...), runTool 用 agent 名(read/exec_command...), 不映射则权限设置部分失效
     try {
       const perms = JSON.parse(localStorage.getItem('huangquan_tool_perms') || '{}') as Record<string, string>
@@ -263,7 +263,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'clipboard_write': { if(!A.text)return'E:need text';await window.huangquan.computer.clipboardWrite(A.text);return'ok:clipped' }
       case 'process_list': return await window.huangquan.computer.processList()
       case 'kill_process': { if(!A.pid)return'E:need pid';return await window.huangquan.computer.killProcess(A.pid) }
-      // v0.2.3-fix(P12): 相同事实去重(重复调用不再累积)
+      // 相同事实去重(重复调用不再累积)
       case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = String(A.fact || '').trim(); if (!fact) return 'E:need fact'; const pf = (m.pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; m.pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m) as Record<string, unknown>); return 'ok:pinned' }
       // v0.2.3: recall_memory 接入向量语义检索(主进程 TF-IDF) + 关键词匹配合并
       case 'recall_memory': {
@@ -356,4 +356,4 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
 }
 
 // v0.2.1: 情景记忆——自动记录文件操作到审计日志
-// v0.2.3-fix: 写盘防抖 —— 500ms 合并批量工具操作, 避免每次工具调用全量读写 memory.json
+// 写盘防抖 —— 500ms 合并批量工具操作, 避免每次工具调用全量读写 memory.json

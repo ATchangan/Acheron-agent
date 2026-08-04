@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+﻿import React, { useState, useCallback } from 'react'
 import { Volume2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -63,7 +63,7 @@ export default function MessageItem({ message, streaming }: Props) {
   const isUser = message.role === 'user'
   const timeText = new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   const handleCopy = async () => {
-    // v0.2.3-fix: 内容可能是多模态数组 → 统一转文本; clipboard 需焦点 → 异常时回退 execCommand(无需焦点/权限)
+    // 内容可能是多模态数组 → 统一转文本; clipboard 需焦点 → 异常时回退 execCommand(无需焦点/权限)
     const raw = message.content
     const text = typeof raw === 'string' ? raw : JSON.stringify(raw || '')
     try {
@@ -103,7 +103,7 @@ export default function MessageItem({ message, streaming }: Props) {
     const isError = c.startsWith('E:')
     const toolId = message.tool_call_id || ''
     const shortId = toolId.replace(/^(call_|c_)/, '').slice(0, 8) || 'tool'
-    // v0.2.3-fix: 显示关联工具名(如 ✓ write), 不再只显示 call id 缩写
+    // 显示关联工具名(如 ✓ write), 不再只显示 call id 缩写
     const toolName = message.toolName || shortId
     return (
       <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
@@ -117,7 +117,7 @@ export default function MessageItem({ message, streaming }: Props) {
     )
   }
 
-  // v0.2.3-fix: 工具调用卡片 —— 内嵌紧凑风格(与工具结果块一致: 无头像无sender)
+  // 工具调用卡片 —— 内嵌紧凑风格(与工具结果块一致: 无头像无sender)
   // header 只显示工具名, 参数为灰色单行摘要, 完整参数可展开
   const toolCalls = message.tool_calls
   if (toolCalls?.length) {
@@ -152,7 +152,7 @@ export default function MessageItem({ message, streaming }: Props) {
       </span>
     )
     // v0.2.1: 解析交互卡片 <!--CARD:title-->html<!--/CARD-->
-    // v0.2.3-fix(Q9): matchAll 一次性提取卡片, 避免 exec+replace 混用导致相同卡片错位
+    // matchAll 一次性提取卡片, 避免 exec+replace 混用导致相同卡片错位
     const cardRe = /<!--CARD(?::([^>]*))?-->([\s\S]*?)<!--\/CARD-->/g
     const cards: { title: string; html: string }[] = []
     let reflect = ''
@@ -160,7 +160,7 @@ export default function MessageItem({ message, streaming }: Props) {
     for (const m of text.matchAll(cardRe)) { cards.push({ title: m[1] || '', html: m[2] }) }
     if (cards.length) clean = text.replace(cardRe, '')
     // v0.2.3: 反思内容不再静默丢弃 —— 提取为可折叠「💭 反思」块
-    // v0.2.3-fix(Q8): 多段反思内容拼接保留, 不再只留最后一段
+    // 多段反思内容拼接保留, 不再只留最后一段
     clean = clean.replace(/<reflect>([\s\S]*?)<\/reflect>/g, (_s: string, body: string) => { const b = body.trim(); reflect = reflect ? reflect + '\n' + b : b; return '' }).trim()
     return (
       <div className="markdown-body">

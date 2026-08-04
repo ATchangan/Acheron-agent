@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+﻿import React, { useEffect, useRef } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import MessageItem from './MessageItem'
@@ -17,7 +17,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
   const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
   const endRef = useRef<HTMLDivElement>(null)
-  // v0.2.5-fix: 任一供应商已配置即可对话(原只检查 providers[0], 首个无 key 的供应商会挡住全部)
+  // 任一供应商已配置即可对话(原只检查 providers[0], 首个无 key 的供应商会挡住全部)
   const hasProvider = providers.some(p => p.apiKey)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [session?.messages, stage])
@@ -31,7 +31,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const displayMsgs = (() => {
     const out: typeof msgs = []
     for (const m of msgs) {
-      // v0.2.3-fix: 工具过程(调用卡片+结果块)统一显示在「思考气泡」内, 单气泡模式消息流保持干净(只有用户+最终回答)
+      // 工具过程(调用卡片+结果块)统一显示在「思考气泡」内, 单气泡模式消息流保持干净(只有用户+最终回答)
       if (m.role === 'tool') { if (!singleBubble) out.push(m); continue }
       if (m.role === 'assistant' && m.tool_calls && !m.content) { if (!singleBubble) out.push(m); continue }
       if (m.role === 'assistant' && !m.content && !m.tool_calls) continue
@@ -43,7 +43,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
         out[out.length - 1] = { ...prev, content: merged }
       } else out.push(m)
     }
-    // v0.2.3-fix(Q14): 工具名关联只对多气泡模式有意义, 注入移到 MessageItem 外循环之后仍保持简单
+    // 工具名关联只对多气泡模式有意义, 注入移到 MessageItem 外循环之后仍保持简单
     if (!singleBubble) {
       const toolNameById = new Map<string, string>()
       for (const m of msgs) {
@@ -60,7 +60,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
 
   const lastMsg = msgs.slice(-1)[0]
   const isGeneratingText = streaming && lastMsg?.role === 'assistant' && lastMsg?.content && lastMsg.content.length > 0
-  // v0.2.3-fix(Q4): 单次遍历取最后 tool/assistant 时间戳, 不再三次全量 filter
+  // 单次遍历取最后 tool/assistant 时间戳, 不再三次全量 filter
   let lastToolT = 0, lastAsstT = 0
   for (const m of msgs) { if (m.role === 'tool') lastToolT = m.timestamp; else if (m.role === 'assistant') lastAsstT = m.timestamp }
   const isToolWorking = (streaming || executing) && lastToolT > 0 && lastToolT > lastAsstT
@@ -70,7 +70,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
     if (!isActive) return null
     if (isGeneratingText) return null // 已经有文字在流式输出
     // v0.2.3: 思考气泡内动态显示执行阶段 —— 思考中 → 🔧 调用 XX → ✓ 完成(任务结束气泡消失)
-    // v0.2.3-fix(Q5): 仅显示当前会话的 stage(多会话并发不串台); 其他会话执行中显示通用「执行中」
+    // 仅显示当前会话的 stage(多会话并发不串台); 其他会话执行中显示通用「执行中」
     const myStage = stage && stage.sid === session?.id ? stage : null
     const phase = myStage?.phase || 'thinking'
     const label = myStage?.label || (isToolWorking ? '执行中' : '思考中')

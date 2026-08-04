@@ -1,4 +1,4 @@
-// electron/ipc/web.ts —— 网络域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/web.ts —— 网络域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 
@@ -56,7 +56,7 @@ export function registerWebIpc(deps: {
       // 读取设置中的浏览器解析配置(双向绑定全局配置文件)
       let cfg: Record<string, unknown> = {}
       try { cfg = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-      // v0.2.3-fix(N27): 直接读文件时 cookie 是密文, 需解密后传给 web_read
+      // 直接读文件时 cookie 是密文, 需解密后传给 web_read
       if (typeof cfg.webReadCookies === 'string' && cfg.webReadCookies.startsWith('__ENC__')) cfg.webReadCookies = decKey(cfg.webReadCookies)
       // 总开关: 关闭后 Agent 无法调用 web_read
       if (cfg.webReadEnabled === false) {

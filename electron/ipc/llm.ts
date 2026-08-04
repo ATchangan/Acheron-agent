@@ -1,4 +1,4 @@
-// electron/ipc/llm.ts —— LLM 域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/llm.ts —— LLM 域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 
 interface LLMMsg {
@@ -67,7 +67,7 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
     }
   }
   const body: Record<string, unknown> = { model, messages, temperature, stream: true }
-  // v0.2.3-fix: 官方要求 include_usage 才保证流式返回完整 usage(prompt_cache_hit/miss_tokens), 否则缓存统计缺失
+  // 官方要求 include_usage 才保证流式返回完整 usage(prompt_cache_hit/miss_tokens), 否则缓存统计缺失
   body.stream_options = { include_usage: true }
   // v0.2.3-debug: 打印首个 assistant(tool_calls) 完整结构(排查 reasoning_content 400)
   if ((messages || []).some((m: LLMMsg) => m.role === 'assistant' && m.tool_calls)) {

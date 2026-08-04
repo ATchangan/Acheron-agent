@@ -49,7 +49,7 @@ export interface S {
 }
 
 // v0.2.1: 插话补充队列 —— 工作中插话=给当前任务补充指令，任务不中断，下一轮执行时注入
-// v0.2.3-fix: 插话队列带会话归属 —— 多会话并发时插话只被本会话消费, 防串台
+// 插话队列带会话归属 —— 多会话并发时插话只被本会话消费, 防串台
 let pendingInterject: { sid: string; text: string }[] = []
 export const clearInterjectForSid = (sid: string) => { pendingInterject = pendingInterject.filter(x => x.sid !== sid) }
 
@@ -104,7 +104,7 @@ export async function runSend(
   const cfg = await window.huangquan.settings.load()
   // v0.2.4: 任务配置快照 —— 任务执行期间用快照, 用户改设置不影响当前任务
   const gSnap = (cfg.general || {}) as GeneralSettings
-  // v0.2.5-fix: 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
+  // 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
   const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
   // v0.2.3: 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
   refreshMemoryCache().catch(() => {})
@@ -119,7 +119,7 @@ export async function runSend(
     return null
   }
   const main = resolveModel('mainModel') || { p, model: p.selectedModel || p.models[0] || 'deepseek-v4-pro' }
-  // 简单任务自动用快速模型（autoFastModel 开启且消息短/无图片时）—— v0.2.3-fix(P29): 词表扩充, 减少误判
+  // 简单任务自动用快速模型（autoFastModel 开启且消息短/无图片时）—— 词表扩充, 减少误判
   const heavyWords = ['工具', '代码', '脚本', '文件', '读取', '创建', '查找', '目录', '搜索', '网页', '下载', '执行', '命令', '终端', '分析', '总结', '报告', '修改', '删除', '移动', '复制']
   const isSimple = gNow.autoFastModel !== false && !images?.length && content.length < 300 && !heavyWords.some(w => content.includes(w))
   const fast = isSimple ? (resolveModel('fastModel') || main) : main
@@ -128,7 +128,7 @@ export async function runSend(
   const large = resolveModel('largeModel')
   const chosen = isSimple ? (small || fast) : (large || main)
   let curP = chosen.p, model = chosen.model
-  // v0.3.0-fix: 调度选择日志(定位切换失效问题)
+  // 调度选择日志(定位切换失效问题)
   console.log('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
   set({ curModel: model || '' })
   // v0.2.4-debug: 暴露最近一次实际发送模型(验证调度绑定/多模型策略接线)
@@ -171,8 +171,8 @@ export async function runSend(
     if (failN > 0) content = content + (content ? '\n\n' : '') + '[' + failN + ' 张图片无法解析, 已忽略]'
   }
 
-  // 1. 追加用户消息到 store —— v0.2.3-fix: 立即上屏（不再等视觉分析，避免界面停留初始状态）
-  // v0.2.3-fix: images 保留原始图片（聊天框 UI 显示）；API 是否传图由 withImages=isVisionModel(model) 决定
+  // 1. 追加用户消息到 store —— 立即上屏（不再等视觉分析，避免界面停留初始状态）
+  // images 保留原始图片（聊天框 UI 显示）；API 是否传图由 withImages=isVisionModel(model) 决定
   const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
 // v0.2.3: 本任务 token 基线(主 Agent + 全部子 Agent 消耗都计入 sessTok, 任务结束时算增量)
 const tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number }> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
@@ -186,10 +186,10 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
   })
 
   // v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时，用视觉模型分析图片并转为文本描述
-  // v0.2.2-fix: 无论视觉分析是否成功，主模型不支持视觉就不向 API 传图（否则 API 400: unknown variant image_url）
-  // v0.2.3-fix: 用户消息已先上屏，分析完成后更新该消息 content（追加分析结果）
-  // v0.3.0-fix: 视觉任务(发图/识图) —— 强制优先【视觉理解】队列模型(策略页配置, 按优先级), 队列空回退自动候选;
-  //             调用失败自动顺位下一个; 全部失败清晰报错; 禁止纯文本模型处理图像
+  // 无论视觉分析是否成功，主模型不支持视觉就不向 API 传图（否则 API 400: unknown variant image_url）
+  // 用户消息已先上屏，分析完成后更新该消息 content（追加分析结果）
+  // 视觉任务(发图/识图) —— 强制优先【视觉理解】队列模型(策略页配置, 按优先级), 队列空回退自动候选;
+  // 调用失败自动顺位下一个; 全部失败清晰报错; 禁止纯文本模型处理图像
   // v0.3.0 FIX-F: 视觉任务判定(收紧) —— 发图/路径/明确看图表述; 无图无路径的宽正则命中 → 不切模型并提示
   let isVisualTask = !!(images && images.length) || !!imgPathMatch
     || /(看(一?下|看)?.*(图|照片|截图)|(图|照片|截图).*(什么|内容|识别|分析|描述|里(有|是)什么)|识别.*(图|照片|截图)|视觉理解|图片里|图像里|这张图|这张照片|这个截图)/i.test(content)
@@ -325,7 +325,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
         if (em && em.requestId && em.requestId !== rid) return // 其他会话的错误，忽略
         cbs.forEach(f => f()); reject(new Error(errMsg))
       }))
-      // v0.2.3-fix(P27): 工具参数解析失败不再完全静默 —— console.warn 便于排查
+      // 工具参数解析失败不再完全静默 —— console.warn 便于排查
       cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { console.warn('[黄泉Agent] 工具参数解析失败:', tc?.function?.name, String(tc?.function?.arguments || '').slice(0, 100)) } }))
       const cur = get().sessions.find(x => x.id === sid)!
       const msgs = buildContextualMessages(cur.messages, isVisionModel(model), { gSnap, cl: get().cl, spIshiki: get().spIshiki, spFallback: get().sp, onAgentRoute: (role) => { if (role) { set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, agent: role as string, activeAgents: (x.activeAgents || []).includes(role as string) ? x.activeAgents : [...(x.activeAgents || []), role as string] } : x) })); try { window.__huangquan_agent = role as string } catch (e) { /* ignore */ console.debug('[swallow]', e) } } } })
@@ -338,7 +338,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
   try {
     // 每次 LLM 调用独立超时保护 —— v0.2.3: 只中止当前请求(requestId), 不再误杀其他会话并发请求
     let timeoutId: ReturnType<typeof setTimeout> | null = null
-    // v0.2.3-fix(可用性): toolTimeout 设置接入 —— 默认 120s, 可在设置中调整
+    // toolTimeout 设置接入 —— 默认 120s, 可在设置中调整
     const toolTimeout = Number(gSnap.toolTimeout) || 120000
     const guard = (rid: string) => { timeoutId = setTimeout(() => window.huangquan.llm.abort(rid), toolTimeout) }
     const clear = () => { if (timeoutId) clearTimeout(timeoutId) }
@@ -364,7 +364,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
       const rid1 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
       guard(rid1)
       set({ stage: { sid, phase: 'thinking', label: '思考中', detail: '' } })
-      // v0.3.0-fix: 视觉任务模型轮询 —— 调用失败自动顺位下一个视觉模型(队列优先级), 全部失败清晰报错
+      // 视觉任务模型轮询 —— 调用失败自动顺位下一个视觉模型(队列优先级), 全部失败清晰报错
       if (isVisualTask && visQueue.length > 1) {
         const tried: string[] = []
         let okRes: CallResult | null = null
@@ -466,7 +466,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
         let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
         // v0.2.3: 工具日志已改为写入右侧终端面板(terminal), 不再拼进消息正文(原死代码块已删除)
         // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）
-        // v0.2.2-fix: 只清空【本轮内】的中间 assistant 消息 —— 之前遍历整个会话导致历史回复全部被清空
+        // 只清空【本轮内】的中间 assistant 消息 —— 之前遍历整个会话导致历史回复全部被清空
         const roundIds = new Set(thisRound.map(m => m.id))
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => (roundIds.has(m.id) && m.role === 'assistant' && m.content && m.id !== aid) ? { ...m, content: '' } : (m.id === aid ? { ...m, content: finalContent, _toolLog: toolLog } : m)) } : x) }))
       }
@@ -496,7 +496,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, activeAgents: undefined } : x) }))
     set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
-    // v0.2.3-fix: 任务结束瞬间发送的消息(走了插话分支但任务已退出)自动续跑 —— 解决"每个窗口只能发一次指令"
+    // 任务结束瞬间发送的消息(走了插话分支但任务已退出)自动续跑 —— 解决"每个窗口只能发一次指令"
     // v0.3.1 C4: 会话级句柄(scheduleResume) + 触发前校验(代号未变 + 无新消息指纹)
     try {
       const ss2 = get().sessions.find(x => x.id === sid)
@@ -533,15 +533,15 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
     if (toSave) { window.huangquan.sessions.save(safeIPC(toSave)); autoExtractMemory(sid, get().sessions).catch(() => {}) }
   } catch (e: unknown) {
     const errText = (e instanceof Error ? e.message : String(e))
-    // v0.3.0-fix: 栈溢出/异常友好化 —— 图片处理或模型调用异常时给出可操作提示, 不再裸抛
+    // 栈溢出/异常友好化 —— 图片处理或模型调用异常时给出可操作提示, 不再裸抛
     const friendly = /maximum call stack|stack size|RangeError|too much recursion/i.test(errText)
       ? '处理任务时出现异常（可能是图片过大或模型调用过深）。建议：换较小的图片重试，或在 设置→策略 中检查视觉/主模型配置。' + (images?.length ? '（本次为图片任务）' : '')
       : errText
-    // v0.2.2-fix: API 不接受 image_url 时（模型实际不支持视觉），移除图片后自动重试一次纯文本
+    // API 不接受 image_url 时（模型实际不支持视觉），移除图片后自动重试一次纯文本
     if (images?.length && /image_url|image url|image data/i.test(errText)) {
       console.warn('[黄泉Agent] 模型不支持图片，自动降级为纯文本重试:', errText.slice(0, 120))
       try {
-        // v0.2.3-fix(P11): 简化 —— 直接按 userMsg.id 过滤, 消除冗余查找
+        // 简化 —— 直接按 userMsg.id 过滤, 消除冗余查找
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.filter(m => m.id !== userMsg?.id) } : x) }))
       } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false } : x) }))

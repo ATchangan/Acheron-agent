@@ -1,4 +1,4 @@
-// electron/ipc/settings.ts —— 设置域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/settings.ts —— 设置域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
@@ -47,7 +47,7 @@ export function registerSettingsIpc(deps: {
           try { fs.writeFileSync(join(userDataPath, file), v, 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
           g2[key] = '__FILE__' + file
         } else if (v === undefined || v === null) {
-          // v0.2.5-fix: 数据安全 —— 删除大字段文件前先备份 .bak(壁纸曾因异常被删且无法找回)
+          // 数据安全 —— 删除大字段文件前先备份 .bak(壁纸曾因异常被删且无法找回)
           try {
             const fp = join(userDataPath, file)
             if (fs.existsSync(fp)) fs.copyFileSync(fp, fp + '.bak')

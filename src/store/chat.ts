@@ -74,7 +74,7 @@ export const useChatStore = create<S>((set, get) => ({
     }
     if (wd) window.huangquan.computer.exec('if (-not (Test-Path "' + wd + '")) { New-Item -ItemType Directory -Path "' + wd + '" -Force }').catch(() => {})
     const sessions = await Promise.all(metas.map((m: SessionMeta) => window.huangquan.sessions.load(m.id).catch(() => ({ id: m.id, title: 'Chat', messages: [], mode: 'work' }))))
-    // v0.2.3-fix: 启动巡检 —— 磁盘↔内存对账: 删除"磁盘存在但列表无归属"的孤立会话文件(删除会话未同步清理的孤儿消息)
+    // 启动巡检 —— 磁盘↔内存对账: 删除"磁盘存在但列表无归属"的孤立会话文件(删除会话未同步清理的孤儿消息)
     try {
       const diskIds: string[] = (await window.huangquan.sessions.audit?.()) || [] as string[]
       const storeIds = new Set<string>(sessions.map(s => s.id))
@@ -89,7 +89,7 @@ export const useChatStore = create<S>((set, get) => ({
     for (const s of stale) { window.huangquan.sessions.delete(s.id).catch(() => {}) }
     const kept = sessions.filter(s => s.messages.length > 0)
     kept.unshift(ns)
-    // v0.2.3-fix(可用性): maxSessions 设置接入 —— 超限时仅保留最新的 N 个会话(0=不限)
+    // maxSessions 设置接入 —— 超限时仅保留最新的 N 个会话(0=不限)
     const maxS = Number((cfg.general)?.maxSessions) || 0
     set({ sessions: maxS > 0 ? kept.slice(0, maxS) : kept, cid: ns.id, sp })
   },
@@ -120,7 +120,7 @@ export const useChatStore = create<S>((set, get) => ({
     window.huangquan.sessions.save(safeIPC(ns))
   },
   switchS: (id) => {
-    // v0.2.3-fix(可用性): autoSave 设置接入 —— 切换会话前自动保存当前会话(autoSave !== false 时)
+    // autoSave 设置接入 —— 切换会话前自动保存当前会话(autoSave !== false 时)
     const curId = get().cid
     if (curId && curId !== id && useSettingsStore.getState().general.autoSave !== false) {
       const cur = get().sessions.find(x => x.id === curId)
@@ -136,7 +136,7 @@ export const useChatStore = create<S>((set, get) => ({
   del: (id) => {
     window.huangquan.sessions.delete(id)
     // v0.2.6: 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
-    // v0.2.3-fix: 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃 Agent/插话队列)
+    // 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃 Agent/插话队列)
     if (id === get().cid) clearInterjectForSid(id)
     set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal, activeAgents: s.cid === id ? [] : s.activeAgents } })
   },

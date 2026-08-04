@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import { C, S } from '../settings-ui'
 
 // v0.3.1 块 H: 模型缓存统计 tab(从 SettingsView 拆分, 行为零变化)
@@ -39,7 +39,7 @@ export default function StatsTab() {
                   const readT = c.readTokens || 0
                   const writeT = c.writeTokens || 0
                   const inputT = c.inputTokens || 0
-                  // v0.2.3-fix: 双口径显示 —— 请求级(命中请求÷总请求)与 token 级
+                  // 双口径显示 —— 请求级(命中请求÷总请求)与 token 级
                   const reqRate = reqs > 0 ? (hitReqs / reqs * 100).toFixed(1) : '—'
                   // 官方口径(DeepSeek API 文档): 命中率 = prompt_cache_hit_tokens ÷ (hit + miss); 无 miss 数据时回退 hit÷输入总
                   const missT2 = c.missTokens || 0

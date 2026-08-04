@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from '../store/settings'
 
 // v0.2.4: "agent 正在使用浏览器"横幅 —— 主窗口内提示(不再创建系统悬浮窗)
@@ -10,7 +10,7 @@ export default function FloatBadge() {
 
   useEffect(() => {
     const unsub = window.huangquan?.web.onFloat?.((d: { show: boolean }) => {
-      // v0.2.3-fix(N24): 实时读取开关设置, 不再闭包捕获初始快照
+      // 实时读取开关设置, 不再闭包捕获初始快照
       const enabled = useSettingsStore.getState().general?.browserFloatEnabled !== false
       setShow(!!d.show && enabled)
     })

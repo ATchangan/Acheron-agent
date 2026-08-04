@@ -1,4 +1,4 @@
-/**
+﻿/**
  * webtools.ts — 无头浏览器网页解析工具模块 (v0.2.5)
  * 基于 Playwright-core + 系统 Edge/Chrome 内核, 按需临时启动, 用完即销毁。
  * 不长期驻留内存; 与现有 browse/browse_screenshot(Electron 内置窗口) 完全独立。
@@ -47,7 +47,7 @@ const UA_DEFAULT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
 // ─── 正文/标题提取(页面内执行, 清洗冗余) ──────────
-// v0.2.5-fix: 直接传函数引用给 page.evaluate(playwright 自动序列化), 避免字符串转义问题
+// 直接传函数引用给 page.evaluate(playwright 自动序列化), 避免字符串转义问题
 function extractPage(): { title: string; text: string } {
   try {
     const killSel = ['script','style','noscript','iframe','template','nav','footer','aside',

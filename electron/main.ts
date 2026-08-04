@@ -23,12 +23,12 @@ import * as http from 'http'
 import { exec } from 'child_process'
 import * as os from 'os'
 
-// v0.2.2-fix: 使用 Electron net.fetch（Chromium 网络栈，自动跟随 Windows 系统代理）——
+// 使用 Electron net.fetch（Chromium 网络栈，自动跟随 Windows 系统代理）——
 // Node 全局 fetch(undici) 不读系统代理，导致浏览器能访问的 API 在应用内超时
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch(args[0] as string, args[1] as never)) as typeof fetch
 
 // v0.2.1: 全局崩溃捕获
-// v0.2.3-fix(P22): 崩溃日志异步追加, 不再同步阻塞主进程
+// 崩溃日志异步追加, 不再同步阻塞主进程
 function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
 process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
 process.on('unhandledRejection', (reason) => { console.error('[FATAL] unhandledRejection:', reason); appendCrashLog(new Date().toISOString() + ' unhandledRejection: ' + reason + '\n') })
@@ -102,7 +102,7 @@ function decKey(v: string): string {
   if (!v || !v.startsWith('__ENC__')) return v
   try { return safeStorage.decryptString(Buffer.from(v.slice(7), 'base64')) } catch { return v }
 }
-// v0.2.3-fix(N27): 敏感字段全覆盖 —— apiKey + customHeaders(可含 Authorization) + webReadCookies(登录态)
+// 敏感字段全覆盖 —— apiKey + customHeaders(可含 Authorization) + webReadCookies(登录态)
 function encProviders(data: MainSettingsData): MainSettingsData {
   if (!data || typeof data !== 'object') return data
   const out = { ...data, general: data.general ? { ...data.general } : data.general }
@@ -134,9 +134,9 @@ if (rendererMode === 'cpu') {
   app.disableHardwareAcceleration()
   app.commandLine.appendSwitch('disable-gpu')
 } else {
-  // v0.2.6-fix: GPU 模式(auto/gpu) —— 完全自动识别。
+  // GPU 模式(auto/gpu) —— 完全自动识别。
   // 不强制指定/不无视黑名单(移除 ignore-gpu-blocklist), 由 Chromium 自动探测 GPU 并决定是否硬件加速:
-  //   检测到可用 GPU → 自动启用硬件加速; 无 GPU / 驱动有问题的 GPU → 自动降级软件渲染。
+  // 检测到可用 GPU → 自动启用硬件加速; 无 GPU / 驱动有问题的 GPU → 自动降级软件渲染。
   app.commandLine.appendSwitch('enable-gpu-rasterization')  // 尽力而为: GPU 可用时栅格化走 GPU
   app.commandLine.appendSwitch('enable-zero-copy')          // 尽力而为: 零拷贝合成
   app.commandLine.appendSwitch('enable-accelerated-2d-canvas') // Canvas 2D 加速(可用时)
@@ -148,7 +148,7 @@ let tray: Tray | null = null
 let isQuitting = false
 let serverPort = 0
 
-// ─── v0.2.3-fix: 单实例锁 —— 防止多实例并行导致悬浮窗/窗口互相干扰 ──
+// ─── 单实例锁 —— 防止多实例并行导致悬浮窗/窗口互相干扰 ──
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   // v0.2.3: 直接退出, 不再 throw(避免触发 uncaughtException 写 crash.log 噪音)
@@ -202,7 +202,7 @@ function startServer(): Promise<number> {
       if (!fp.startsWith(distDir)) { res.writeHead(403); res.end('403'); return }
       fs.readFile(fp, (err, data) => {
         if (err) { res.writeHead(404); res.end('404'); return }
-        // v0.2.3-fix(P23): 静态资源缓存头(HTML 不缓存, 其余资源 1h)
+        // 静态资源缓存头(HTML 不缓存, 其余资源 1h)
         const isHtml = reqPath.endsWith('.html') || reqPath === '/'
         res.writeHead(200, {
           'Content-Type': mime[extname(fp)] || 'application/octet-stream',
@@ -260,7 +260,7 @@ let floatHideTimer: ReturnType<typeof setTimeout> | null = null
 
 function showBrowserPanel() {
   if (browserPanelWin && !browserPanelWin.isDestroyed()) { browserPanelWin.show(); browserPanelWin.focus(); return }
-  // v0.2.3-fix: 若无头浏览器从未导航过, 先加载默认页, 避免面板一直空白/加载
+  // 若无头浏览器从未导航过, 先加载默认页, 避免面板一直空白/加载
   try {
     // v0.2.4: 默认主页从设置读取（设置 → 工具 → 浏览器设置 → 默认主页）
     let homeUrl = 'https://example.com'
@@ -423,7 +423,7 @@ function sampleGpuWin(resolve: (v: { pct: number | null; name: string | null }) 
 // v0.2.3-opt: readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
 const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string }>()
 // ─── v0.2.6: 文件浏览器操作(写操作限定工作目录内, 防误删) ──
-// v0.2.3-fix: set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录
+// set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录
 let workDirOverride: string | null = null
 // v0.3.0: 有效工作目录 = 会话覆盖(如有) || 用户设置(可自定义, 设置→引擎→工作目录)
 function getEffectiveWorkDir(): string | undefined {
@@ -475,11 +475,11 @@ registerBrowserIpc({ getBrowserWin, waitLoad, getCurUrl: () => browserCurUrl, se
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
 // ─── 启动 ──────────────────────────────────────────
 app.whenReady().then(async () => {
-  // v0.2.6-fix: GPU 状态检测(仅日志/状态查询, 不做运行时禁用)。
+  // GPU 状态检测(仅日志/状态查询, 不做运行时禁用)。
   // auto 模式下 GPU 不可用时 Chromium 原生自动降级为软件渲染, 无需手动调用
   // disableHardwareAcceleration(该 API 只能在 app ready 之前调用)。
   try {
-    // v0.2.6-fix: 延迟 3s 等 GPU 进程完成初始化后再读取(立即读取会得到 disabled_off 等不准确初始值)
+    // 延迟 3s 等 GPU 进程完成初始化后再读取(立即读取会得到 disabled_off 等不准确初始值)
     setTimeout(() => {
       try {
         const gst = app.getGPUFeatureStatus() as unknown as Record<string, string | undefined>
