@@ -5,6 +5,7 @@ import { registerMemoryIpc } from './ipc/memory'
 import { registerSkillsIpc } from './ipc/skills'
 import { registerPluginsIpc } from './ipc/plugins'
 import { registerModelStatsIpc } from './ipc/model-stats'
+import { registerMcpIpc } from './ipc/mcp'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -435,6 +436,7 @@ ipcMain.handle('ishiki:load', () => {
 const { assessRisk } = require('./security/permission')
 registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir })
 registerModelStatsIpc()
+registerMcpIpc()
 ipcMain.handle('computer:exec', async (_e, cmd: string) => {
   const cmdS = String(cmd || '')
   if (assessRisk({ type: 'terminal', command: cmdS }) === 'L4') {
@@ -1074,13 +1076,6 @@ ipcMain.handle('cron:add', async (_e, expr:string, prompt:string) => {
 ipcMain.handle('cron:list', () => { try { return require('./scheduler/cron').listJobs() } catch { return [] } })
 ipcMain.handle('cron:remove', (_e, id:string) => { try { require('./scheduler/cron').removeJob(id); return true } catch { return false } })
 
-ipcMain.handle('mcp:connect', async (_e, name, cmd, args) => {
-  try { return await require('./mcp/client').connectServer(name, cmd, args||[]) } catch(e: unknown) { return { error: (e instanceof Error ? e.message : String(e)) } }
-})
-ipcMain.handle('mcp:call', async (_e, server, tool, a) => {
-  try { return await require('./mcp/client').callMCPTool(server, tool, a) } catch(e: unknown) { return 'Error: ' + (e instanceof Error ? e.message : String(e)) }
-})
-ipcMain.handle('mcp:list', () => { try { return require('./mcp/client').listServers() } catch { return [] } })
 ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
 
 // ─── v0.2.3: 自动更新 —— GitHub Releases 版本检查 + 安装包下载 ──
@@ -1434,16 +1429,6 @@ ipcMain.handle('media:gen', async (_e, opts: { kind: 'img' | 'video'; prompt: st
     })
   } catch (e) { return { ok: false, error: '生成异常: ' + (e instanceof Error ? e.message : String(e)) } }
 })
-
-ipcMain.handle('mcp:sse:connect', async (_e, name: string, url: string, headers?: Record<string,string>) => {
-  try { const tools = await require('./mcp/sse-transport').connectSSE({ name, type:'sse', url, headers }); return tools }
-  catch(e: unknown) { return { error: (e instanceof Error ? e.message : String(e)) } }
-})
-ipcMain.handle('mcp:sse:call', async (_e, server: string, tool: string, args: Record<string, unknown>) => {
-  try { return await require('./mcp/sse-transport').callSSETool(server, tool, args) }
-  catch(e: unknown) { return 'Error: ' + (e instanceof Error ? e.message : String(e)) }
-})
-ipcMain.handle('mcp:sse:list', () => { try { return require('./mcp/sse-transport').listSSEServers() } catch { return [] } })
 
 // ─── v0.2: Agent 系统 ──────────────────────────────
 // v0.2.3: agent:list / agent:route 已由前端 AGENTS 实现接管(主进程不再维护第二套 Agent 体系)
