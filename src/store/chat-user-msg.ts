@@ -33,7 +33,8 @@ export async function buildUserMessage(deps: BuildUserMsgDeps, contentIn: string
   }
 
   // 图片路径直读 —— 消息含图片文件路径时, 主进程读为 dataURL 并入 images(支持 9 格式)
-  const imgPathRe = /[\w\u4e00-\u9fa5\\\/:\.\- ]+\.(?:png|jpe?g|webp|gif|bmp|svg|avif|heic)/i
+  // v0.3.1 修复: 正则要求以盘符/UNC/相对路径开头, 避免贪婪吞掉「帮我看」等中文动词前缀
+  const imgPathRe = /(?:[A-Za-z]:[\\\/]|\\\\|\.{1,2}[\\\/])[\w\u4e00-\u9fa5\\\/:\.\- ]+\.(?:png|jpe?g|webp|gif|bmp|svg|avif|heic)/i
   const imgPathMatch = (content || '').match(imgPathRe)
   if (!images?.length && imgPathMatch) {
     const pathTxtA = imgPathMatch[0].trim()
