@@ -12,7 +12,7 @@ import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, task
 import { normalizeImage } from '../utils/image'
 import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelResume } from './session-state'
 import { pickModels, resolveModel } from './model-pick'
-import { pushInterject, hasInterjectForSid, drainInterjections, clearInterjectForSid } from './interject'
+import { pushInterject, hasInterjectForSid, drainInterjections, clearInterjectForSid, detectInterjectKind } from './interject'
 import { runToolRound } from './chat-round'
 import type { CallResult } from './chat-round'
 import { createCallLLM } from './chat-llm'
@@ -55,6 +55,8 @@ export interface S {
 }
 
 // v0.3.1 块 I: send 主逻辑(从 chat.ts 拆出, 行为零变化)
+// v0.3.1 M3: 发送锁 —— 同一会话同时刻只允许一个任务在跑(双连发第二条走插话路径)
+const sendLockBySid: Record<string, boolean> = {}
 export async function runSend(
   deps: { set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>), replace?: boolean) => void; get: () => S },
   content: string,
@@ -66,7 +68,8 @@ export async function runSend(
   const st0 = get()
   let sid = st0.cid; if (!sid) { get().create(); sid = get().cid! }
   // 会话级忙碌判断 —— 仅当"本会话"正在工作时才走插话；其他会话在工作不影响本会话独立发送
-  const thisBusy = get().sessions.find(x => x.id === sid)?.busy
+  // v0.3.1 M3: 发送锁占用也走插话路径(双连发不覆盖)
+  const thisBusy = get().sessions.find(x => x.id === sid)?.busy || !!sendLockBySid[sid]
   if (thisBusy) {
     // 探测当前工作状态
     const cur = get().sessions.find(x => x.id === sid)
@@ -75,17 +78,22 @@ export async function runSend(
     const lastRole = recentMsgs.slice(-1)[0]?.role
     const inToolWork = lastRole === 'tool' || hasToolCall
     const partialReply = recentMsgs.filter(m => m.role === 'assistant' && m.content).slice(-1)[0]?.content?.slice(0, 200) || ''
+    // v0.3.1 M3: 改向关键词识别(retarget 前缀措辞改向版)
+    const isRetarget = detectInterjectKind(content) === 'retarget'
     // 插话标记
     const prefix = inToolWork
-      ? `（用户在工作执行中插话补充。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。请结合当前进度理解用户意图并调整后续操作。）\n`
+      ? (isRetarget
+        ? `（用户在工作执行中发出改向指令，请停止当前操作，按新指令调整方向。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。）\n`
+        : `（用户在工作执行中插话补充。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。请结合当前进度理解用户意图并调整后续操作。）\n`)
       : `（用户在回复中插话补充。以下是补充指令。）\n`
     // 用户消息立即上屏(_inject 标记: 构建上下文时重排到末尾, 保证 API 消息序列合法)
     const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments, _inject: true }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, interjectMsg] } : x) }))
-    // 补充指令进入队列，当前任务继续执行
-    pushInterject(sid, prefix + content)
+    // 补充指令进入队列(kind 由内容识别, retarget 独立成项触发工具链熔断)，当前任务继续执行
+    pushInterject(sid, prefix + content, isRetarget ? 'retarget' : 'supplement')
     return
   }
+  sendLockBySid[sid] = true
   const myGen = nextTaskGenFor(taskGenBySid, sid) // v0.3.1 C2: 会话级任务代号(仅本会话失效)
   // v0.3.1 D2: send 幂等去重(同一内容 500ms 内重复发送直接忽略)
   const fpD = content + '|' + (images || []).join('|')
@@ -322,6 +330,8 @@ export async function runSend(
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
     set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: s.cid === sid ? friendly : s.error, stage: s.cid === sid ? null : s.stage, activeAgents: s.cid === sid ? [] : s.activeAgents }))
   } finally {
+    // v0.3.1 M3: 发送锁释放(正常/异常/中断三路径统一走 finally)
+    delete sendLockBySid[sid]
     // v0.3.0 FIX-B: 模型还原唯一入口 —— 只要真的切换过(switchedVision), 无论正常/异常/中断都还原主力模型
     if (switchedVision && origModel && origModel !== model) {
       curP = origP; model = origModel
