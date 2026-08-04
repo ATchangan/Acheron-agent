@@ -1,9 +1,19 @@
-﻿import React, { useState } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { C, S } from '../settings-ui'
 
 // v0.3.1 块 H: 关于 tab(从 SettingsView 拆分, 行为零变化)
+// v0.3.1 更新下载进度条: 订阅 update:progress 显示下载进度
 export default function AboutTab() {
-  const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; downloadInfo: { ok: boolean; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, downloadInfo: null })
+  const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; progress: { received: number; total: number } | null; downloadInfo: { ok: boolean; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, progress: null, downloadInfo: null })
+  // 订阅下载进度(卸载时取消)
+  useEffect(() => {
+    const off = window.huangquan.update.onProgress((d) => {
+      setUpt(prev => prev.downloading ? { ...prev, progress: d } : prev)
+    })
+    return () => off()
+  }, [])
+  const pct = upt.progress && upt.progress.total > 0 ? Math.min(100, Math.round((upt.progress.received / upt.progress.total) * 100)) : 0
+  const fmtSize = (n: number) => n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
@@ -19,7 +29,7 @@ export default function AboutTab() {
         <div style={S.hint}>从 GitHub Releases 检查最新版本并下载安装包</div>
         <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button style={S.btn('primary')} onClick={async () => {
-            setUpt({ ...upt, checking: true, info: null, error: '', downloading: false })
+            setUpt({ ...upt, checking: true, info: null, error: '', downloading: false, progress: null })
             const r = await window.huangquan.update.check().catch((): { ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } => ({ ok: false, error: '检查失败' }))
             if (!r.ok) { setUpt({ ...upt, checking: false, error: r.error || '检查失败' }); return }
             setUpt({ ...upt, checking: false, info: { version: r.version, hasUpdate: r.hasUpdate, url: r.url, assets: r.assets, notes: r.notes, current: r.current } })
@@ -35,10 +45,22 @@ export default function AboutTab() {
               <button style={S.btn('primary')} disabled={upt.downloading} onClick={async () => {
                 const asset = (upt.info?.assets || []).find((x: { name: string }) => /\.exe$/i.test(x.name)) || (upt.info?.assets || [])[0]
                 if (!asset) { setUpt({ ...upt, error: '发布页无安装包资产' }); return }
-                setUpt({ ...upt, downloading: true, error: '' })
+                setUpt({ ...upt, downloading: true, error: '', progress: null, downloadInfo: null })
                 const r = await window.huangquan.update.download(asset.url, asset.name).catch(() => ({ ok: false, error: '下载失败' }))
                 setUpt({ ...upt, downloading: false, downloadInfo: r.ok ? r : null, error: r.ok ? '' : (r.error || '下载失败') })
               }}>{upt.downloading ? '下载中…' : '下载安装包'}</button>
+              {upt.downloading && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 220, flex: '1 1 220px' }}>
+                  <div style={{ height: 8, borderRadius: 4, background: 'color-mix(in srgb, var(--accent-color) 18%, transparent)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: pct + '%', background: 'var(--accent-color)', borderRadius: 4, transition: 'width 0.2s' }} />
+                  </div>
+                  <div style={S.hint}>
+                    {upt.progress && upt.progress.total > 0
+                      ? `下载中 ${pct}% · ${fmtSize(upt.progress.received)} / ${fmtSize(upt.progress.total)}`
+                      : '连接下载中…'}
+                  </div>
+                </div>
+              )}
               {upt.downloadInfo && (
                 <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.green }}>
                   已保存到 {upt.downloadInfo.path}
