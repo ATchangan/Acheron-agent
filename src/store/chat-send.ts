@@ -11,6 +11,9 @@ import { routeAgent } from './router'
 import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, taskGen, nextTaskGen, costedReqs, setCached, getCached, onWriteOp } from './runtime'
 import { normalizeImage } from '../utils/image'
 import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelResume } from './session-state'
+import { pickModels, resolveModel } from './model-pick'
+import { pushInterject, hasInterjectForSid, drainInterjections } from './interject'
+import { runToolRound } from './chat-round'
 import { refreshPluginTools } from './plugins'
 
 // v0.3.1 块 C/D: 会话级任务代号表 + send 幂等指纹(模块级, 串行入口安全)
@@ -82,7 +85,7 @@ export async function runSend(
     const interjectMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, interjectMsg] } : x) }))
     // 补充指令进入队列，当前任务继续执行
-    pendingInterject.push({ sid, text: prefix + content })
+    pushInterject(sid, prefix + content)
     return
   }
   const myGen = nextTaskGenFor(taskGenBySid, sid) // v0.3.1 C2: 会话级任务代号(仅本会话失效)
@@ -110,24 +113,9 @@ export async function runSend(
   refreshMemoryCache().catch(() => {})
   // v0.2.1: 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
   const gNow = gSnap
-  const resolveModel = (key: string): { p: ProviderConfig; model: string } | null => {
-    const val = (gNow as unknown as Record<string, string | undefined>)[key]
-    if (!val) return null
-    const [pid, m] = val.includes('::') ? val.split('::') : [null, val]
-    if (pid) { const pr = (cfg.providers || []).find((x: ProviderConfig) => x.id === pid); if (pr && (pr.models || []).includes(m)) return { p: pr, model: m } }
-    else if ((p.models || []).includes(val)) return { p, model: val }
-    return null
-  }
-  const main = resolveModel('mainModel') || { p, model: p.selectedModel || p.models[0] || 'deepseek-v4-pro' }
-  // 简单任务自动用快速模型（autoFastModel 开启且消息短/无图片时）—— 词表扩充, 减少误判
-  const heavyWords = ['工具', '代码', '脚本', '文件', '读取', '创建', '查找', '目录', '搜索', '网页', '下载', '执行', '命令', '终端', '分析', '总结', '报告', '修改', '删除', '移动', '复制']
-  const isSimple = gNow.autoFastModel !== false && !images?.length && content.length < 300 && !heavyWords.some(w => content.includes(w))
-  const fast = isSimple ? (resolveModel('fastModel') || main) : main
-  // v0.2.4: 调度绑定（全局公用，含自定义模型）—— 轻量任务→小模型，复杂任务→大模型
-  const small = resolveModel('smallModel')
-  const large = resolveModel('largeModel')
-  const chosen = isSimple ? (small || fast) : (large || main)
-  let curP = chosen.p, model = chosen.model
+  const mc = pickModels(gSnap, cfg, p, content, images)
+  const main = mc.main, isSimple = mc.isSimple, fast = mc.fast, small = mc.small, large = mc.large
+  let curP = mc.chosen.p, model = mc.chosen.model
   // 调度选择日志(定位切换失效问题)
   console.log('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
   set({ curModel: model || '' })
@@ -355,9 +343,8 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
       aid = uuidv4()
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
       // v0.2.1: 消费插话补充（第 2 轮起）—— 作为 user 消息注入，Agent 继续任务时可见
-      if (roundNum > 1 && pendingInterject.some(x => x.sid === sid)) {
-        const iidx = pendingInterject.findIndex(x => x.sid === sid)
-        const inject = pendingInterject.splice(iidx, 1)[0].text
+      if (roundNum > 1 && hasInterjectForSid(sid)) {
+        const inject = drainInterjections(sid)!
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
       }
 
@@ -387,72 +374,10 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
         res = await callLLM(aid, rid1); clear()
       }
 
-      // 3. 工具调用循环（熔断+计时+重试+并行+单气泡整合）
-      toolLog = []
-      for (let r = 0; res.tcs.length > 0 && r < (gSnap.maxToolRounds || 50); r++) {
-        // v0.3.1 D3: 长任务中途保存(每 5 轮或 30s, 走保存队列不阻塞)
-        if (r > 0 && (r % 5 === 0 || Date.now() - lastMidSave > 30000)) {
-          lastMidSave = Date.now()
-          const curMs = get().sessions.find(x => x.id === sid)
-          if (curMs) window.huangquan.sessions.save(curMs).catch(() => {})
-        }
-        // v0.2.1: 用户终止/插话 —— 任务代号失效则立即停止
-        if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
-        // 熔断检测
-        const meltLimit = gSnap.meltdownLimit || 3
-        const rc = new Map(); for (const t of toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
-        if (res.tcs.some((tc: ToolCallItem) => (rc.get(tc.name + '::' + JSON.stringify(tc.args || {})) || 0) >= meltLimit)) { console.warn('[黄泉Agent] 熔断'); break }
-
-        set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'assistant', content: null, timestamp: Date.now(), tool_calls: res.tcs.map((tc2: ToolCallItem) => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) }]; return { sessions: s.sessions.map(x => x.id === sid ? cur : x) } })
-
-        const maxRetry = gSnap.retryCount ?? 3
-        const doParallel = gSnap.parallelTools !== false
-        const doEpisodic = gSnap.episodicMemory !== false
-
-        const runOne = async (tc: ToolCallItem) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now(); // v0.2.3: 思考气泡显示「正在调用 XX」
-          const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '🔧 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
-          r2 = await runTool(tc.name, tc.args, cfg); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms }); // v0.2.3: 完成后显示 ✓(带结果摘要)
-        set({ stage: { sid, phase: 'tool', label: '✓ ' + tc.name, detail: (r2 && r2.length > 50 ? r2.slice(0, 50) + '…' : (r2 || '')) } })
-        if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = String(tc.args.agent_name); const curAg = get().activeAgents || []; const maxChain = gSnap.maxHandoffChain || 3; if (!curAg.includes(to) && curAg.length >= maxChain) { return { tc, r: 'E:交接链已达上限(' + maxChain + '), 请在当前 Agent 直接完成任务, 不要再交接' } } set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }
-        const writes = ['write', 'edit', 'exec_command', 'mkdir', 'codebox']
-        if (doParallel) {
-          // 读类并行，写类串行；结果按 tc 一一对应收集，避免同名工具结果错配
-          const readTcs = res.tcs.filter((tc: ToolCallItem) => !writes.includes(tc.name))
-          const writeTcs = res.tcs.filter((tc: ToolCallItem) => writes.includes(tc.name))
-          const results: { tc: ToolCallItem; r: string }[] = []
-          const pResults = await Promise.all(readTcs.map(runOne))
-          results.push(...pResults)
-          for (const tc of writeTcs) { results.push(await runOne(tc)) }
-          for (const { tc, r } of results) {
-            set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } })
-          }
-        } else {
-          for (const tc of res.tcs) { const { r } = await runOne(tc); set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } }) }
-        }
-
-        // v0.2.1: 工具执行中用户插话 → 补充立即注入（作为 user 消息），下一轮 LLM 可见
-        while (pendingInterject.some(x => x.sid === sid) && myGen === getTaskGenFor(taskGenBySid, sid)) {
-          const iidx2 = pendingInterject.findIndex(x => x.sid === sid)
-          const inject = pendingInterject.splice(iidx2, 1)[0].text
-          set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
-        }
-
-        // v0.2.1: 多模型策略 —— 代码类任务切 codeModel，文档/总结类切 longTextModel
-        const toolNames = res.tcs.map((tc: ToolCallItem) => tc.name)
-        if (toolNames.some((n: string) => ['write', 'edit', 'exec_command', 'mkdir', 'codebox', 'grep', 'read'].includes(n))) {
-          const cm = resolveModel('codeModel'); if (cm) { curP = cm.p; model = cm.model }
-        } else if (toolNames.some((n: string) => ['summarize', 'save_memory', 'recall_memory', 'web_search', 'web_fetch', 'import_doc'].includes(n))) {
-          const lm = resolveModel('longTextModel'); if (lm) { curP = lm.p; model = lm.model }
-        }
-        aid = uuidv4(); set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
-        const rid2 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
-        guard(rid2)
-        set({ stage: { sid, phase: 'thinking', label: '思考中', detail: '' } })
-        if (myGen !== getTaskGenFor(taskGenBySid, sid)) { clear(); break } // 终止后不再发起下一轮 LLM
-        res = await callLLM(aid, rid2); clear()
-        if (myGen !== getTaskGenFor(taskGenBySid, sid)) break // 终止后丢弃本轮结果
-      }
-
+      // 3. 工具调用循环(拆至 chat-round.ts, 行为零变化)
+      const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, lastMidSave)
+      res = tr.res; toolLog = tr.toolLog; lastMidSave = tr.lastMidSave
+      if (tr.switchTo) { curP = tr.switchTo.p; model = tr.switchTo.model; set({ curModel: model }); updateContextLimit(model) }
       // 4. 单气泡 + Hermes 风格日志
       set({ stage: null }) // v0.2.3: 任务完成, 思考气泡消失
       const finalSession = get().sessions.find(x => x.id === sid)
@@ -472,7 +397,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
       }
 
       // v0.2.1: 有插话补充且未被终止 → 继续下一轮（任务不中断）
-      if (myGen !== getTaskGenFor(taskGenBySid, sid) || !pendingInterject.some(x => x.sid === sid)) break
+      if (myGen !== getTaskGenFor(taskGenBySid, sid) || !hasInterjectForSid(sid)) break
     }
 
     // v0.2.3: 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息

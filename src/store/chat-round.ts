@@ -1,0 +1,106 @@
+// src/store/chat-round.ts —— 单轮任务执行循环(v0.3.1 补丁 D: 从 chat-send.ts 拆出, 行为零变化)
+import { v4 as uuidv4 } from 'uuid'
+import type { Message, ProviderConfig, SettingsData, UsageData, ToolCallDelta } from '../global'
+import type { GeneralSettings } from '../types'
+import { updateContextLimit } from './context'
+import { recordEpisodic } from './memory'
+import { runTool, setCached } from './runtime'
+import { getTaskGenFor } from './session-state'
+import { resolveModel } from './model-pick'
+import { hasInterjectForSid, drainInterjections } from './interject'
+import type { S } from './chat-send'
+
+export interface ToolCallItem {
+  id: string
+  name: string
+  args: Record<string, unknown>
+}
+
+export interface CallResult { text: string; tcs: ToolCallItem[] }
+
+export interface RoundCtx {
+  sid: string
+  myGen: number
+  gSnap: GeneralSettings
+  cfg: SettingsData
+  p: ProviderConfig
+  taskGenBySid: Record<string, number>
+  visQueue: { id?: string; p: ProviderConfig; model: string }[]
+  isVisualTask: boolean
+  set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>), replace?: boolean) => void
+  get: () => S
+  callLLM: (aid: string, ridArg?: string) => Promise<CallResult>
+  guard: (rid: string) => void
+  clear: () => void
+  applySwitch: (s: { p: ProviderConfig; model: string }) => void
+}
+
+// 工具执行循环 + 插话续跑(每轮)
+export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[], lastMidSave: number): Promise<{ res: CallResult; toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[]; lastMidSave: number; switchTo: { p: ProviderConfig; model: string } | null }> {
+  const { sid, myGen, gSnap, cfg, p, taskGenBySid, set, get } = ctx
+  let switchTo: { p: ProviderConfig; model: string } | null = null
+  for (let r = 0; res.tcs.length > 0 && r < (gSnap.maxToolRounds || 50); r++) {
+    // 长任务中途保存(每 5 轮或 30s, 走保存队列不阻塞)
+    if (r > 0 && (r % 5 === 0 || Date.now() - lastMidSave > 30000)) {
+      lastMidSave = Date.now()
+      const curMs = get().sessions.find(x => x.id === sid)
+      if (curMs) window.huangquan.sessions.save(curMs).catch(() => {})
+    }
+    // 用户终止/插话 —— 任务代号失效则立即停止
+    if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
+    // 熔断检测
+    const meltLimit = gSnap.meltdownLimit || 3
+    const rc = new Map(); for (const t of toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
+    if (res.tcs.some((tc: ToolCallItem) => (rc.get(tc.name + '::' + JSON.stringify(tc.args || {})) || 0) >= meltLimit)) { console.warn('[黄泉Agent] 熔断'); break }
+
+    set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'assistant', content: null, timestamp: Date.now(), tool_calls: res.tcs.map((tc2: ToolCallItem) => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) }]; return { sessions: s.sessions.map(x => x.id === sid ? cur : x) } })
+
+    const maxRetry = gSnap.retryCount ?? 3
+    const doParallel = gSnap.parallelTools !== false
+    const doEpisodic = gSnap.episodicMemory !== false
+
+    const runOne = async (tc: ToolCallItem) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now();
+      const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '🔧 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
+      r2 = await runTool(tc.name, tc.args, cfg); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms });
+      set({ stage: { sid, phase: 'tool', label: '✓ ' + tc.name, detail: (r2 && r2.length > 50 ? r2.slice(0, 50) + '…' : (r2 || '')) } })
+      if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = String(tc.args.agent_name); const curAg = get().activeAgents || []; const maxChain = gSnap.maxHandoffChain || 3; if (!curAg.includes(to) && curAg.length >= maxChain) { return { tc, r: 'E:交接链已达上限(' + maxChain + '), 请在当前 Agent 直接完成任务, 不要再交接' } } set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }
+    const writes = ['write', 'edit', 'exec_command', 'mkdir', 'codebox']
+    if (doParallel) {
+      // 读类并行，写类串行；结果按 tc 一一对应收集，避免同名工具结果错配
+      const readTcs = res.tcs.filter((tc: ToolCallItem) => !writes.includes(tc.name))
+      const writeTcs = res.tcs.filter((tc: ToolCallItem) => writes.includes(tc.name))
+      const results: { tc: ToolCallItem; r: string }[] = []
+      const pResults = await Promise.all(readTcs.map(runOne))
+      results.push(...pResults)
+      for (const tc of writeTcs) { results.push(await runOne(tc)) }
+      for (const { tc, r } of results) {
+        set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } })
+      }
+    } else {
+      for (const tc of res.tcs) { const { r } = await runOne(tc); set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } }) }
+    }
+
+    // 工具执行中用户插话 → 补充立即注入（作为 user 消息），下一轮 LLM 可见
+    while (hasInterjectForSid(sid) && myGen === getTaskGenFor(taskGenBySid, sid)) {
+      const inject = drainInterjections(sid)!
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
+    }
+
+    // 多模型策略 —— 代码类任务切 codeModel，文档/总结类切 longTextModel
+    const toolNames = res.tcs.map((tc: ToolCallItem) => tc.name)
+    if (toolNames.some((n: string) => ['write', 'edit', 'exec_command', 'mkdir', 'codebox', 'grep', 'read'].includes(n))) {
+      const cm = resolveModel(gSnap, cfg, p, 'codeModel'); if (cm) { switchTo = { p: cm.p, model: cm.model }; ctx.applySwitch(switchTo) }
+    } else if (toolNames.some((n: string) => ['summarize', 'save_memory', 'recall_memory', 'web_search', 'web_fetch', 'import_doc'].includes(n))) {
+      const lm = resolveModel(gSnap, cfg, p, 'longTextModel'); if (lm) { switchTo = { p: lm.p, model: lm.model }; ctx.applySwitch(switchTo) }
+    }
+    // 下一轮 LLM 调用(工具结果作为上下文)
+    const aid2 = uuidv4(); set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid2, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
+    const rid2 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    ctx.guard(rid2)
+    set({ stage: { sid, phase: 'thinking', label: '思考中', detail: '' } })
+    if (myGen !== getTaskGenFor(taskGenBySid, sid)) { ctx.clear(); break } // 终止后不再发起下一轮 LLM
+    res = await ctx.callLLM(aid2, rid2); ctx.clear()
+    if (myGen !== getTaskGenFor(taskGenBySid, sid)) break // 终止后丢弃本轮结果
+  }
+  return { res, toolLog, lastMidSave, switchTo }
+}
