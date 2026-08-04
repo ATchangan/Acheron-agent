@@ -2,7 +2,7 @@
 // 职责: 子任务并行(subRounds 循环)/结果汇总。runDispatch 迁移自 chat.ts runTool 的 dispatch case(行为未改)
 // 注意: 依赖 chat.ts 的 useChatStore(运行时循环依赖, 函数体内延迟解析, 安全)
 import { useAgents } from './agents'
-import { TOOLS } from './tools'
+import { TOOLS, filterToolsByAgent } from './tools'
 import { buildPrompt } from './context'
 import { useChatStore } from './chat'
 import { SUB_ROUND_LIMIT } from './constants'
@@ -38,7 +38,8 @@ export async function runDispatch(
           const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
           // 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)
           const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
-          const agTools = (ag.tools.includes('*') ? TOOLS : TOOLS.filter((tt: ToolSpec) => ag.tools.includes(tt.function.name))).filter((tt: ToolSpec) => !COLLAB_TOOLS.includes(tt.function.name))
+          // v0.3.2 T1: 与主请求共用同一白名单过滤函数(过滤基仍为 TOOLS 不含插件, 现状保持)
+          const agTools = filterToolsByAgent(TOOLS, t.agent).filter((tt: ToolSpec) => !COLLAB_TOOLS.includes(tt.function.name))
           const rid = 'sub' + Date.now() + '_' + tasks.indexOf(t) + '_' + Math.random().toString(36).slice(2, 6)
           const subMsgs: LLMMessage[] = [
             { role: 'system', content: sp },

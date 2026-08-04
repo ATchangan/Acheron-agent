@@ -215,7 +215,8 @@ export function buildContextualMessages(
   if (agentRole) {
     const ag = useAgents()[agentRole]
     if (ag) sp += '\n\n## 当前身份\n' + ag.icon + ' ' + agentRole + ' — ' + ag.role + '\n' + ag.prompt +
-      '\n可用工具: ' + ag.tools.join(', ')
+      // v0.3.2 T9: 工具名单不再冗余注入(tools 参数已按白名单提供 schema), 只保留一行范围描述维持边界感知
+      '\n可用工具范围: ' + (ag.tools.includes('*') ? '全部' : '本专业领域工具集(详见工具列表)')
     // 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个 Agent
     if (agentRole === '姬子') {
       sp += '\n\n【调度铁律】只有涉及多个专业领域的复杂任务（如代码+文档、设计+开发、分析+总结、开发+测试+审查）才调用 dispatch 分发；简单任务（单步问答、简短说明、单个文件操作、闲聊等）一律直接完成，绝对禁止 dispatch 或 handoff，不得小题大做。'

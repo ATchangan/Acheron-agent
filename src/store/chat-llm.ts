@@ -90,6 +90,6 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
       // 更新上下文用量
       const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as { text?: string }[]).reduce((t:number,p:{ text?: string }) => t + ((p.text)?.length || 0), 0) : 0), 0)
       set({ cu: estCu })
-      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
+      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(cur.agent), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
     })
 }

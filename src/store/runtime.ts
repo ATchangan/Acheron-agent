@@ -5,7 +5,7 @@
 import { useSettingsStore } from './settings'
 import { useChatStore } from './chat'
 import { useAgents } from './agents'
-import { TOOLS } from './tools'
+import { TOOLS, filterToolsByAgent } from './tools'
 import { PLUGIN_TOOLS, PLUGIN_TOOL_NAMES } from './plugins'
 import { safeIPC } from '../utils/safe'
 import { CACHE_TTL, WORKFLOWS } from './constants'
@@ -78,12 +78,15 @@ function checkFilePermission(name: string, args: Record<string, unknown>): strin
 
 // 工具开关——从设置读取禁用列表，过滤 TOOLS
 
-export function getActiveTools(): ToolSpec[] {
+export function getActiveTools(agentName?: string): ToolSpec[] {
   const raw = useSettingsStore.getState().general.disabledTools
   // 未显式配置时默认禁用高风险 workflow 工具(LLM 输出直接执行 JS, 已限 8KB+严格模式, 仍需人工开启)
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   // v0.3.0 M4: 插件工具并入(有 index.js 实现的插件, plugin_ 前缀防冲突)
   const merged = [...TOOLS, ...PLUGIN_TOOLS]
+  // v0.3.2 T1: Agent 白名单裁剪(主请求; 子任务在 subtask.ts 用同一函数, 过滤基为 TOOLS 不含插件——现状保持)
+  // ⚠ 顺序锁定: filter 保序(TOOLS 原序 + PLUGIN_TOOLS 原序) —— 禁止 sort/Set 去重, 破坏顺序会打断供应商前缀缓存
+  const filtered = agentName ? filterToolsByAgent(merged, agentName) : merged
   // 协作模式=关闭 时彻底禁用多 Agent 协作工具(handoff/dispatch/list_agents)
   const collabMode = String(useSettingsStore.getState().general.collabMode || '自动')
   // v0.3.0: 媒体自动调用开关(策略页可调) —— 关闭则不注入生成工具
@@ -91,10 +94,10 @@ export function getActiveTools(): ToolSpec[] {
   if (g0.autoMediaImg === false) disabled.push('media_img')
   if (g0.autoMediaVideo === false) disabled.push('media_video')
   if (collabMode === '关闭') {
-    return merged.filter(t => !disabled.includes(t.function.name) && !['handoff', 'dispatch', 'list_agents'].includes(t.function.name))
+    return filtered.filter(t => !disabled.includes(t.function.name) && !['handoff', 'dispatch', 'list_agents'].includes(t.function.name))
   }
-  if (disabled.length === 0) return merged
-  return merged.filter(t => !disabled.includes(t.function.name))
+  if (disabled.length === 0) return filtered
+  return filtered.filter(t => !disabled.includes(t.function.name))
 }
 
 
