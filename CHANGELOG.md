@@ -1,5 +1,13 @@
 # 更新日志
 
+## Hermes + Codex 优点吸收（2026-08-05，0.3.1~0.3.5 全版本）
+- **记忆安全扫描**（Hermes）：`scanMemoryText` 检测凭证/API Key/提示注入，save_memory/自动摘要写入前拦截
+- **记忆冻结快照 + 使用率**（Hermes）：任务开始冻结一次记忆，会话内各轮一致；记忆块头部显示容量
+- **AGENTS.md 项目指令**（Codex）：工作目录约定自动注入 system 尾部（`project-ctx` 模块 + `get:projectContext` IPC）
+- **会话搜索工具**（Hermes 轻量版）：`session_search` 关键词检索历史会话（主进程 `sessions:search`）
+- **工具调用回复去重**：DeepSeek 等模型工具调用前预答与最终回复相同则丢弃重复段
+- 各版本 build/测试全绿，启动 + session_search 实测通过；方案库 0.4.0/0.4.1 已标注衔接
+
 ## v0.3.5 发布前修复（2026-08-05）
 - **关于页版本号动态化**：修复 0.3.2~0.3.5 关于页硬编码显示 v0.3.1 的问题
   - 新增 `app:info` IPC（主进程 `app.getVersion()` + `process.versions`）
