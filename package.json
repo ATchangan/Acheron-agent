@@ -5,7 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node scripts/check-theme-tokens.mjs && vite build && tsc -p electron/tsconfig.json && concurrently -k \"vite build --watch\" \"electron .\"",
-    "build": "node scripts/check-theme-tokens.mjs && vite build && tsc -p electron/tsconfig.json",
+    "build": "node scripts/check-theme-tokens.mjs && tsc -p tsconfig.json --noEmit && vite build && tsc -p electron/tsconfig.json",
     "preview": "vite preview",
     "start": "electron .",
     "package:win": "npm run build && electron-builder --win --config electron-builder.yml",

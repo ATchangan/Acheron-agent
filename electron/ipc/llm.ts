@@ -69,14 +69,15 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   const body: Record<string, unknown> = { model, messages, temperature, stream: true }
   // 官方要求 include_usage 才保证流式返回完整 usage(prompt_cache_hit/miss_tokens), 否则缓存统计缺失
   body.stream_options = { include_usage: true }
-  // 打印首个 assistant(tool_calls) 完整结构(排查 reasoning_content 400)
-  if ((messages || []).some((m: LLMMsg) => m.role === 'assistant' && m.tool_calls)) {
+  // v0.3.1 收尾: 结构调试日志统一走 HQ_LLM_DEBUG 开关, 默认静默(防噪音 + 防敏感内容进日志)
+  const llmDebug = !!process.env.HQ_LLM_DEBUG
+  if (llmDebug && (messages || []).some((m: LLMMsg) => m.role === 'assistant' && m.tool_calls)) {
     const atc = (messages as LLMMsg[]).find((m: LLMMsg) => m.role === 'assistant' && m.tool_calls)
     const toolMsgs = (messages as { role: string }[]).filter((m: { role: string }) => m.role === 'tool').length
-    console.log('[LLM] ATC:', JSON.stringify({ keys: atc ? Object.keys(atc) : [], content: atc?.content, rc: atc?.reasoning_content, tcId: (atc?.tool_calls as { id?: string }[] | undefined)?.[0]?.id, tools: toolMsgs }))
+    console.log('[LLM] ATC:', JSON.stringify({ keys: atc ? Object.keys(atc) : [], tcId: (atc?.tool_calls as { id?: string }[] | undefined)?.[0]?.id, tools: toolMsgs }))
   }
-  // 打印消息 role 序列(排查 tool 消息格式问题)
-  if ((messages || []).length > 20) console.log('[LLM] roles:', (messages as { role: string }[]).map((m: { role: string }) => m.role).join(','), '| tc:', (messages as { tool_calls?: unknown }[]).filter((m: { tool_calls?: unknown }) => m.tool_calls).length)
+  // 打印消息 role 序列(排查 tool 消息格式问题) —— 仅结构, 不含内容
+  if (llmDebug && (messages || []).length > 20) console.log('[LLM] roles:', (messages as { role: string }[]).map((m: { role: string }) => m.role).join(','), '| tc:', (messages as { tool_calls?: unknown }[]).filter((m: { tool_calls?: unknown }) => m.tool_calls).length)
   if (tools?.length) { body.tools = tools }
 
   let url: string
@@ -104,15 +105,15 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   const doneClean = () => { removeReq(); event.sender.removeListener('destroyed', removeReq) }
 
   try {
-    console.log('[LLM]', provider, model, url, 'msgs:', messages?.length, 'tools:', tools?.length || 0)
+    if (llmDebug) console.log('[LLM]', provider, model, url, 'msgs:', messages?.length, 'tools:', tools?.length || 0)
     const res = await netFetch(url, {
       method: 'POST',
       headers: reqHeaders,
       body: JSON.stringify(body),
       signal: abortCtrl.signal,
     })
-    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); doneClean(); console.error('[LLM] FAIL-MSGS:', JSON.stringify((messages || []).slice(0, 6).map((m: LLMMsg) => ({ role: m.role, tc: Array.isArray(m.tool_calls) ? m.tool_calls.length : 0, tcid: m.tool_call_id || null, c: typeof m.content === 'string' ? m.content.slice(0, 60) : null })))); event.sender.send('llm:error', { requestId, error: `API ${res.status}: ${e.slice(0, 400)}` }); return }
-    console.log('[LLM] stream ok'); doneClean()
+    if (!res.ok) { const e = await res.text().catch(() => ''); console.error('[LLM] FAIL', res.status, e.slice(0, 400)); doneClean(); if (llmDebug) console.error('[LLM] FAIL-MSGS:', JSON.stringify((messages || []).slice(0, 6).map((m: LLMMsg) => ({ role: m.role, tc: Array.isArray(m.tool_calls) ? m.tool_calls.length : 0, tcid: m.tool_call_id || null })))); event.sender.send('llm:error', { requestId, error: `API ${res.status}: ${e.slice(0, 400)}` }); return }
+    if (llmDebug) console.log('[LLM] stream ok'); doneClean()
     const reader = res.body?.getReader(); if (!reader) { event.sender.send('llm:error', { requestId, error: '无流' }); return }
 
     const dec = new TextDecoder(); let buf = ''

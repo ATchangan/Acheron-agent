@@ -147,7 +147,7 @@ npm run package:win   # 打包 NSIS 安装包
 - SettingsView 拆分：165KB → 11.9KB 壳，13 个 tab 迁入 src/components/settings/
 - chat.ts 拆分：51KB → 10.4KB，发送主逻辑迁入 chat-send.ts
 - 94 处补丁注释清零；组件全部 ≤25KB；全库 any 清零（0 处）
-- vitest 测试基座（3 个测试文件 10 个用例）
+- vitest 测试基座(8 个测试文件 29 个用例,`npm test` 全绿)
 
 ### v0.3.0 (2026-08-04)
 
