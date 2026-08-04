@@ -32,6 +32,8 @@ export default function AdvancedTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>上下文管理</div>
+        {/* v0.3.4 T2: 缓存友好度提示 —— system 头部保持稳定即可最大化供应商前缀缓存命中 */}
+        <div style={S.hint}>上下文缓存: 供应商按请求前缀自动命中缓存, 命中部分价格大幅降低。保持 system 提示词头部不变即可最大化命中; Agent 切换(handoff)后首请求缓存失效属正常。</div>
         <NumSetting label="压缩触发阈值" hint="Token 用量超过模型上限此比例时触发智能压缩" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
       </div>
       <div style={S.card}>

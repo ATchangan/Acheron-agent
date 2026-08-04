@@ -11,10 +11,37 @@ import { memoryBlock } from './memory'
 import { useChatStore } from './chat'
 import { routeAgent } from './router'
 
+// v0.3.4 T1: 按模型隔离的实测校准系数(初始 1.0, EMA 平滑, 限幅 0.3~3 防单次异常拉偏)
+const scaleByModel = new Map<string, number>()
+export function calibrateTokens(model: string, actual: number, estimated: number): void {
+  if (!model || !actual || !estimated) return
+  const cur = scaleByModel.get(model) ?? 1.0
+  const ratio = Math.min(3, Math.max(0.3, actual / estimated))
+  scaleByModel.set(model, cur * 0.8 + ratio * 0.2)
+}
+export function getCalibrationScale(model: string): number {
+  return scaleByModel.get(model) ?? 1.0
+}
+function getScale(): number {
+  const m = useChatStore.getState().curModel || ''
+  return scaleByModel.get(m) ?? 1.0
+}
+
+// v0.3.4 T1: 分层估算 —— 代码块(/3.5) + 中文(×1.2) + URL(段级) + 剩余(/4), 最后乘实测校准系数
 export function estimateTokens(text: string): number {
   if (!text) return 0
-  const cn = (text.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length
-  return Math.ceil(cn / 1.5 + (text.length - cn) / 3.5)
+  const s = getScale()
+  let base = 0
+  const codeBlocks = text.match(/```[\s\S]*?```/g) || []
+  for (const b of codeBlocks) base += b.length / 3.5
+  const rest = text.replace(/```[\s\S]*?```/g, '')
+  const cn = (rest.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length
+  base += cn * 1.2
+  const urlM = rest.match(/[a-z]+:\/\/[^\s"'<>]+/gi) || []
+  for (const u of urlM) base += 2 + u.split(/[\/?#]/).length
+  const nonCn = rest.replace(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g, '').replace(/[a-z]+:\/\/[^\s"'<>]+/gi, '')
+  base += nonCn.length / 4
+  return Math.max(1, Math.round(base * s))
 }
 
 // v0.3.2 T7: 输出上限分级(纯函数, 只降明确闲聊场景; 代码/文件/任务类保持全局上限, 杜绝截断风险)
@@ -360,13 +387,27 @@ export function buildContextualMessages(
     else if (m.role === 'user' || m.role === 'assistant') d.push({ role: m.role, content: m.content || ' ' })
   }
   // v0.3.1 插话序列修复: _inject 消息追加到序列末尾(与正常 user 消息同构, 图片类按 withImages 处理)
-  for (const im of injectMsgs) {
-    if (im.images?.length && withImages) {
-      const parts: VisionContent[] = [{ type: 'text', text: im.content || '' }]
-      im.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } }))
-      d.push({ role: 'user', content: parts })
+  // v0.3.4 T3: 多段文本插话合并为单条注入(编号 + 全量保留; 超长 >1500 前段合并 + 末段独立; 带图插话不合并防丢图)
+  if (injectMsgs.length > 1 && injectMsgs.every(im => !im.images?.length)) {
+    const total = injectMsgs.reduce((s, x) => s + String(x.content || '').length, 0)
+    let inject: string
+    if (total <= 1500) {
+      inject = '[补充指令]\n' + injectMsgs.map((x, i) => (i + 1) + '. ' + String(x.content || '').trim()).join('\n')
     } else {
-      d.push({ role: 'user', content: im.content || ' ' })
+      const head = injectMsgs.slice(0, -1)
+      const last = injectMsgs[injectMsgs.length - 1]
+      inject = '[补充指令]\n' + head.map((x, i) => (i + 1) + '. ' + String(x.content || '').trim()).join('\n') + '\n[最后补充]\n' + String(last.content || '').trim()
+    }
+    d.push({ role: 'user', content: inject })
+  } else {
+    for (const im of injectMsgs) {
+      if (im.images?.length && withImages) {
+        const parts: VisionContent[] = [{ type: 'text', text: im.content || '' }]
+        im.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: img } }))
+        d.push({ role: 'user', content: parts })
+      } else {
+        d.push({ role: 'user', content: im.content || ' ' })
+      }
     }
   }
   // 每次发送时根据当前模式重建系统提示词

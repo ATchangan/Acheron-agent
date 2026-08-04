@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages } from './context'
+import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale } from './context'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
 
@@ -135,5 +135,60 @@ describe('0.3.3 T1/T2 图片降级与参数截断(buildContextualMessages 全链
     expect(args.path).toBe('D:/keep.txt')
     expect(args.content).toContain('…[省略')
     expect(args.content!.length).toBeLessThan(300)
+  })
+})
+
+describe('0.3.4 T1 分层估算与 EMA 校准', () => {
+  it('代码块密度高于普通文本', () => {
+    const code = '```js\n' + 'const x = 1;'.repeat(50) + '\n```'
+    const plain = 'const x = 1;'.repeat(50)
+    expect(estimateTokens(code)).toBeGreaterThan(estimateTokens(plain))
+  })
+  it('URL 按段计数', () => {
+    expect(estimateTokens('https://example.com/a/b/c?q=1')).toBeGreaterThan(estimateTokens('abcde'))
+  })
+  it('校准系数 EMA 收敛 + 限幅', () => {
+    calibrateTokens('test-model', 2000, 1000)      // ratio=2 → scale = 0.8+0.4 = 1.2
+    expect(getCalibrationScale('test-model')).toBeCloseTo(1.2, 5)
+    calibrateTokens('test-model', 1000, 1000)      // ratio=1 → scale = 1.2*0.8+0.2 = 1.16
+    expect(getCalibrationScale('test-model')).toBeCloseTo(1.16, 5)
+    calibrateTokens('test-model', 10000, 1000)     // ratio=10 → 限幅 3 → 1.16*0.8+0.6 = 1.528
+    expect(getCalibrationScale('test-model')).toBeCloseTo(1.528, 5)
+  })
+  it('无效输入不更新系数', () => {
+    calibrateTokens('', 100, 100)
+    calibrateTokens('m2', 0, 100)
+    expect(getCalibrationScale('m2')).toBe(1.0)
+  })
+})
+
+describe('0.3.4 T3 多段插话合并', () => {
+  const gSnap = { mode: 'work', maxTokens: 4000, taskArchive: false } as GeneralSettings
+  const opts = { gSnap, cl: 8000, spIshiki: 'x', spFallback: 'x', onAgentRoute: () => {}, agent: '姬子' }
+
+  it('3 段文本插话合并为单条编号补充指令', () => {
+    const msgs: Message[] = [
+      { id: 'u1', role: 'user', content: '执行任务', timestamp: 1 },
+      { id: 'i1', role: 'user', content: '补充一', timestamp: 2, _inject: true },
+      { id: 'i2', role: 'user', content: '补充二', timestamp: 3, _inject: true },
+      { id: 'i3', role: 'user', content: '补充三', timestamp: 4, _inject: true },
+    ]
+    const d = buildContextualMessages(msgs, false, opts)
+    const tail = d[d.length - 1]!
+    expect(tail.role).toBe('user')
+    expect(String(tail.content)).toContain('[补充指令]')
+    expect(String(tail.content)).toContain('1. 补充一')
+    expect(String(tail.content)).toContain('3. 补充三')
+    const injectCount = d.filter(m => m.role === 'user' && String(m.content).includes('补充')).length
+    expect(injectCount).toBe(1)
+  })
+
+  it('单段插话保持原样', () => {
+    const msgs: Message[] = [
+      { id: 'u1', role: 'user', content: '执行任务', timestamp: 1 },
+      { id: 'i1', role: 'user', content: '单独补充', timestamp: 2, _inject: true },
+    ]
+    const d = buildContextualMessages(msgs, false, opts)
+    expect(String(d[d.length - 1]!.content)).toBe('单独补充')
   })
 })

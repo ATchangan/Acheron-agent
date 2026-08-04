@@ -7,7 +7,9 @@ export const STREAM_THROTTLE_MS = 40       // 流式渲染节流
 export const TOOL_ROUND_DEFAULT = 50       // 工具轮次上限默认值(设置项 maxToolRounds 兜底)
 export const COMPACT_MSG_DEFAULT = 20      // 压缩阈值默认消息数
 export const COMPACT_TOKEN_DEFAULT = 50000 // 压缩阈值默认 token
-export const COMPACT_RATIO_DEFAULT = 0.7   // 压缩阈值默认占比
+// 压缩阈值默认占比 0.7 —— v0.3.4 T4 基准说明: 以 scripts/token-baseline.mjs 三档(0.60/0.70/0.80)
+// 对比后写入最终决策; 当前维持 0.7(数据待真实模型跑数后回填)
+export const COMPACT_RATIO_DEFAULT = 0.7
 
 export const CACHE_TTL: Record<string, number> = {
   read: 30000, ls: 30000, grep: 30000, find: 30000,
