@@ -200,11 +200,8 @@ export const useChatStore = create<S>((set, get) => ({
     // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
     const wasInterjecting = st0.streaming
 
-    // v0.2.1: 多Agent 协作状态 —— 新任务开始时清空；handoff/自动路由不持久，恢复自动（仅用户手动选择保持固定）
-    if (!wasInterjecting) {
-      set({ activeAgents: [] })
-      if (window.__huangquan_agent_manual !== true) delete window.__huangquan_agent
-    }
+    // v0.3.1 B1: 会话级 Agent 状态接管 —— 新任务开始不清 agent（会话字段保持, 避免多会话并发覆盖）
+    // 全局 activeAgents/__huangquan_agent 由会话字段读写迁移（块 B）取代, window 仅保留兼容镜像
 
     // 1. 获取 provider 和模型
     const cfg = await window.huangquan.settings.load()
@@ -243,9 +240,10 @@ export const useChatStore = create<S>((set, get) => ({
 
     // v0.2.1: 记录当前活跃 Agent（路由结果），供右侧面板展示
     const recordAgent = (name: string) => {
-      set(s => ({ activeAgents: s.activeAgents.includes(name) ? s.activeAgents : [...s.activeAgents, name] }))
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, activeAgents: (x.activeAgents || []).includes(name) ? x.activeAgents : [...(x.activeAgents || []), name] } : x) }))
     }
-    if (window.__huangquan_agent) recordAgent(window.__huangquan_agent)
+    const curS0 = get().sessions.find(x => x.id === sid)
+    if (curS0?.agent) recordAgent(curS0.agent)
 
     // v0.2.2: 附件（视频/音频/文档）描述拼入消息内容，agent 可用 read_file 等工具读取
     if (attachments && attachments.length) {
@@ -433,7 +431,7 @@ export const useChatStore = create<S>((set, get) => ({
         // v0.2.3-fix(P27): 工具参数解析失败不再完全静默 —— console.warn 便于排查
         cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { console.warn('[黄泉Agent] 工具参数解析失败:', tc?.function?.name, String(tc?.function?.arguments || '').slice(0, 100)) } }))
         const cur = get().sessions.find(x => x.id === sid)!
-        const msgs = buildContextualMessages(cur.messages, isVisionModel(model), { gSnap, cl: get().cl, spIshiki: get().spIshiki, spFallback: get().sp, onAgentRoute: (role) => { if (role) set(s => ({ activeAgents: s.activeAgents.includes(role) ? s.activeAgents : [...s.activeAgents, role] })) } })
+        const msgs = buildContextualMessages(cur.messages, isVisionModel(model), { gSnap, cl: get().cl, spIshiki: get().spIshiki, spFallback: get().sp, onAgentRoute: (role) => { if (role) { set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, agent: role as string, activeAgents: (x.activeAgents || []).includes(role as string) ? x.activeAgents : [...(x.activeAgents || []), role as string] } : x) })); try { window.__huangquan_agent = role as string } catch (e) { /* ignore */ console.debug('[swallow]', e) } } } })
         // v0.2: 更新上下文用量
         const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as VisionContent[]).reduce((t:number,p:VisionContent) => t + ((p as { text?: string }).text?.length || 0), 0) : 0), 0)
         set({ cu: estCu })
@@ -592,7 +590,7 @@ export const useChatStore = create<S>((set, get) => ({
           }) } : x) }))
         }
       } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
+      set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, activeAgents: undefined } : x) }))
       set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
       // v0.2.3-fix: 任务结束瞬间发送的消息(走了插话分支但任务已退出)自动续跑 —— 解决"每个窗口只能发一次指令"
       try {
@@ -625,8 +623,8 @@ export const useChatStore = create<S>((set, get) => ({
           // v0.2.3-fix(P11): 简化 —— 直接按 userMsg.id 过滤, 消除冗余查找
           set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.filter(m => m.id !== userMsg?.id) } : x) }))
         } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false } : x) }))
-        set({ streaming: false, executing: false, error: null, activeAgents: [] })
+        set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false } : x) }))
+        set({ executing: false, error: null })
         return get().send(content, undefined, attachments)
       }
       console.error('[黄泉Agent] send error:', e)
