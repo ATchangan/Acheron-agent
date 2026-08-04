@@ -12,6 +12,8 @@ import AboutTab from './settings/AboutTab'
 import StatsTab from './settings/StatsTab'
 import SkinTab from './settings/SkinTab'
 import McpTab from './settings/McpTab'
+import MemoryTab from './settings/MemoryTab'
+import CollabTab from './settings/CollabTab'
 import SkillsTab from './settings/SkillsTab'
 
 const PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = {
@@ -297,7 +299,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const [bgOp, setBgOp] = useState(general.bgOpacity ?? 0.7)
   const hasBg = !!general.bgImage
   useEffect(() => { setBgOp(general.bgOpacity ?? 0.7) }, [general?.bgOpacity])
-  const [memF, setMemF] = useState<string[]>([]); const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [chatPersona, setChatPersona] = useState(general.chatPersona || '')
   const [workPersona, setWorkPersona] = useState(general.workPersona || '')
   // v0.2.1: 同步 store → state（预设切换/外部修改时 textarea 实时刷新）
@@ -349,14 +351,6 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     save({ pluginPerm: { ...pluginPerm, [key]: next } })
   }
   const toHex = (c: string) => (/^#[0-9a-fA-F]{6}$/.test(c || '') ? c : '#17181c')
-
-  // v0.2.3-fix(S1): 长期记忆计数用 state(不再在 JSX 里渲染 async IIFE -> [object Promise])
-  const [factsCount, setFactsCount] = useState(0)
-  useEffect(() => {
-    if (tab === 'memory') {
-      window.huangquan.memory.load().then((m) => { setMemF(m?.pinnedFacts || []); setFactsCount((m?.facts || []).length) }).catch(() => {})
-    }
-  }, [tab])
 
   const selectProvider = (name: string) => {
     // v0.3.0: 切换前保存当前供应商配置(手动修改立即落盘, 不丢失)
@@ -795,177 +789,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 <textarea style={{ ...S.inp, height: 120, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 3px)', fontFamily: 'monospace', lineHeight: 1.5, marginTop: 8 }} value={g.customSystemPrompt || ''} onChange={e => save({ customSystemPrompt: e.target.value })} placeholder="你是 {{Name}}，专注{{Domain}}的{{Role}}。&#10;核心原则：&#10;1. 不确定时追问&#10;2. 完成前自检&#10;3. 输出结构化" />
                 <div style={S.row}><div style={S.label}>注入位置</div><select style={S.sel} value={g.promptInjectPos||'end'} onChange={e=>save({promptInjectPos:e.target.value})}><option value="end">系统提示词末尾</option><option value="begin">系统提示词开头</option><option value="replace">替换默认提示词</option></select></div>
               </div>
-            </div> : tab === 'memory' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}>
-                <div style={S.section}>工作记忆（对话内）</div>
-                <div style={S.label}>压缩策略</div>
-                <select style={S.sel} value={g.compactStrategy || 'auto'} onChange={e => save({ compactStrategy: e.target.value })}>
-                  <option value="auto">自动 — 达到阈值时触发</option>
-                  <option value="manual">手动 — 仅用户手动触发</option>
-                  <option value="off">关闭 — 溢出则截断</option>
-                </select>
-                <div style={S.row}><div style={S.label}>触发条件</div></div>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <div style={{ flex:1 }}><div style={S.hint}>消息数超过</div><input type="number" style={S.inp} value={g.compactMsgCount || 20} onChange={e => save({ compactMsgCount: parseInt(e.target.value) || 20 })} /></div>
-                  <div style={{ flex:1 }}><div style={S.hint}>Token 超过</div><input type="number" style={S.inp} value={g.compactTokenLimit || 50000} onChange={e => save({ compactTokenLimit: parseInt(e.target.value) || 50000 })} /></div>
-                </div>
-                <div style={S.row}><div style={S.label}>压缩强度</div></div>
-<SegSetting label="压缩强度" hint="压缩时保留原文的程度" value={g.compactStrength ?? 1} onChange={v => save({ compactStrength: v })} options={[{ v: 0, label: '保留细节' }, { v: 1, label: '平衡' }, { v: 2, label: '激进' }]} />
-                <div style={S.hint}>{['保留更多原文，压缩比约30%','平衡：保留关键信息，压缩比约50%','仅保留核心结论，压缩比约80%'][g.compactStrength ?? 1]}</div>
-                <div style={{ marginTop:8 }}>
-                  {([['keepUserGoals','始终保留用户核心目标和约束'],['keepPendingTasks','始终保留未完成待办事项'],['keepDecisions','始终保留重要决策和原因'],['keepRecentRaw','保留最近5条消息原文']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
-                </div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>短期记忆（会话内）</div>
-                <Toggle checked={g.shortTermMemory !== false} onChange={v => save({ shortTermMemory: v })} label="记住会话偏好" hint="本会话中确认过的参数、路径、技术选型自动沿用" />
-                <div style={S.label}>会话结束时</div>
-                <select style={S.sel} value={g.sessionEndAction || 'clear'} onChange={e => save({ sessionEndAction: e.target.value })}>
-                  <option value="clear">自动清理（节省资源）</option>
-                  <option value="keep24h">保留 24 小时以便恢复</option>
-                </select>
-              </div>
-              <div style={S.card}><div style={S.section}>置顶记忆</div>
-                <div style={S.hint}>跨会话持久化的事实，Agent 每次对话都会看到。按 Enter 添加。</div>
-                <input style={{ ...S.inp, marginTop: 10, marginBottom: 12 }} placeholder="添加置顶事实..." onKeyDown={async e => { if (e.key !== 'Enter') return; const v = (e.target as HTMLInputElement).value; if (!v) return; const m = await window.huangquan.memory.load(); m.pinnedFacts = [...(m.pinnedFacts || []), v]; await window.huangquan.memory.save(m); setMemF([...(m.pinnedFacts || [])]); (e.target as HTMLInputElement).value = '' }} />
-                {memF.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', textAlign: 'center', padding: 20 }}>暂无置顶记忆</div> : memF.map((f, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: C.input, borderRadius: 7, marginBottom: 6 }}>
-                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, flex: 1 }}>{f}</span>
-                  <button style={{ ...S.btn('danger'), height: 26, padding: '0 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={async () => { const m = await window.huangquan.memory.load(); const pf = m.pinnedFacts || []; pf.splice(i, 1); m.pinnedFacts = pf; await window.huangquan.memory.save(m); setMemF([...(m.pinnedFacts || [])]) }}>删除</button>
-                </div>)}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>长期记忆</div>
-                <div style={S.hint}>Agent 自动学习的事实和偏好。可浏览、搜索、删除。</div>
-                <div style={{ textAlign: 'right', marginBottom: 8 }}>
-                  <button style={S.btn('ghost')} onClick={async () => {
-                    const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [] }))
-                    const facts = m.facts || []
-                    if (!facts.length) { alert('暂无长期记忆') }
-                    else { alert(facts.map((f: string, i: number) => (i + 1) + '. ' + f.slice(0, 200)).join('\n')) }
-                  }}>浏览全部 ({factsCount})</button>
-                  <button style={{ ...S.btn('danger'), marginLeft: 8 }} onClick={async () => {
-                    if (!confirm('清空全部长期记忆？此操作不可撤销。')) return
-                    const m = await window.huangquan.memory.load()
-                    m.facts = []; await window.huangquan.memory.save(m)
-                    alert('已清空')
-                  }}>清空全部</button>
-                </div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>程序记忆（技能固化）</div>
-                <Toggle checked={g.programMemory !== false} onChange={v => save({ programMemory: v })} label="启用技能识别" hint="任务完成后自动检测可复用模式" />
-                <Toggle checked={g.autoSkill !== false} onChange={v => save({ autoSkill: v })} label="自动推荐固化" hint="关闭则每次需人工确认后才创建技能" />
-                <div style={S.label}>推荐触发条件</div>
-                <div style={S.hint}>流程≥{g.skillMinSteps||3}步且无人工介入时推荐固化</div>
-                <input type="number" style={S.inp} value={g.skillMinSteps||3} min={2} max={10} onChange={e => save({ skillMinSteps: parseInt(e.target.value)||3 })} />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>情景记忆（操作追溯）</div>
-                <div style={S.label}>保留时间</div>
-                <select style={S.sel} value={g.episodicRetention||'30d'} onChange={e => save({ episodicRetention: e.target.value })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select>
-                <Toggle checked={g.episodicRollback !== false} onChange={v => save({ episodicRollback: v })} label="支持操作回滚" hint="文件修改时自动生成备份" />
-              </div>
-            </div> : tab === 'collab' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}>
-                <div style={S.section}>多 Agent 协作模式</div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
-                  {['自动','手动','关闭'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 6, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: (g.collabMode || '自动') === s ? '#fff' : C.muted, background: (g.collabMode || '自动') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.collabMode || '自动') === s} onChange={() => save({ collabMode: s })} />{s}</label>)}
-                </div>
-                <NumSetting label="最大同时活跃 Agent" hint="" value={g.maxAgents || 5} min={1} max={10} unit="个" onChange={v => save({ maxAgents: v })} />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>编队成员</div>
-                <div style={S.hint}>点击开关启用/禁用编队成员。关闭的Agent在对话中不可被 handoff 调用。</div>
-                {[
-                  ['姬子','☕','总指挥官，任务分配与最终验收'],
-                  ['银狼','🐺','代码审查、安全审计、质量门禁'],
-                  ['螺丝咕姆','🤖','安全扫描、漏洞检测、代码加固'],
-                  ['艾丝妲','📡','前后端开发、调试、重构'],
-                  ['三月七','📸','数据清洗、记忆管理、上下文归档'],
-                  ['黑天鹅','🦢','UI设计、图表绘制、视觉创意'],
-                  ['知更鸟','🕊️','代码生成、脚本编写、自动化'],
-                ].map(([name, icon, desc]) => {
-                  const list = (g.disabledAgents || []) as string[]
-                  const on = !list.includes(name)
-                  return <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid ' + C.border }}>
-                    <div><span style={{ fontSize: 'var(--ui-font-size)' }}>{icon}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: on ? C.text : C.muted, marginLeft: 6 }}>{name}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginLeft: 8 }}>{desc}</span></div>
-                    <div onClick={() => { const d = [...list]; if (on) d.push(name); else d.splice(d.indexOf(name), 1); save({ disabledAgents: d }) }} style={{ width: 36, height: 20, borderRadius: 10, background: on ? C.accent : C.border, cursor: 'pointer', position: 'relative', flexShrink: 0 }}><div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: on ? 19 : 3 }} /></div>
-                  </div>
-                })}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>Handoff 交接规则</div>
-                <Toggle checked={g.handoffContext !== false} onChange={v => save({ handoffContext: v })} label="传递完整上下文" hint="交接时带上需求背景、已有代码、约束条件" />
-                <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接Agent完成任务后自动回到主Agent" />
-                <div style={S.row}><div style={S.label}>最大连续交接次数</div><input type="number" style={S.inp} value={g.maxHandoffChain || 3} onChange={e => save({ maxHandoffChain: parseInt(e.target.value) || 3 })} /></div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>交叉验证</div>
-                <Toggle checked={g.crossValidation === true} onChange={v => save({ crossValidation: v })} label="启用交叉验证" hint="关键任务由两个 Agent 独立执行后对比" />
-                {g.crossValidation === true && <>
-                  <Toggle checked={g.cvCodeReview !== false} onChange={v => save({ cvCodeReview: v })} label="代码审查触发" hint="生成代码后自动触发" />
-                  <Toggle checked={g.cvSecurity !== false} onChange={v => save({ cvSecurity: v })} label="安全相关操作" />
-                  <Toggle checked={g.cvFinancial !== false} onChange={v => save({ cvFinancial: v })} label="涉及金钱/权限操作" />
-                  <div style={S.label}>验证方式</div>
-                  <select style={S.sel} value={g.cvMode || 'parallel'} onChange={e => save({ cvMode: e.target.value })}>
-                    <option value="parallel">并行验证（同时执行后对比）</option>
-                    <option value="serial">串行验证（执行→审查）</option>
-                  </select>
-                  <div style={S.label}>不一致处理</div>
-                  <select style={S.sel} value={g.cvConflictAction || 'report'} onChange={e => save({ cvConflictAction: e.target.value })}>
-                    <option value="report">汇报差异，由用户裁决</option>
-                    <option value="vote">Agent 自行投票决定</option>
-                    <option value="conservative">以更保守方案为准</option>
-                  </select>
-                </>}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>工作流模板</div>
-                <div style={S.hint}>预定义的多步骤任务自动化流程（运行后自动切到对话执行）</div>
-                {(() => {
-                  let custom: { name: string; id: string; desc?: string; steps?: number }[] = []
-                  try { custom = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]') } catch (e) { /* ignore */ console.debug('[swallow]', e) }
-                  const all: [string, string, string, number, boolean][] = [
-                    ['代码审查流程','code-review','开发者提交→审查者审查→开发者修正',3,false],
-                    ['部署检查清单','deploy-checklist','检查配置→构建→测试→打包→...',7,false],
-                    ['每日总结','daily-summary','汇总今日工作+明日计划',1,false],
-                    ...custom.map((c: { name: string; id: string; desc?: string; steps?: number }) => [c.name, 'custom-' + c.id, c.desc || '', c.steps || 1, true] as [string, string, string, number, boolean]),
-                  ]
-                  return all.map(([name,key,desc,steps,isCustom]: [string, string, string, number, boolean]) => <div key={key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid ' + C.border}}>
-                    <div><div style={{fontSize: 'calc(var(--ui-font-size) - 2px)',fontWeight:600,color:C.text}}>{name}{isCustom ? <span style={{fontSize: 'calc(var(--ui-font-size) - 4px)',color:C.muted}}> · 自定义</span> : null}</div><div style={S.hint}>{desc}（{steps}步）</div></div>
-                    <div style={{display:'flex',gap:4}}>
-                      <button style={{...S.btn('ghost'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 8px'}} onClick={() => { onNavigate('chat'); useChatStore.getState().send('执行工作流「' + name + '」：' + desc); setToast('工作流「' + name + '」已发送到对话执行') }}>运行</button>
-                      {isCustom ? <button style={{...S.btn('danger'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 8px'}} onClick={() => { const list = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]'); localStorage.setItem('hq_custom_wfs', JSON.stringify(list.filter((c: { id: string }) => 'custom-' + c.id !== key))); setToast('已删除自定义工作流'); setTab('collab'); }}>删除</button> : null}
-                    </div>
-                  </div>)
-                })()}
-                <div style={{textAlign:'right',marginTop:8}}><button style={S.btn('primary')} onClick={() => { setWfName(''); setWfDesc(''); setWfModal(true) }}>+ 新建工作流</button></div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>已安装技能</div>
-                <div style={S.hint}>可复用的知识/流程模块，由 Agent 自动学习或手动安装</div>
-                {(() => {
-                  let removed: string[] = []
-                  try { removed = JSON.parse(localStorage.getItem('hq_removed_skills') || '[]') } catch (e) { /* ignore */ console.debug('[swallow]', e) }
-                  const list: string[][] = [
-                    ['Code Review','内置','代码审查流程、检查清单、最佳实践'],
-                    ['Project Manager','内置','项目进度追踪、里程碑管理、风险识别'],
-                    ['部署检查清单','手动','来源: GitHub/xxx/deploy-checklist'],
-                  ].filter(([n]) => !removed.includes(n))
-                  return list.length ? list.map(([name,src,desc]: string[]) => <div key={name} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid ' + C.border}}>
-                    <div><span style={{fontSize: 'calc(var(--ui-font-size) - 2px)',fontWeight:600,color:C.text}}>{name}</span><span style={{fontSize: 'calc(var(--ui-font-size) - 4px)',color:C.muted}}> · {src}</span></div>
-                    <div style={{display:'flex',gap:4}}>
-                      <button style={{...S.btn('ghost'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 6px'}} onClick={() => setToast(name + '：' + desc)}>查看</button>
-                      {src !== '内置' ? <button style={{...S.btn('danger'),height:24,fontSize: 'calc(var(--ui-font-size) - 4px)',padding:'0 6px'}} onClick={() => { const r: string[] = JSON.parse(localStorage.getItem('hq_removed_skills') || '[]'); r.push(name); localStorage.setItem('hq_removed_skills', JSON.stringify(r)); setToast('已移除技能「' + name + '」'); setTab('collab'); }}>移除</button> : null}
-                    </div>
-                  </div>) : <div style={S.hint}>暂无技能，可安装</div>
-                })()}
-                <div style={{display:'flex',gap:8,marginTop:10}}>
-                  <button style={S.btn('primary')} onClick={async () => { const url = prompt('GitHub 仓库地址（https://...）：'); if (!url) return; setToast('正在安装...'); const r = await window.huangquan.skills.install(url.trim()); setToast(String(r)) }}>从 GitHub 安装</button>
-                  <button style={S.btn('ghost')} onClick={async () => { try { const path = await window.huangquan.skills.pickLocal(); if (!path) return; setToast('正在安装...'); const r = await window.huangquan.skills.installLocal(path); setToast(String(r)) } catch (e: unknown) { setToast('安装失败: ' + errMsg(e)) } }}>从本地安装</button>
-                </div>
-              </div>
-            </div> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+            </div> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>工具总览仪表盘</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
