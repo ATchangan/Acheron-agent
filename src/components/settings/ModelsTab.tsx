@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S } from '../settings-ui'
 import type { MediaProvider, ProviderConfig } from '../../global'
@@ -63,7 +63,7 @@ const detectCaps = (models: string[]): string[] => {
   return [...caps]
 }
 
-// v0.2.4: 媒体平台配置表单(供应商页内联显示, 不跳转) —— 样式与供应商表单对齐(DeepSeek 模板)
+// 媒体平台配置表单(供应商页内联显示, 不跳转) —— 样式与供应商表单对齐(DeepSeek 模板)
 const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => void }> = ({ mediaSelIdx, showToast }) => {
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const mp = mediaProviders[mediaSelIdx]

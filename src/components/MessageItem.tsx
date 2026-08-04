@@ -31,7 +31,7 @@ const FooterBtn: React.FC<{ title: string; onClick: () => void; active?: boolean
     </button>
   )
 
-// v0.2.2: 时长格式化（ms -> 1.2s / 850ms）
+// 时长格式化（ms -> 1.2s / 850ms）
 const fmtTime = (ms?: number) => {
   if (ms === undefined || ms === null) return ''
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
@@ -48,7 +48,7 @@ export default function MessageItem({ message, streaming }: Props) {
   const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
   const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
   const cardMaxHeight = useSettingsStore(s => (s.general).cardMaxHeight || 500)
-  // v0.2.3: TTS 语音朗读(Windows SAPI)
+  // TTS 语音朗读(Windows SAPI)
   const ttsEnabled = useSettingsStore(s => (s.general).ttsEnabled !== false)
   const ttsRate = useSettingsStore(s => (s.general).ttsRate || 1)
   const [ttsBusy, setTtsBusy] = useState(false)
@@ -83,7 +83,7 @@ export default function MessageItem({ message, streaming }: Props) {
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
-  // v0.2.2: 引用内容 → 显示在输入框上方（类似图片预览），由 ChatInput 监听 huangquan-quote 事件接收
+  // 引用内容 → 显示在输入框上方（类似图片预览），由 ChatInput 监听 huangquan-quote 事件接收
   const sendQuote = useCallback((text: string) => {
     window.dispatchEvent(new CustomEvent('huangquan-quote', { detail: text }))
   }, [])
@@ -151,7 +151,7 @@ export default function MessageItem({ message, streaming }: Props) {
         {streaming ? <>🤔 思考中<span className="thinking-dots" /></> : '调用工具中...'}
       </span>
     )
-    // v0.2.1: 解析交互卡片 <!--CARD:title-->html<!--/CARD-->
+    // 解析交互卡片 <!--CARD:title-->html<!--/CARD-->
     // matchAll 一次性提取卡片, 避免 exec+replace 混用导致相同卡片错位
     const cardRe = /<!--CARD(?::([^>]*))?-->([\s\S]*?)<!--\/CARD-->/g
     const cards: { title: string; html: string }[] = []
@@ -159,7 +159,7 @@ export default function MessageItem({ message, streaming }: Props) {
     let clean = text
     for (const m of text.matchAll(cardRe)) { cards.push({ title: m[1] || '', html: m[2] }) }
     if (cards.length) clean = text.replace(cardRe, '')
-    // v0.2.3: 反思内容不再静默丢弃 —— 提取为可折叠「💭 反思」块
+    // 反思内容不再静默丢弃 —— 提取为可折叠「💭 反思」块
     // 多段反思内容拼接保留, 不再只留最后一段
     clean = clean.replace(/<reflect>([\s\S]*?)<\/reflect>/g, (_s: string, body: string) => { const b = body.trim(); reflect = reflect ? reflect + '\n' + b : b; return '' }).trim()
     return (
@@ -193,7 +193,7 @@ export default function MessageItem({ message, streaming }: Props) {
       <div className="message-body" onContextMenu={handleContextMenu}>
         <div className="message-sender">{isUser ? '你' : (agentAvatar || '黄泉')}</div>
         {message.images?.length ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>{message.images.map((img, i) => <img key={i} src={img} className="image-preview" alt="" />)}</div> : null}
-        {/* v0.2.2: 附件（视频/音频/文档）展示，点击用系统默认程序打开 */}
+        {/* 附件（视频/音频/文档）展示，点击用系统默认程序打开 */}
         {message.attachments?.length ? (
           <div className="message-attachments">
             {message.attachments.map((a, i) => (
@@ -228,7 +228,7 @@ export default function MessageItem({ message, streaming }: Props) {
                   {message.meta?.ttft !== undefined && <span title="首字延迟 (TTFT)">⚡{fmtTime(message.meta.ttft)}</span>}
                   {message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
                   {(message.usage || message.meta?.taskTokens) && (() => {
-                    // v0.2.3: 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
+                    // 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
                     const total = message.meta?.taskTokens || message.usage?.total_tokens || ((message.usage?.prompt_tokens || 0) + (message.usage?.completion_tokens || 0))
                     const speed = message.meta?.duration ? Math.round(message.usage?.completion_tokens || 0 / (message.meta.duration / 1000)) : 0
                     return <span title={message.meta?.taskTokens ? '本任务总消耗(主 Agent + 全部子 Agent)' : '本次回复消耗 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全Agent)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>

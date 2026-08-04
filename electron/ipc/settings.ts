@@ -16,9 +16,9 @@ export function registerSettingsIpc(deps: {
         const raw = fs.readFileSync(settingsPath, 'utf-8')
         if (raw.trim()) {
           const data = JSON.parse(raw)
-          // v0.2.3: API Key 解密(DPAPI) —— 必须合并返回值(decProviders 返回新对象)
+          // API Key 解密(DPAPI) —— 必须合并返回值(decProviders 返回新对象)
           Object.assign(data, decProviders(data))
-          // v0.2.5-opt: 从独立文件读回大字段
+          // 从独立文件读回大字段
           const g = data?.general || {}
           for (const [key, file] of [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']] as [string, string][]) {
             const v = g[key]
@@ -37,7 +37,7 @@ export function registerSettingsIpc(deps: {
   ipcMain.handle('settings:save', (_e, s) => {
     try {
       fs.mkdirSync(userDataPath, { recursive: true })
-      // v0.2.5-opt: 大字段(头像/背景图 base64)剥离到独立文件, 避免每次保存全量写 2.8MB 阻塞
+      // 大字段(头像/背景图 base64)剥离到独立文件, 避免每次保存全量写 2.8MB 阻塞
       const g = s?.general || {}
       const bigKeys: [string, string][] = [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']]
       const g2 = { ...g }
@@ -61,7 +61,7 @@ export function registerSettingsIpc(deps: {
         const wd = g2?.workDir
         if (typeof wd === 'string' && wd.trim()) fs.mkdirSync(wd.trim(), { recursive: true })
       } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-      // v0.2.3: API Key 加密落盘(DPAPI)
+      // API Key 加密落盘(DPAPI)
       fs.writeFileSync(settingsPath, JSON.stringify(encProviders(slim)), 'utf-8')
       return true
     } catch (e) { console.error('[SETTINGS] save error:', e); return false }

@@ -1,6 +1,6 @@
 ﻿// src/store/runtime.ts —— 工具循环/中断令牌/工具执行(v0.3.0 M2)
 // 职责: runTool 及工具分支/analyzeWithVision/taskGen 中断令牌/工具缓存
-// 迁移自 chat.ts(v0.2.5) —— 行为未改
+// 迁移自 chat.ts() —— 行为未改
 // 注意: 依赖 chat.ts 的 useChatStore(运行时循环依赖, 函数体内延迟解析, 安全)
 import { useSettingsStore } from './settings'
 import { useChatStore } from './chat'
@@ -49,14 +49,14 @@ function normPath(p: string): string {
   return (isAbs ? '/' : '') + parts.join('/')
 }
 
-// v0.2.1: 文件权限检查
+// 文件权限检查
 
 function checkFilePermission(name: string, args: Record<string, unknown>): string | null {
   const perm = useSettingsStore.getState().general.filePermission || 'full'
   if (perm === 'full') return null
   const wd = useSettingsStore.getState().general.workDir || ''
   const p = String(args.path || args.dirPath || '')
-  // sandbox: 仅在 working directory 内允许操作 —— v0.2.3: 规范化路径后再比较, 防 .. 穿越绕过
+  // sandbox: 仅在 working directory 内允许操作 —— 规范化路径后再比较, 防 .. 穿越绕过
   if (perm === 'sandbox' && wd && p) {
     const rp = normPath(p).toLowerCase()
     const rw = normPath(wd).toLowerCase()
@@ -76,7 +76,7 @@ function checkFilePermission(name: string, args: Record<string, unknown>): strin
 }
 
 
-// v0.2.1: 工具开关——从设置读取禁用列表，过滤 TOOLS
+// 工具开关——从设置读取禁用列表，过滤 TOOLS
 
 export function getActiveTools(): ToolSpec[] {
   const raw = useSettingsStore.getState().general.disabledTools
@@ -84,7 +84,7 @@ export function getActiveTools(): ToolSpec[] {
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   // v0.3.0 M4: 插件工具并入(有 index.js 实现的插件, plugin_ 前缀防冲突)
   const merged = [...TOOLS, ...PLUGIN_TOOLS]
-  // v0.2.3: 协作模式=关闭 时彻底禁用多 Agent 协作工具(handoff/dispatch/list_agents)
+  // 协作模式=关闭 时彻底禁用多 Agent 协作工具(handoff/dispatch/list_agents)
   const collabMode = String(useSettingsStore.getState().general.collabMode || '自动')
   // v0.3.0: 媒体自动调用开关(策略页可调) —— 关闭则不注入生成工具
   const g0 = useSettingsStore.getState().general
@@ -190,10 +190,10 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
     try { return await window.huangquan.plugins.exec(plugin, tool, a || {}) } catch (e: unknown) { return 'E:插件执行异常: ' + (errMsg(e)) }
   }
   try {
-    // v0.2.1: 文件权限检查
+    // 文件权限检查
     const permErr = checkFilePermission(name, a)
     if (permErr) return permErr
-    // v0.2.3: 每工具权限表(ToolsView 配置)接入 —— IPC API 名 → agent 工具名映射
+    // 每工具权限表(ToolsView 配置)接入 —— IPC API 名 → agent 工具名映射
     // ToolsView 的 BUILTIN_TOOLS 用 IPC 名(readFile/exec...), runTool 用 agent 名(read/exec_command...), 不映射则权限设置部分失效
     try {
       const perms = JSON.parse(localStorage.getItem('huangquan_tool_perms') || '{}') as Record<string, string>
@@ -206,7 +206,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
     // v0.2: cache
     const ck = name + ':' + JSON.stringify(a || {})
     const cached = getCached(ck, name)
-    // v0.2.6: 缓存命中统计 —— 按当前会话 + 按当前模型 双维度
+    // 缓存命中统计 —— 按当前会话 + 按当前模型 双维度
     {
       const st = useChatStore.getState()
       const sid = st.cid
@@ -215,7 +215,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
         useChatStore.setState(s => {
           const c = s.sessCache[sid] || { hits: 0, misses: 0 }
           const sess = { ...s.sessCache, [sid]: cached ? { hits: c.hits + 1, misses: c.misses } : { hits: c.hits, misses: c.misses + 1 } }
-          // v0.2.6: 按模型统计(未使用的模型不会出现)
+          // 按模型统计(未使用的模型不会出现)
           let modelPart = s.modelCache
           if (mdl) {
             const m = s.modelCache[mdl] || { hits: 0, misses: 0 }
@@ -228,12 +228,12 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
     if (cached) return cached + ' [cache]'
     if (['write','edit','mkdir','exec_command'].includes(name)) onWriteOp()
     switch (name) {
-      // v0.2.3: read 支持主进程分段读(offset/limit 透传, 修复 >5MB 文件无法续读)
+      // read 支持主进程分段读(offset/limit 透传, 修复 >5MB 文件无法续读)
       case 'read': { if (!A.path) return 'E:need path'; const c = await window.huangquan.computer.readFile(A.path, A.offset ? Number(A.offset) : undefined, A.limit ? Number(A.limit) : undefined); if (A.offset) return c; return (c.length > 8000 ? c.slice(0, 8000) + '\n...[已截断, 共 ' + c.length + ' 字符, 如需后续内容用 read offset=' + (c.slice(0, 8000).split('\n').length + 1) + ' 续读]' : c) }
       case 'write': { if (!A.path || A.content === undefined) return 'E:need path+content'; await window.huangquan.computer.writeFile(A.path, A.content); return A.path + ' (' + A.content.length + ' chars)' }
       case 'edit': { if (!A.path || !A.oldText) return 'E:need path+oldText+newText'; const o = await window.huangquan.computer.readFile(A.path); if (!o.includes(A.oldText)) return 'E:text not found in ' + A.path; await window.huangquan.computer.writeFile(A.path, o.replace(A.oldText, A.newText || '')); return A.path + ' (edited)' }
       case 'exec_command': { if (!A.cmd) return 'E:need cmd'; const r = await window.huangquan.computer.exec(A.cmd); const out = r || '(empty output)'; return out.length > 3000 ? out.slice(0, 1500) + '\n...[输出过长已截断, 共 ' + out.length + ' 字符, 头尾已保留]\n' + out.slice(-1500) : out }
-      // v0.2.3-security: mkdir 走主进程 IPC(带工作目录校验 + 防 shell 注入), 不再拼 exec
+      // mkdir 走主进程 IPC(带工作目录校验 + 防 shell 注入), 不再拼 exec
       case 'mkdir': { if (!A.path) return 'E:need path'; const r = await window.huangquan.computer.mkdir(A.path); if (!r?.ok) return 'E:mkdir failed: ' + (r?.error || 'unknown'); return A.path + ' (created)' }
       case 'grep': { if (!A.dirPath || !A.pattern) return 'E:need dirPath+pattern'; return await window.huangquan.computer.grep(A.dirPath, A.pattern) || '(no matches)' }
       case 'find': { if (!A.dirPath || !A.glob) return 'E:need dirPath+glob'; return await window.huangquan.computer.find(A.dirPath, A.glob) || '(no files found)' }
@@ -243,7 +243,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'web_fetch': return await window.huangquan.web.fetch(A.url || 'about:blank')
       case 'web_read': {
         if (!A.url) return 'E:need url'
-        // v0.2.5: 总开关本地兜底(主进程也会校验)
+        // 总开关本地兜底(主进程也会校验)
         const g = useSettingsStore.getState().general
         if (g.webReadEnabled === false) return 'E:web_read 已被禁用, 请在 设置 → 工具 → 无头浏览器网页解析工具 中开启'
         try {
@@ -265,7 +265,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'kill_process': { if(!A.pid)return'E:need pid';return await window.huangquan.computer.killProcess(A.pid) }
       // 相同事实去重(重复调用不再累积)
       case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = String(A.fact || '').trim(); if (!fact) return 'E:need fact'; const pf = (m.pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; m.pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m) as Record<string, unknown>); return 'ok:pinned' }
-      // v0.2.3: recall_memory 接入向量语义检索(主进程 TF-IDF) + 关键词匹配合并
+      // recall_memory 接入向量语义检索(主进程 TF-IDF) + 关键词匹配合并
       case 'recall_memory': {
         const query = (A.query || '').trim()
         const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
@@ -302,7 +302,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       // v0.2: 多Agent/工作流
       case 'handoff': { const agents = useAgents(); if (!A.agent_name) return 'E:need agent_name'; const ag = agents[A.agent_name]; if (!ag) return 'E:unknown agent: ' + A.agent_name + ' (可用: ' + Object.keys(agents).join(', ') + ')'; const dAgents: string[] = useSettingsStore.getState().general.disabledAgents || []; if (dAgents.includes(A.agent_name)) return 'E:该 Agent 已被禁用: ' + A.agent_name + ' (设置→协作 中可重新启用)'; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: A.agent_name, agentManual: false } : x) })); useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(A.agent_name) ? s.activeAgents : [...s.activeAgents, A.agent_name] })); return `✅ 已交接给 ${A.agent_name}(${ag.role})。原因: ${A.reason || '能力边界外'}。现在你以 ${A.agent_name} 的身份继续执行。\n\n【${A.agent_name} 身份】${ag.prompt}` }
       case 'list_agents': { return Object.entries(useAgents()).map(([n,ag]) => `${ag.icon} **${n}** (${ag.role}): ${ag.prompt.slice(0,80)}... | 工具: ${ag.tools.join(', ')}`).join('\n\n') }
-      // v0.2.1: 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
+      // 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
       case 'dispatch': { let dTasks: { agent: string; task: string }[] = []; try { dTasks = JSON.parse(A.tasks || A.plan || '[]') } catch { dTasks = [] }; return await runDispatch(dTasks, snapCfg, () => taskGen, runTool) }
       case 'list_workflows': { return Object.entries(WORKFLOWS).map(([id,w]) => `- **${id}** (${w.name}): 触发词 → ${w.triggers.slice(0,3).join(', ')}; ${w.steps.length} 步骤`).join('\n') }
       case 'run_workflow': { if (!A.workflow_id) return 'E:need workflow_id'; const wf = WORKFLOWS[A.workflow_id]; if (!wf) return 'E:unknown workflow: ' + A.workflow_id; let vars: Record<string, string> = {}; try { vars = JSON.parse(A.variables || '{}') } catch { vars = {} }; const steps = wf.steps.map((s,i) => `${i+1}. ${s.desc} → \`${s.tool}(${s.args_template.replace(/\{(\w+)\}/g,(_:string,k:string)=>vars[k]||`{${k}}`)})\``).join('\n'); return `工作流 **${wf.name}** (${wf.steps.length}步):\n${steps}\n\n请按顺序执行以上步骤，每步完成后验证结果。` }
@@ -311,9 +311,9 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'media_video': { if (!A.prompt) return 'E:need prompt'; const r = await window.huangquan.mediaGen({ kind: 'video', prompt: String(A.prompt), duration: A.duration ? Number(A.duration) : undefined }); return r.ok ? ('视频已生成: ' + (r.path || '')) : ('生成失败: ' + (r.error || '')) }
       case 'show_card': { if (!A.html) return 'E:need html'; return '<!--CARD' + (A.title ? ':' + A.title : '') + '-->' + A.html + '<!--/CARD-->' }
       case 'bridge_notify': { const g = useSettingsStore.getState().general; if (g.notifyEnabled === false) return 'ok:notifications disabled'; const kind = A.type || 'info'; if (kind === 'task_done' && g.notifyTaskDone === false) return 'ok:task_done notifications disabled'; if (kind === 'error' && g.notifyError === false) return 'ok:error notifications disabled'; try { new Notification(A.title || '黄泉Agent', { body: A.body || '' }) } catch {} return 'ok:notified' }
-      // v0.2.3-security: workflow 脚本加固 —— 限长 8KB、严格模式、隔离 window 访问, 防提示注入直接操纵宿主
+      // workflow 脚本加固 —— 限长 8KB、严格模式、隔离 window 访问, 防提示注入直接操纵宿主
       case 'workflow': { if (!A.script) return 'E:need script'; if (String(A.script).length > 8192) return 'E:workflow script too long (max 8KB)'; return new Promise(resolve => { const logs: string[] = []; const ctx = { log: (msg: unknown) => { logs.push(String(msg)); if (logs.length > 200) logs.shift() }, tools: { run: async (n: string, args: Record<string, unknown>) => { logs.push('[wf] ' + n); return await runTool(n, args, snapCfg) } }, done: (r: unknown) => resolve(JSON.stringify({ result: r, logs }, null, 2)) }; try { const fn = new Function('ctx', '"use strict"; ' + A.script); const ret = fn(ctx); if (ret instanceof Promise) ret.catch(e => resolve('E:workflow error: ' + errMsg(e))); } catch (e) { resolve('E:workflow error: ' + errMsg(e)) } }) }
-      // v0.2.1: 情景记忆 + 审计 + 目标持久化
+      // 情景记忆 + 审计 + 目标持久化
       case 'audit_log': {
         const mem = await window.huangquan.memory.load().catch(() => ({ episodic: [] }))
         const log = (mem.episodic || []).slice(-(Number(A.limit || 20)))
@@ -326,7 +326,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
         ;window.__watchState = prevState
         try {
           const content = await window.huangquan.computer.readFile(A.path)
-          // v0.2.3: 强哈希(内容全量), 修复弱哈希误判(同长同前缀内容变化不识别)
+          // 强哈希(内容全量), 修复弱哈希误判(同长同前缀内容变化不识别)
           let hash = ''
           try { hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content)).then(b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 32)) } catch { hash = content.length + ':' + content.slice(0, 200) }
           if (prevState[watchKey] && prevState[watchKey] !== hash) {
@@ -355,5 +355,5 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
   } catch (e: unknown) { return 'E:' + errMsg(e) }
 }
 
-// v0.2.1: 情景记忆——自动记录文件操作到审计日志
+// 情景记忆——自动记录文件操作到审计日志
 // 写盘防抖 —— 500ms 合并批量工具操作, 避免每次工具调用全量读写 memory.json

@@ -27,7 +27,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   // 消息过滤：单气泡模式下隐藏 tool 角色和纯 tool_calls 消息；多气泡模式下全部展示
   const msgs = session?.messages || []
   const singleBubble = useSettingsStore.getState().general.singleBubble !== false
-  // v0.2.1: 单气泡终极过滤 —— 隐藏 tool/tool_calls/空消息，且连续 assistant 合并为单条（UI 层兜底，杜绝多气泡）
+  // 单气泡终极过滤 —— 隐藏 tool/tool_calls/空消息，且连续 assistant 合并为单条（UI 层兜底，杜绝多气泡）
   const displayMsgs = (() => {
     const out: typeof msgs = []
     for (const m of msgs) {
@@ -69,7 +69,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
     const isActive = streaming || executing
     if (!isActive) return null
     if (isGeneratingText) return null // 已经有文字在流式输出
-    // v0.2.3: 思考气泡内动态显示执行阶段 —— 思考中 → 🔧 调用 XX → ✓ 完成(任务结束气泡消失)
+    // 思考气泡内动态显示执行阶段 —— 思考中 → 🔧 调用 XX → ✓ 完成(任务结束气泡消失)
     // 仅显示当前会话的 stage(多会话并发不串台); 其他会话执行中显示通用「执行中」
     const myStage = stage && stage.sid === session?.id ? stage : null
     const phase = myStage?.phase || 'thinking'

@@ -35,14 +35,14 @@ const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean
   'Whisper本地': { type: 'audio', url: 'http://127.0.0.1:9000', noKey: true, audio: ['whisper-large-v3'] },
 }
 
-// v0.2.2: 判断是否为本地服务（127.0.0.1 / localhost / noKey）
+// 判断是否为本地服务（127.0.0.1 / localhost / noKey）
 
 
 
 export default function SettingsView({ onNavigate }: { onNavigate: (v: string) => void }) {
   const { providers, general, addProvider, removeProvider, updateProvider } = useSettingsStore()
 
-  // v0.2.4: 读取后才有模型 —— 一次性迁移: 清理与官方预置完全一致的模型(旧行为自动带上的, 未经过读取)
+  // 读取后才有模型 —— 一次性迁移: 清理与官方预置完全一致的模型(旧行为自动带上的, 未经过读取)
   useEffect(() => {
     try {
       const same = (a: string[] | undefined, b: string[] | undefined) => {
@@ -63,7 +63,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   }, [])
 
   const [tab, setTab] = useState('models')
-  // v0.2.6: 模型缓存统计(持久化)
+  // 模型缓存统计(持久化)
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   // 新建工作流改用应用内弹窗(Electron 不支持 prompt, 调用会抛错触发全局错误页)
@@ -71,7 +71,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const [wfName, setWfName] = useState('')
   const [wfDesc, setWfDesc] = useState('')
   const g = general
-  // v0.2.1: 多媒体供应商
+  // 多媒体供应商
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const addMediaProvider = useSettingsStore(s => s.addMediaProvider)
   const removeMediaProvider = useSettingsStore(s => s.removeMediaProvider)

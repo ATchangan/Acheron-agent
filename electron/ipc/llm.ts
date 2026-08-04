@@ -30,7 +30,7 @@ interface VisionParams {
   prompt?: string
 }
 
-// v0.2.1: 使用 AbortController 替代全局标志位，支持并发请求
+// 使用 AbortController 替代全局标志位，支持并发请求
 const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>()
 
 export function registerLlmIpc(deps: {
@@ -57,7 +57,7 @@ ipcMain.handle('llm:abort', (_e, id?: string) => {
 })
 
 ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
-  // v0.2.3: 多会话并发 —— requestId 由调用方传入，用于把流式事件路由回对应会话
+  // 多会话并发 —— requestId 由调用方传入，用于把流式事件路由回对应会话
   const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders, sid } = params
   const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }
   // 合并自定义 Headers（JSON 或 key=value 多行格式）
@@ -69,18 +69,18 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   const body: Record<string, unknown> = { model, messages, temperature, stream: true }
   // 官方要求 include_usage 才保证流式返回完整 usage(prompt_cache_hit/miss_tokens), 否则缓存统计缺失
   body.stream_options = { include_usage: true }
-  // v0.2.3-debug: 打印首个 assistant(tool_calls) 完整结构(排查 reasoning_content 400)
+  // 打印首个 assistant(tool_calls) 完整结构(排查 reasoning_content 400)
   if ((messages || []).some((m: LLMMsg) => m.role === 'assistant' && m.tool_calls)) {
     const atc = (messages as LLMMsg[]).find((m: LLMMsg) => m.role === 'assistant' && m.tool_calls)
     const toolMsgs = (messages as { role: string }[]).filter((m: { role: string }) => m.role === 'tool').length
     console.log('[LLM] ATC:', JSON.stringify({ keys: atc ? Object.keys(atc) : [], content: atc?.content, rc: atc?.reasoning_content, tcId: (atc?.tool_calls as { id?: string }[] | undefined)?.[0]?.id, tools: toolMsgs }))
   }
-  // v0.2.3-debug: 打印消息 role 序列(排查 tool 消息格式问题)
+  // 打印消息 role 序列(排查 tool 消息格式问题)
   if ((messages || []).length > 20) console.log('[LLM] roles:', (messages as { role: string }[]).map((m: { role: string }) => m.role).join(','), '| tc:', (messages as { tool_calls?: unknown }[]).filter((m: { tool_calls?: unknown }) => m.tool_calls).length)
   if (tools?.length) { body.tools = tools }
 
   let url: string
-  // v0.2.1: 兼容设置界面保存的显示名类型（OpenAI Compatible 等），修复非 DeepSeek provider 全部报"不支持的 Provider"
+  // 兼容设置界面保存的显示名类型（OpenAI Compatible 等），修复非 DeepSeek provider 全部报"不支持的 Provider"
   switch (provider) {
     case 'openai': url = (baseUrl || 'https://api.openai.com') + '/v1/chat/completions'; break
     case 'deepseek': url = (baseUrl || 'https://api.deepseek.com') + '/v1/chat/completions'; break
@@ -97,10 +97,10 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   const requestId = params.requestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const abortCtrl = new AbortController()
   activeRequests.set(requestId, { ctrl: abortCtrl, sid: params.sid })
-  // v0.2.3: 请求结束后自动从活跃表移除（防止泄漏 + 精确中止）
+  // 请求结束后自动从活跃表移除（防止泄漏 + 精确中止）
   const removeReq = () => { activeRequests.delete(requestId); event.sender.removeListener('destroyed', removeReq) }
   event.sender.once('destroyed', removeReq)
-  // v0.2.3: 请求结束(成功/失败)立即清理 listener, 防止 WebContents 监听器累积(修复 MaxListenersExceededWarning)
+  // 请求结束(成功/失败)立即清理 listener, 防止 WebContents 监听器累积(修复 MaxListenersExceededWarning)
   const doneClean = () => { removeReq(); event.sender.removeListener('destroyed', removeReq) }
 
   try {
@@ -117,7 +117,7 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
 
     const dec = new TextDecoder(); let buf = ''
     let streamEnded = false // 防止重复发送 done
-    // 累积工具调用参数 — v0.2.1: 支持多工具调用
+    // 累积工具调用参数 — 支持多工具调用
     const tcAccum: Map<number, { id: string; name: string; args: string }> = new Map()
 
     const flushToolCalls = () => {
@@ -155,7 +155,7 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
         const d = t.slice(6); if (d === '[DONE]') { sendDone(); continue }
         try {
           const p = JSON.parse(d), choice = p.choices?.[0]
-          // 累积工具调用参数片段 — v0.2.1: 支持多工具调用
+          // 累积工具调用参数片段 — 支持多工具调用
           const deltaTcs = choice?.delta?.tool_calls
           if (deltaTcs) {
             for (const deltaTc of deltaTcs) {
@@ -191,7 +191,7 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   }
 })
 
-// v0.2.1: 非流式单次 LLM 调用 —— 多 Agent 分发时子 Agent 独立执行
+// 非流式单次 LLM 调用 —— 多 Agent 分发时子 Agent 独立执行
 ipcMain.handle('llm:chatOnce', async (_e, params: LLMChatParams) => {
   const { provider, model, apiKey, baseUrl, messages } = params
   try {
@@ -209,7 +209,7 @@ ipcMain.handle('llm:chatOnce', async (_e, params: LLMChatParams) => {
   } catch (e: unknown) { return 'E:' + ((e instanceof Error ? e.message : String(e)) || String(e)) }
 })
 
-// v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时，用此接口分析图片（非流式一次性调用）
+// 视觉辅助模型 —— 主模型不支持多模态时，用此接口分析图片（非流式一次性调用）
 ipcMain.handle('llm:vision', async (_e, params: VisionParams) => {
   const { provider, model, apiKey, baseUrl, imageDataUrl, prompt } = params
   try {

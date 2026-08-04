@@ -13,7 +13,7 @@ export function registerBrowserIpc(deps: {
   const { getBrowserWin, waitLoad, getCurUrl, setCurUrl, showBrowserPanel, showBrowserFloat, hideBrowserFloat } = deps
 
   ipcMain.handle('browser:showPanel', () => { showBrowserPanel(); hideBrowserFloat(); return true })
-  // v0.2.3-debug: 窗口诊断
+  // 窗口诊断
   ipcMain.handle('browser:debug', () => {
     const out: Record<string, unknown> = {}
     const bwAll = BrowserWindow.getAllWindows()
@@ -58,7 +58,7 @@ export function registerBrowserIpc(deps: {
     if (bw && !bw.isDestroyed()) setCurUrl(bw.webContents.getURL() || getCurUrl())
     return getCurUrl()
   })
-  // v0.2.3: 实时快照 —— 前端轮询此接口显示 agent 正在看的页面
+  // 实时快照 —— 前端轮询此接口显示 agent 正在看的页面
   // Windows 上隐藏窗口 capturePage 返回空 —— 截图时临时显示窗口再隐藏
   ipcMain.handle('browser:snapshot', async () => {
     let bw: BrowserWindow | null = null
@@ -77,9 +77,9 @@ export function registerBrowserIpc(deps: {
       return { url: curUrl, img: img.toDataURL(), loading: false, title: title || '' }
     } catch { if (bw && !bw.isDestroyed()) bw.hide(); return { url: getCurUrl(), img: '', loading: false, title: '' } }
   })
-  // v0.2.3: agent 工具调用 —— 打开页面并返回文本内容（保持旧 browse 语义）
+  // agent 工具调用 —— 打开页面并返回文本内容（保持旧 browse 语义）
   ipcMain.handle('browser:open', async (_e, url: string) => {
-    showBrowserFloat() // v0.2.3: agent 使用浏览器时弹出悬浮提示
+    showBrowserFloat() // agent 使用浏览器时弹出悬浮提示
     const bw = getBrowserWin(); const wc = bw.webContents
     try { await wc.loadURL(url) } catch (e) { /* 继续 */ console.debug('[swallow]', e) }
     await waitLoad(wc)
@@ -90,9 +90,9 @@ export function registerBrowserIpc(deps: {
       return `${title}\n\n${String(text || '').slice(0, 10000)}`
     } catch { return '(load error)' }
   })
-  // v0.2.3: agent 工具调用 —— 截取当前页面（保持旧 browse_screenshot 语义）
+  // agent 工具调用 —— 截取当前页面（保持旧 browse_screenshot 语义）
   ipcMain.handle('browser:screenshot', async (_e, url?: string) => {
-    showBrowserFloat() // v0.2.3: agent 使用浏览器时弹出悬浮提示
+    showBrowserFloat() // agent 使用浏览器时弹出悬浮提示
     const bw = getBrowserWin(); const wc = bw.webContents
     if (url && url !== 'about:blank') { try { await wc.loadURL(url) } catch (e) { /* 继续 */ console.debug('[swallow]', e) } await waitLoad(wc) }
     setCurUrl(wc.getURL() || url || getCurUrl())

@@ -27,21 +27,21 @@ const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.R
 export default function ChatInput() {
   const [text, setText] = useState('')
   const [images, setImages] = useState<string[]>([])
-  // v0.2.2: 拖拽附件（视频/音频/文档等非图片）
+  // 拖拽附件（视频/音频/文档等非图片）
   const [attachments, setAttachments] = useState<{ name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]>([])
   const [dragOver, setDragOver] = useState(false)
-  // v0.2.2: 引用内容（显示在输入框上方，像图片预览）
+  // 引用内容（显示在输入框上方，像图片预览）
   const [quote, setQuote] = useState<string | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
   const [memOpen, setMemOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
   const [thinkOpen, setThinkOpen] = useState(false)
   const [memText, setMemText] = useState('')
-  // v0.2.1: 权限/推理强度与设置持久化联动（不再是无效果本地状态）
+  // 权限/推理强度与设置持久化联动（不再是无效果本地状态）
   const [perm, setPerm] = useState<string>(useSettingsStore.getState().general.filePermission || 'auto')
   const [think, setThink] = useState<string>(useSettingsStore.getState().general.thinkLevel || 'medium')
   const send = useChatStore(s => s.send)
-  // v0.2.3: 发送/停止按钮按"当前会话"判断 —— 聊天/工作会话独立, 其他会话在跑不影响本会话
+  // 发送/停止按钮按"当前会话"判断 —— 聊天/工作会话独立, 其他会话在跑不影响本会话
   const cid = useChatStore(s => s.cid)
   const allSessions = useChatStore(s => s.sessions)
   const curBusy = allSessions.find(x => x.id === cid)?.busy || false
@@ -51,7 +51,7 @@ export default function ChatInput() {
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  // v0.2.4: 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
+  // 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const classifyModel = (m: string): 'text' | 'image' | 'video' | 'audio' => {
     const ml = m.toLowerCase()
@@ -77,7 +77,7 @@ export default function ChatInput() {
   const [modelSel, setModelSel] = useState(defaultKey)
   const currentModel = modelSel || defaultKey || '未配置'
   const curModelName = (currentModel.includes('::') ? currentModel.split('::').pop() : currentModel) || ''
-  // v0.2.1: 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
+  // 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
   const supportsVision = !currentModel || currentModel === '未配置' || /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(curModelName.toLowerCase())
   const visionAssist = !supportsVision
   const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
@@ -87,7 +87,7 @@ export default function ChatInput() {
     const ta = taRef.current
     if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px' }
   }, [text])
-  // v0.2.2: 接收消息引用（全选引入 / 右键选中文字引入）
+  // 接收消息引用（全选引入 / 右键选中文字引入）
   useEffect(() => {
     const h = (e: Event) => { const d = (e as CustomEvent).detail; if (typeof d === 'string' && d.trim()) setQuote(d.trim()) }
     window.addEventListener('huangquan-quote', h)
@@ -113,7 +113,7 @@ export default function ChatInput() {
     setText('')
     const imgs = images.length ? [...images] : undefined
     const atts = attachments.length ? [...attachments] : undefined
-    // v0.2.2: 引用内容拼入消息
+    // 引用内容拼入消息
     const quoted = quote ? `> ${quote.replace(/\n/g, '\n> ')}\n\n` : ''
     setImages([]); setAttachments([]); setQuote(null)
     await send((quoted + t).trim() || (imgs?.length ? '分析图片' : '请处理我拖入的文件'), imgs, atts)
@@ -136,7 +136,7 @@ export default function ChatInput() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  // v0.2.2: 拖拽上传 —— 图片走 base64 通道，视频/音频/文档走附件通道
+  // 拖拽上传 —— 图片走 base64 通道，视频/音频/文档走附件通道
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
@@ -181,9 +181,9 @@ export default function ChatInput() {
 
   return (
     <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
-      {/* v0.2.2: 拖拽遮罩 */}
+      {/* 拖拽遮罩 */}
       {dragOver && <div style={{ position: 'absolute', inset: 0, zIndex: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(var(--skin-accent),.18)', border: '2px dashed var(--accent)', borderRadius: 10, pointerEvents: 'none', fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 600, color: 'var(--accent)' }}>松开鼠标 · 添加图片 / 视频 / 文件</div>}
-      {/* v0.2.2: 引用内容（显示在输入框上方，类似图片预览） */}
+      {/* 引用内容（显示在输入框上方，类似图片预览） */}
       {quote && (
         <div className="quote-preview" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8, padding: '8px 12px', borderRadius: 8, borderLeft: '3px solid var(--accent)', background: 'var(--bg-card)', fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto' }}>
           <span style={{ flexShrink: 0, fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)', fontWeight: 600, marginTop: 2 }}>引用</span>
@@ -202,7 +202,7 @@ export default function ChatInput() {
         </div>
       )}
 
-      {/* v0.2.2: 附件（视频/音频/文档）预览 */}
+      {/* 附件（视频/音频/文档）预览 */}
       {!!attachments.length && (
         <div className="image-attach-preview">
           {attachments.map((a, i) => (
@@ -275,7 +275,7 @@ export default function ChatInput() {
             )}
           </div>
 
-          {/* v0.2.3: 语音输入按钮已移除 —— Web Speech API 在 Electron 不可用 */}
+          {/* 语音输入按钮已移除 —— Web Speech API 在 Electron 不可用 */}
 
           {/* 图片上传 */}
           <label title={supportsVision ? '上传图片' : (visionAssist ? '上传图片（自动用视觉辅助模型分析）' : '上传图片')} style={{

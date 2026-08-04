@@ -1,4 +1,4 @@
-// electron/ipc/plugins.ts —— 插件域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/plugins.ts —— 插件域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain, BrowserWindow, dialog } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
@@ -14,7 +14,7 @@ export function registerPluginsIpc(deps: {
   const { userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir } = deps
 
   ipcMain.handle('plugins:install', (_e, url: string) => {
-    // v0.2.3-security: spawn 替代 exec 拼接 —— 修复命令注入
+    // spawn 替代 exec 拼接 —— 修复命令注入
     return new Promise<string>(resolve => {
       const dir = join(userDataPath, 'plugins')
       try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }) } catch (e: unknown) { resolve('Error: cannot create plugins dir: ' + (e instanceof Error ? e.message : String(e))); return }

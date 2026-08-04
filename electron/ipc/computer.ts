@@ -24,7 +24,7 @@ ipcMain.handle('computer:exec', async (_e, cmd: string) => {
     return 'E:permission denied: 危险命令已被拦截 (' + (hit || '').trim() + ')。如需执行请手动在终端操作。'
   }
   return new Promise<string>((resolve) => {
-    // v0.2.1: 更可靠的 PowerShell 检测——检查 powershell 关键字和常见 cmdlet 模式
+    // 更可靠的 PowerShell 检测——检查 powershell 关键字和常见 cmdlet 模式
     const trimmed = cmd.trim()
     const isPS = /^(powershell|pwsh)\b/i.test(trimmed) ||
       /\b(Get-|Set-|New-|Invoke-|Write-|Select-|Where-|ForEach-|Start-Process)\b/i.test(trimmed) ||
@@ -35,7 +35,7 @@ ipcMain.handle('computer:exec', async (_e, cmd: string) => {
     } else {
       finalCmd = `cmd /c "${cmd.replace(/"/g, '\\"')}"`
     }
-    // v0.2.1: maxBuffer 从 10MB → 50MB; v0.3.0: cwd 跟随自定义工作目录(设置→引擎→工作目录)
+    // maxBuffer 从 10MB → 50MB; v0.3.0: cwd 跟随自定义工作目录(设置→引擎→工作目录)
     exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf-8', cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
       const out = err ? (stderr || err.message) : (stdout || '')
       const truncated = out.length > 8000 ? out.slice(0, 8000) + '\n...(已截断，共' + out.length + '字符)' : out
@@ -44,10 +44,10 @@ ipcMain.handle('computer:exec', async (_e, cmd: string) => {
   })
 })
 
-// v0.2.3-opt: 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
+// 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
 let perfCache: { cpuPct: number; memPct: number; memUsed: number; memTotal: number; gpuPct: number; gpuName: string; cpus: number } | null = null; let perfCacheAt = 0
 let lastCpuSample: { idle: number; total: number } | null = null; let lastCpuAt = 0
-// v0.2.3-opt: GPU 采样 —— 优先 nvidia-smi(正在使用的 NVIDIA GPU, 准确), 失败回退性能计数器各引擎最大值
+// GPU 采样 —— 优先 nvidia-smi(正在使用的 NVIDIA GPU, 准确), 失败回退性能计数器各引擎最大值
 let gpuViaNvidia = true
 function sampleGpu(): Promise<{ pct: number | null; name: string | null }> {
   return new Promise((resolve) => {
@@ -99,7 +99,7 @@ ipcMain.handle('computer:stat', async (_e, filePath: string) => {
   const st = fs.statSync(filePath)
   return { mtimeMs: st.mtimeMs, size: st.size, isFile: st.isFile(), isDirectory: st.isDirectory() }
 })
-// v0.2.3-opt: readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
+// readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
 const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string }>()
 ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number, limit?: number) => {
   if (!fs.existsSync(filePath)) throw new Error('文件不存在')
@@ -107,7 +107,7 @@ ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number
   // 分段读取：传 offset/limit 时不限制文件大小
   if (offset !== undefined) {
     const fd = fs.openSync(filePath, 'r')
-    // v0.2.1: 确保不从 UTF-8 多字节字符中间截断
+    // 确保不从 UTF-8 多字节字符中间截断
     let start = offset
     if (start > 0) {
       const probe = Buffer.alloc(4)
@@ -143,7 +143,7 @@ ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number
     return buf.toString('utf-8', 0, Math.min(validLen, readSize))
   }
   if (stat.size > 5 * 1024 * 1024) throw new Error('文件过大 (>5MB)，请使用 offset/limit 分段读取')
-  // v0.2.3-opt: 命中缓存且文件未变 → 零磁盘读
+  // 命中缓存且文件未变 → 零磁盘读
   const hit = readFileCache.get(filePath)
   if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.content
   const content = fs.readFileSync(filePath, 'utf-8')
@@ -160,7 +160,7 @@ ipcMain.handle('computer:readDir', async (_e, dirPath: string) => {
   const items = fs.readdirSync(dirPath, { withFileTypes: true })
   return items.map(item => ({ name: item.name, isDirectory: item.isDirectory(), size: item.isFile() ? fs.statSync(join(dirPath, item.name)).size : 0 }))
 })
-// ─── v0.2.6: 文件浏览器操作(写操作限定工作目录内, 防误删) ──
+// ─── 文件浏览器操作(写操作限定工作目录内, 防误删) ──
 // v0.3.1 块G: getEffectiveWorkDir/assertInsideWorkDir 由 deps 注入(main.ts 单一来源)
 ipcMain.handle('computer:setWorkDir', (_e, dir: string) => { setWorkDirOverride(dir || null); return true })
 ipcMain.handle('computer:mkdir', async (_e, dirPath: string) => {
@@ -196,7 +196,7 @@ ipcMain.handle('computer:createFile', async (_e, filePath: string, content?: str
     return { ok: true }
   } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
 })
-// ─── v0.2.6: 原生右键菜单(文件浏览器) ──
+// ─── 原生右键菜单(文件浏览器) ──
 ipcMain.handle('computer:contextMenu', (_e, opts: { path: string; isDir: boolean; isWorkDir?: boolean }) => {
   return new Promise<string>((resolve) => {
     try {
@@ -255,7 +255,7 @@ ipcMain.handle('computer:readFileAsDataUrl', async (_e, path: string) => {
   }
 })
 ipcMain.handle('computer:readImageBase64', async (_e, filePath: string) => {
-  // v0.2.1: 限制图片大小 20MB，防止大图撑爆内存
+  // 限制图片大小 20MB，防止大图撑爆内存
   const stat = fs.statSync(filePath)
   if (stat.size > 20 * 1024 * 1024) throw new Error('图片文件过大 (>20MB)')
   const buf = fs.readFileSync(filePath)
@@ -263,11 +263,11 @@ ipcMain.handle('computer:readImageBase64', async (_e, filePath: string) => {
   const mm: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }
   return 'data:' + (mm[ext] || 'image/png') + ';base64,' + buf.toString('base64')
 })
-// v0.2.3-opt: 检索提速 —— 并行遍历(16 路并发) + 扩展忽略目录 + 大文件跳过
+// 检索提速 —— 并行遍历(16 路并发) + 扩展忽略目录 + 大文件跳过
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'dist-electron', 'build', 'release', 'out', 'target', '__pycache__', '.venv', 'venv', '.idea', '.vscode', '.next', '.nuxt', '.cache', 'coverage', '.gradle', '.tox', 'site-packages'])
 
 ipcMain.handle('computer:grep', async (_e, dirPath: string, pattern: string) => {
-  // v0.2.3-opt: 并行遍历 + 忽略大目录 + 大文件跳过
+  // 并行遍历 + 忽略大目录 + 大文件跳过
   const results: string[] = []
   const scanned = { n: 0 }
   async function walkGrep(dir: string): Promise<void> {
@@ -299,7 +299,7 @@ ipcMain.handle('computer:grep', async (_e, dirPath: string, pattern: string) => 
 })
 
 ipcMain.handle('computer:find', async (_e, dirPath: string, glob: string) => {
-  // v0.2.3-opt: 并行遍历 + 忽略大目录
+  // 并行遍历 + 忽略大目录
   const results: string[] = []
   const scanned = { n: 0 }
   let regex: RegExp

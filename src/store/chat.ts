@@ -27,10 +27,10 @@ import { errMsg } from '../utils/safe'
 
 
 
-// v0.2.1: 安全序列化——防止 Proxy/循环引用导致 IPC 报错
+// 安全序列化——防止 Proxy/循环引用导致 IPC 报错
 
 // ─── v0.2: 渲染进程内置模块 ────────────────────────────
-// v0.2.3: 启动时预加载全局记忆
+// 启动时预加载全局记忆
 if (typeof window !== 'undefined' && window.huangquan?.memory) refreshMemoryCache().catch(() => {})
 // v0.3.0 M4: 启动时加载插件工具(有 index.js 实现的插件并入 TOOLS)
 if (typeof window !== 'undefined' && window.huangquan?.plugins) refreshPluginTools().catch(() => {})
@@ -39,12 +39,12 @@ if (typeof window !== 'undefined' && window.huangquan?.plugins) refreshPluginToo
 
 // Token 估算（中英混合）
 
-// ─── v0.2: 多Agent 编队（v0.2.1: 改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
+// ─── v0.2: 多Agent 编队（改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
 
 
 // ─── v0.2: 模型上下文窗口自动检测 ──────────────────────
 
-// v0.2.1: 视觉辅助模型 —— 主模型不支持多模态时自动切换到视觉模型分析图片
+// 视觉辅助模型 —— 主模型不支持多模态时自动切换到视觉模型分析图片
 
 
 
@@ -64,9 +64,9 @@ export const useChatStore = create<S>((set, get) => ({
     const mode = cfg.general?.mode || 'work'
     const ss = skills.length ? '\n\n## 已装载技能\n' + skills.map((s: SkillMeta) => `- **${s.name}**: ${s.description}`).join('\n') : ''
     const sp = buildPrompt(mode, ishiki) + ss
-    // v0.2.3: 独立保存原始 ishiki(不再从 sp 反推, 避免动态内容污染身份段)
+    // 独立保存原始 ishiki(不再从 sp 反推, 避免动态内容污染身份段)
     set({ spIshiki: ishiki })
-    // 自动创建工作台目录（默认使用主进程 workspace 目录, v0.2.3: 不再硬编码用户路径）
+    // 自动创建工作台目录（默认使用主进程 workspace 目录, 不再硬编码用户路径）
     let wd = (cfg.general)?.workDir || ''
     if (!wd) {
       try { const paths = await window.huangquan.getPaths(); wd = paths?.workDir || '' } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
@@ -82,9 +82,9 @@ export const useChatStore = create<S>((set, get) => ({
         if (!storeIds.has(did)) { try { await window.huangquan.sessions.delete(did) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
       }
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    // v0.2.1: 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
+    // 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
     const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode }
-    // v0.2.1: 清理历史空会话（从未发过消息的），避免启动多次后堆积垃圾文件
+    // 清理历史空会话（从未发过消息的），避免启动多次后堆积垃圾文件
     const stale = sessions.filter(s => s.messages.length === 0)
     for (const s of stale) { window.huangquan.sessions.delete(s.id).catch(() => {}) }
     const kept = sessions.filter(s => s.messages.length > 0)
@@ -115,7 +115,7 @@ export const useChatStore = create<S>((set, get) => ({
   create: () => {
     const m = useSettingsStore.getState().general.mode || 'work'
     const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode: m }
-    // v0.2.3: 新会话独立,不继承其他会话的流式/执行状态
+    // 新会话独立,不继承其他会话的流式/执行状态
     set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [] }))
     window.huangquan.sessions.save(safeIPC(ns))
   },
@@ -127,7 +127,7 @@ export const useChatStore = create<S>((set, get) => ({
       if (cur) window.huangquan.sessions.save(cur).catch(() => {})
     }
     set(s => {
-      // v0.2.3: 切换会话时,全局 streaming/executing 跟随目标会话的忙碌状态（每个会话独立）
+      // 切换会话时,全局 streaming/executing 跟随目标会话的忙碌状态（每个会话独立）
       const target = s.sessions.find(x => x.id === id)
       const busy = !!target?.busy
       return { cid: id, error: null, streaming: busy, executing: busy }
@@ -135,7 +135,7 @@ export const useChatStore = create<S>((set, get) => ({
   },
   del: (id) => {
     window.huangquan.sessions.delete(id)
-    // v0.2.6: 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
+    // 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
     // 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃 Agent/插话队列)
     if (id === get().cid) clearInterjectForSid(id)
     set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal, activeAgents: s.cid === id ? [] : s.activeAgents } })
@@ -161,7 +161,7 @@ export const useChatStore = create<S>((set, get) => ({
     set({ executing: false, error: null })
   },
 
-  // v0.2.2: 从指定用户消息重新发送（编辑后重发 / 刷新重发）
+  // 从指定用户消息重新发送（编辑后重发 / 刷新重发）
   resendFrom: async (msgId: string, newContent?: string) => {
     const s = get().cur(); if (!s || s.streaming) return // v0.3.1 C6: 本会话忙判断
     const idx = s.messages.findIndex(m => m.id === msgId)

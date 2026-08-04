@@ -14,7 +14,7 @@ export function registerWebIpc(deps: {
       const u = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query)
       const r = await netFetch(u, { signal: AbortSignal.timeout(10000) })
       const h = await r.text()
-      // v0.2.1: 多层正则 fallback 以应对 DDG 页面结构变化
+      // 多层正则 fallback 以应对 DDG 页面结构变化
       let out: string[] = []
       // 尝试主解析模式
       const re1 = /<a[^>]*class="result__a"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*?>([^<]+)<\/a>/gi

@@ -1,5 +1,5 @@
 ﻿/**
- * webtools.ts — 无头浏览器网页解析工具模块 (v0.2.5)
+ * webtools.ts — 无头浏览器网页解析工具模块 ()
  * 基于 Playwright-core + 系统 Edge/Chrome 内核, 按需临时启动, 用完即销毁。
  * 不长期驻留内存; 与现有 browse/browse_screenshot(Electron 内置窗口) 完全独立。
  */
@@ -112,7 +112,7 @@ export async function webRead(rawOpts: WebReadOpts): Promise<WebReadResult> {
     })
     const page = await ctx.newPage()
 
-    // v0.2.5: cookie 注入(支持 JSON 数组格式 或 "name=value; name2=value2" 字符串格式)
+    // cookie 注入(支持 JSON 数组格式 或 "name=value; name2=value2" 字符串格式)
     if (opts.cookies && opts.cookies.trim()) {
       try {
         const rawCookies = opts.cookies.trim()

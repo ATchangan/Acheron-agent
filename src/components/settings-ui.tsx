@@ -1,5 +1,5 @@
-// src/components/settings-ui.tsx — 设置页通用 UI(样式对象 + 设置控件)
-// v0.2.4: 从 SettingsView 拆分, 降低单文件复杂度
+﻿// src/components/settings-ui.tsx — 设置页通用 UI(样式对象 + 设置控件)
+// 从 SettingsView 拆分, 降低单文件复杂度
 import React from 'react'
 import { Minus, Plus } from 'lucide-react'
 
@@ -47,7 +47,7 @@ export const NumSetting: React.FC<{ label: string; hint: string; value: number; 
   </div>
 )
 
-// v0.2.3: 步进器(- 值 +) —— 替代生硬的滑动条
+// 步进器(- 值 +) —— 替代生硬的滑动条
 export const stepBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 7, border: '1px solid ' + C.border, background: C.bg, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 15, lineHeight: 1, transition: 'background .15s' }
 export const StepSetting: React.FC<{ label: string; hint?: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void }> = ({ label, hint, value, min, max, step = 1, unit = '', onChange }) => (
   <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
@@ -63,7 +63,7 @@ export const StepSetting: React.FC<{ label: string; hint?: string; value: number
   </div>
 )
 
-// v0.2.3: 档位按钮组 —— 替代生硬的滑动条
+// 档位按钮组 —— 替代生硬的滑动条
 export const SegSetting: React.FC<{ label: string; hint?: string; value: number; options: { v: number; label: string }[]; onChange: (v: number) => void }> = ({ label, hint, value, options, onChange }) => (
   <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
     <div style={{ flex: 1 }}>

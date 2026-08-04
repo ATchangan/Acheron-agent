@@ -2,7 +2,7 @@
 import { useSettingsStore } from '../store/settings'
 import { errMsg } from '../utils/safe'
 
-// v0.2.5: 实时浏览器面板 —— 轮询主进程无头浏览器截图,实时显示 agent 正在看的页面
+// 实时浏览器面板 —— 轮询主进程无头浏览器截图,实时显示 agent 正在看的页面
 // 增强: 页面标题栏 / 复制URL / 主页按钮 / 刷新间隔设置即时生效 / 空状态与错误提示
 export default function BrowserView() {
   const [url, setUrl] = useState('')

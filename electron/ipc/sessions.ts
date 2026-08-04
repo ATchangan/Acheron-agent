@@ -1,9 +1,9 @@
-// electron/ipc/sessions.ts —— 会话域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/sessions.ts —— 会话域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 
-// v0.2.3-security: 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
+// 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
 const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
 
 export function registerSessionIpc(deps: {
@@ -68,7 +68,7 @@ export function registerSessionIpc(deps: {
     }
   })
   ipcMain.handle('sessions:save', (_e, s) => {
-    // v0.2.1: 安全序列化防止循环引用导致 IPC 克隆报错
+    // 安全序列化防止循环引用导致 IPC 克隆报错
     const id = String(s?.id || '')
     if (!SAFE_ID.test(id)) return false
     const safe = safeClone(s) as { id?: string; title?: string; messages?: { length?: number } }
@@ -77,7 +77,7 @@ export function registerSessionIpc(deps: {
     return true
   })
   ipcMain.handle('sessions:delete', (_e, id: string) => { try { if (!SAFE_ID.test(String(id || ''))) return false; fs.unlinkSync(join(sessionsDir, id + '.json')); sessionMeta.delete(id) } catch (e) { /* ok */ console.debug('[swallow]', e) }; return true })
-  // v0.2.1: 清空全部对话历史
+  // 清空全部对话历史
   ipcMain.handle('sessions:clearAll', () => {
     try {
       if (!fs.existsSync(sessionsDir)) return true
@@ -86,7 +86,7 @@ export function registerSessionIpc(deps: {
       return true
     } catch { return false }
   })
-  // v0.2.1: 导出对话历史（md/json/txt）到工作目录
+  // 导出对话历史（md/json/txt）到工作目录
   ipcMain.handle('sessions:export', async (_e, format: string, workDir?: string) => {
     try {
       const dir = workDir && fs.existsSync(workDir) ? workDir : userDataPath

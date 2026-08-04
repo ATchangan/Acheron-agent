@@ -27,7 +27,7 @@ import * as os from 'os'
 // Node 全局 fetch(undici) 不读系统代理，导致浏览器能访问的 API 在应用内超时
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch(args[0] as string, args[1] as never)) as typeof fetch
 
-// v0.2.1: 全局崩溃捕获
+// 全局崩溃捕获
 // 崩溃日志异步追加, 不再同步阻塞主进程
 function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
 process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
@@ -60,7 +60,7 @@ interface VisionParams {
 interface MainProvider { id: string; type: string; name: string; apiKey?: string; baseUrl?: string; customHeaders?: string }
 interface MainSettingsData { providers: MainProvider[]; mediaProviders?: (MediaProvider & { apiKey?: string })[]; general?: Record<string, unknown> }
 
-// ─── v0.2.1: 安全序列化——消除循环引用和不可序列化对象导致的 IPC 报错 ──
+// ─── 安全序列化——消除循环引用和不可序列化对象导致的 IPC 报错 ──
 function safeClone(obj: unknown, seen = new WeakSet()): unknown {
   if (obj === null || obj === undefined) return obj
   if (typeof obj !== 'object') return obj
@@ -91,7 +91,7 @@ function safeClone(obj: unknown, seen = new WeakSet()): unknown {
   return result
 }
 
-// ─── v0.2.3: API Key 加密存储(Windows DPAPI via safeStorage) ──
+// ─── API Key 加密存储(Windows DPAPI via safeStorage) ──
 // 加密不可用(如无 keyring 的环境)时自动回退明文, 旧明文数据兼容读取
 function encKey(v: string): string {
   if (!v || v.startsWith('__ENC__')) return v
@@ -122,7 +122,7 @@ function decProviders(data: MainSettingsData): MainSettingsData {
   return out
 }
 
-// ─── v0.2.6: 渲染加速 —— GPU 优先, 无 GPU 自动回退 CPU ─────────
+// ─── 渲染加速 —— GPU 优先, 无 GPU 自动回退 CPU ─────────
 // 模式(settings.general.rendererMode): auto(默认, GPU可用则GPU) / gpu(强制GPU) / cpu(强制CPU软件渲染)
 let rendererMode = 'auto'
 try {
@@ -151,7 +151,7 @@ let serverPort = 0
 // ─── 单实例锁 —— 防止多实例并行导致悬浮窗/窗口互相干扰 ──
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
-  // v0.2.3: 直接退出, 不再 throw(避免触发 uncaughtException 写 crash.log 噪音)
+  // 直接退出, 不再 throw(避免触发 uncaughtException 写 crash.log 噪音)
   app.quit()
   process.exit(0)
 }
@@ -168,11 +168,11 @@ registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as 
 const memoryPath = join(userDataPath, 'memory.json')
 registerMemoryIpc({ memoryPath, settingsPath, userDataPath, safeClone, decKey })
 const workspaceDir = join(userDataPath, 'workspace')
-// v0.2.3-pack(SOP红线): skillsDir 必须在 userData —— 安装版 app.asar 内只读, mkdir 抛 ENOTDIR 导致启动崩溃
+// skillsDir 必须在 userData —— 安装版 app.asar 内只读, mkdir 抛 ENOTDIR 导致启动崩溃
 const skillsDir = join(userDataPath, 'skills')
 registerSkillsIpc({ skillsDir, resourcesDir })
 
-// v0.2.3-pack(SOP红线): mkdir 循环全部 try-catch —— resources/skills 在 asar 内只读, 失败不能崩溃
+// mkdir 循环全部 try-catch —— resources/skills 在 asar 内只读, 失败不能崩溃
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
   try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }) } catch (e) { /* 只读目录(asar 内)或权限受限: 跳过 */ console.debug('[swallow]', e) }
 }
@@ -183,7 +183,7 @@ import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-ve
 import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
   mainWindow?.webContents.send('cron:trigger', prompt)
 })).catch(() => {})
-// v0.2.3: 多Agent体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
+// 多Agent体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
 import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})
@@ -244,7 +244,7 @@ function createAppMenu() {
 }
 
 // ─── 窗口 / 托盘 ────────────────────────────────────
-// v0.2.1: 读取"最小化/关闭缩至托盘"设置
+// 读取"最小化/关闭缩至托盘"设置
 function trayEnabled(): boolean {
   try {
     if (fs.existsSync(settingsPath)) {
@@ -254,7 +254,7 @@ function trayEnabled(): boolean {
   } catch (e) { /* ignore */ console.debug('[swallow]', e) }
   return false
 }
-// ─── v0.2.3: 独立浏览器窗口 + 使用中悬浮窗 ─────────────────
+// ─── 独立浏览器窗口 + 使用中悬浮窗 ─────────────────
 let browserPanelWin: BrowserWindow | null = null
 let floatHideTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -262,7 +262,7 @@ function showBrowserPanel() {
   if (browserPanelWin && !browserPanelWin.isDestroyed()) { browserPanelWin.show(); browserPanelWin.focus(); return }
   // 若无头浏览器从未导航过, 先加载默认页, 避免面板一直空白/加载
   try {
-    // v0.2.4: 默认主页从设置读取（设置 → 工具 → 浏览器设置 → 默认主页）
+    // 默认主页从设置读取（设置 → 工具 → 浏览器设置 → 默认主页）
     let homeUrl = 'https://example.com'
     try {
       const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
@@ -276,7 +276,7 @@ function showBrowserPanel() {
       wc.loadURL(homeUrl).catch(() => {})
     }
   } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  // v0.2.5: 窗口尺寸从设置读取(浏览器设置 → 实时面板 → 窗口尺寸)
+  // 窗口尺寸从设置读取(浏览器设置 → 实时面板 → 窗口尺寸)
   let winW = 1280, winH = 860
   try {
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
@@ -298,7 +298,7 @@ function hideBrowserFloat() {
   if (floatHideTimer) { clearTimeout(floatHideTimer); floatHideTimer = null }
   try { mainWindow?.webContents.send('browser:float', { show: false }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
 }
-// v0.2.4: 悬浮提示改为"主窗口内横幅" —— 通过事件推送到主窗口渲染, 不再创建系统悬浮窗
+// 悬浮提示改为"主窗口内横幅" —— 通过事件推送到主窗口渲染, 不再创建系统悬浮窗
 function showBrowserFloat() {
   // 提示时长从设置读取（browserFloatTimeout, 默认 30s）
   let timeoutMs = 30000
@@ -323,9 +323,9 @@ function createWindow() {
   win.loadURL('http://127.0.0.1:' + serverPort + '/index.html')
   win.once('ready-to-show', () => mainWindow?.show())
   win.on('closed', () => { mainWindow = null })
-  // v0.2.1: 关闭 → 设置开启时缩至托盘，否则正常退出
+  // 关闭 → 设置开启时缩至托盘，否则正常退出
   win.on('close', (e: Electron.Event) => { if (trayEnabled() && !isQuitting) { e.preventDefault(); mainWindow?.hide() } })
-  // v0.2.1: 最小化 → 设置开启时缩至托盘
+  // 最小化 → 设置开启时缩至托盘
   win.on('minimize', () => { if (trayEnabled()) { mainWindow?.hide() } })
 }
 
@@ -360,7 +360,7 @@ function fmtSize(b: number): string {
   return (b / 1073741824).toFixed(2) + ' GB'
 }
 
-// v0.2.3: 会话元数据缓存 —— 避免 list 时全量解析大会话文件(大会话含图片可达数 MB)
+// 会话元数据缓存 —— 避免 list 时全量解析大会话文件(大会话含图片可达数 MB)
 const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string }>()
 registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone })
 function buildSessionMeta() {
@@ -378,7 +378,7 @@ function buildSessionMeta() {
 // ─── Skills 系统 ───────────────────────────────────
 // ─── 记忆系统 ──────────────────────────────────────
 // ─── 电脑控制 ──────────────────────────────────────
-// v0.2.4: 危险命令拦截统一走 security/permission.ts 风险分级(L4 拒绝), 消除双份列表漂移
+// 危险命令拦截统一走 security/permission.ts 风险分级(L4 拒绝), 消除双份列表漂移
 const { assessRisk } = require('./security/permission')
 registerComputerIpc({ assertInsideWorkDir, assessRisk, getEffectiveWorkDir, getWorkDirOverride: () => workDirOverride, setWorkDirOverride: (d) => { workDirOverride = d }, netFetch, workspaceDir, userDataPath })
 registerLlmIpc({ netFetch })
@@ -394,10 +394,10 @@ registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
 registerCronIpc()
 
-// v0.2.3-opt: 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
+// 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
 let perfCache: { cpuPct: number; memPct: number; memUsed: number; memTotal: number; gpuPct: number; gpuName: string; cpus: number } | null = null; let perfCacheAt = 0
 let lastCpuSample: { idle: number; total: number } | null = null; let lastCpuAt = 0
-// v0.2.3-opt: GPU 采样 —— 优先 nvidia-smi(正在使用的 NVIDIA GPU, 准确), 失败回退性能计数器各引擎最大值
+// GPU 采样 —— 优先 nvidia-smi(正在使用的 NVIDIA GPU, 准确), 失败回退性能计数器各引擎最大值
 let gpuViaNvidia = true
 function sampleGpu(): Promise<{ pct: number | null; name: string | null }> {
   return new Promise((resolve) => {
@@ -420,9 +420,9 @@ function sampleGpuWin(resolve: (v: { pct: number | null; name: string | null }) 
     resolve({ pct: isFinite(v) && v >= 0 ? Math.min(100, Math.round(v)) : null, name: null })
   })
 }
-// v0.2.3-opt: readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
+// readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
 const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string }>()
-// ─── v0.2.6: 文件浏览器操作(写操作限定工作目录内, 防误删) ──
+// ─── 文件浏览器操作(写操作限定工作目录内, 防误删) ──
 // set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录
 let workDirOverride: string | null = null
 // v0.3.0: 有效工作目录 = 会话覆盖(如有) || 用户设置(可自定义, 设置→引擎→工作目录)
@@ -442,13 +442,13 @@ function assertInsideWorkDir(p: string): boolean {
     return rp === rw || rp.startsWith(rw + require('path').sep)
   } catch { return false }
 }
-// v0.2.3-opt: 检索提速 —— 并行遍历(16 路并发) + 扩展忽略目录 + 大文件跳过
+// 检索提速 —— 并行遍历(16 路并发) + 扩展忽略目录 + 大文件跳过
 const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'dist-electron', 'build', 'release', 'out', 'target', '__pycache__', '.venv', 'venv', '.idea', '.vscode', '.next', '.nuxt', '.cache', 'coverage', '.gradle', '.tox', 'site-packages'])
 
 
 
 // ─── 浏览器自动化 ───────────────────────────────
-// v0.2.3: 常驻无头浏览器 —— agent 浏览时页面保持打开，前端可实时截图查看
+// 常驻无头浏览器 —— agent 浏览时页面保持打开，前端可实时截图查看
 let browserWin: BrowserWindow | null = null
 let browserCurUrl = 'about:blank'
 function getBrowserWin(): BrowserWindow {

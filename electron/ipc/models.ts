@@ -11,7 +11,7 @@ export function registerModelsIpc(deps: {
       let base = (baseUrl || '').replace(/\/+$/, '')
       if (!base) return { ok: false, error: '请先填写 Base URL' }
       // Anthropic(Claude) 鉴权是 x-api-key 而非 Bearer —— 按 baseUrl / key 前缀自动识别
-      // v0.2.4: 支持 Azure OpenAI / Google Gemini 模型列表接口
+      // 支持 Azure OpenAI / Google Gemini 模型列表接口
       const isAnthropic = !!(opts?.type === 'Anthropic Claude' || opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
       const isAzure = !!opts?.type?.includes('Azure') || /openai\.azure\.com/i.test(base)
       const isGemini = !!opts?.type?.includes('Gemini') || /generativelanguage\.googleapis\.com/i.test(base)
@@ -41,7 +41,7 @@ export function registerModelsIpc(deps: {
         return { ok: false, error: 'HTTP ' + res.status + (hint ? '：' + hint : '') }
       }
       const data = JSON.parse(await res.text())
-      // v0.2.4: Gemini 返回 { models: [{ name: "models/gemini-..." }] }，需清理前缀
+      // Gemini 返回 { models: [{ name: "models/gemini-..." }] }，需清理前缀
       const ids = isGemini
         ? (data.models || []).map((m: { name?: string }) => String(m.name || '').replace(/^models\//, '')).filter(Boolean)
         : (data.data || []).map((m: { id: string }) => m.id).filter(Boolean)
@@ -58,7 +58,7 @@ export function registerModelsIpc(deps: {
     }
   })
 
-  // v0.2.2: 测试连接 —— 轻量探测 baseUrl + apiKey 是否可用（不拉全量模型）
+  // 测试连接 —— 轻量探测 baseUrl + apiKey 是否可用（不拉全量模型）
   ipcMain.handle('models:test', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => {
     const t0 = Date.now()
     try {

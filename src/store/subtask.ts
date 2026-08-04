@@ -20,7 +20,7 @@ export async function runDispatch(
         if (!tasks.length) return 'E:dispatch 需要 tasks 数组 [{agent, task}]，例如 {"tasks":[{"agent":"螺丝咕姆","task":"..."},{"agent":"三月七","task":"..."}]}'
         const mode = snapCfg?.general?.mode || 'work'
         const ishiki = useChatStore.getState().sp ? useChatStore.getState().sp.replace(/\n##.+/s, '') : ''
-        // v0.2.4: 任务快照优先 —— 用户任务中改设置不影响本次分发
+        // 任务快照优先 —— 用户任务中改设置不影响本次分发
         const cfg = snapCfg || await window.huangquan.settings.load()
         // 已配置供应商优先(原 providers[0] 可能无 key, 分发失败)
         const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) return 'E:未配置 Provider，无法分发'
@@ -29,7 +29,7 @@ export async function runDispatch(
         // 分发开始：所有子 Agent 一并显示（并发协作）
         const validAgents = tasks.map(t => t.agent).filter(n => agents[n])
         useChatStore.setState(s => ({ activeAgents: [...new Set([...s.activeAgents, ...validAgents])] }))
-        // 并行执行子任务（每个子 Agent 独立系统提示词 + 真实工具调用循环 —— v0.2.3: 子 Agent 也能调用工具真正干活）
+        // 并行执行子任务（每个子 Agent 独立系统提示词 + 真实工具调用循环 —— 子 Agent 也能调用工具真正干活）
         const dispStartGen = getTaskGen()
         const results = await Promise.all(tasks.map(async (t) => {
           const ag = agents[t.agent]

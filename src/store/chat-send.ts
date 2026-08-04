@@ -54,7 +54,7 @@ export interface S {
   cur: () => SessionData | undefined
 }
 
-// v0.2.1: 插话补充队列 —— 工作中插话=给当前任务补充指令，任务不中断，下一轮执行时注入
+// 插话补充队列 —— 工作中插话=给当前任务补充指令，任务不中断，下一轮执行时注入
 // 插话队列带会话归属 —— 多会话并发时插话只被本会话消费, 防串台
 let pendingInterject: { sid: string; text: string }[] = []
 export const clearInterjectForSid = (sid: string) => { pendingInterject = pendingInterject.filter(x => x.sid !== sid) }
@@ -70,7 +70,7 @@ export async function runSend(
   const get = deps.get
   const st0 = get()
   let sid = st0.cid; if (!sid) { get().create(); sid = get().cid! }
-  // v0.2.3: 会话级忙碌判断 —— 仅当"本会话"正在工作时才走插话；其他会话在工作不影响本会话独立发送
+  // 会话级忙碌判断 —— 仅当"本会话"正在工作时才走插话；其他会话在工作不影响本会话独立发送
   const thisBusy = get().sessions.find(x => x.id === sid)?.busy
   if (thisBusy) {
     // 探测当前工作状态
@@ -96,7 +96,7 @@ export async function runSend(
   const fpD = content + '|' + (images || []).join('|')
   if (checkSendIdempotent(fpD)) return
 
-  // v0.2.3: 标记本会话为忙碌（侧栏"工作中"指示灯 + 独立并发）
+  // 标记本会话为忙碌（侧栏"工作中"指示灯 + 独立并发）
   set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: true } : x) }))
   // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
   const wasInterjecting = st0.streaming
@@ -106,13 +106,13 @@ export async function runSend(
 
   // 1. 获取 provider 和模型
   const cfg = await window.huangquan.settings.load()
-  // v0.2.4: 任务配置快照 —— 任务执行期间用快照, 用户改设置不影响当前任务
+  // 任务配置快照 —— 任务执行期间用快照, 用户改设置不影响当前任务
   const gSnap = (cfg.general || {}) as GeneralSettings
   // 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
   const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
-  // v0.2.3: 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
+  // 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
   refreshMemoryCache().catch(() => {})
-  // v0.2.1: 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
+  // 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
   const gNow = gSnap
   const mc = pickModels(gSnap, cfg, p, content, images)
   const main = mc.main, isSimple = mc.isSimple, fast = mc.fast, small = mc.small, large = mc.large
@@ -120,11 +120,11 @@ export async function runSend(
   // 调度选择日志(定位切换失效问题)
   console.log('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
   set({ curModel: model || '' })
-  // v0.2.4-debug: 暴露最近一次实际发送模型(验证调度绑定/多模型策略接线)
+  // 暴露最近一次实际发送模型(验证调度绑定/多模型策略接线)
   
   updateContextLimit(model)
 
-  // v0.2.1: 记录当前活跃 Agent（路由结果），供右侧面板展示
+  // 记录当前活跃 Agent（路由结果），供右侧面板展示
   const recordAgent = (name: string) => {
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, activeAgents: (x.activeAgents || []).includes(name) ? x.activeAgents : [...(x.activeAgents || []), name] } : x) }))
   }
@@ -201,14 +201,14 @@ export async function runSend(
 
 
   try {
-    // 每次 LLM 调用独立超时保护 —— v0.2.3: 只中止当前请求(requestId), 不再误杀其他会话并发请求
+    // 每次 LLM 调用独立超时保护 —— 只中止当前请求(requestId), 不再误杀其他会话并发请求
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     // toolTimeout 设置接入 —— 默认 120s, 可在设置中调整
     const toolTimeout = Number(gSnap.toolTimeout) || 120000
     const guard = (rid: string) => { timeoutId = setTimeout(() => window.huangquan.llm.abort(rid), toolTimeout) }
     const clear = () => { if (timeoutId) clearTimeout(timeoutId) }
 
-    // v0.2.1: 主执行循环 —— 正常轮次 + 插话补充轮次（工作中插话=补充指令，任务继续而非重开）
+    // 主执行循环 —— 正常轮次 + 插话补充轮次（工作中插话=补充指令，任务继续而非重开）
     let roundNum = 0
     let aid = ''
     let res: CallResult = { text: '', tcs: [] }
@@ -219,7 +219,7 @@ export async function runSend(
       // 2. 创建空的 assistant 占位（每轮一个新气泡位）
       aid = uuidv4()
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
-      // v0.2.1: 消费插话补充（第 2 轮起）—— 作为 user 消息注入，Agent 继续任务时可见
+      // 消费插话补充（第 2 轮起）—— 作为 user 消息注入，Agent 继续任务时可见
       if (roundNum > 1 && hasInterjectForSid(sid)) {
         const inject = drainInterjections(sid)!
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
@@ -256,28 +256,28 @@ export async function runSend(
       res = tr.res; toolLog = tr.toolLog; lastMidSave = tr.lastMidSave
       if (tr.switchTo) { curP = tr.switchTo.p; model = tr.switchTo.model; set({ curModel: model }); updateContextLimit(model) }
       // 4. 单气泡 + Hermes 风格日志
-      set({ stage: null }) // v0.2.3: 任务完成, 思考气泡消失
+      set({ stage: null }) // 任务完成, 思考气泡消失
       const finalSession = get().sessions.find(x => x.id === sid)
       if (finalSession) {
-        // v0.2.1: 合并本轮所有 assistant 文本 → 单一气泡（工具循环中间轮的文字并入最终回复）
+        // 合并本轮所有 assistant 文本 → 单一气泡（工具循环中间轮的文字并入最终回复）
         // v0.3.1 D1: 清空边界 = 任务起始消息(userMsg.id 首次出现)之后的所有中间 assistant 文本(插话 user 消息不破坏边界)
     const lastUserIdx = finalSession.messages.map(m => m.id).indexOf(userMsg.id)
         const thisRound = lastUserIdx >= 0 ? finalSession.messages.slice(lastUserIdx) : finalSession.messages
         const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
         const llmText = res.text || ''; const hasTools = toolLog.length > 0
         let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
-        // v0.2.3: 工具日志已改为写入右侧终端面板(terminal), 不再拼进消息正文(原死代码块已删除)
+        // 工具日志已改为写入右侧终端面板(terminal), 不再拼进消息正文(原死代码块已删除)
         // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）
         // 只清空【本轮内】的中间 assistant 消息 —— 之前遍历整个会话导致历史回复全部被清空
         const roundIds = new Set(thisRound.map(m => m.id))
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => (roundIds.has(m.id) && m.role === 'assistant' && m.content && m.id !== aid) ? { ...m, content: '' } : (m.id === aid ? { ...m, content: finalContent, _toolLog: toolLog } : m)) } : x) }))
       }
 
-      // v0.2.1: 有插话补充且未被终止 → 继续下一轮（任务不中断）
+      // 有插话补充且未被终止 → 继续下一轮（任务不中断）
       if (myGen !== getTaskGenFor(taskGenBySid, sid) || !hasInterjectForSid(sid)) break
     }
 
-    // v0.2.3: 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
+    // 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
     try {
       const tokNow = get().sessTok[sid] || {}
       let taskTok = 0
@@ -319,7 +319,7 @@ export async function runSend(
       return get().send(content, undefined, attachments)
     }
     console.error('[黄泉Agent] send error:', e)
-    // v0.2.1: 异常/插话中止时清理当前流式 assistant 残留（避免多气泡）
+    // 异常/插话中止时清理当前流式 assistant 残留（避免多气泡）
     try {
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsg?.id && !m.content ? { ...m, content: '' } : m) } : x) }))
     } catch (e) { /* 会话可能已删除 */ console.debug('[swallow]', e) }

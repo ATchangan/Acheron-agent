@@ -1,4 +1,4 @@
-// electron/ipc/cache.ts —— 缓存统计域 IPC(0.3.1 块 G 迁移, 行为零变化)
+﻿// electron/ipc/cache.ts —— 缓存统计域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 
 export function registerCacheIpc(): void {
@@ -10,7 +10,7 @@ export function registerCacheIpc(): void {
     try { return require('../cache/tool-cache').invalidateCache() }
     catch { return 0 }
   })
-  // v0.2.1: 写操作时同步失效主进程缓存
+  // 写操作时同步失效主进程缓存
   ipcMain.handle('cache:invalidate:write', () => {
     try {
       const tc = require('../cache/tool-cache')

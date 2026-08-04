@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+﻿import React, { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import FileTree from './FileTree'
@@ -12,11 +12,11 @@ export default function RightPanel() {
   const executing = useChatStore(s => s.executing)
   const activeAgents = useChatStore(s => s.activeAgents)
   const workDir = useSettingsStore(s => s.general.workDir)
-  // v0.2.3-opt: memUsed/memPct 由 sysPerf 实时提供(perf.memUsed/perf.memPct)
+  // memUsed/memPct 由 sysPerf 实时提供(perf.memUsed/perf.memPct)
   const [perf, setPerf] = useState<{ cpuPct: number; memPct: number; memUsed: number; memTotal: number; gpuPct: number; gpuName: string } | null>(null)
 
 
-  // v0.2.6: 文件浏览器状态
+  // 文件浏览器状态
   const [treeKey, setTreeKey] = useState(0)
   const [creating, setCreating] = useState<'dir' | 'file' | null>(null)
   const [createName, setCreateName] = useState('')
@@ -38,7 +38,7 @@ export default function RightPanel() {
     else { setCreating(null); setCreateName(''); setTreeKey(k => k + 1) }
   }
 
-  // v0.2.3-opt: CPU/RAM/GPU 实时占用 —— 2.5s 轮询(主进程 2s 缓存, GPU 性能计数器)
+  // CPU/RAM/GPU 实时占用 —— 2.5s 轮询(主进程 2s 缓存, GPU 性能计数器)
   useEffect(() => {
     let alive = true
     const tick = async () => {
@@ -56,7 +56,7 @@ export default function RightPanel() {
     <aside className="sidebar-right" style={{ position: 'relative' }}>
       <div className="right-top-name"><h3>黄泉</h3></div>
 
-      {/* v0.2.1: 多Agent 协作实时面板 —— 常驻置顶，显示当前正在调用的 Agent（多个并发时全部显示） */}
+      {/* 多Agent 协作实时面板 —— 常驻置顶，显示当前正在调用的 Agent（多个并发时全部显示） */}
       <div className="sys-bar" style={{ marginBottom: 8, border: '1px solid rgba(var(--skin-accent),.4)', background: 'rgba(var(--skin-accent),.08)', borderRadius: 8, padding: '8px 10px' }}>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: 'var(--accent)', marginBottom: 6, letterSpacing: 1 }}>协作调度</div>
         {streaming || executing ? (

@@ -30,7 +30,7 @@ const CONFIG = {
   maxEntries: 500,
 }
 
-// v0.2.3: RAG embedding 升级 —— OpenAI 兼容 /embeddings 接口(本地 LM Studio / OpenAI / 任意兼容服务)
+// RAG embedding 升级 —— OpenAI 兼容 /embeddings 接口(本地 LM Studio / OpenAI / 任意兼容服务)
 // 配置为空时自动回退 TF-IDF 检索
 let embCfg: { baseUrl: string; apiKey: string; model: string } | null = null
 export function setEmbeddingConfig(cfg: { baseUrl: string; apiKey: string; model: string } | null) {
@@ -176,7 +176,7 @@ export function addMemory(content: string, importance?: number): string {
   }
   entries.push(entry)
   dirty = true
-  // v0.2.3: 异步补 embedding(不阻塞写入; API 不可用时保持空向量走 TF-IDF 回退)
+  // 异步补 embedding(不阻塞写入; API 不可用时保持空向量走 TF-IDF 回退)
   embedText(content).then(vec => {
     if (vec && vec.length) { entry.embedding = vec; dirty = true }
   }).catch(() => {})
@@ -197,7 +197,7 @@ export async function searchMemory(query: string, limit = 5): Promise<MemoryEntr
   cleanStale()
   normalizeVectors()
 
-  // v0.2.3: ① embedding 向量检索(配置了嵌入引擎且有向量时优先)
+  // ① embedding 向量检索(配置了嵌入引擎且有向量时优先)
   if (embCfg) {
     const qvec = await embedText(query)
     if (qvec) {

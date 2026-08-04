@@ -31,7 +31,7 @@ export function registerMemoryIpc(deps: {
     }
     return _vm as MemoryVectorModule
   }
-  // v0.2.3: 从设置刷新 embedding 引擎配置(启动/设置变更后调用, 无需重启)
+  // 从设置刷新 embedding 引擎配置(启动/设置变更后调用, 无需重启)
   const refreshEmbeddingConfig = (): void => {
     try {
       const vm = getVM()
@@ -50,7 +50,7 @@ export function registerMemoryIpc(deps: {
     catch { return { facts: [], summaries: [] } }
   })
   ipcMain.handle('memory:save', (_e, memory) => {
-    // v0.2.1: 安全序列化防止循环引用
+    // 安全序列化防止循环引用
     // 异步写盘不阻塞主进程
     fs.promises.writeFile(memoryPath, JSON.stringify(safeClone(memory), null, 2), 'utf-8').catch(() => {})
     return true

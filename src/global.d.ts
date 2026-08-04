@@ -158,7 +158,7 @@ declare global {
 }
 
 export interface SettingsData { providers: ProviderConfig[]; mediaProviders?: MediaProvider[]; general: GeneralSettings }
-// v0.2.1: 多媒体供应商（图片生成/视频生成/语音识别）
+// 多媒体供应商（图片生成/视频生成/语音识别）
 export interface MediaProvider {
   id: string
   name: string
@@ -195,7 +195,7 @@ export interface SessionData {
   messages: Message[]
   updatedAt?: string
   mode?: string
-  busy?: boolean // v0.2.3: 该会话是否正在工作中（独立于其他会话）
+  busy?: boolean // 该会话是否正在工作中（独立于其他会话）
   // v0.3.1 会话修复: 会话级并发状态（FIX-1/2/8/16, 取代全局 window.__huangquan_agent / 全局 streaming / 全局 taskGen）
   agent?: string          // 当前 Agent（路由/handoff 写入, 会话隔离）
   agentManual?: boolean   // 用户手动选择（手动模式下不自动路由覆盖）
@@ -211,13 +211,13 @@ export interface Message {
   tool_call_id?: string
   reasoning_content?: string
   images?: string[]
-  // v0.2.2: 拖拽/上传的附件（视频/音频/文档等非图片文件）
+  // 拖拽/上传的附件（视频/音频/文档等非图片文件）
   attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]
-  // v0.2.3: 工具调用声明(工具卡片渲染用)与工具名(结果块关联用)
+  // 工具调用声明(工具卡片渲染用)与工具名(结果块关联用)
   tool_calls?: { id?: string; type: string; function: { name: string; arguments: string } }[]
   toolName?: string
   usage?: UsageData
-  // v0.2.2: 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
+  // 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
   meta?: { ttft?: number; duration?: number; taskTokens?: number }
   _toolLog?: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[]
 }
@@ -233,7 +233,7 @@ export interface UsageData {
   cache_creation_input_tokens?: number
   input_tokens?: number
   requestId?: string
-  // v0.2.6: 前端镜像统计字段(不入盘)
+  // 前端镜像统计字段(不入盘)
   _readTokens?: number
   _inputTokens?: number
   _writeTokens?: number

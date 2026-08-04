@@ -60,7 +60,7 @@ export function registerSkillsIpc(deps: {
       return true
     } catch (e: unknown) { const em = e instanceof Error ? e.message : String(e); console.log('[SKILLS:CREATE] ERR', em); return 'Error: ' + em }
   })
-  // v0.2.3: 本地技能安装 —— 复制本地技能目录到 skillsDir(只读源, 校验目录名)
+  // 本地技能安装 —— 复制本地技能目录到 skillsDir(只读源, 校验目录名)
   ipcMain.handle('skills:installLocal', async (_e, srcPath: string) => {
     try {
       const src = String(srcPath || '').trim()
@@ -83,7 +83,7 @@ export function registerSkillsIpc(deps: {
     } catch (e: unknown) { return 'Error: ' + ((e instanceof Error ? e.message : String(e))) }
   })
   ipcMain.handle('skills:install', (_e, url: string) => {
-    // v0.2.3-security: spawn 替代 exec 拼接 —— 修复命令注入(url 含 ; && 等可执行任意命令)
+    // spawn 替代 exec 拼接 —— 修复命令注入(url 含 ; && 等可执行任意命令)
     return new Promise<string>(resolve2 => {
       const name = String(url || '').split('/').pop()?.replace(/\.git$/, '') || 'skill'
       if (!/^[\w\-.]{1,80}$/.test(name)) { resolve2('Error: 无效的技能名称'); return }

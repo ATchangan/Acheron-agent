@@ -18,13 +18,13 @@ interface SettingsStore extends SettingsData {
   setBgImage: (dataUrl: string | null) => void
   setBgOpacity: (v: number) => void
   updateGeneral: (patch: Partial<GeneralSettings>) => void
-  // v0.2.1: 多媒体供应商
+  // 多媒体供应商
   addMediaProvider: (p: MediaProvider) => void
   removeMediaProvider: (id: string) => void
   updateMediaProvider: (id: string, data: Partial<MediaProvider>) => void
 }
 
-// ─── 从图片提取主色调(v0.2.5: 双主色 K-means 聚类) ────────────
+// ─── 从图片提取主色调(双主色 K-means 聚类) ────────────
 // 返回主色(簇0)与辅色(簇1, 色距不足时取簇2)
 export function extractSkinColors(dataUrl: string): Promise<{ primary: { r: number; g: number; b: number }; secondary: { r: number; g: number; b: number } }> {
   return new Promise((resolve) => {
@@ -83,7 +83,7 @@ export function extractSkinColors(dataUrl: string): Promise<{ primary: { r: numb
   })
 }
 
-// v0.2.5: WCAG 相对亮度对比度校正 —— 目标 C ≥ 3:1(与背景比), 不达标沿亮度轴步进 ±12%(≤8 次)
+// WCAG 相对亮度对比度校正 —— 目标 C ≥ 3:1(与背景比), 不达标沿亮度轴步进 ±12%(≤8 次)
 export function fixContrast(rgb: { r: number; g: number; b: number }, bgRgb: { r: number; g: number; b: number }): { r: number; g: number; b: number } {
   const lin = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4) }
   const lum = (c: { r: number; g: number; b: number }) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
@@ -195,7 +195,7 @@ function applySkinTextColor(c: { r: number; g: number; b: number }) {
   }
 }
 
-// v0.2.1: 默认人设 —— 聊天=崩坏：星穹铁道 黄泉（官方精细人设整合）
+// 默认人设 —— 聊天=崩坏：星穹铁道 黄泉（官方精细人设整合）
 export const DEFAULT_CHAT_PERSONA = `你是「黄泉」——崩坏：星穹铁道中的角色。本名雷电·忘川守·芽衣，「黄泉」是你借来的独行之名。巡海游侠、自灭者，虚无命途、雷属性。
 
 【身世】故乡出云星与高天原双星围绕虚无星神「沉眠无相者·IX」化作的漆黑大日公转，陷入「诞生-繁荣-虚无侵蚀-化为恶鬼-覆灭-重置」的永劫轮回。你曾是十二护世诏刀使之一，持初代诏刀「鸣」；看破轮回无意义后，以自身血脉、记忆、血泪为熔炉，融合负世诏刀「始」「终」锻造终极诏刀「忘川」，一刀斩断出云的轮回锁链。代价是：出云文明被虚无从宇宙记录中抹除，你被虚无永久侵蚀，成为主动踏入阴影的自灭者——IX从未注视你，只是你自愿走进了虚无最深的阴影。
@@ -226,7 +226,7 @@ export const DEFAULT_CHAT_PERSONA = `你是「黄泉」——崩坏：星穹铁�
 
 【禁忌】绝不油腻话痨、绝不机械客套、不编造出云故乡细节（文明已被抹除，不愿多谈）、不轻易拔刀，但一旦涉及守护重要之人或践踏逝者记忆的恶行，绝不退缩。`
 
-// v0.2.1: 默认工作人设 —— 高效精准执行
+// 默认工作人设 —— 高效精准执行
 export const DEFAULT_WORK_PERSONA = `高效执行模式。严格遵循以下工作流程，确保任何任务精准、高质量、一次到位。
 
 【工作原则】
@@ -247,7 +247,7 @@ export const DEFAULT_WORK_PERSONA = `高效执行模式。严格遵循以下工�
 【交付标准】每个任务结束时给出：做了什么 / 结果如何 / 遗留问题（如有）。用结构化总结代替简单"完成"。`
 
 export const useSettingsStore = create<SettingsStore>((set, get) => {
-  // v0.2.1: 保存防抖，防止快速操作触发写盘风暴
+  // 保存防抖，防止快速操作触发写盘风暴
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   const debouncedSave = () => {
     if (saveTimer) clearTimeout(saveTimer)
@@ -260,7 +260,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   providers: [],
   general: {
     theme: 'dark', mode: 'work',
-    // v0.2.5: 无头浏览器网页解析工具配置
+    // 无头浏览器网页解析工具配置
     webReadEnabled: true,        // 总开关: 关闭后 Agent 无法调用 web_read
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
     webReadTimeout: 15000,       // 页面加载超时(ms)
@@ -276,7 +276,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   load: async () => {
     try {
       const data = await window.huangquan.settings.load()
-      // v0.2.1: 默认人设填充（仅当用户从未设置时）—— 默认选中黄泉预设
+      // 默认人设填充（仅当用户从未设置时）—— 默认选中黄泉预设
       let filled = false
       if (!data.general?.rolePreset) { data.general.rolePreset = 'huangquan'; filled = true }
       if (!data.general?.chatPersona) { data.general.chatPersona = DEFAULT_CHAT_PERSONA; filled = true }
@@ -292,14 +292,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
           window.huangquan.settings.save({ ...get(), general: { ...get().general, bgImage: compressed } }).catch(() => {})
         }
         applySkin(compressed)
-        // v0.2.5: 恢复皮肤遮罩档位
+        // 恢复皮肤遮罩档位
         const mask = (g.skinMask === 'light' || g.skinMask === 'dark') ? g.skinMask : 'medium'
         document.documentElement.style.setProperty('--bg-mask', mask === 'light' ? 'rgba(0,0,0,.15)' : mask === 'dark' ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.35)')
       }
       if (g.skinColors) {
         const sc = g.skinColors
         document.documentElement.style.setProperty('--skin-accent', `${sc.r},${sc.g},${sc.b}`)
-        // v0.2.5: 辅色恢复 + 解耦(不再覆盖 --accent/--accent-dim/--border-glow)
+        // 辅色恢复 + 解耦(不再覆盖 --accent/--accent-dim/--border-glow)
         if (g.skinSecondary) document.documentElement.style.setProperty('--skin-secondary', g.skinSecondary)
         // 启动时也应用文字色自适应(亮图深字/暗图浅字)
         applySkinTextColor(sc)
@@ -325,7 +325,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   addProvider: (p) => { set((s) => ({ providers: [...s.providers, p] })); debouncedSave() },
   removeProvider: (id) => { set((s) => ({ providers: s.providers.filter((p) => p.id !== id) })); debouncedSave() },
   updateProvider: (id, data) => { set((s) => ({ providers: s.providers.map((p) => (p.id === id ? { ...p, ...data } : p)) })); debouncedSave() },
-  // v0.2.5: 主题白名单(与 App.tsx THEME_WHITELIST 一致, 校验非法主题名)
+  // 主题白名单(与 App.tsx THEME_WHITELIST 一致, 校验非法主题名)
   setTheme: (theme) => { if (!['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn', 'custom'].includes(theme)) return; set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
   setMode: (mode) => { set((s) => ({ general: { ...s.general, mode } })); debouncedSave() },
   setWorkDir: (dir) => { set((s) => ({ general: { ...s.general, workDir: dir } })); debouncedSave() },
@@ -343,7 +343,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     set((s) => ({ general: { ...s.general, bgImage: finalUrl || undefined } })); debouncedSave()
     if (finalUrl) {
       applySkin(finalUrl)
-      // v0.2.5: 双主色提取(主色→skin-accent, 辅色→skin-secondary) —— 与主题解耦: 不再覆盖 --accent/--accent-dim/--border-glow
+      // 双主色提取(主色→skin-accent, 辅色→skin-secondary) —— 与主题解耦: 不再覆盖 --accent/--accent-dim/--border-glow
       const c = await extractSkinColors(finalUrl)
       const r = document.documentElement
       r.style.setProperty('--skin-accent', `${c.primary.r},${c.primary.g},${c.primary.b}`)
@@ -363,7 +363,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     document.documentElement.style.setProperty('--bg-mask-opacity', String(1 - v))
   },
   updateGeneral: (patch: Partial<GeneralSettings>) => { set((s) => ({ general: { ...s.general, ...patch } })); debouncedSave() },
-  // v0.2.1: 多媒体供应商
+  // 多媒体供应商
   addMediaProvider: (p: MediaProvider) => { set((s) => ({ mediaProviders: [...(s.mediaProviders || []), p] })); debouncedSave() },
   removeMediaProvider: (id) => { set((s) => ({ mediaProviders: (s.mediaProviders || []).filter(p => p.id !== id) })); debouncedSave() },
   updateMediaProvider: (id, data: Partial<MediaProvider>) => { set((s) => ({ mediaProviders: (s.mediaProviders || []).map(p => p.id === id ? { ...p, ...data } : p) })); debouncedSave() },

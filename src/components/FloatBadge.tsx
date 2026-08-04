@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from '../store/settings'
 
-// v0.2.4: "agent 正在使用浏览器"横幅 —— 主窗口内提示(不再创建系统悬浮窗)
+// "agent 正在使用浏览器"横幅 —— 主窗口内提示(不再创建系统悬浮窗)
 // 位置由设置 browserFloatPos 控制: top-right(默认) / top-center / bottom-left / bottom-right
 export default function FloatBadge() {
   const [show, setShow] = useState(false)

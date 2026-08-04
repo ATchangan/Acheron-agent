@@ -61,7 +61,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             key={item.id}
             className={`menu-item ${currentView === item.id ? 'active' : ''}`}
             onClick={() => {
-              // v0.2.3: 浏览器导航 -> 打开独立浏览器窗口
+              // 浏览器导航 -> 打开独立浏览器窗口
               if (item.id === 'browser') { try { window.huangquan?.web.showPanel() } catch {} return }
               onNavigate(item.id)
             }}

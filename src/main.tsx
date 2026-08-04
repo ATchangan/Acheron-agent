@@ -15,7 +15,7 @@ import App from './App'
 import './styles/global.css'
 import './styles/ui-polish.css'
 
-// v0.2.1: React Error Boundary — 捕获渲染错误并显示在页面上
+// React Error Boundary — 捕获渲染错误并显示在页面上
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) { super(props); this.state = { error: null } }
   static getDerivedStateFromError(error: Error) { return { error } }
