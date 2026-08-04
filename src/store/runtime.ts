@@ -9,6 +9,7 @@ import { TOOLS, filterToolsByAgent } from './tools'
 import { PLUGIN_TOOLS, PLUGIN_TOOL_NAMES } from './plugins'
 import { safeIPC } from '../utils/safe'
 import { CACHE_TTL, WORKFLOWS } from './constants'
+import { scanMemoryText } from './memory'
 import type { ProviderConfig, MediaProvider, MemoryData } from '../global'
 import type { ToolSpec } from '../types'
 import type { SettingsData } from '../global'
@@ -268,7 +269,13 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'process_list': return await window.huangquan.computer.processList()
       case 'kill_process': { if(!A.pid)return'E:need pid';return await window.huangquan.computer.killProcess(A.pid) }
       // 相同事实去重(重复调用不再累积)
-      case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = String(A.fact || '').trim(); if (!fact) return 'E:need fact'; const pf = (m.pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; m.pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m) as Record<string, unknown>); return 'ok:pinned' }
+      case 'save_memory': {
+        const m = await window.huangquan.memory.load(); const fact = String(A.fact || '').trim(); if (!fact) return 'E:need fact'
+        // Hermes 吸收: 记忆安全扫描(凭证/注入拒绝落盘)
+        const scan = scanMemoryText(fact)
+        if (!scan.ok) return 'E:' + scan.reason
+        const pf = (m.pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; m.pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m) as Record<string, unknown>); return 'ok:pinned'
+      }
       // recall_memory 接入向量语义检索(主进程 TF-IDF) + 关键词匹配合并
       case 'recall_memory': {
         const query = (A.query || '').trim()
@@ -294,6 +301,13 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
           return true
         }).slice(0, 10)
         return merged.length ? merged.map((r: { content: string }, i: number) => (i + 1) + '. ' + r.content).join('\n---\n') : '(empty)'
+      }
+      // Hermes 吸收: 会话全文关键词搜索(跨会话回忆)
+      case 'session_search': {
+        const q = String(A.query || '').trim()
+        if (!q) return 'E:need query'
+        const r = await window.huangquan.sessions.search(q, A.limit ? Number(A.limit) : 5)
+        return r.length ? r.map((x: { title: string; role: string; snippet: string; ts: number }, i: number) => `${i + 1}. [${x.title}](${x.role}) ${new Date(x.ts).toLocaleDateString('zh-CN')} ${x.snippet}`).join('\n---\n') : '(no matches)'
       }
       case 'codebox': { if (!A.lang || !A.code) return 'E:need lang+code'; return await window.huangquan.computer.codebox(A.lang, A.code) }
       case 'import_doc': { if (!A.path) return 'E:need path'; const ok = await window.huangquan.memory.importFile(A.path).catch(() => false); return ok ? 'ok:imported' : 'E:import failed' }

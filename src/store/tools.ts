@@ -10,7 +10,8 @@ import { useAgents } from './agents'
 export function filterToolsByAgent(tools: ToolSpec[], agentName: string): ToolSpec[] {
   const ag = useAgents()[agentName]
   if (!ag || ag.tools.includes('*')) return tools
-  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents'])
+  // 基础工具恒保留: 协作工具 + 跨会话回忆(session_search, Hermes 吸收)
+  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'session_search'])
   return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_'))
 }
 
@@ -37,6 +38,8 @@ export const TOOLS: ToolSpec[] = [
   { type: 'function', function: { name: 'kill_process', description: 'kill_process(pid) 按 PID 结束进程', parameters: { type: 'object', properties: { pid: { type: 'string' } }, required: ['pid'] } } },
   { type: 'function', function: { name: 'save_memory', description: 'save_memory(fact, pinned?) 保存记忆; pinned=true 置顶跨会话永久保留', parameters: { type: 'object', properties: { fact: { type: 'string' }, pinned: { type: 'boolean' } }, required: ['fact'] } } },
   { type: 'function', function: { name: 'recall_memory', description: 'recall_memory(query) 语义检索记忆', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } } },
+  // Hermes 吸收: 会话全文关键词搜索(跨会话回忆, 轻量版)
+  { type: 'function', function: { name: 'session_search', description: 'session_search(query, limit?) 关键词搜索历史会话(跨会话回忆, 返回匹配消息摘要)', parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'codebox', description: 'codebox(lang, code) 沙箱运行 Python/Node 代码(lang: python|node)', parameters: { type: 'object', properties: { lang: { type: 'string' }, code: { type: 'string' } }, required: ['lang', 'code'] } } },
   { type: 'function', function: { name: 'import_doc', description: 'import_doc(path) 导入文档到知识库', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'schedule_task', description: 'schedule_task(expression, prompt) 创建定时任务(如 every 30m|every 1h|at 09:00)', parameters: { type: 'object', properties: { expression: { type: 'string' }, prompt: { type: 'string' } }, required: ['expression', 'prompt'] } } },

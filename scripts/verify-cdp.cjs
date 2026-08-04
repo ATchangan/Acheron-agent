@@ -70,6 +70,19 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
       awaitPromise: true,
     }).then(r => console.log('STRATEGY:', JSON.stringify(r.result.value)))
   }
+  if (process.argv[4] === 'features') {
+    const r = await send('Runtime.evaluate', {
+      expression: `(async () => ({
+        appInfo: await window.huangquan.appInfo(),
+        projectContext: await window.huangquan.projectContext(),
+        sessionSearch: await window.huangquan.sessions.search('打包', 3),
+        sessionSearchEmpty: await window.huangquan.sessions.search('不存在的词xyz', 3)
+      }))()`,
+      returnByValue: true,
+      awaitPromise: true,
+    })
+    console.log('FEATURES:', JSON.stringify(r.result.value))
+  }
   const info = await send('Runtime.evaluate', {
     expression: `(() => ({
       title: document.title,

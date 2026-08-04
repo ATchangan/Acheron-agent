@@ -6,7 +6,8 @@ import { TOOLS } from './tools'
 import { safeIPC, errMsg } from '../utils/safe'
 import { CACHE_TTL, WORKFLOWS } from './constants'
 import { estimateTokens, getModelContextLimit, updateContextLimit, isVisionModel, buildPrompt, buildContextualMessages } from './context'
-import { recordEpisodic, autoExtractMemory, refreshMemoryCache } from './memory'
+import { recordEpisodic, autoExtractMemory, refreshMemoryCache, freezeMemory } from './memory'
+import { setProjectContext } from './project-ctx'
 import { routeAgent } from './router'
 import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, taskGen, nextTaskGen, costedReqs, setCached, getCached, onWriteOp } from './runtime'
 import { normalizeImage } from '../utils/image'
@@ -114,7 +115,14 @@ export async function runSend(
   // 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
   const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
   // 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
-  refreshMemoryCache().catch(() => {})
+  // Hermes 吸收: 刷新后冻结本次任务记忆快照(会话内各轮一致, 前缀缓存友好)
+  await refreshMemoryCache().catch(() => {})
+  freezeMemory(content)
+  // Codex 吸收: 读取工作目录项目指令 AGENTS.md(约定自动注入上下文)
+  try {
+    const pc = await window.huangquan.projectContext().catch(() => ({ file: '', content: '' }))
+    if (pc && pc.file) setProjectContext(pc)
+  } catch { /* 忽略 */ }
   // 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
   const gNow = gSnap
   const mc = pickModels(gSnap, cfg, p, content, images)

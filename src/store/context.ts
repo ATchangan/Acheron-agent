@@ -7,7 +7,8 @@ import { useAgents } from './agents'
 import type { Message, VisionContent, LLMMessage } from '../global'
 import type { GeneralSettings } from '../types'
 import { WORKFLOWS, VISION_MODEL_HINTS, MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT } from './constants'
-import { memoryBlock } from './memory'
+import { memoryBlock, getFrozenMemory } from './memory'
+import { getProjectContext } from './project-ctx'
 import { useChatStore } from './chat'
 import { routeAgent } from './router'
 
@@ -429,9 +430,13 @@ export function buildContextualMessages(
   // v0.3.2 T4/T5: 动态段统一追加 system 尾部(顺序固定: workflows → 记忆), 头部区块保持字节级稳定(供应商前缀缓存)
   const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
+  // Codex 吸收: 项目指令注入(AGENTS.md 约定, 有则注入 system 尾部)
+  const projectCtx = getProjectContext()
+  if (projectCtx.file && projectCtx.content) sp += '\n## 项目指令(' + projectCtx.file + ')\n' + projectCtx.content + '\n'
   // v0.3.5 T2: workflowLazy 关闭时恒注入完整工作流列表
   if (currentMode === 'work') sp += '\n' + buildWorkflowsBlock(lastUserText, opts.gSnap.perf?.workflowLazy === false)
-  sp += '\n' + memoryBlock(lastUserText)
+  // Hermes 吸收: 记忆冻结快照(任务内各轮一致), 无冻结时回退实时计算
+  sp += '\n' + (getFrozenMemory() ?? memoryBlock(lastUserText))
   // v0.3.3 T3: 归档记录追加 system 尾部(最多 5 条, 每条含目标/结论/产出物/工具)
   if (archives.length) {
     sp += '\n## 任务归档\n' + archives.slice(-5).map(a => `- 目标: ${a.goal} | 结论: ${a.conclusion} | 产出物: ${a.outputs.join(', ') || '无'} | 工具: ${a.tools}`).join('\n') + '\n(如需早期细节请用工具重新读取或 recall_memory)\n'

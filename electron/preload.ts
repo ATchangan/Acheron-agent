@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     audit: () => ipcRenderer.invoke('sessions:audit'),
     clearAll: () => ipcRenderer.invoke('sessions:clearAll'),
     export: (format: string, workDir?: string) => ipcRenderer.invoke('sessions:export', format, workDir),
+    search: (query: string, limit?: number) => ipcRenderer.invoke('sessions:search', query, limit),
   },
   ishiki: { load: () => ipcRenderer.invoke('ishiki:load') },
   skills: {
@@ -198,4 +199,5 @@ contextBridge.exposeInMainWorld('huangquan', {
     },
   },
   appInfo: () => ipcRenderer.invoke('app:info'),
+  projectContext: () => ipcRenderer.invoke('get:projectContext'),
 })

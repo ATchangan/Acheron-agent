@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory=$true)][int]$Port,
   [switch]$About,
   [switch]$Strategy,
+  [switch]$Features,
   [switch]$Chat,
   [string]$UserData = ''
 )
@@ -34,6 +35,7 @@ $outDir = 'C:\Users\ROG\.codex\visualizations\2026\08\04\019fcd60-e9a7-72e3-8aec
 $extra = ''
 if ($About) { $extra = 'about' }
 if ($Strategy) { $extra = 'strategy' }
+if ($Features) { $extra = 'features' }
 if ($Chat) {
   node (Join-Path $scriptDir 'verify-chat.cjs') $Port '你好，用一句话介绍自己' '读取 D:\桌面\黄泉agent\打包发布流程.md 的第一行并原样回复'
 } else {

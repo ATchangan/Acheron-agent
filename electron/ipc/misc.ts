@@ -55,6 +55,20 @@ export function registerMiscIpc(deps: {
     })
   })
   ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
+  // ─── Codex 吸收: 项目指令文件(AGENTS.md)注入 ───
+  // 工作目录存在 AGENTS.md / .agents.md 时, 其约定自动进入 Agent 上下文(限长 4000 字符)
+  ipcMain.handle('get:projectContext', () => {
+    try {
+      for (const name of ['AGENTS.md', '.agents.md']) {
+        const p = join(workspaceDir, name)
+        if (fs.existsSync(p)) {
+          const c = fs.readFileSync(p, 'utf-8')
+          return { file: name, content: c.slice(0, 4000) }
+        }
+      }
+      return { file: '', content: '' }
+    } catch { return { file: '', content: '' } }
+  })
   // 应用版本信息 —— 关于页动态读取, 杜绝硬编码版本号漂移
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
