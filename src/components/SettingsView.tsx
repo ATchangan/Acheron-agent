@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
 import { useSettingsStore } from '../store/settings'
 import { C, S, Toggle, NumSetting, StepSetting, SegSetting, stepBtn } from './settings-ui'
 
@@ -8,6 +8,7 @@ import type { GeneralSettings } from '../types'
 import { updateContextLimit, useChatStore } from '../store/chat'
 import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal } from 'lucide-react'
 import { errMsg } from '../utils/safe'
+import AboutTab from './settings/AboutTab'
 
 const PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = {
   'DeepSeek': { type: 'OpenAI Compatible', url: 'https://api.deepseek.com' },
@@ -407,8 +408,6 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   }
 
   const [testState, setTestState] = useState<{ key: string; loading: boolean; ok?: boolean; msg?: string }>({ key: '', loading: false })
-  // v0.2.3: 软件更新状态
-  const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; downloadInfo: { ok?: boolean; error?: string; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, downloadInfo: null })
   const testConnection = async (key: string, baseUrl?: string, apiKey?: string, isAnthropic?: boolean) => {
     setTestState({ key, loading: true })
 
@@ -1503,51 +1502,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
 
 
               
-            </div> : tab === 'about' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}>
-                <div style={S.section}>关于</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[['版本','v0.3.0'],['平台','黄泉Agent'],['Electron','32.x'],['React','18.3'],['Node','22.x']].map(([k,v]) => (
-                    <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: C.text }}>{v}</div></div>
-                  ))}
-                </div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>软件更新</div>
-                <div style={S.hint}>从 GitHub Releases 检查最新版本并下载安装包</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button style={S.btn('primary')} onClick={async () => {
-                    setUpt({ ...upt, checking: true, info: null, error: '', downloading: false })
-                    const r = await window.huangquan.update.check().catch((): { ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } => ({ ok: false, error: '检查失败' }))
-                    if (!r.ok) { setUpt({ ...upt, checking: false, error: r.error || '检查失败' }); return }
-                    setUpt({ ...upt, checking: false, info: { version: r.version, hasUpdate: r.hasUpdate, url: r.url, assets: r.assets, notes: r.notes, current: r.current } })
-                  }} disabled={upt.checking}>{upt.checking ? '检查中…' : '检查更新'}</button>
-                  {upt.info?.hasUpdate && <span style={{ color: C.green, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>发现新版本 v{upt.info.version}（当前 v{upt.info.current}）</span>}
-                  {upt.info && !upt.info.hasUpdate && <span style={{ color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>已是最新版本 v{upt.info.current}</span>}
-                  {upt.error && <span style={{ color: C.danger, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>检查失败：{upt.error.slice(0, 80)}</span>}
-                </div>
-                {upt.info?.hasUpdate && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={S.hint}>更新内容：{(upt.info.notes || '（无说明）').slice(0, 200)}</div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button style={S.btn('primary')} disabled={upt.downloading} onClick={async () => {
-                        const asset = (upt.info?.assets || []).find((x: { name: string }) => /\.exe$/i.test(x.name)) || (upt.info?.assets || [])[0]
-                        if (!asset) { setUpt({ ...upt, error: '发布页无安装包资产' }); return }
-                        setUpt({ ...upt, downloading: true, error: '' })
-                        const r = await window.huangquan.update.download(asset.url, asset.name).catch(() => ({ ok: false, error: '下载失败' }))
-                        setUpt({ ...upt, downloading: false, downloadInfo: r.ok ? r : null, error: r.ok ? '' : (r.error || '下载失败') })
-                      }}>{upt.downloading ? '下载中…' : '下载安装包'}</button>
-                      {upt.downloadInfo && (
-                        <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.green }}>
-                          已保存到 {upt.downloadInfo.path}
-                          <button style={{ ...S.btn('ghost'), marginLeft: 8 }} onClick={async () => { try { await window.huangquan.computer.openFile(upt.downloadInfo?.path || '') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }}>打开安装包</button>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div> : null}
+            </div> : tab === 'about' ? <AboutTab /> : null}
         </div>
       </div>
       {/* v0.2.5-fix: 新建工作流弹窗(Electron prompt 不支持) */}
