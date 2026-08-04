@@ -312,7 +312,32 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'show_card': { if (!A.html) return 'E:need html'; return '<!--CARD' + (A.title ? ':' + A.title : '') + '-->' + A.html + '<!--/CARD-->' }
       case 'bridge_notify': { const g = useSettingsStore.getState().general; if (g.notifyEnabled === false) return 'ok:notifications disabled'; const kind = A.type || 'info'; if (kind === 'task_done' && g.notifyTaskDone === false) return 'ok:task_done notifications disabled'; if (kind === 'error' && g.notifyError === false) return 'ok:error notifications disabled'; try { new Notification(A.title || '黄泉Agent', { body: A.body || '' }) } catch {} return 'ok:notified' }
       // workflow 脚本加固 —— 限长 8KB、严格模式、隔离 window 访问, 防提示注入直接操纵宿主
-      case 'workflow': { if (!A.script) return 'E:need script'; if (String(A.script).length > 8192) return 'E:workflow script too long (max 8KB)'; return new Promise(resolve => { const logs: string[] = []; const ctx = { log: (msg: unknown) => { logs.push(String(msg)); if (logs.length > 200) logs.shift() }, tools: { run: async (n: string, args: Record<string, unknown>) => { logs.push('[wf] ' + n); return await runTool(n, args, snapCfg) } }, done: (r: unknown) => resolve(JSON.stringify({ result: r, logs }, null, 2)) }; try { const fn = new Function('ctx', '"use strict"; ' + A.script); const ret = fn(ctx); if (ret instanceof Promise) ret.catch(e => resolve('E:workflow error: ' + errMsg(e))); } catch (e) { resolve('E:workflow error: ' + errMsg(e)) } }) }
+      // v0.3.1 补丁: 超时兜底(30s) + Promise/普通返回值统一收尾, 防脚本不调 done 导致工具循环永久挂起
+      case 'workflow': {
+        if (!A.script) return 'E:need script'
+        if (String(A.script).length > 8192) return 'E:workflow script too long (max 8KB)'
+        return new Promise(resolve => {
+          const logs: string[] = []
+          let settled = false
+          const timeout = setTimeout(() => finish('E:workflow timeout (30s)'), 30000)
+          const finish = (r: unknown) => { if (settled) return; settled = true; clearTimeout(timeout); resolve(String(r)) }
+          const ctx = {
+            log: (msg: unknown) => { logs.push(String(msg)); if (logs.length > 200) logs.shift() },
+            tools: { run: async (n: string, args: Record<string, unknown>) => { logs.push('[wf] ' + n); return await runTool(n, args, snapCfg) } },
+            done: (r: unknown) => finish(JSON.stringify({ result: r, logs }, null, 2)),
+          }
+          try {
+            const fn = new Function('ctx', '"use strict"; ' + A.script)
+            const ret = fn(ctx)
+            if (ret instanceof Promise) {
+              ret.then(v => finish(JSON.stringify({ result: v, logs }, null, 2))).catch(e => finish('E:workflow error: ' + errMsg(e)))
+            } else if (!settled) {
+              // 脚本未调用 done 也未返回 Promise —— 以返回值收尾, 防止永久挂起
+              finish(JSON.stringify({ result: ret ?? null, logs }, null, 2))
+            }
+          } catch (e) { finish('E:workflow error: ' + errMsg(e)) }
+        })
+      }
       // 情景记忆 + 审计 + 目标持久化
       case 'audit_log': {
         const mem = await window.huangquan.memory.load().catch(() => ({ episodic: [] }))

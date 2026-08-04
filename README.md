@@ -76,7 +76,8 @@ v0.3.0 起每个 Agent 有真实的工具白名单和能力路由，子 Agent �
 ```
 Acheron-agent/
 ├── electron/                  # Electron 主进程
-│   ├── main.ts                # 窗口/托盘/IPC/LLM流式/浏览器自动化/DPAPI 加密/崩溃处理
+│   ├── main.ts                # 窗口/托盘/生命周期(28KB,IPC 已拆分出去)
+│   ├── ipc/                   # 107 个 IPC handler,18 个域文件
 │   ├── preload.ts             # contextBridge 安全桥
 │   ├── webtools.ts            # 网页解析(playwright-core + 系统 Edge)
 │   ├── mcp/                   # MCP 客户端(stdio + SSE)
@@ -87,14 +88,19 @@ Acheron-agent/
 │   └── plugins/loader.ts      # 插件加载(vm 沙箱执行层)
 ├── src/                       # React 渲染进程
 │   ├── store/
-│   │   ├── chat.ts            # 工具实现 + Agent 编队 + 权限检查(模块化拆分)
+│   │   ├── chat.ts            # 工具实现 + Agent 编队 + 权限检查
+│   │   ├── chat-send.ts       # 发送主逻辑
+│   │   ├── session-state.ts   # 会话级并发状态(多会话互不串台)
 │   │   └── settings.ts        # 人设/主题/供应商设置
 │   ├── types.ts               # 全库统一类型来源(tsc strict 门禁)
-│   └── components/            # 聊天/设置/文件树/浏览器/悬浮窗等界面
+│   ├── components/
+│   │   ├── settings/          # 13 个设置 tab(拆分自 SettingsView)
+│   │   └── ...                # 聊天/文件树/浏览器/悬浮窗等界面
 ├── resources/
 │   ├── skills/                # 4 组内置技能
 │   └── ishiki.md              # 黄泉人格定义
 ├── docs/                      # 自检报告与开发文档
+├── scripts/                   # 构建门禁脚本(主题 token 检查等)
 └── .github/workflows/         # CI 自动构建(推 tag 自动出安装包)
 ```
 
@@ -126,6 +132,22 @@ npm run package:win   # 打包 NSIS 安装包
 ---
 
 ## 更新日志
+
+### v0.3.1 (2026-08-04)
+
+**会话修复（块 A~F）**
+- 会话级并发状态模块（session-state.ts），取代全局状态，多会话并发互不串台（Agent 状态/插话队列/阶段气泡全部会话级）
+- 停止/重发/自动续跑：终止只作用于当前会话（会话级任务代号 + abort 会话过滤）
+- 发送幂等去重（同一内容 500ms 内重复发送忽略）
+- 清空边界 / 中途保存（长任务每 30 秒自动落盘）
+- 主进程保存队列：防抖合并、meta 写盘绑定、load 失败标记
+
+**重构（块 G~N）**
+- 主进程拆分：main.ts 108KB → 28KB，107 个 IPC handler 全部迁入 electron/ipc/ 18 个域文件（行为零变化、通道名零变化）
+- SettingsView 拆分：165KB → 11.9KB 壳，13 个 tab 迁入 src/components/settings/
+- chat.ts 拆分：51KB → 10.4KB，发送主逻辑迁入 chat-send.ts
+- 94 处补丁注释清零；组件全部 ≤25KB；全库 any 清零（0 处）
+- vitest 测试基座（3 个测试文件 10 个用例）
 
 ### v0.3.0 (2026-08-04)
 

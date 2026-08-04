@@ -97,9 +97,20 @@ export function registerPluginsIpc(deps: {
       const sandboxRequire = (modName: string): unknown => {
         if (modName === 'path' || modName === 'node:path') return require('path')
         if (modName === 'fs' || modName === 'node:fs') {
-          const f: Record<string, unknown> = {}
-          const fsAny = fs as unknown as Record<string, unknown>
-          for (const k of ['readFileSync', 'readdirSync', 'existsSync', 'statSync', 'readdir', 'readFile']) if (fsAny[k]) f[k] = (fsAny[k] as { bind: (x: unknown) => unknown }).bind(fs)
+          // v0.3.1 补丁: fs 白名单全部包一层工作目录校验 —— 插件禁止读取工作目录外的任意文件
+          const guardRead = (p: unknown): string => {
+            const path = String(p ?? '')
+            if (!assertInsideWorkDir(path)) throw new Error('E:仅允许读取工作目录内的文件')
+            return path
+          }
+          const f: Record<string, unknown> = {
+            readFileSync: (p: unknown, ...a: unknown[]) => fs.readFileSync(guardRead(p), ...(a as [never])),
+            readdirSync: (p: unknown, ...a: unknown[]) => fs.readdirSync(guardRead(p), ...(a as [never])),
+            existsSync: (p: unknown) => { const q = String(p ?? ''); return assertInsideWorkDir(q) && fs.existsSync(q) },
+            statSync: (p: unknown) => fs.statSync(guardRead(p)),
+            readFile: (p: unknown, ...a: unknown[]) => fs.promises.readFile(guardRead(p), ...(a as [never])),
+            readdir: (p: unknown, ...a: unknown[]) => fs.promises.readdir(guardRead(p), ...(a as [never])),
+          }
           return f
         }
         throw new Error('E:PLUGIN_FORBIDDEN: ' + modName)
