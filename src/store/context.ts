@@ -149,7 +149,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
 export function buildContextualMessages(
   msgs: Message[],
   withImages: boolean,
-  opts: { gSnap: GeneralSettings; cl: number; spIshiki: string; spFallback: string; onAgentRoute: (role: string | null) => void }
+  opts: { gSnap: GeneralSettings; cl: number; spIshiki: string; spFallback: string; onAgentRoute: (role: string | null) => void; agent?: string }
 ): LLMMessage[] {
   const d: LLMMessage[] = []
   // v0.2.6: 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
@@ -188,7 +188,7 @@ export function buildContextualMessages(
   let sp = buildPrompt(currentMode, ishiki) + earlySummary
   // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
-  let agentRole = collabOff ? null : window.__huangquan_agent
+  let agentRole = collabOff ? null : (opts.agent || window.__huangquan_agent)
   // 自动检测：根据用户最后一条消息内容匹配最合适的 Agent
   if (!agentRole) {
     const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
@@ -196,7 +196,7 @@ export function buildContextualMessages(
     if (txt) { agentRole = routeAgent(txt) || undefined; try { window.__routeDebug = JSON.stringify({ role: agentRole || null, txt: txt.slice(0, 40), collab: gSnap.collabMode }) } catch (e) { /* ignore */ console.debug('[swallow]', e) } }
   }
   // v0.2.1: 路由确定的 Agent 记入协作状态
-  if (agentRole && !window.__huangquan_agent) {
+  if (agentRole && !opts.agent && !window.__huangquan_agent) {
     opts.onAgentRoute(agentRole)
   }
   if (agentRole) {
