@@ -472,7 +472,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
       }
 
       // v0.2.1: 有插话补充且未被终止 → 继续下一轮（任务不中断）
-      if (myGen !== getTaskGenFor(taskGenBySid, sid) || pendingInterject.length === 0) break
+      if (myGen !== getTaskGenFor(taskGenBySid, sid) || !pendingInterject.some(x => x.sid === sid)) break
     }
 
     // v0.2.3: 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
