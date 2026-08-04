@@ -13,6 +13,8 @@ import StatsTab from './settings/StatsTab'
 import SkinTab from './settings/SkinTab'
 import McpTab from './settings/McpTab'
 import MemoryTab from './settings/MemoryTab'
+import StrategyTab from './settings/StrategyTab'
+import PersonaTab from './settings/PersonaTab'
 import CollabTab from './settings/CollabTab'
 import SkillsTab from './settings/SkillsTab'
 
@@ -300,14 +302,6 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const hasBg = !!general.bgImage
   useEffect(() => { setBgOp(general.bgOpacity ?? 0.7) }, [general?.bgOpacity])
   const [loading, setLoading] = useState(false)
-  const [chatPersona, setChatPersona] = useState(general.chatPersona || '')
-  const [workPersona, setWorkPersona] = useState(general.workPersona || '')
-  // v0.2.1: 同步 store → state（预设切换/外部修改时 textarea 实时刷新）
-  useEffect(() => {
-    setChatPersona(general.chatPersona || '')
-    setWorkPersona(general.workPersona || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [general?.chatPersona, general?.workPersona])
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   // v0.2.5-fix: 新建工作流改用应用内弹窗(Electron 不支持 prompt, 调用会抛错触发全局错误页)
@@ -594,202 +588,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                 </div>
               </div>
             </div> : null}
-          </> : tab === 'strategy' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              {/* 多模型策略 —— 联动供应商（文字模型）与多媒体（图片/视频/语音模型） */}
-              <div style={S.card}>
-                <div style={S.section}>多模型策略</div>
-                <div style={S.hint}>统一调度各能力模型：文字对话、视觉理解、图片生成、视频生成、语音识别，全部联动下方已配置的供应商</div>
-                {/* 文字模型（联动供应商） */}
-                <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '10px 0 6px' }}>文字模型（联动供应商）</div>
-                {/* v0.3.0-fix: 主对话模型由聊天框右侧模型选择器指定(不在此重复设置), 输入框选择自动写入 */} 
-                <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>主对话模型</div><div style={S.hint}>由聊天输入框右侧模型选择器指定（选择即生效），此处不再单独设置</div></div>
-                <div style={S.row}><div style={S.label}>长文本模型</div><select style={S.sel} value={g.longTextModel||''} onChange={e=>save({longTextModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>文档分析 / 长上下文任务</div></div>
-                <div style={S.row}><div style={S.label}>代码模型</div><select style={S.sel} value={g.codeModel||''} onChange={e=>save({codeModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>代码生成 / 审查</div></div>
-                <div style={S.row}><div style={S.label}>快速响应模型</div><select style={S.sel} value={g.fastModel||''} onChange={e=>save({fastModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>简单任务 / 工具调度</div></div>
-                <Toggle checked={g.autoFastModel !== false} onChange={v=>save({autoFastModel:v})} label="简单任务自动使用快速模型" hint="Token < 2000 且 工具调用 ≤ 2 次时切换" />
-                {/* v0.2.4: 调度绑定 —— 所有模型公用（含自定义模型），全供应商模型可选 */}
-                <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '16px 0 6px' }}>调度绑定（所有模型公用，含自定义）</div>
-                <div style={S.row}><div style={S.label}>小模型</div><select style={S.sel} value={g.smallModel||''} onChange={e=>save({smallModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>轻量任务（简单问答 / 单步工具）</div></div>
-                <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>大模型</div><select style={S.sel} value={g.largeModel||''} onChange={e=>save({largeModel:e.target.value})}><option value="">跟随主模型</option>{providers.flatMap(pr => (pr.models||[]).map(m => ({ id: pr.id+'::'+m, label: pr.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>复杂任务（多步骤 / 代码 / 文档）</div></div>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>视觉理解（联动供应商）</div>
-                <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 8 }}>勾选要用的视觉辅助模型（<b style={{color:C.text}}>顺序即优先级</b>）：优先尝试排在前面的，连不通自动切换下一个，全部失败会提示原因</div>
-                {(() => {
-                  // v0.2.3: 候选池 = 已配置且有 key 的供应商 + 多媒体（模型名含视觉关键词）
-                  const visCands: { id: string; label: string; pname: string; mname: string; keyed: boolean }[] = []
-                  const pushFrom = (pname: string, models: string[], keyed: boolean) => {
-                    // v0.3.0-fix: 能力校验 —— 区分 识图多模态/绘图模型/纯文本; 绘图模型(seedream/dall/flux/sdxl/cogview 等)禁止进入视觉理解列表
-                    const hits = (models || []).filter((m: string) => {
-                      const ml = m.toLowerCase()
-                      if (/(dall|flux|sdxl|stable-diffusion|seedream|cogview|imagen|midjourney|\bmj\b|draw|文生图|图片生成|image-gen|text2img|video-gen|sora|kling|runway|pika|veo)/.test(ml)) return false
-                      return /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|qwen2-vl|glm-4v|llava|yi-vision|internvl|deepseek-vl|step-1v|moonshot-v1|minimax-vl|识图|多模态/i.test(ml)
-                    })
-                    hits.forEach((m: string) => { const id = pname + '::' + m; if (!visCands.some(c => c.id === id)) visCands.push({ id, label: pname + ' · ' + m, pname, mname: m, keyed }) })
-                  }
-                  providers.forEach(pr => pushFrom(pr.name, pr.models || [], !!pr.apiKey))
-                  mediaProviders.forEach(mp => pushFrom(mp.name, [...(mp.imgModels||[]), ...(mp.videoModels||[]), ...(mp.audioModels||[])], !!mp.apiKey))
-                  // 无视觉关键词命中的供应商: 若该供应商有 key, 显示其第一个模型作为候选（可能有视觉能力但名字不含关键词）
-                  providers.forEach(pr => { if (pr.apiKey && (pr.models||[]).length && !visCands.some(c => c.pname === pr.name)) visCands.push({ id: pr.name + '::' + (pr.models||[])[0], label: pr.name + ' · ' + (pr.models||[])[0] + '（自动）', pname: pr.name, mname: (pr.models||[])[0], keyed: true }) })
-                  const curList: string[] = Array.isArray(g.visionModels) ? [...g.visionModels] : (g.visionModel ? [g.visionModel] : [])
-                  const toggleVis = (id: string) => {
-                    const next = curList.includes(id) ? curList.filter(x => x !== id) : [...curList, id]
-                    save({ visionModels: next, visionModel: next.length ? next[0] : '' })
-                  }
-                  const moveVis = (id: string, dir: -1 | 1) => {
-                    const i = curList.indexOf(id)
-                    if (i < 0) return
-                    const j = i + dir
-                    if (j < 0 || j >= curList.length) return
-                    const next = [...curList]
-                    ;[next[i], next[j]] = [next[j], next[i]]
-                    save({ visionModels: next, visionModel: next[0] })
-                  }
-                  return (
-                    <div style={{ border: '1px solid ' + C.border, borderRadius: 8, padding: '6px 8px', maxHeight: 180, overflowY: 'auto', background: C.input }}>
-                      {visCands.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: 6 }}>暂无已配置的视觉模型候选（请先在供应商中填入 API Key 并读取模型）</div>}
-                      {visCands.map(c => {
-                        const idx = curList.indexOf(c.id)
-                        const on = idx >= 0
-                        // v0.3.0-fix: 失效检测 —— 模型已不在供应商 models 中(供应商被删/模型被移除)标记「已失效」
-                        const alive = providers.some(pr => pr.name === c.pname && (pr.models || []).includes(c.mname)) || mediaProviders.some(mp => mp.name === c.pname && [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])].includes(c.mname))
-                        return (
-                          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: on ? C.text : C.label }}>
-                            <input type="checkbox" checked={on} onChange={() => toggleVis(c.id)} style={{ accentColor: C.accent }} />
-                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!alive && <span style={{ color: 'var(--danger)' }}>（已失效）</span>}{!c.keyed && <span style={{ color: 'var(--warning)' }}>（未填Key）</span>}</span>
-                            <span style={{ display: 'flex', gap: 2 }}>
-                              <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, -1)} disabled={!on || idx === 0}>↑</button>
-                              <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, 1)} disabled={!on || idx === curList.length - 1}>↓</button>
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })()}
-                <Toggle checked={g.visionAutoSwitch !== false} onChange={v=>save({visionAutoSwitch:v})} label="自动切换" hint="视觉任务时自动切到视觉模型，完成后恢复原模型" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>图片生成（联动供应商）</div>
-                <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaImgProvider||''} onChange={e=>save({mediaImgProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.imgModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select><div style={S.hint}>选择供应商中的图片生成平台</div></div>
-                <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaImgModel||''} onChange={e=>save({mediaImgModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.imgModels||[]).length).flatMap(mp2 => (mp2.imgModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaImgMode||'text2image'} onChange={e=>save({mediaImgMode:e.target.value})}><option value="text2image">文生图 text2image</option><option value="image2image">图生图 image2image</option></select></div>
-                <div style={S.row}><div style={S.label}>默认比例</div><select style={S.sel} value={g.mediaImgRatio||'1:1'} onChange={e=>save({mediaImgRatio:e.target.value})}>{[['1:1','1:1'],['16:9','16:9'],['9:16','9:16'],['4:3','4:3'],['3:4','3:4'],['3:2','3:2'],['2:3','2:3'],['21:9','21:9']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>默认并发</div><input type="number" style={S.num} min={1} max={9} value={g.mediaImgConcurrency||1} onChange={e=>save({mediaImgConcurrency:parseInt(e.target.value)||1})} /><span style={S.hint}>一次生成张数（1~9）</span></div>
-                {/* v0.3.0: 自动生图开关 —— 对话中遇到生图需求自动调用, 无需用户明确要求 */}
-                <Toggle checked={g.autoMediaImg !== false} onChange={v=>save({autoMediaImg:v})} label="自动生图" hint="对话中遇到「画/生成一张图片」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>视频生成（联动供应商）</div>
-                <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaVideoProvider||''} onChange={e=>save({mediaVideoProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.videoModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaVideoModel||''} onChange={e=>save({mediaVideoModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.videoModels||[]).length).flatMap(mp2 => (mp2.videoModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaVideoMode||'text2video'} onChange={e=>save({mediaVideoMode:e.target.value})}><option value="text2video">文生视频 text2video</option><option value="image2video">图生视频 image2video</option></select></div>
-                <StepSetting label="默认时长" hint="视频生成默认时长" value={g.mediaVideoDuration||5} min={4} max={15} unit=" 秒" onChange={v => save({ mediaVideoDuration: v })} />
-                {/* v0.3.0: 自动生视频开关 —— 对话中遇到视频需求自动调用, 无需用户明确要求 */}
-                <Toggle checked={g.autoMediaVideo !== false} onChange={v=>save({autoMediaVideo:v})} label="自动生视频" hint="对话中遇到「生成/制作一个视频」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>语音识别 / 合成（联动供应商）</div>
-                <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaAudioProvider||''} onChange={e=>save({mediaAudioProvider:e.target.value})}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.audioModels||[]).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaAudioModel||''} onChange={e=>save({mediaAudioModel:e.target.value})}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.audioModels||[]).length).flatMap(mp2 => (mp2.audioModels||[]).map(m => ({ id: mp2.id+'::'+m, label: mp2.name+' · '+m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-                <Toggle checked={g.ttsEnabled !== false} onChange={v=>save({ttsEnabled:v})} label="启用语音合成 (TTS)" />
-                {/* v0.2.3: ASR 语音识别未实现引擎, 已移除 */}
-              </div>
-            </div> : tab === 'persona' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}>
-                <div style={S.section}>基础身份</div>
-                <div style={{ display: 'flex', gap: 16, marginBottom: 14, alignItems: 'center' }}>
-                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
-                    {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={S.label}>名称</div><input style={S.inp} value={g.agentName || '黄泉'} onChange={e => save({ agentName: e.target.value })} />
-                  </div>
-                </div>
-                <div style={S.row}><div style={S.label}>称呼用户为</div><input style={S.inp} value={g.userAlias || '老板'} onChange={e => save({ userAlias: e.target.value })} /></div>
-                <div style={S.row}><div style={S.label}>语言</div><select style={S.sel} value={g.language||'zh'} onChange={e=>save({language:e.target.value})}><option value="zh">中文（简体）</option><option value="zh-tw">中文（繁体）</option><option value="en">English</option><option value="ja">日本語</option><option value="auto">自动检测</option><option value="match">始终用提问语言回复</option></select></div>
-                <div style={S.row}>
-                  <div style={S.label}>角色预设</div>
-                  <select style={S.sel} value={g.rolePreset || ''} onChange={e => { const v = e.target.value; if (v === 'custom' || v === '') save({ rolePreset: '', chatPersona: chatPersona, workPersona: workPersona }); else { const P = { huangquan: [DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA], tech: ['全栈技术助手。精通前后端、数据库、DevOps。代码优先，精简注释。输出结构清晰：先结论后细节，附可运行代码与验证方法。', '高效编码。需求→方案→实现→测试→交付。优先给出可运行的最小实现，关注 Windows 兼容性，代码含注释与边界处理，交付前自测通过。'], academic: ['学术研究导师。深度推理，引用文献，严谨表达。逻辑链完整，区分事实/推断/假设，结论带置信度与局限说明。', '严谨分析。数据驱动，标注来源，区分事实与推断。先定义问题再建框架，逐层论证，结论可复核。'], creative: ['创意写作伙伴。风格多样，善于比喻和场景描写。语言有画面感，节奏张弛有度，情感自然不做作。', '创意产出。天马行空但可落地，交付完整作品。先给创意方向再写正文，风格与篇幅按需调整。'], pm: ['项目经理。结构化沟通，关注节点和风险。会议纪要、任务拆解、进度跟踪、风险预案，事事有回音。', '项目管理。拆解任务、排期、识别风险、跟进验收。WBS 拆解→排期→里程碑→风险登记→验收清单，全程可追踪。'], ops: ['运维工程师。系统监控、部署、故障排查。操作前先评估影响面，步骤可回滚，故障有根因分析。', '运维执行。先备份再操作，步骤可回滚，故障有根因。变更前评估影响面，变更后验证，出问题先恢复再定位。'], analyst: ['数据分析师。统计方法、可视化、业务洞察。结论有数据支撑，图表清晰，洞察可落地。', '数据分析。先清洗再建模，结论带置信度。明确指标口径→ETL→EDA→建模→可视化→业务建议，每一步可复现。'] }[v] || ['', '']; save({ rolePreset: v, chatPersona: P[0], workPersona: P[1] }) } }}>
-                    <option value="custom">自定义</option>
-                    <option value="huangquan">黄泉（崩坏：星穹铁道）</option>
-                    <option value="tech">全栈技术助手</option>
-                    <option value="academic">学术研究导师</option>
-                    <option value="creative">创意写作伙伴</option>
-                    <option value="pm">项目经理</option>
-                    <option value="ops">运维工程师</option>
-                    <option value="analyst">数据分析师</option>
-                  </select>
-                  <div style={S.hint}>选择预设会同时填充下方聊天/工作人设；选「自定义」则保留自己编写的内容</div>
-                </div>
-              </div>
-              {/* 人设编辑（与角色预设联动：预设填充这里，手写即自动视为自定义） */}
-              <div style={S.card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ ...S.section, marginBottom: 0 }}>聊天人设</div>
-                  {g.rolePreset && g.rolePreset !== 'custom' ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.accent, background: C.accentBg, padding: '2px 8px', borderRadius: 8 }}>来自预设：{g.rolePreset}</span> : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}>自定义</span>}
-                </div>
-                <textarea readOnly={!!(g.rolePreset && g.rolePreset !== 'custom')} style={{ ...S.inp, height: 100, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 2px)', lineHeight: 1.6, ...(g.rolePreset && g.rolePreset !== 'custom' ? { opacity: 0.75, cursor: 'not-allowed' } : {}) }} value={chatPersona} onChange={e => { setChatPersona(e.target.value); save({ chatPersona: e.target.value }); if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} placeholder="聊天模式下的行为风格；编写后自动切换为「自定义」" />
-              </div>
-              <div style={S.card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ ...S.section, marginBottom: 0 }}>工作人设</div>
-                  {g.rolePreset && g.rolePreset !== 'custom' ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.accent, background: C.accentBg, padding: '2px 8px', borderRadius: 8 }}>来自预设：{g.rolePreset}</span> : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}>自定义</span>}
-                </div>
-                <textarea readOnly={!!(g.rolePreset && g.rolePreset !== 'custom')} style={{ ...S.inp, height: 100, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 2px)', lineHeight: 1.6, fontFamily: 'monospace', ...(g.rolePreset && g.rolePreset !== 'custom' ? { opacity: 0.75, cursor: 'not-allowed' } : {}) }} value={workPersona} onChange={e => { setWorkPersona(e.target.value); save({ workPersona: e.target.value }); if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} placeholder="工作模式下的执行规范；编写后自动切换为「自定义」" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>语气与表达</div>
-                <div style={S.label}>风格基调</div>
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                  {['专业正式','实用直接','轻松友好','极简克制'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 5, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 3px)', color: (g.toneStyle || '实用直接') === s ? '#fff' : C.muted, background: (g.toneStyle || '实用直接') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.toneStyle || '实用直接') === s} onChange={() => save({ toneStyle: s })} />{s}</label>)}
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <div style={S.label}>详细程度</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-<SegSetting label="详细程度" hint="回答的详细档位" value={g.verbosity ?? 2} onChange={v => save({ verbosity: v })} options={[{ v: 0, label: '极简' }, { v: 1, label: '简洁' }, { v: 2, label: '标准' }, { v: 3, label: '详细' }, { v: 4, label: '详尽' }]} />
-                  </div>
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <div style={S.label}>结构化偏好</div>
-                  {([['useTables','优先使用表格'],['useLists','优先使用列表'],['useEmoji','使用 Emoji 点缀'],['autoCopy','代码块一键复制']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
-                </div>
-                <div style={{ marginTop: 10 }}><div style={S.label}>称呼风格</div></div>
-                <div style={{ display:'flex',gap:4,flexWrap:'wrap' }}>
-                  {['不称呼用户','"你"','"您"',(g.userAlias||'老板')].map(s => <label key={s} style={{ display:'flex',alignItems:'center',gap:4,padding:'3px 8px',borderRadius:4,border:'1px solid '+C.border,cursor:'pointer',fontSize: 'calc(var(--ui-font-size) - 4px)',color:(g.addressStyle||'你')===s?'#fff':C.muted,background:(g.addressStyle||'你')===s?C.accent:'transparent' }}><input type="radio" style={{display:'none'}} checked={(g.addressStyle||'你')===s} onChange={()=>save({addressStyle:s})}/>{s}</label>)}
-                </div>
-                <div style={{ marginTop: 10 }}><div style={S.label}>不确定表达</div></div>
-                {([['expressUncertainty','不确定时明确说"不确定"'],['askWhenMissing','信息不足时主动追问，不脑补'],['showConfidence','对关键事实标注置信度(高/中/低)']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
-                <div style={{ marginTop: 4 }}><div style={S.label}>敏感话题处理</div></div>
-                {([['explainRefusal','拒绝回答时解释原因'],['neutralOnControversial','对争议话题保持中立']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] === true} onChange={v => save({ [k]: v })} label={l} />)}
-                <div style={{ marginTop: 4 }}><div style={S.label}>收尾习惯</div></div>
-                {([['noClosingPhrase','不添加固定收尾语'],['briefClosing','完成时简洁提示"完成"']] as const).map(([k,l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>输出格式</div>
-                <div style={S.row}><div style={S.label}>默认输出格式</div><select style={S.sel} value={g.outputFormat||'markdown'} onChange={e=>save({outputFormat:e.target.value})}><option value="markdown">Markdown</option><option value="plain">纯文本</option><option value="html">HTML</option><option value="json">JSON</option></select></div>
-                <div style={S.row}><div style={S.label}>代码注释语言</div><select style={S.sel} value={g.commentLang||'zh'} onChange={e=>save({commentLang:e.target.value})}><option value="zh">中文</option><option value="en">English</option><option value="match">与用户语言一致</option></select></div>
-                <div style={S.label}>数学公式渲染</div><select style={S.sel} value={g.mathRender||'katex'} onChange={e=>save({mathRender:e.target.value})}><option value="katex">KaTeX</option><option value="mathjax">MathJax</option><option value="plain">纯文本</option><option value="none">不渲染</option></select>
-                <div style={S.label}>链接呈现</div><select style={S.sel} value={g.linkStyle||'auto'} onChange={e=>save({linkStyle:e.target.value})}><option value="inline">内联链接</option><option value="footnote">脚注式</option><option value="url">仅URL</option><option value="auto">自动</option></select>
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>知识域限制</div>
-                <div style={S.row}><div style={S.label}>地域偏重</div><select style={S.sel} value={g.region||'none'} onChange={e=>save({region:e.target.value})}><option value="none">无偏好</option><option value="cn">中国大陆</option><option value="na">北美</option><option value="eu">欧洲</option><option value="jp">日本</option></select></div>
-                <Toggle checked={g.knowledgeTimeLimit === true} onChange={v=>save({knowledgeTimeLimit:v})} label="限制知识截止日期" hint="模拟特定时期的知识范围，如仅用2022年前技术" />
-                {g.knowledgeTimeLimit === true && <div style={{display:'flex',gap:8,marginTop:6}}>
-                  <div style={{flex:1}}><div style={S.hint}>不早于</div><input type="date" style={S.inp} value={g.knowledgeFrom||''} onChange={e=>save({knowledgeFrom:e.target.value})} /></div>
-                  <div style={{flex:1}}><div style={S.hint}>不晚于</div><input type="date" style={S.inp} value={g.knowledgeTo||''} onChange={e=>save({knowledgeTo:e.target.value})} /></div>
-                </div>}
-                <Toggle checked={g.knowledgeWhitelist === true} onChange={v=>save({knowledgeWhitelist:v})} label="仅使用白名单来源" hint="限制 Agent 引用的知识范围" />
-                <Toggle checked={g.strictVersionAware === true} onChange={v=>save({strictVersionAware:v})} label="严格版本感知" hint="涉及API/框架时标注版本并验证兼容性" />
-              </div>
-              <div style={S.card}>
-                <div style={S.section}>自定义系统提示词（高级）</div>
-                <div style={S.hint}>可用模板变量：{'{{Name}} {{UserName}} {{Date}} {{Time}} {{OS}} {{WorkingDir}}'.split(' ').map(v=><code key={v} style={{fontSize: 'calc(var(--ui-font-size) - 4px)',background:C.input,padding:'1px 4px',borderRadius:2,margin:'0 2px'}}>{v}</code>)}</div>
-                <textarea style={{ ...S.inp, height: 120, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 3px)', fontFamily: 'monospace', lineHeight: 1.5, marginTop: 8 }} value={g.customSystemPrompt || ''} onChange={e => save({ customSystemPrompt: e.target.value })} placeholder="你是 {{Name}}，专注{{Domain}}的{{Role}}。&#10;核心原则：&#10;1. 不确定时追问&#10;2. 完成前自检&#10;3. 输出结构化" />
-                <div style={S.row}><div style={S.label}>注入位置</div><select style={S.sel} value={g.promptInjectPos||'end'} onChange={e=>save({promptInjectPos:e.target.value})}><option value="end">系统提示词末尾</option><option value="begin">系统提示词开头</option><option value="replace">替换默认提示词</option></select></div>
-              </div>
-            </div> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+          </> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>工具总览仪表盘</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
