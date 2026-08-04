@@ -79,6 +79,7 @@ declare global {
         download: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string; path?: string }>
         onProgress: (cb: (d: { received: number; total: number }) => void) => () => void
       }
+      appInfo: () => Promise<{ version: string; electron: string; node: string }>
       computer: {
         exec: (cmd: string) => Promise<string>
         readFile: (path: string, offset?: number, limit?: number) => Promise<string>

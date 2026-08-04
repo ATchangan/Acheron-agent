@@ -5,6 +5,9 @@ import { C, S } from '../settings-ui'
 // v0.3.1 更新下载进度条: 订阅 update:progress 显示下载进度
 export default function AboutTab() {
   const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; progress: { received: number; total: number } | null; downloadInfo: { ok: boolean; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, progress: null, downloadInfo: null })
+  // 动态版本信息(主进程 app.getVersion + process.versions), 不硬编码
+  const [info, setInfo] = useState<{ version: string; electron: string; node: string } | null>(null)
+  useEffect(() => { window.huangquan.appInfo().then(setInfo).catch(() => {}) }, [])
   // 订阅下载进度(卸载时取消)
   useEffect(() => {
     const off = window.huangquan.update.onProgress((d) => {
@@ -19,7 +22,7 @@ export default function AboutTab() {
       <div style={S.card}>
         <div style={S.section}>关于</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[['版本', 'v0.3.1'], ['平台', '黄泉Agent'], ['Electron', '32.x'], ['React', '18.3'], ['Node', '22.x']].map(([k, v]) => (
+          {[['版本', info?.version || '…'], ['平台', '黄泉Agent'], ['Electron', info?.electron || '…'], ['React', React.version], ['Node', info?.node || '…']].map(([k, v]) => (
             <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: C.text }}>{v}</div></div>
           ))}
         </div>

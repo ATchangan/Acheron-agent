@@ -55,4 +55,10 @@ export function registerMiscIpc(deps: {
     })
   })
   ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
+  // 应用版本信息 —— 关于页动态读取, 杜绝硬编码版本号漂移
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron || '',
+    node: process.versions.node || '',
+  }))
 }

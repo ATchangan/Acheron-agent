@@ -197,4 +197,5 @@ contextBridge.exposeInMainWorld('huangquan', {
       ipcRenderer.on('llm:usage', h); return () => ipcRenderer.removeListener('llm:usage', h)
     },
   },
+  appInfo: () => ipcRenderer.invoke('app:info'),
 })
