@@ -11,6 +11,8 @@ import { registerWindowIpc } from './ipc/window'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
 import { registerMiscIpc } from './ipc/misc'
+import { registerModelsIpc } from './ipc/models'
+import { registerUpdateIpc } from './ipc/update'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -393,6 +395,8 @@ registerModelStatsIpc()
 registerMcpIpc()
 registerCacheIpc()
 registerMiscIpc({ settingsPath, userDataPath, resourcesDir, skillsDir, workspaceDir, dirSize, fmtSize })
+registerModelsIpc({ netFetch })
+registerUpdateIpc({ netFetch })
 registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
 registerCronIpc()
@@ -850,158 +854,6 @@ ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
   return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
 })
 
-// ─── 浏览器 / 搜索 / 模型探测 ──────────────────────
-ipcMain.handle('models:detect', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean; type?: string }) => {
-  try {
-    let base = (baseUrl || '').replace(/\/+$/, '')
-    if (!base) return { ok: false, error: '请先填写 Base URL' }
-    // v0.2.2-fix: Anthropic(Claude) 鉴权是 x-api-key 而非 Bearer —— 按 baseUrl / key 前缀自动识别
-    // v0.2.4: 支持 Azure OpenAI / Google Gemini 模型列表接口
-    const isAnthropic = !!(opts?.type === 'Anthropic Claude' || opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
-    const isAzure = !!opts?.type?.includes('Azure') || /openai\.azure\.com/i.test(base)
-    const isGemini = !!opts?.type?.includes('Gemini') || /generativelanguage\.googleapis\.com/i.test(base)
-    let url: string
-    const headers: Record<string, string> = {}
-    if (isAnthropic) {
-      url = base.replace(/\/v\d+$/i, '') + '/v1/models'
-      headers['x-api-key'] = apiKey || ''
-      headers['anthropic-version'] = '2023-06-01'
-    } else if (isAzure) {
-      const root = base.replace(/\/openai\/?.*$/i, '')
-      url = root + '/openai/models?api-version=2024-06-01'
-      headers['api-key'] = apiKey || ''
-    } else if (isGemini) {
-      url = base.replace(/\/v\d+(beta)?\/?$/i, '') + '/v1beta/models?key=' + encodeURIComponent(apiKey || '')
-    } else {
-      url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
-      headers['Authorization'] = 'Bearer ' + (apiKey || '')
-    }
-    const res = await netFetch(url, { headers, signal: AbortSignal.timeout(15000) })
-    if (!res.ok) {
-      const hint = res.status === 401 ? 'API Key 无效或未授权'
-        : res.status === 403 ? '禁止访问（Key 无权限或地区限制）'
-        : res.status === 404 ? '接口路径不存在，请检查 Base URL'
-        : res.status === 410 ? '接口已废弃，请更新 Base URL'
-        : ''
-      return { ok: false, error: 'HTTP ' + res.status + (hint ? '：' + hint : '') }
-    }
-    const data = JSON.parse(await res.text())
-    // v0.2.4: Gemini 返回 { models: [{ name: "models/gemini-..." }] }，需清理前缀
-    const ids = isGemini
-      ? (data.models || []).map((m: { name?: string }) => String(m.name || '').replace(/^models\//, '')).filter(Boolean)
-      : (data.data || []).map((m: { id: string }) => m.id).filter(Boolean)
-    const filtered = ids.filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
-    return { ok: true, models: filtered }
-  } catch (e: unknown) {
-    const msg = (e instanceof Error ? e.message : String(e))
-    const hint = /getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(msg) ? '域名无法解析，请检查 Base URL 是否填写正确'
-      : /timeout|abort/i.test(msg) ? '请求超时（网络不通或需要代理）'
-      : /ECONNREFUSED/i.test(msg) ? '连接被拒绝（地址或端口错误）'
-      : /fetch failed/i.test(msg) ? '网络请求失败'
-      : ''
-    return { ok: false, error: (hint || msg).slice(0, 200) }
-  }
-})
-
-// v0.2.2: 测试连接 —— 轻量探测 baseUrl + apiKey 是否可用（不拉全量模型）
-ipcMain.handle('models:test', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => {
-  const t0 = Date.now()
-  try {
-    let base = (baseUrl || '').replace(/\/+$/, '')
-    if (!base) return { ok: false, status: 0, latency: 0, message: '请先填写 Base URL' }
-    const isAnthropic = !!(opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
-    let url: string
-    const headers: Record<string, string> = {}
-    if (isAnthropic) {
-      url = base.replace(/\/v\d+$/i, '') + '/v1/models'
-      headers['x-api-key'] = apiKey || ''
-      headers['anthropic-version'] = '2023-06-01'
-    } else {
-      url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
-      headers['Authorization'] = 'Bearer ' + (apiKey || '')
-    }
-    const res = await netFetch(url, { headers, signal: AbortSignal.timeout(10000) })
-    const latency = Date.now() - t0
-    if (res.status === 200) {
-      return { ok: true, status: 200, latency, message: '连接成功，API Key 有效' }
-    }
-    if (res.status === 401) return { ok: false, status: 401, latency, message: '已连接，但 API Key 无效或未授权 (401)' }
-    if (res.status === 403) return { ok: false, status: 403, latency, message: '已连接，但无权限 (403)，请检查 Key 或地区限制' }
-    if (res.status === 404 || res.status === 410) return { ok: false, status: res.status, latency, message: '服务器可达，但该接口不存在 (' + res.status + ')，此平台可能不支持模型列表接口' }
-    return { ok: false, status: res.status, latency, message: '服务器响应异常 (HTTP ' + res.status + ')' }
-  } catch (e: unknown) {
-    const latency = Date.now() - t0
-    const msg = (e instanceof Error ? e.message : String(e))
-    const hint = /getaddrinfo|ENOTFOUND|EAI_AGAIN/i.test(msg) ? '域名无法解析，请检查 Base URL 是否填写正确'
-      : /timeout|abort/i.test(msg) ? '连接超时（网络不通或需要代理）'
-      : /ECONNREFUSED/i.test(msg) ? '连接被拒绝（地址或端口错误）'
-      : /fetch failed/i.test(msg) ? '网络请求失败'
-      : msg.slice(0, 120)
-    return { ok: false, status: 0, latency, message: hint }
-  }
-})
-
-// ─── v0.2.5: 无头浏览器网页解析工具 web_read (Playwright + 系统 Edge/Chrome) ──
-// v0.2.3-opt: web_read 10s 同 URL 缓存(重复访问零导航)
-const webReadCache = new Map<string, { ts: number; result: string }>()
-// ─── v0.2.3: 自动更新 —— GitHub Releases 版本检查 + 安装包下载 ──
-const UPDATE_REPO = 'ATchangan/Acheron-agent'
-function currentVersion(): string {
-  try { return require('../package.json').version || app.getVersion() || '0.0.0' } catch { return app.getVersion() || '0.0.0' }
-}
-function compareVer(a: string, b: string): number {
-  const pa = String(a).replace(/^v/i, '').split('.').map(n => parseInt(n) || 0)
-  const pb = String(b).replace(/^v/i, '').split('.').map(n => parseInt(n) || 0)
-  for (let i = 0; i < 3; i++) {
-    const x = pa[i] || 0, y = pb[i] || 0
-    if (x !== y) return x - y
-  }
-  return 0
-}
-ipcMain.handle('update:check', async () => {
-  try {
-    const res = await netFetch('https://api.github.com/repos/' + UPDATE_REPO + '/releases/latest', {
-      headers: { 'User-Agent': 'huangquan-agent', 'Accept': 'application/vnd.github+json' },
-      signal: AbortSignal.timeout(12000),
-    })
-    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status }
-    const d = await res.json()
-    const latest = String(d.tag_name || '').replace(/^v/i, '')
-    const cur = currentVersion()
-    const has = compareVer(latest, cur) > 0
-    return {
-      ok: true, hasUpdate: has, version: latest, current: cur,
-      url: d.html_url || '',
-      assets: (d.assets || []).map((a: { name: string; browser_download_url: string; size?: number }) => ({ name: a.name, size: a.size || 0, url: a.browser_download_url })),
-      notes: String(d.body || '').slice(0, 800),
-    }
-  } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
-})
-// 下载安装包到系统下载目录(带进度事件)
-ipcMain.handle('update:download', async (event, url: string, fileName: string) => {
-  try {
-    const name = String(fileName || '').replace(/[^\w\-. ]/g, '').slice(0, 120) || 'Acheron-agent-update.exe'
-    const dest = join(app.getPath('downloads'), name)
-    const res = await netFetch(String(url), { signal: AbortSignal.timeout(1800000) })
-    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status }
-    const reader = res.body?.getReader()
-    if (!reader) return { ok: false, error: '无响应流' }
-    const chunks: Buffer[] = []
-    let received = 0
-    const total = Number(res.headers.get('content-length') || 0)
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(Buffer.from(value))
-      received += value.length
-      if (total > 0 && received % (1024 * 512) < 4096) {
-        try { event.sender.send('update:progress', { received, total }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-      }
-    }
-    fs.writeFileSync(dest, Buffer.concat(chunks))
-    return { ok: true, path: dest, size: received }
-  } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
-})
 const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>()
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
