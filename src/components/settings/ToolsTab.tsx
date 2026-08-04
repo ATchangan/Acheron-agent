@@ -169,7 +169,7 @@ export default function ToolsTab() {
         <div style={S.section}>系统信息</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
-            ['版本', 'v0.3.0'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
+            ['版本', 'v0.3.1'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
             ['构建', new Date().toLocaleDateString('zh-CN')], ['工具数', '27'],
             ['Agent数', '7'], ['技能数', '4+']
           ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}
