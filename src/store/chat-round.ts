@@ -65,7 +65,14 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     const doParallel = gSnap.parallelTools !== false
     const doEpisodic = gSnap.episodicMemory !== false
 
-    const runOne = async (tc: ToolCallItem) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now();
+    const runOne = async (tc: ToolCallItem) => {
+      // v0.3.1 M2: 改向熔断(工具粒度) —— 每个工具 await 前检查 retarget, 并行批内也能中途跳出
+      if (peekInterjectKind(sid) === 'retarget') {
+        console.log('[插话] 检测到改向指令, 熔断当前工具链')
+        toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
+        return { tc, r: 'E:改向指令熔断' }
+      }
+      let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now();
       const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '🔧 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
       r2 = await runTool(tc.name, tc.args, cfg); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms });
       set({ stage: { sid, phase: 'tool', label: '✓ ' + tc.name, detail: (r2 && r2.length > 50 ? r2.slice(0, 50) + '…' : (r2 || '')) } })
