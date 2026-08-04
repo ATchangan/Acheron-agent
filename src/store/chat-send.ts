@@ -264,8 +264,12 @@ export async function runSend(
         // v0.3.1 D1: 清空边界 = 任务起始消息(userMsg.id 首次出现)之后的所有中间 assistant 文本(插话 user 消息不破坏边界)
     const lastUserIdx = finalSession.messages.map(m => m.id).indexOf(userMsg.id)
         const thisRound = lastUserIdx >= 0 ? finalSession.messages.slice(lastUserIdx) : finalSession.messages
-        const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
+        // 单气泡合并: DeepSeek 等模型在工具调用前会先输出一遍预答, 工具执行后再次输出最终回答,
+        // 若把两者都并入会重复。检测中间文本与最终输出相同则丢弃该重复段(保留更早的阶段性说明)
+        const roundMid = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
         const llmText = res.text || ''; const hasTools = toolLog.length > 0
+        const lastMid = roundMid[roundMid.length - 1]
+        const midTexts = (lastMid && llmText && lastMid === llmText) ? roundMid.slice(0, -1) : roundMid
         let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
         // 工具日志已改为写入右侧终端面板(terminal), 不再拼进消息正文(原死代码块已删除)
         // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）

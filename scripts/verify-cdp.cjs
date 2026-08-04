@@ -46,6 +46,30 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
       awaitPromise: true,
     }).then(r => console.log('ABOUT:', JSON.stringify(r.result.value)))
   }
+  if (process.argv[4] === 'strategy') {
+    await send('Runtime.evaluate', {
+      expression: `(async () => {
+        const all = () => [...document.querySelectorAll('button, div, span, li')]
+        const clickByText = (t) => { const el = all().find(x => x.innerText.trim() === t || x.innerText.trim().startsWith(t)); if (el) { el.click(); return true } return false }
+        clickByText('设置')
+        await new Promise(r => setTimeout(r, 600))
+        clickByText('策略')
+        await new Promise(r => setTimeout(r, 800))
+        const selects = [...document.querySelectorAll('select')].map(s => ({ label: (s.labels && s.labels[0] ? s.labels[0].innerText : s.previousElementSibling ? s.previousElementSibling.innerText : '').slice(0, 16), value: s.value }))
+        const text = document.body.innerText
+        return {
+          hasStrategyPage: text.includes('主对话模型') || text.includes('策略'),
+          selects,
+          hasVision: text.includes('视觉'),
+          hasAutoMedia: text.includes('自动生成') || text.includes('媒体'),
+          hasThink: text.includes('思考') || text.includes('推理'),
+          tail: text.slice(-500).replace(/\\n+/g, ' | ')
+        }
+      })()`,
+      returnByValue: true,
+      awaitPromise: true,
+    }).then(r => console.log('STRATEGY:', JSON.stringify(r.result.value)))
+  }
   const info = await send('Runtime.evaluate', {
     expression: `(() => ({
       title: document.title,

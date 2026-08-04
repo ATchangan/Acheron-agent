@@ -1,14 +1,20 @@
-# 黄泉Agent 版本验证：启动应用 -> CDP 检查 -> 截图 -> 关闭
+﻿# 黄泉Agent 版本验证：启动应用 -> CDP 检查 -> 截图 -> 关闭
 # 用法: powershell -ExecutionPolicy Bypass -File scripts/launch-verify.ps1 -VersionDir D:\...\v0.3.2\源码 -Port 9232
 param(
   [Parameter(Mandatory=$true)][string]$VersionDir,
   [Parameter(Mandatory=$true)][int]$Port,
-  [switch]$About
+  [switch]$About,
+  [switch]$Strategy,
+  [switch]$Chat,
+  [string]$UserData = ''
 )
 
 $exe = Join-Path $VersionDir 'node_modules\electron\dist\electron.exe'
-$tmpUd = Join-Path $env:TEMP ("hq-v" + $Port)
-if (Test-Path -LiteralPath $tmpUd) { Remove-Item -LiteralPath $tmpUd -Recurse -Force }
+$tmpUd = $UserData
+if (-not $tmpUd) {
+  $tmpUd = Join-Path $env:TEMP ("hq-v" + $Port)
+  if (Test-Path -LiteralPath $tmpUd) { Remove-Item -LiteralPath $tmpUd -Recurse -Force }
+}
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $exe
@@ -27,8 +33,20 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $outDir = 'C:\Users\ROG\.codex\visualizations\2026\08\04\019fcd60-e9a7-72e3-8aec-46c31810326e'
 $extra = ''
 if ($About) { $extra = 'about' }
-node (Join-Path $scriptDir 'verify-cdp.cjs') $Port $outDir $extra
+if ($Strategy) { $extra = 'strategy' }
+if ($Chat) {
+  node (Join-Path $scriptDir 'verify-chat.cjs') $Port '你好，用一句话介绍自己' '读取 D:\桌面\黄泉agent\打包发布流程.md 的第一行并原样回复'
+} else {
+  node (Join-Path $scriptDir 'verify-cdp.cjs') $Port $outDir $extra
+}
 
+Get-Process -ProcessName electron -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+if ($Chat) {
+  try {
+    ($proc.StandardError.ReadToEnd()) -split "`n" | Select-String 'FAIL|ERROR|error|Error' | Select-Object -Last 12 | ForEach-Object { Write-Output ("STDERR: " + $_.Line) }
+  } catch {}
+}
 if (-not $alive) {
   Write-Output ("EXIT={0}" -f $proc.ExitCode)
   try {
@@ -36,5 +54,4 @@ if (-not $alive) {
   } catch {}
 }
 
-Get-Process -ProcessName electron -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Write-Output 'DONE'
