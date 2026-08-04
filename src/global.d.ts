@@ -1,13 +1,11 @@
-export {}
+﻿export {}
 import type { GeneralSettings } from './types'
 
 declare global {
   interface Window {
     // v0.3.0 M5: 运行时调试属性(原 window 断言逃逸, 集中声明)
     __lastSp?: string
-    __lastModel?: string
-    __routeDebug?: string
-    __huangquan_agent?: string
+        __huangquan_agent?: string
     __huangquan_agent_manual?: boolean
     __watchState?: Record<string, string>
     huangquan: {

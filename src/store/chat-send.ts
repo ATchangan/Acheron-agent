@@ -132,7 +132,7 @@ export async function runSend(
   console.log('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
   set({ curModel: model || '' })
   // v0.2.4-debug: 暴露最近一次实际发送模型(验证调度绑定/多模型策略接线)
-  try { window.__lastModel = model || '' } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+  
   updateContextLimit(model)
 
   // v0.2.1: 记录当前活跃 Agent（路由结果），供右侧面板展示
@@ -214,7 +214,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
       if (!curInQueue) {
         curP = visQueue[0].p; model = visQueue[0].model
         set({ curModel: model || '' }); updateContextLimit(model)
-        try { window.__lastModel = model || '' } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+        
         content = content + '\n\n[识图任务已使用视觉模型:' + model + ']'
         switchedVision = true
         console.log('[MODEL] 视觉任务强制切换队列模型:', model)
@@ -230,7 +230,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
       if (alt) {
         curP = alt.p; model = alt.model
         set({ curModel: model || '' }); updateContextLimit(model)
-        try { window.__lastModel = model || '' } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+        
         content = content + '\n\n[已自动切换模型:' + model + '(支持图片分析)]'
         switchedVision = true
         console.log('[MODEL] 视觉任务自动切换:', model)
@@ -560,7 +560,7 @@ const tokBase: Record<string, { readTokens?: number; inputTokens?: number; write
     if (switchedVision && origModel && origModel !== model) {
       curP = origP; model = origModel
       set({ curModel: model }); updateContextLimit(model)
-      try { window.__lastModel = model || '' } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+      
       console.log('[MODEL] 视觉任务结束, 还原主力模型:', model)
     }
   }

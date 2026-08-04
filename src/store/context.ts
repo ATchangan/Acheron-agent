@@ -193,7 +193,7 @@ export function buildContextualMessages(
   if (!agentRole) {
     const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
     const txt = (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '').toLowerCase()
-    if (txt) { agentRole = routeAgent(txt) || undefined; try { window.__routeDebug = JSON.stringify({ role: agentRole || null, txt: txt.slice(0, 40), collab: gSnap.collabMode }) } catch (e) { /* ignore */ console.debug('[swallow]', e) } }
+    if (txt) { agentRole = routeAgent(txt) || undefined }
   }
   // v0.2.1: 路由确定的 Agent 记入协作状态
   if (agentRole && !opts.agent && !window.__huangquan_agent) {
@@ -235,6 +235,6 @@ export function buildContextualMessages(
     }
   }
   // v0.2.3-debug: 暴露最近一次 system prompt(验证思考模式/人设等接线)
-  try { window.__lastSp = sp || '' } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+  try { window.__lastSp = sp || '' /* 供 check-prefix-stable.mjs 使用 */ } catch (e) { /* ignore */ console.debug('[swallow]', e) }
   return sp ? [{ role: 'system', content: sp }, ...d] : d
 }
