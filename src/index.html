@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>黄泉Agent</title>
+    <style>
+      /* 防止白屏闪烁：在 JS 加载前显示暗色背景 */
+      body { margin: 0; background: var(--bg-root, #17181c); }
+      #root:empty::after { content: '黄泉 · 加载中...'; display: flex; align-items: center; justify-content: center; height: 100vh; color: #6B4C9A; font-family: sans-serif; font-size: 18px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
