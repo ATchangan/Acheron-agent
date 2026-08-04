@@ -6,6 +6,10 @@ import { registerSkillsIpc } from './ipc/skills'
 import { registerPluginsIpc } from './ipc/plugins'
 import { registerModelStatsIpc } from './ipc/model-stats'
 import { registerMcpIpc } from './ipc/mcp'
+import { registerCronIpc } from './ipc/cron'
+import { registerWindowIpc } from './ipc/window'
+import { registerWebIpc } from './ipc/web'
+import { registerCacheIpc } from './ipc/cache'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -358,16 +362,6 @@ ipcMain.handle('renderer:status', () => {
     }
   } catch { return { mode: rendererMode, gpuAcceleration: 'unknown', webgl: 'unknown', canvas2d: 'unknown' } }
 })
-ipcMain.handle('window:setOpacity', (_e, opacity: number) => {
-  if (mainWindow) mainWindow.setOpacity(Math.max(0.3, Math.min(1, opacity)))
-})
-ipcMain.handle('window:minimize', () => mainWindow?.minimize())
-ipcMain.handle('window:maximize', () => {
-  if (mainWindow?.isMaximized()) mainWindow.unmaximize()
-  else mainWindow?.maximize()
-})
-ipcMain.handle('window:close', () => { if (trayEnabled() && mainWindow) { mainWindow.hide() } else { isQuitting = true; app.quit() } })
-
 // ─── 设置/会话 ─────────────────────────────────────
 function dirSize(dir: string): number {
   let total = 0
@@ -437,6 +431,10 @@ const { assessRisk } = require('./security/permission')
 registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir })
 registerModelStatsIpc()
 registerMcpIpc()
+registerCacheIpc()
+registerWebIpc({ settingsPath, netFetch, decKey })
+registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
+registerCronIpc()
 ipcMain.handle('computer:exec', async (_e, cmd: string) => {
   const cmdS = String(cmd || '')
   if (assessRisk({ type: 'terminal', command: cmdS }) === 'L4') {
@@ -994,88 +992,9 @@ ipcMain.handle('models:test', async (_e, baseUrl: string, apiKey: string, opts?:
   }
 })
 
-ipcMain.handle('web:search', async (_e, query: string) => {
-  try {
-    const u = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query)
-    const r = await netFetch(u, { signal: AbortSignal.timeout(10000) })
-    const h = await r.text()
-    // v0.2.1: 多层正则 fallback 以应对 DDG 页面结构变化
-    let out: string[] = []
-    // 尝试主解析模式
-    const re1 = /<a[^>]*class="result__a"[^>]*>([^<]+)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*?>([^<]+)<\/a>/gi
-    let m
-    while ((m = re1.exec(h)) && out.length < 5) {
-      out.push(`${out.length + 1}. ${m[1].trim()}: ${m[2].trim().replace(/<[^>]+>/g, '')}`)
-    }
-    // fallback: 尝试更宽松的匹配
-    if (!out.length) {
-      const re2 = /class="result__title"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/gi
-      const re2b = /class="result__snippet"[^>]*>([^<]+)/gi
-      const titles: string[] = []; const snippets: string[] = []
-      while ((m = re2.exec(h))) titles.push(m[1].trim().replace(/<[^>]+>/g, ''))
-      while ((m = re2b.exec(h))) snippets.push(m[1].trim().replace(/<[^>]+>/g, ''))
-      for (let i = 0; i < Math.min(titles.length, snippets.length, 5); i++) {
-        out.push(`${i + 1}. ${titles[i]}: ${snippets[i]}`)
-      }
-    }
-    return out.length ? out.join('\n') : '(无结果)'
-  } catch { return '(搜索失败)' }
-})
-
-ipcMain.handle('web:fetch', async (_e, url: string) => {
-  try {
-    const res = await netFetch(url, { signal: AbortSignal.timeout(15000) })
-    return await res.text().then(t => t.slice(0, 50000))
-  } catch (err: unknown) {
-    return 'Error: ' + (err instanceof Error ? err.message : String(err))
-  }
-})
-
 // ─── v0.2.5: 无头浏览器网页解析工具 web_read (Playwright + 系统 Edge/Chrome) ──
 // v0.2.3-opt: web_read 10s 同 URL 缓存(重复访问零导航)
 const webReadCache = new Map<string, { ts: number; result: string }>()
-ipcMain.handle('web:read', async (_e, url: string, mode?: string) => {
-  const cacheKey = url + '|' + (mode || 'text')
-  const cachedHit = webReadCache.get(cacheKey)
-  if (cachedHit && Date.now() - cachedHit.ts < 10000) return cachedHit.result
-  try {
-    const { webRead } = require('./webtools')
-    // 读取设置中的浏览器解析配置(双向绑定全局配置文件)
-    let cfg: Record<string, unknown> = {}
-    try { cfg = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    // v0.2.3-fix(N27): 直接读文件时 cookie 是密文, 需解密后传给 web_read
-    if (typeof cfg.webReadCookies === 'string' && cfg.webReadCookies.startsWith('__ENC__')) cfg.webReadCookies = decKey(cfg.webReadCookies)
-    // 总开关: 关闭后 Agent 无法调用 web_read
-    if (cfg.webReadEnabled === false) {
-      return JSON.stringify({ ok: false, error: 'web_read 已被禁用', advice: '请在 设置 → 工具 → 无头浏览器网页解析工具 中开启总开关' })
-    }
-    const timeoutMs = parseInt(String(cfg.webReadTimeout || '')) || 15000
-    const result = await webRead({
-      url,
-      mode: mode || 'text',
-      headless: cfg.webReadHeadless !== false,
-      timeoutMs,
-      userAgent: cfg.webReadUA || '',
-      proxy: cfg.webReadProxy || '',
-      ignoreHTTPSErrors: true,
-      cleanAds: cfg.webReadCleanAds !== false,
-      autoClose: cfg.webReadAutoClose !== false,
-      cookies: cfg.webReadCookies || '',
-    })
-    webReadCache.set(cacheKey, { ts: Date.now(), result: JSON.stringify(result) })
-    return JSON.stringify(result)
-  } catch (e: unknown) {
-    return JSON.stringify({ ok: false, error: 'web_read 调用异常: ' + (e instanceof Error ? e.message : String(e)), advice: '请查看应用日志或稍后重试' })
-  }
-})
-
-// ─── 定时任务 ───────────────────────────────────
-ipcMain.handle('cron:add', async (_e, expr:string, prompt:string) => {
-  try { return require('./scheduler/cron').addJob(expr, prompt) } catch(e: unknown) { return 'Error: ' + (e instanceof Error ? e.message : String(e)) }
-})
-ipcMain.handle('cron:list', () => { try { return require('./scheduler/cron').listJobs() } catch { return [] } })
-ipcMain.handle('cron:remove', (_e, id:string) => { try { require('./scheduler/cron').removeJob(id); return true } catch { return false } })
-
 ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
 
 // ─── v0.2.3: 自动更新 —— GitHub Releases 版本检查 + 安装包下载 ──
@@ -1136,9 +1055,6 @@ ipcMain.handle('update:download', async (event, url: string, fileName: string) =
     return { ok: true, path: dest, size: received }
   } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
 })
-// v0.2.3-fix: 本地技能选择 —— 原生对话框(可同时选目录或 .zip), 替代渲染层 window.prompt(Electron 不支持, 会抛错)
-ipcMain.handle('cron:toggle', (_e, id:string) => { try { require('./scheduler/cron').toggleJob(id); return true } catch { return false } })
-// ─── v0.2.1: 使用 AbortController 替代全局标志位，支持并发请求 ──────
 const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>()
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
@@ -1428,29 +1344,6 @@ ipcMain.handle('media:gen', async (_e, opts: { kind: 'img' | 'video'; prompt: st
       })
     })
   } catch (e) { return { ok: false, error: '生成异常: ' + (e instanceof Error ? e.message : String(e)) } }
-})
-
-// ─── v0.2: Agent 系统 ──────────────────────────────
-// v0.2.3: agent:list / agent:route 已由前端 AGENTS 实现接管(主进程不再维护第二套 Agent 体系)
-
-// ─── v0.2: 工具缓存 ────────────────────────────────
-// ─── v0.2.6: 按 会话×模型 的 TOKEN 缓存命中统计(持久化) ──
-ipcMain.handle('cache:stats', () => {
-  try { return require('./cache/tool-cache').getCacheStats() }
-  catch { return { size:0, hits:0, misses:0, hit_rate:'0%' } }
-})
-ipcMain.handle('cache:clear', () => {
-  try { return require('./cache/tool-cache').invalidateCache() }
-  catch { return 0 }
-})
-// v0.2.1: 写操作时同步失效主进程缓存
-ipcMain.handle('cache:invalidate:write', () => {
-  try {
-    const tc = require('./cache/tool-cache')
-    tc.invalidateCache('read'); tc.invalidateCache('ls')
-    tc.invalidateCache('grep'); tc.invalidateCache('find')
-    return true
-  } catch { return false }
 })
 
 // ─── 启动 ──────────────────────────────────────────
