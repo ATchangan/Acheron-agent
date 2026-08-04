@@ -10,6 +10,7 @@ import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzl
 import { errMsg } from '../utils/safe'
 import AboutTab from './settings/AboutTab'
 import StatsTab from './settings/StatsTab'
+import SkinTab from './settings/SkinTab'
 
 const PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = {
   'DeepSeek': { type: 'OpenAI Compatible', url: 'https://api.deepseek.com' },
@@ -1038,118 +1039,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
                   <button style={S.btn('primary')} onClick={async () => { if (!skillUrl.trim()) { showToast('请输入 Git 地址'); return } const r = await window.huangquan.skills.install(skillUrl.trim()); showToast(r === 'ok' ? '技能安装成功' : String(r)); setSkillUrl(''); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>安装</button>
                 </div>
               </div>
-            </div> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-              <div style={S.card}><div style={S.section}>Agent 头像</div>
-                <div style={S.hint}>上传图片作为 Agent 头像，或使用 emoji 文字。留空默认"泉"。</div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
-                    {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <input style={S.inp} value={g.agentAvatar || ''} placeholder="emoji 或文字（如 🤖）" onChange={e => save({ agentAvatar: e.target.value })} maxLength={4} />
-                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <input type="file" accept="image/*" style={{ display: 'none' }} id="avatarImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => save({ agentAvatarImage: r.result as string }); r.readAsDataURL(f) }} />
-                      <button style={S.btn('primary')} onClick={() => document.getElementById('avatarImg')?.click()}>上传图片</button>
-                      {g.agentAvatarImage && <button style={S.btn('ghost')} onClick={() => save({ agentAvatarImage: '' })}>使用默认</button>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div style={S.card}><div style={S.section}>主题（配色体系）</div>
-                <div style={S.hint}>6 套预设主题 + 自定义配色；主题只控制配色，与背景皮肤互相独立</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {THEME_META.map(t => {
-                    const active = currentTheme(g) === t.id
-                    return <div key={t.id} onClick={() => { save({ theme: t.id, themePreset: undefined }); useSettingsStore.getState().setTheme(t.id) }} style={{ padding: 10, borderRadius: 8, border: '1px solid ' + (active ? C.accent : C.border), cursor: 'pointer', background: active ? C.accentBg : 'transparent', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 6 }}>
-                        {t.dots.map(d => <span key={d} style={{ width: 13, height: 13, borderRadius: '50%', background: d, border: '1px solid rgba(150,150,160,.35)' }} />)}
-                      </div>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text }}>{t.label}</div>
-                    </div>
-                  })}
-                  {(() => {
-                    const active = currentTheme(g) === 'custom'
-                    const cc = g.customColors || g.customTheme || {}
-                    const cdots = [cc.bg || '#17181c', cc.accent || '#7c6fa8', cc.text || '#e2e2e8']
-                    return <div onClick={() => { save({ theme: 'custom', themePreset: undefined }); useSettingsStore.getState().setTheme('custom') }} style={{ padding: 10, borderRadius: 8, border: '1px solid ' + (active ? C.accent : C.border), cursor: 'pointer', background: active ? C.accentBg : 'transparent', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 6 }}>
-                        {cdots.map(d => <span key={d} style={{ width: 13, height: 13, borderRadius: '50%', background: d, border: '1px solid rgba(150,150,160,.35)' }} />)}
-                      </div>
-                      <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text }}>自定义</div>
-                    </div>
-                  })()}
-                </div>
-                {currentTheme(g) === 'custom' && <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed ' + C.border }}>
-                  <div style={S.hint}>实时预览（不落盘），点「应用」保存；「恢复默认」清除自定义回到暗夜</div>
-                  {([['背景', 'bg'], ['卡片', 'surface'], ['强调', 'accent'], ['文字', 'text']] as const).map(([cn, ck]) => {
-                    const cc = (g.customColors || g.customTheme || {})[ck]
-                    return <div key={ck} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                      <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label, width: 40, flexShrink: 0 }}>{cn}</span>
-                      <input type="color" value={toHex(cc || "")} onChange={e => {
-                        const next = { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value }
-                        const r = document.documentElement.style
-                        if (ck === 'bg') r.setProperty('--bg-root', e.target.value)
-                        else if (ck === 'surface') r.setProperty('--bg-surface', e.target.value)
-                        else if (ck === 'accent') r.setProperty('--accent', e.target.value)
-                        else if (ck === 'text') r.setProperty('--text-primary', e.target.value)
-                        save({ customColors: next })
-                      }} style={{ width: 36, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
-                      <input style={{ ...S.inp, flex: 1 }} value={cc || ''} placeholder="#RRGGBB" onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} />
-                    </div>
-                  })}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <button style={S.btn('primary')} onClick={() => { save({ theme: 'custom', themePreset: undefined }); useSettingsStore.getState().setTheme('custom') }}>应用</button>
-                    <button style={S.btn('ghost')} onClick={() => { save({ theme: 'dark', themePreset: undefined, customColors: undefined }); useSettingsStore.getState().setTheme('dark'); clearSkinInlineVars() }}>恢复默认</button>
-                  </div>
-                </div>}
-              </div>
-                            <div style={{ borderTop: '1px dashed ' + C.border, margin: '18px 0' }} />
-<div style={S.card}><div style={S.section}>皮肤（背景叠加）</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                  <input type="file" accept="image/*" style={{ display: 'none' }} id="bgImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { useSettingsStore.getState().setBgImage(r.result as string) }; r.readAsDataURL(f) }} />
-                  <button style={S.btn('primary')} onClick={() => document.getElementById('bgImg')?.click()}>选择图片</button>
-                  {hasBg && <button style={S.btn('danger')} onClick={() => { useSettingsStore.getState().setBgImage(null) }}>清除</button>}
-                </div>
-                {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
-                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>透明度</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button style={stepBtn} title="减小" onClick={() => { const v = Math.max(0.05, Math.round((bgOp - 0.05) * 100) / 100); setBgOp(v); useSettingsStore.getState().setBgOpacity(v) }}><Minus size={14} /></button>
-                    <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, minWidth: 44, textAlign: 'center' }}>{Math.round(bgOp * 100)}%</span>
-                    <button style={stepBtn} title="增大" onClick={() => { const v = Math.min(1, Math.round((bgOp + 0.05) * 100) / 100); setBgOp(v); useSettingsStore.getState().setBgOpacity(v) }}><Plus size={14} /></button>
-                  </div>
-                </div>}
-                {/* v0.2.5: 皮肤遮罩三档 + 辅色(与主题解耦) */}
-                {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>遮罩</span>
-                  {[['light', '亮', 'rgba(0,0,0,.15)'], ['medium', '中', 'rgba(0,0,0,.35)'], ['dark', '暗', 'rgba(0,0,0,.55)']].map(([k, label, v]) => {
-                    const on = (g.skinMask || 'medium') === k
-                    return <button key={k} onClick={() => { save({ skinMask: k }); document.documentElement.style.setProperty('--bg-mask', v) }} style={{ ...stepBtn, display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid ' + (on ? C.accent : C.border), color: on ? C.accent : C.text }}>
-                      <span style={{ width: 12, height: 12, borderRadius: '50%', background: v, border: '1px solid ' + C.border, display: 'inline-block' }} />{label}
-                    </button>
-                  })}
-                </div>}
-                {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                  <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>辅色</span>
-                  <span style={{ width: 18, height: 18, borderRadius: 4, background: g.skinSecondary ? 'rgb(' + g.skinSecondary + ')' : 'transparent', border: '1px solid ' + C.border }} />
-                  <button style={S.btn('ghost')} onClick={async () => {
-                    if (!g.bgImage) return
-                    const c = await extractSkinColors(g.bgImage)
-                    save({ skinSecondary: `${c.secondary.r},${c.secondary.g},${c.secondary.b}` })
-                    document.documentElement.style.setProperty('--skin-secondary', `${c.secondary.r},${c.secondary.g},${c.secondary.b}`)
-                    showToast('辅色已重新提取')
-                  }}>重新提取</button>
-                </div>}
-              </div>
-              <div style={S.card}><div style={S.section}>排版</div>
-                <div style={S.row}><div style={S.label}>界面字号</div><select style={S.sel} value={g.uiFontSize || 13} onChange={e => save({ uiFontSize: parseInt(e.target.value) })}>{[12,13,14,15,16,18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>代码字号</div><select style={S.sel} value={g.codeFontSize || 12} onChange={e => save({ codeFontSize: parseInt(e.target.value) })}>{[11,12,13,14,15,16].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
-                <div style={S.row}><div style={S.label}>消息间距</div><select style={S.sel} value={g.messageSpacing || 'comfortable'} onChange={e => save({ messageSpacing: e.target.value })}><option value="compact">紧凑</option><option value="comfortable">舒适</option><option value="loose">宽松</option></select></div>
-              </div>
-              <div style={S.card}><div style={S.section}>布局</div>
-                <StepSetting label="对话区最大宽度" hint="消息区最大宽度" value={g.chatMaxWidth || 800} min={400} max={1200} step={50} unit=" px" onChange={v => save({ chatMaxWidth: v })} />
-                <Toggle checked={g.showTimestamps !== 'hover'} onChange={v => save({ showTimestamps: v ? 'always' : 'hover' })} label="始终显示时间戳" hint="关闭后仅悬停显示" />
-              </div>
-            </div> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+            </div> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
               <div style={S.card}>
                 <div style={S.section}>工具总览仪表盘</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
