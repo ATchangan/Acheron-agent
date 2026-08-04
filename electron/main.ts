@@ -1,5 +1,6 @@
 ﻿import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net, safeStorage } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
+import { registerSettingsIpc } from './ipc/settings'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -147,6 +148,7 @@ const distDir = join(ROOT, 'dist')
 const userDataPath = app.getPath('userData')
 const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
+registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
 const memoryPath = join(userDataPath, 'memory.json')
 const workspaceDir = join(userDataPath, 'workspace')
 // v0.2.3-pack(SOP红线): skillsDir 必须在 userData —— 安装版 app.asar 内只读, mkdir 抛 ENOTDIR 导致启动崩溃
@@ -360,64 +362,6 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => { if (trayEnabled() && mainWindow) { mainWindow.hide() } else { isQuitting = true; app.quit() } })
 
 // ─── 设置/会话 ─────────────────────────────────────
-ipcMain.handle('settings:load', () => {
-  try {
-    if (fs.existsSync(settingsPath)) {
-      const raw = fs.readFileSync(settingsPath, 'utf-8')
-      if (raw.trim()) {
-        const data = JSON.parse(raw)
-        // v0.2.3: API Key 解密(DPAPI) —— 必须合并返回值(decProviders 返回新对象)
-        Object.assign(data, decProviders(data))
-        // v0.2.5-opt: 从独立文件读回大字段
-        const g = data?.general || {}
-        for (const [key, file] of [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']] as [string, string][]) {
-          const v = g[key]
-          if (typeof v === 'string' && v.startsWith('__FILE__')) {
-            try { const fv = fs.readFileSync(join(userDataPath, file), 'utf-8'); g[key] = fv } catch { delete g[key] }
-          }
-        }
-        if (g !== data?.general) data.general = g
-        console.log('[SETTINGS] loaded providers:', data?.providers?.length)
-        return data
-      }
-    }
-  } catch (e) { console.error('settings load error:', e) }
-  return { providers: [], general: { theme: 'dark' } }
-})
-ipcMain.handle('settings:save', (_e, s) => {
-  try {
-    fs.mkdirSync(userDataPath, { recursive: true })
-    // v0.2.5-opt: 大字段(头像/背景图 base64)剥离到独立文件, 避免每次保存全量写 2.8MB 阻塞
-    const g = s?.general || {}
-    const bigKeys: [string, string][] = [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']]
-    const g2 = { ...g }
-    for (const [key, file] of bigKeys) {
-      const v = g2[key]
-      if (typeof v === 'string' && v.length > 1024) {
-        try { fs.writeFileSync(join(userDataPath, file), v, 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-        g2[key] = '__FILE__' + file
-      } else if (v === undefined || v === null) {
-        // v0.2.5-fix: 数据安全 —— 删除大字段文件前先备份 .bak(壁纸曾因异常被删且无法找回)
-        try {
-          const fp = join(userDataPath, file)
-          if (fs.existsSync(fp)) fs.copyFileSync(fp, fp + '.bak')
-          fs.rmSync(fp, { force: true })
-        } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-      }
-    }
-    const slim = { ...s, general: g2 }
-    // v0.3.0: 自定义工作目录 —— 目录不存在时自动创建(输入新路径即可直接使用)
-    try {
-      const wd = g2?.workDir
-      if (typeof wd === 'string' && wd.trim()) fs.mkdirSync(wd.trim(), { recursive: true })
-    } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    // v0.2.3: API Key 加密落盘(DPAPI)
-    fs.writeFileSync(settingsPath, JSON.stringify(encProviders(slim)), 'utf-8')
-    return true
-  } catch (e) { console.error('[SETTINGS] save error:', e); return false }
-})
-
-// v0.2.1: 真实存储统计
 function dirSize(dir: string): number {
   let total = 0
   try {
