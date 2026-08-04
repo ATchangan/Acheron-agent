@@ -28,6 +28,7 @@ interface LLMChatParams {
   headers?: string
   requestId?: string
   customHeaders?: string
+  sid?: string // v0.3.1 C3: 会话级中止过滤
 }
 interface VisionParams {
   provider: string
@@ -1556,24 +1557,30 @@ ipcMain.handle('plugins:exec', async (_e, payload: { plugin: string; tool: strin
 })
 ipcMain.handle('cron:toggle', (_e, id:string) => { try { require('./scheduler/cron').toggleJob(id); return true } catch { return false } })
 // ─── v0.2.1: 使用 AbortController 替代全局标志位，支持并发请求 ──────
-const activeRequests = new Map<string, AbortController>()
+const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>()
 
-ipcMain.handle('llm:abort', (_e, requestId?: string) => {
-  // v0.2.3: 多会话并发 —— 传入 requestId 只中止该请求；不传则中止全部
-  if (requestId) {
-    const ctrl = activeRequests.get(requestId)
-    if (ctrl) { try { ctrl.abort() } catch (e) { /* ok */ console.debug('[swallow]', e) } activeRequests.delete(requestId) }
+// v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
+ipcMain.handle('llm:abort', (_e, id?: string) => {
+  if (!id) {
+    for (const [rid, rec] of activeRequests) { try { rec.ctrl.abort() } catch (e) { /* ok */ console.debug('[swallow]', e) } }
+    activeRequests.clear()
     return
   }
-  for (const [rid, ctrl] of activeRequests) {
-    try { ctrl.abort() } catch (e) { /* ok */ console.debug('[swallow]', e) }
+  if (activeRequests.has(id)) {
+    const rec = activeRequests.get(id)!
+    try { rec.ctrl.abort() } catch (e) { /* ok */ console.debug('[swallow]', e) }
+    activeRequests.delete(id)
+    return
   }
-  activeRequests.clear()
+  // 会话级中止(该 sid 的全部请求)
+  for (const [rid, rec] of activeRequests) {
+    if (rec.sid === id) { try { rec.ctrl.abort() } catch (e) { /* ok */ console.debug('[swallow]', e) } activeRequests.delete(rid) }
+  }
 })
 
 ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   // v0.2.3: 多会话并发 —— requestId 由调用方传入，用于把流式事件路由回对应会话
-  const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders } = params
+  const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders, sid } = params
   const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey }
   // 合并自定义 Headers（JSON 或 key=value 多行格式）
   if (customHeaders) {
@@ -1611,7 +1618,7 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
 
   const requestId = params.requestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const abortCtrl = new AbortController()
-  activeRequests.set(requestId, abortCtrl)
+  activeRequests.set(requestId, { ctrl: abortCtrl, sid: params.sid })
   // v0.2.3: 请求结束后自动从活跃表移除（防止泄漏 + 精确中止）
   const removeReq = () => { activeRequests.delete(requestId); event.sender.removeListener('destroyed', removeReq) }
   event.sender.once('destroyed', removeReq)

@@ -265,6 +265,7 @@ export interface LLMChatParams {
   headers?: string | Record<string, string>
   requestId?: string
   max_tokens?: number
+  sid?: string // v0.3.1 C3: 会话级中止过滤
 }
 export interface LLMMessage {
   role: string

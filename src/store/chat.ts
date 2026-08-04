@@ -11,6 +11,11 @@ import { recordEpisodic, autoExtractMemory, refreshMemoryCache } from './memory'
 import { routeAgent } from './router'
 import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, taskGen, nextTaskGen, costedReqs, setCached, getCached, onWriteOp } from './runtime'
 import { normalizeImage } from '../utils/image'
+import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelResume } from './session-state'
+
+// v0.3.1 块 C/D: 会话级任务代号表 + send 幂等指纹(模块级, 串行入口安全)
+const taskGenBySid: Record<string, number> = {}
+let lastSendFp = ''; let lastSendTs = 0
 import { refreshPluginTools } from './plugins'
 
 // v0.3.0 M5: 工具调用循环中的扁平工具项(组件收集, 非 API delta)
@@ -194,7 +199,7 @@ export const useChatStore = create<S>((set, get) => ({
       pendingInterject.push({ sid, text: prefix + content })
       return
     }
-    const myGen = nextTaskGen() // 本任务持有新代号；旧任务代号已失效
+    const myGen = nextTaskGenFor(taskGenBySid, sid) // v0.3.1 C2: 会话级任务代号(仅本会话失效)
     // v0.2.3: 标记本会话为忙碌（侧栏"工作中"指示灯 + 独立并发）
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: true } : x) }))
     // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
@@ -435,7 +440,7 @@ export const useChatStore = create<S>((set, get) => ({
         // v0.2: 更新上下文用量
         const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as VisionContent[]).reduce((t:number,p:VisionContent) => t + ((p as { text?: string }).text?.length || 0), 0) : 0), 0)
         set({ cu: estCu })
-        window.huangquan.llm.chat({ requestId: rid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
+        window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
       })
 
     try {
@@ -453,7 +458,7 @@ export const useChatStore = create<S>((set, get) => ({
       let toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[] = []
       while (true) {
         roundNum++
-        if (myGen !== taskGen) break // 被终止
+        if (myGen !== getTaskGenFor(taskGenBySid, sid)) break // 被终止
         // 2. 创建空的 assistant 占位（每轮一个新气泡位）
         aid = uuidv4()
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
@@ -494,7 +499,7 @@ export const useChatStore = create<S>((set, get) => ({
         toolLog = []
         for (let r = 0; res.tcs.length > 0 && r < (gSnap.maxToolRounds || 50); r++) {
           // v0.2.1: 用户终止/插话 —— 任务代号失效则立即停止
-          if (myGen !== taskGen) break
+          if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
           // 熔断检测
           const meltLimit = gSnap.meltdownLimit || 3
           const rc = new Map(); for (const t of toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
@@ -528,7 +533,7 @@ export const useChatStore = create<S>((set, get) => ({
           }
 
           // v0.2.1: 工具执行中用户插话 → 补充立即注入（作为 user 消息），下一轮 LLM 可见
-          while (pendingInterject.some(x => x.sid === sid) && myGen === taskGen) {
+          while (pendingInterject.some(x => x.sid === sid) && myGen === getTaskGenFor(taskGenBySid, sid)) {
             const iidx2 = pendingInterject.findIndex(x => x.sid === sid)
             const inject = pendingInterject.splice(iidx2, 1)[0].text
             set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: uuidv4(), role: 'user', content: inject, timestamp: Date.now() }] } : x) }))
@@ -545,9 +550,9 @@ export const useChatStore = create<S>((set, get) => ({
           const rid2 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
           guard(rid2)
           set({ stage: { sid, phase: 'thinking', label: '思考中', detail: '' } })
-          if (myGen !== taskGen) { clear(); break } // 终止后不再发起下一轮 LLM
+          if (myGen !== getTaskGenFor(taskGenBySid, sid)) { clear(); break } // 终止后不再发起下一轮 LLM
           res = await callLLM(aid, rid2); clear()
-          if (myGen !== taskGen) break // 终止后丢弃本轮结果
+          if (myGen !== getTaskGenFor(taskGenBySid, sid)) break // 终止后丢弃本轮结果
         }
 
         // 4. 单气泡 + Hermes 风格日志
@@ -568,7 +573,7 @@ export const useChatStore = create<S>((set, get) => ({
         }
 
         // v0.2.1: 有插话补充且未被终止 → 继续下一轮（任务不中断）
-        if (myGen !== taskGen || pendingInterject.length === 0) break
+        if (myGen !== getTaskGenFor(taskGenBySid, sid) || pendingInterject.length === 0) break
       }
 
       // v0.2.3: 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
@@ -593,6 +598,7 @@ export const useChatStore = create<S>((set, get) => ({
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, activeAgents: undefined } : x) }))
       set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: null, activeAgents: s.cid === sid ? [] : s.activeAgents }))
       // v0.2.3-fix: 任务结束瞬间发送的消息(走了插话分支但任务已退出)自动续跑 —— 解决"每个窗口只能发一次指令"
+      // v0.3.1 C4: 会话级句柄(scheduleResume) + 触发前校验(代号未变 + 无新消息指纹)
       try {
         const ss2 = get().sessions.find(x => x.id === sid)
         if (ss2) {
@@ -602,9 +608,25 @@ export const useChatStore = create<S>((set, get) => ({
             if (msgs2[k].role === 'user' && lu < 0) lu = k
             if (msgs2[k].role === 'assistant' && la < 0) la = k
           }
-          if (lu > la && lu >= 0 && !get().streaming && !get().executing) {
+          if (lu > la && lu >= 0 && !ss2.streaming && !get().executing) {
             const pm = msgs2[lu]
-            setTimeout(() => { get().send(pm.content || '', pm.images, pm.attachments).catch(() => {}) }, 300)
+            const fp = (pm.content || '') + '|' + (pm.images || []).join('|')
+            const now = Date.now()
+            if (lastSendFp === fp && now - lastSendTs < 500) { /* 重复消息, 跳过续跑 */ }
+            else {
+              lastSendFp = fp; lastSendTs = now
+              const sched = scheduleResume(ss2, () => {
+                const cur2 = get().sessions.find(x => x.id === sid)
+                if (!cur2) return
+                const lu2 = (() => { for (let k = cur2.messages.length - 1; k >= 0; k--) if (cur2.messages[k].role === 'user') return k; return -1 })()
+                const pm2 = lu2 >= 0 ? cur2.messages[lu2] : undefined
+                const fp2 = ((pm2?.content || '') + '|' + (pm2?.images || []).join('|'))
+                if (myGen === getTaskGenFor(taskGenBySid, sid) && fp2 === fp && !cur2.streaming) {
+                  get().send(pm2?.content || '', pm2?.images, pm2?.attachments).catch(() => {})
+                }
+              }, 300)
+              set(s => ({ sessions: s.sessions.map(x => x.id === sid ? sched : x) }))
+            }
           }
         }
       } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
@@ -645,22 +667,24 @@ export const useChatStore = create<S>((set, get) => ({
     }
   },
 
+  // v0.3.1 C1: 停止仅作用于当前会话(会话级任务代号 + abort 带会话过滤)
   stop: () => {
-    nextTaskGen(); window.huangquan.llm.abort()
-    // v0.2.3-fix(可用性): autoSave 设置接入 —— 停止时保存当前会话(部分回复不丢失)
-    const curId = get().cid
-    if (curId && useSettingsStore.getState().general?.autoSave !== false) {
-      const cur = get().sessions.find(x => x.id === curId)
-      if (cur) window.huangquan.sessions.save(cur).catch(() => {})
+    const sid = get().cid
+    if (!sid) return
+    invalidateSid(taskGenBySid, sid)          // 只杀当前会话
+    window.huangquan.llm.abort(sid)            // abort 带会话过滤
+    const cur = get().sessions.find(x => x.id === sid)
+    if (cur) { clearTimeout(cur.resumeTimer) }
+    if (cur && useSettingsStore.getState().general?.autoSave !== false) {
+      window.huangquan.sessions.save({ ...cur, busy: false, streaming: false, resumeTimer: undefined }).catch(() => {})
     }
-    // v0.2.3: 停止时也清除当前会话忙碌标记
-    if (curId) set(s => ({ sessions: s.sessions.map(x => x.id === curId ? { ...x, busy: false } : x) }))
-    set({ streaming: false, executing: false, error: null })
+    set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, resumeTimer: undefined } : x) }))
+    set({ executing: false, error: null })
   },
 
   // v0.2.2: 从指定用户消息重新发送（编辑后重发 / 刷新重发）
   resendFrom: async (msgId: string, newContent?: string) => {
-    const s = get().cur(); if (!s || get().streaming) return
+    const s = get().cur(); if (!s || s.streaming) return // v0.3.1 C6: 本会话忙判断
     const idx = s.messages.findIndex(m => m.id === msgId)
     if (idx < 0 || s.messages[idx].role !== 'user') return
     const lu = s.messages[idx]
@@ -669,7 +693,7 @@ export const useChatStore = create<S>((set, get) => ({
     await get().send(newContent !== undefined ? newContent : (lu.content || ''), lu.images, lu.attachments)
   },
   regen: async () => {
-    const s = get().cur(); if (!s || get().streaming) return
+    const s = get().cur(); if (!s || s.streaming) return // v0.3.1 C6: 本会话忙判断
     // 找到最后一条用户消息的位置
     let lastUserIdx = -1
     for (let i = s.messages.length - 1; i >= 0; i--) { if (s.messages[i].role === 'user') { lastUserIdx = i; break } }
@@ -678,7 +702,7 @@ export const useChatStore = create<S>((set, get) => ({
     // 删除最后一条用户消息及之后的所有内容（send() 会重新添加用户消息）
     const msgs = s.messages.slice(0, lastUserIdx)
     set(st => ({ sessions: st.sessions.map(x => x.id === s.id ? { ...x, messages: msgs } : x) }))
-    await get().send(lu.content || '', lu.images)
+    await get().send(lu.content || '', lu.images, lu.attachments) // v0.3.1 C5: 补 attachments(附件描述不丢)
   },
 }))
 
