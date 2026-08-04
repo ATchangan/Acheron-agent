@@ -17,6 +17,74 @@ export function estimateTokens(text: string): number {
   return Math.ceil(cn / 1.5 + (text.length - cn) / 3.5)
 }
 
+// v0.3.2 T7: 输出上限分级(纯函数, 只降明确闲聊场景; 代码/文件/任务类保持全局上限, 杜绝截断风险)
+export function outputLimit(userMsg: string, cfg: GeneralSettings): number | undefined {
+  const base = cfg.maxTokens || 4096
+  if (userMsg.length < 40 && !/(代码|文件|报告|项目|脚本|写|改|建|查|找|分析)/.test(userMsg)) {
+    return Math.min(base, 800)
+  }
+  return base
+}
+
+// v0.3.2 T8: 会话累计 token 统计 —— 从消息 usage 重算(不新增存储; 兼容 input/output 两种命名)
+export function sessionTokens(msgs: Message[]): { input: number; output: number } {
+  let input = 0, output = 0
+  for (const m of msgs) {
+    const u = m.usage
+    if (!u) continue
+    input += u.input_tokens || u.prompt_tokens || 0
+    output += (u as { output_tokens?: number }).output_tokens || u.completion_tokens || 0
+  }
+  return { input, output }
+}
+
+// v0.3.2 T5: workflows 按需注入 —— 命中触发词注入完整模板列表, 未命中只保留一行引导(两种形态, 前缀缓存可接受)
+function buildWorkflowsBlock(userMsg: string): string {
+  const need = Object.values(WORKFLOWS).some(w => w.triggers.some(t => userMsg.includes(t)))
+  return need
+    ? '## 工作流模板\n' + Object.entries(WORKFLOWS).map(([id, w]) => `- ${id}: ${w.name} [触发: ${w.triggers.join('/')}]`).join('\n') + '\n'
+    : '## 工作流\n支持 run_workflow 自动化模板, 输入 list_workflows 查看\n'
+}
+
+// v0.3.2 T6: 历史工具轮次折叠 —— 超过 maxRounds 对完整轮次时, 将最旧 foldCount 对折叠为一条归档摘要
+// 安全规则: 只折叠头部连续完整轮次对(assistant(tool_calls) 与 tool 消息一一配对), 否则跳过折叠
+export function foldToolRounds(msgs: Message[], maxRounds = 8, foldCount = 4): Message[] {
+  const rounds: { asst: Message; tools: Message[] }[] = []
+  let i = 0
+  while (i < msgs.length) {
+    const m = msgs[i]
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      const ids = new Set(m.tool_calls.map(tc => tc.id))
+      const tools: Message[] = []
+      let j = i + 1
+      while (j < msgs.length && msgs[j].role === 'tool' && ids.has(msgs[j].tool_call_id || '')) { tools.push(msgs[j]); j++ }
+      if (tools.length === m.tool_calls.length) rounds.push({ asst: m, tools })
+      i = j
+    } else i++
+  }
+  if (rounds.length <= maxRounds) return msgs
+  const fold = rounds.slice(0, foldCount)
+  const foldStart = msgs.indexOf(fold[0].asst)
+  if (foldStart > 0 && msgs.slice(0, foldStart).some(x => x.role === 'tool')) return msgs // 有悬空 tool 消息, 跳过折叠
+  const lastTools = fold[fold.length - 1].tools
+  const foldEnd = msgs.indexOf(lastTools[lastTools.length - 1]) + 1
+  const agg = new Map<string, number>()
+  const lastResult = new Map<string, string>()
+  for (const r of fold) for (const tc of r.asst.tool_calls || []) {
+    const tname = tc.function?.name || '?'
+    agg.set(tname, (agg.get(tname) || 0) + 1)
+    lastResult.set(tname, r.tools[r.tools.length - 1]?.content?.slice(0, 60) || '')
+  }
+  const summary = '[工具调用归档] 已执行: ' + [...agg].map(([n, c]) => n + '(' + c + ')').join(' ') +
+    [...lastResult].map(([n, t]) => ' | ' + n + ': ' + t).join('') +
+    '。如需早期细节请用工具重新读取或 recall_memory'
+  return [
+    ...msgs.slice(0, foldStart),
+    { id: uuidv4(), role: 'user' as const, content: summary, timestamp: Date.now() },
+    ...msgs.slice(foldEnd),
+  ]
+}
+
 function getModelContextLimit(modelName: string): number {
   const m = modelName.toLowerCase()
   // 百万级
@@ -100,10 +168,6 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const multiAgent = '## 多Agent编队\n你属于黄泉Agent编队的一员。编队成员：\n' +
     Object.entries(useAgents()).map(([n,ag]) => `- ${ag.icon} ${n} (${ag.role}): ${ag.tools.includes('*') ? '全工具权限' : '专业领域(' + (ag.capabilities || []).join('/') + ')'}`).join('\n') +
     '\n使用 handoff 工具将任务交接给更合适的Agent；复杂任务用 dispatch 把子任务分发给多个 Agent 并行执行；使用 list_agents 查看编队信息。\n'
-  // v0.2: 工作流
-  const workflows = '## 工作流模板\n' +
-    Object.entries(WORKFLOWS).map(([id,w]) => `- ${id}: ${w.name} [触发: ${w.triggers.join('/')}]`).join('\n') + '\n'
-  
   const base = yuan + identity + userInfo + persona + appearance + tools + think + pinned + env
 
   // 自定义人设覆盖 + 动态设置
@@ -118,9 +182,11 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const chatPrompt = base +
     (cp ? '## 自定义聊天人设\n' + cp + '\n\n' : '## 回复准则\n- 名称：' + agentName + '，称呼用户为' + userAlias + '\n- 风格：' + (toneMap[toneStyle] || toneMap['实用直接']) + '\n- 详细程度：' + (verbMap[verbosity] || verbMap[2]) + '\n- 不评价，只说事实和观察\n- 对方陷入困境时不空泛安慰，问"需要我帮你做什么"\n- 技术回答必须扎实准确\n- 用户提到重要信息时使用 save_memory\n直接回复，不需要特殊格式标签。')
 
+  // v0.3.2 T5: workflows 段移出 buildPrompt(动态内容, 由构建层按需注入尾部, 前缀缓存友好)
   const workPrompt = base +
-    multiAgent + workflows + 
-    (wp ? '## 自定义工作人设\n' + wp + '\n\n' : '## 任务闭环流程（静默执行）\n1. 接收任务 → 2. 拆解步骤 → 3. 静默调用工具 → 4. 生成文件 → 5. 全部完成后一次性输出最终结果\n- 工具执行期间严禁输出任何文字，所有中间日志仅写入右侧终端面板\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n- 用 exec_command 调 PowerShell: Invoke-WebRequest -Uri \"URL\" -OutFile \"路径\"\n- 不要用 web_fetch 下载文件\n\n## 最终回复格式（硬性约束，必须严格遵守）\n成功场景必须包含以下全部字段，缺一不可：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败场景必须输出：\n任务结果：任务执行失败\n失败原因：用通俗语言解释报错原因\n建议方案：给出解决办法\n\n严禁使用\"操作完成\"、\"搞定\"、\"OK\"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天对话框')
+    multiAgent + 
+    // v0.3.2 T10: 静态区块瘦身 —— 删重复表述与冗余示例, 约束字段/禁止项逐字保留
+    (wp ? '## 自定义工作人设\n' + wp + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n工具执行期间严禁输出任何文字，中间日志仅写入右侧终端面板\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框')
   
   // 自定义系统提示词 + 语言指令接入运行时
   const g2 = useSettingsStore.getState().general
@@ -132,8 +198,8 @@ export function buildPrompt(mode: string, ishiki: string): string {
     '- 数字/代码/报错信息/用户约束必须逐字保真, 禁止约等于或转述\n' +
     '- 回复结论前置, 不重复用户原话, 修改只贴改动部分, 输出用标题/列表/表格/代码块\n' +
     '- 被截断的内容需要完整版时, 主动用工具按路径/行号/关键词取回\n'
-  // 全局记忆注入（置顶/长期/情景摘要,所有会话共享）
-  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + memoryBlock()
+  // v0.3.2 T4: memoryBlock 移出 buildPrompt, 由 buildContextualMessages 尾部动态注入(前缀静态化)
+  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline
   if (g2?.customSystemPrompt) {
     const inj = g2.customSystemPrompt
     const pos = g2.promptInjectPos || 'end'
@@ -155,14 +221,16 @@ export function buildContextualMessages(
   // 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
   // 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
   let earlySummary = ''
-  if (msgs.length > MAX_HISTORY_MSGS) {
-    const early = msgs.slice(0, -MAX_HISTORY_MSGS)
+  // v0.3.2 T6: 先折叠旧工具轮次再限长(折叠只作用于最旧完整轮次对)
+  let list = foldToolRounds(msgs)
+  if (list.length > MAX_HISTORY_MSGS) {
+    const early = list.slice(0, -MAX_HISTORY_MSGS)
     const uN = early.filter(m => m.role === 'user').length
     const tN = early.filter(m => m.role === 'tool').length
     const uLast = [...early].reverse().find(m => m.role === 'user' && m.content)
     earlySummary = `\n[前文摘要] 早期 ${early.length} 条消息已归档(约 ${uN} 轮用户交互, ${tN} 次工具调用)${uLast ? ', 最近话题: ' + String(uLast.content).replace(/\s+/g, ' ').slice(0, 60) : ''}。如需早期细节请用 recall_memory 或让用户补充。`
+    list = list.slice(-MAX_HISTORY_MSGS)
   }
-  const list = msgs.length > MAX_HISTORY_MSGS ? msgs.slice(-MAX_HISTORY_MSGS) : msgs
   // v0.3.1 插话序列修复: _inject 插话消息分离 —— 重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
   const injectMsgs = list.filter(m => m._inject)
   const normalMsgs = list.filter(m => !m._inject)
@@ -171,10 +239,11 @@ export function buildContextualMessages(
       // 工具结果瘦身 —— 超长结果保留头尾+关键行(保真截断, 避免大段工具输出反复占用上下文)
       const c = m.content || ''
       let body = c
-      if (c.length > 3000) {
-        const mid = c.slice(1500, -800)
+      // v0.3.2 T3: 瘦身阈值 3000→1500, 头尾 1500/800 → 800/500(截断策略不变, 更早触发; 信息调度纪律段已训练取回行为)
+      if (c.length > 1500) {
+        const mid = c.slice(800, -500)
         const keyLines = mid.split('\n').filter((l: string) => /error|exception|failed|warning|fatal|E:/.test(l)).slice(0, 15).join('\n')
-        body = c.slice(0, 1500) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-800)
+        body = c.slice(0, 800) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-500)
       }
       d.push({ role: 'tool', content: body, tool_call_id: m.tool_call_id || 'c_' + uuidv4().slice(0, 8) })
     }
@@ -199,6 +268,11 @@ export function buildContextualMessages(
   // 使用独立保存的 ishiki(不再从 sp 反推 —— sp 含技能列表/动态内容会污染身份段)
   const ishiki = opts.spIshiki || opts.spFallback.replace(/\n##.+/s, '')
   let sp = buildPrompt(currentMode, ishiki) + earlySummary
+  // v0.3.2 T4/T5: 动态段统一追加 system 尾部(顺序固定: workflows → 记忆), 头部区块保持字节级稳定(供应商前缀缓存)
+  const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
+  const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
+  if (currentMode === 'work') sp += '\n' + buildWorkflowsBlock(lastUserText)
+  sp += '\n' + memoryBlock(lastUserText)
   // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
   let agentRole = collabOff ? null : (opts.agent || window.__huangquan_agent)

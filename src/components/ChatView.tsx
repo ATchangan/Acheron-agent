@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useRef } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
+import { sessionTokens } from '../store/context'
 import MessageItem from './MessageItem'
 import ChatInput from './ChatInput'
 
@@ -27,6 +28,9 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   // 消息过滤：单气泡模式下隐藏 tool 角色和纯 tool_calls 消息；多气泡模式下全部展示
   const msgs = session?.messages || []
   const singleBubble = useSettingsStore.getState().general.singleBubble !== false
+  // v0.3.2 T8: 会话累计 token 展示(从消息 usage 重算, 消息变化时更新)
+  const tokSum = React.useMemo(() => sessionTokens(msgs), [msgs])
+  const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
   // 单气泡终极过滤 —— 隐藏 tool/tool_calls/空消息，且连续 assistant 合并为单条（UI 层兜底，杜绝多气泡）
   const displayMsgs = (() => {
     const out: typeof msgs = []
@@ -96,6 +100,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
         <button className={`tab-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => switchMode('chat')}>聊天</button>
         <button className={`tab-btn ${mode === 'work' ? 'active' : ''}`} onClick={() => switchMode('work')}>工作</button>
         {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }} title={workDir}>📁 {workDir.split(/[/\\]/).pop()}</span>}
+        <span title="本会话累计 token（来自实际 usage 统计）" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>≈ 输入 {fmtK(tokSum.input)} / 输出 {fmtK(tokSum.output)}</span>
       </div>
 
       {!hasProvider ? (

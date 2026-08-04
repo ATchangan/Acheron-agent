@@ -1,7 +1,7 @@
 // src/store/chat-llm.ts —— LLM 流式调用封装(v0.3.1 补丁 D: 从 chat-send.ts 拆出, 行为零变化)
 import type { ProviderConfig, UsageData, ToolCallDelta } from '../global'
 import type { GeneralSettings } from '../types'
-import { updateContextLimit, buildContextualMessages, isVisionModel } from './context'
+import { updateContextLimit, buildContextualMessages, isVisionModel, outputLimit } from './context'
 import { getActiveTools, costedReqs } from './runtime'
 import type { S } from './chat-send'
 import type { CallResult, ToolCallItem } from './chat-round'
@@ -90,6 +90,8 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
       // 更新上下文用量
       const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as { text?: string }[]).reduce((t:number,p:{ text?: string }) => t + ((p.text)?.length || 0), 0) : 0), 0)
       set({ cu: estCu })
-      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(cur.agent), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
+      // v0.3.2 T7: 输出上限分级(纯函数; 闲聊短消息降为 800, 其余保持全局上限)
+      const lastUserText = [...cur.messages].reverse().find(m => m.role === 'user' && typeof m.content === 'string')?.content || ''
+      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: outputLimit(lastUserText, gSnap), tools: getActiveTools(cur.agent), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
     })
 }
