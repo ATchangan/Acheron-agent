@@ -12,7 +12,7 @@ import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, task
 import { normalizeImage } from '../utils/image'
 import { nextTaskGenFor, getTaskGenFor, invalidateSid, scheduleResume, cancelResume } from './session-state'
 import { pickModels, resolveModel } from './model-pick'
-import { pushInterject, hasInterjectForSid, clearInterjectForSid } from './interject'
+import { pushInterject, hasInterjectForSid, drainInterjections, clearInterjectForSid } from './interject'
 import { runToolRound } from './chat-round'
 import type { CallResult } from './chat-round'
 import { createCallLLM } from './chat-llm'
@@ -215,7 +215,8 @@ export async function runSend(
       aid = uuidv4()
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: [...x.messages, { id: aid, role: 'assistant', content: '', timestamp: Date.now() }] } : x) }))
       // 消费插话补充（第 2 轮起）—— 可见性由 _inject 标记条承担(构建时重排到末尾, 不再重复注入消息)
-      // (v0.3.1 插话序列修复: 原注入逻辑删除, 防止 user 消息插队在 assistant(tool_calls) 与 tool 结果之间)
+      // 消费动作仅用于主循环退出判定(队列空则 break), 内容丢弃不注入
+      while (hasInterjectForSid(sid)) drainInterjections(sid)
 
       const rid1 = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
       guard(rid1)

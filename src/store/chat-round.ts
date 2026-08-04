@@ -81,7 +81,8 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     }
 
     // 工具执行中用户插话 → 可见性由 _inject 标记条承担(构建时重排到末尾)
-    // (v0.3.1 插话序列修复: 原注入逻辑删除, 防止 user 消息插队在 assistant(tool_calls) 与 tool 结果之间)
+    // 消费动作仅清空队列(防止主循环 hasInterjectForSid 判断永不退出), 内容丢弃不注入
+    while (hasInterjectForSid(sid)) drainInterjections(sid)
 
     // 多模型策略 —— 代码类任务切 codeModel，文档/总结类切 longTextModel
     const toolNames = res.tcs.map((tc: ToolCallItem) => tc.name)
