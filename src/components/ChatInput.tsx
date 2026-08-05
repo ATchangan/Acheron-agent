@@ -2,7 +2,7 @@
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
-import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Lightbulb, Zap, Flame, Sparkles as SparklesIcon, Send, Square, ImagePlus, Gauge, Brain, Crown } from 'lucide-react'
+import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Send, Square, ImagePlus } from 'lucide-react'
 import { api } from '../services/ipc'
 import { detectCaps } from './settings/consts'
 
@@ -10,7 +10,7 @@ type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
 type ThinkLevel = 'off' | 'quick' | 'medium' | 'deep' | 'extreme' | 'ultra'
 const PERM_ICONS: Record<FilePerm, React.ReactNode> = { auto: <Shield size={14} />, full: <Unlock size={14} />, ask: <Lock size={14} />, readonly: <Eye size={14} /> }
 const PERM_LABELS: Record<FilePerm, string> = { auto: '自动审核', full: '完整权限', ask: '操作前询问', readonly: '只读' }
-const THINK_ICONS: Record<ThinkLevel, React.ReactNode> = { off: <Lightbulb size={14} />, quick: <Gauge size={14} />, medium: <Brain size={14} />, deep: <Flame size={14} />, extreme: <SparklesIcon size={14} />, ultra: <Crown size={14} /> }
+const THINK_ICONS: Record<ThinkLevel, React.ReactNode> = { off: '🕯️', quick: '🍃', medium: '🌊', deep: '🔥', extreme: '⚡', ultra: '👑' }
 
 // 统一图标按钮组件 — 最小 32x32 触摸区域
 const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.ReactNode; style?: React.CSSProperties; disabled?: boolean }> =
