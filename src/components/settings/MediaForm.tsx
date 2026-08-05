@@ -96,6 +96,7 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
           <button style={S.btn('ghost')} onClick={async () => { const r = await window.huangquan.models.test(mp.baseUrl || '', mp.apiKey || '', { anthropic: mp.type === 'Anthropic Claude' }); showToast(r.message || (r.ok ? '连接成功' : '连接失败')) }}>测试连接</button>
         </div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginTop: 8 }}>调度绑定已移至「策略」页 — 所有模型公用</div>
+        <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginTop: 4 }}>若接口列表不全，可点「添加模型」手动输入模型 ID</div>
       </div>
       {detectModal2 && (
         <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal2(null)}>

@@ -198,6 +198,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
                 <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: testState.ok ? 'var(--success)' : 'var(--danger)', marginLeft: 4 }}>{testState.msg}</span>
               )}
             </div>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginTop: 6 }}>若接口列表不全，可点「添加模型」手动输入模型 ID（如智谱视觉模型、方舟豆包模型）</div>
           </div>
           <div style={{ ...S.card, marginBottom: 0 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, padding: '2px 0' }}>调度绑定已移至「策略」页 — 所有模型公用</div>

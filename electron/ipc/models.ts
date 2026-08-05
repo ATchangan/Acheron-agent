@@ -6,6 +6,28 @@ export function registerModelsIpc(deps: {
 }): void {
   const { netFetch } = deps
 
+  // 平台已知模型补充 —— 部分平台 /models 不返回全部可用模型(尤其视觉/多模态)：
+  // always: 无论列表是否为空都补充(经实测该 key 可用); ifEmpty: 列表为空时才补充(如方舟未创建接入点时)
+  const SUPPLEMENT_BY_HOST: Record<string, { always?: string[]; ifEmpty?: string[] }> = {
+    'open.bigmodel.cn': {
+      always: ['glm-4v-flash', 'glm-4v-plus', 'glm-4.5v', 'glm-4.6v', 'glm-4.6v-flash'],
+    },
+    'ark.cn-beijing.volces.com': {
+      ifEmpty: [
+        'doubao-seed-2-0-pro-260215',
+        'doubao-seed-2-0-lite-260428',
+        'doubao-seed-1-6-250615',
+        'doubao-seed-1-6-flash-250615',
+        'doubao-seed-1-6-thinking-250715',
+        'doubao-seed-1-6-vision-250815',
+        'doubao-1-5-pro-32k-250115',
+        'doubao-1-5-vision-pro-32k-250115',
+        'doubao-1-5-thinking-pro-250615',
+        'doubao-1-5-thinking-vision-pro-250615',
+      ],
+    },
+  }
+
   ipcMain.handle('models:detect', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean; type?: string }) => {
     try {
       let base = (baseUrl || '').replace(/\/+$/, '')
@@ -68,10 +90,13 @@ export function registerModelsIpc(deps: {
         page++
       }
       const filtered = [...allIds].filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
-      // 智谱 /models 只返回文字模型，视觉模型需按已知 ID 补充(glm-4v/4.5v/4.6v 系列)
-      if (/bigmodel\.cn/i.test(base)) {
-        const glmVision = ['glm-4v-flash', 'glm-4v-plus', 'glm-4.5v', 'glm-4.6v', 'glm-4.6v-flash']
-        for (const id of glmVision) if (!filtered.includes(id)) filtered.push(id)
+      // 按平台补充列表接口未返回的已知模型
+      let host = ''
+      try { host = new URL(base).hostname } catch { /* 非 URL 时跳过补充 */ }
+      const sup = SUPPLEMENT_BY_HOST[host]
+      if (sup) {
+        const extras = (sup.always || []).concat(filtered.length === 0 ? (sup.ifEmpty || []) : [])
+        for (const id of extras) if (!filtered.includes(id)) filtered.push(id)
       }
       return { ok: true, models: filtered }
     } catch (e: unknown) {
