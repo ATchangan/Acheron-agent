@@ -28,8 +28,9 @@ declare global {
         save: (s: unknown) => Promise<boolean>
         delete: (id: string) => Promise<boolean>
         audit: () => Promise<string[]>
-        clearAll: () => Promise<boolean>
-        export: (format: string, workDir?: string) => Promise<string>
+    clearAll: () => Promise<boolean>
+    export: (format: string, workDir?: string) => Promise<string>
+    search: (query: string, limit?: number) => Promise<{ sid: string; title: string; role: string; snippet: string; ts: number }[]>
       },
       ishiki: { load: () => Promise<string> }
       skills: {
@@ -79,6 +80,8 @@ declare global {
         download: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string; path?: string }>
         onProgress: (cb: (d: { received: number; total: number }) => void) => () => void
       }
+      appInfo: () => Promise<{ version: string; electron: string; node: string }>
+      projectContext: () => Promise<{ file: string; content: string }>
       computer: {
         exec: (cmd: string) => Promise<string>
         readFile: (path: string, offset?: number, limit?: number) => Promise<string>

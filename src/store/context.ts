@@ -7,7 +7,8 @@ import { useAgents } from './agents'
 import type { Message, VisionContent, LLMMessage } from '../global'
 import type { GeneralSettings } from '../types'
 import { WORKFLOWS, VISION_MODEL_HINTS, MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT } from './constants'
-import { memoryBlock } from './memory'
+import { memoryBlock, getFrozenMemory } from './memory'
+import { getProjectContext } from './project-ctx'
 import { useChatStore } from './chat'
 import { routeAgent } from './router'
 
@@ -133,7 +134,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
     '- 回复结论前置, 不重复用户原话, 修改只贴改动部分, 输出用标题/列表/表格/代码块\n' +
     '- 被截断的内容需要完整版时, 主动用工具按路径/行号/关键词取回\n'
   // 全局记忆注入（置顶/长期/情景摘要,所有会话共享）
-  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + memoryBlock()
+  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + (getFrozenMemory() ?? memoryBlock())
   if (g2?.customSystemPrompt) {
     const inj = g2.customSystemPrompt
     const pos = g2.promptInjectPos || 'end'
@@ -199,6 +200,9 @@ export function buildContextualMessages(
   // 使用独立保存的 ishiki(不再从 sp 反推 —— sp 含技能列表/动态内容会污染身份段)
   const ishiki = opts.spIshiki || opts.spFallback.replace(/\n##.+/s, '')
   let sp = buildPrompt(currentMode, ishiki) + earlySummary
+  // Codex 吸收: 项目指令注入(AGENTS.md 约定, 有则注入 system 尾部)
+  const projectCtx = getProjectContext()
+  if (projectCtx.file && projectCtx.content) sp += '\n## 项目指令(' + projectCtx.file + ')\n' + projectCtx.content + '\n'
   // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
   let agentRole = collabOff ? null : (opts.agent || window.__huangquan_agent)

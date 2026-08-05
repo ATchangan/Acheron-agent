@@ -15,6 +15,9 @@ export function registerSessionIpc(deps: {
 }): void {
   const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone } = deps
 
+  // ─── Hermes 吸收: 会话全文关键词搜索(轻量版; 0.4.0 升级 FTS5 后端) ───
+  ipcMain.handle('sessions:search', (_e, query: string, limit?: number) => searchSessionsInDir(sessionsDir, query, limit))
+
   // v0.3.1 E: 每会话串行保存队列 + meta 与写盘绑定(FIX-4/5/7)
   const saveQueues = new Map<string, Promise<void>>()
   const pendingSaves = new Map<string, string>()   // id → 最新 content(防堆积合并)
@@ -113,4 +116,39 @@ export function registerSessionIpc(deps: {
       return out
     } catch (e: unknown) { return 'E:' + ((e instanceof Error ? e.message : String(e)) || String(e)) }
   })
+}
+
+export interface SessionHit { sid: string; title: string; role: string; snippet: string; ts: number }
+export function searchSessionsInDir(dir: string, query: string, limit = 5): SessionHit[] {
+  const q = String(query || '').toLowerCase().trim()
+  if (!q || q.length < 2) return []
+  const hits: SessionHit[] = []
+  let files: string[] = []
+  try { files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')) : [] } catch { return [] }
+  for (const f of files) {
+    let s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }
+    try {
+      const p = join(dir, f)
+      const st = fs.statSync(p)
+      if (st.size > 5 * 1024 * 1024) continue // 超大会话跳过, 防阻塞
+      s = JSON.parse(fs.readFileSync(p, 'utf-8'))
+    } catch { continue }
+    for (const m of s.messages || []) {
+      if (m.role !== 'user' && m.role !== 'assistant') continue
+      const text = typeof m.content === 'string' ? m.content : ''
+      if (!text) continue
+      const idx = text.toLowerCase().indexOf(q)
+      if (idx < 0) continue
+      hits.push({
+        sid: s.id || f.replace(/\.json$/, ''),
+        title: String(s.title || '对话'),
+        role: m.role || '',
+        snippet: text.slice(Math.max(0, idx - 30), idx + q.length + 60).replace(/\s+/g, ' '),
+        ts: Number(m.timestamp) || 0,
+      })
+      if (hits.length >= limit * 3) break
+    }
+  }
+  hits.sort((a, b) => b.ts - a.ts)
+  return hits.slice(0, limit)
 }

@@ -8,6 +8,7 @@ import { useAgents } from './agents'
 import { TOOLS } from './tools'
 import { PLUGIN_TOOLS, PLUGIN_TOOL_NAMES } from './plugins'
 import { safeIPC } from '../utils/safe'
+import { scanMemoryText } from './memory'
 import { CACHE_TTL, WORKFLOWS } from './constants'
 import type { ProviderConfig, MediaProvider, MemoryData } from '../global'
 import type { ToolSpec } from '../types'
@@ -264,7 +265,13 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'process_list': return await window.huangquan.computer.processList()
       case 'kill_process': { if(!A.pid)return'E:need pid';return await window.huangquan.computer.killProcess(A.pid) }
       // 相同事实去重(重复调用不再累积)
-      case 'save_memory': { const m = await window.huangquan.memory.load(); const fact = String(A.fact || '').trim(); if (!fact) return 'E:need fact'; const pf = (m.pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; m.pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m) as Record<string, unknown>); return 'ok:pinned' }
+      case 'save_memory': {
+        const m = await window.huangquan.memory.load(); const fact = String(A.fact || '').trim(); if (!fact) return 'E:need fact'
+        // Hermes 吸收: 记忆安全扫描(凭证/注入拒绝落盘)
+        const scan = scanMemoryText(fact)
+        if (!scan.ok) return 'E:' + scan.reason
+        const pf = (m.pinnedFacts || []) as string[]; if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'; m.pinnedFacts = [...pf, fact]; await window.huangquan.memory.save(safeIPC(m) as Record<string, unknown>); return 'ok:pinned'
+      }
       // recall_memory 接入向量语义检索(主进程 TF-IDF) + 关键词匹配合并
       case 'recall_memory': {
         const query = (A.query || '').trim()

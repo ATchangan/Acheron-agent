@@ -6,7 +6,8 @@ import { TOOLS } from './tools'
 import { safeIPC, errMsg } from '../utils/safe'
 import { CACHE_TTL, WORKFLOWS } from './constants'
 import { estimateTokens, getModelContextLimit, updateContextLimit, isVisionModel, buildPrompt, buildContextualMessages } from './context'
-import { recordEpisodic, autoExtractMemory, refreshMemoryCache } from './memory'
+import { recordEpisodic, autoExtractMemory, refreshMemoryCache, freezeMemory } from './memory'
+import { setProjectContext } from './project-ctx'
 import { routeAgent } from './router'
 import { analyzeWithVision, buildVisionCandidates, runTool, getActiveTools, taskGen, nextTaskGen, costedReqs, setCached, getCached, onWriteOp } from './runtime'
 import { normalizeImage } from '../utils/image'
@@ -114,7 +115,14 @@ export async function runSend(
   // 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
   const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
   // 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
-  refreshMemoryCache().catch(() => {})
+  // Hermes 吸收: 刷新后冻结本次任务记忆快照(会话内各轮一致, 前缀缓存友好)
+  await refreshMemoryCache().catch(() => {})
+  freezeMemory()
+  // Codex 吸收: 读取工作目录项目指令 AGENTS.md(约定自动注入上下文)
+  try {
+    const pc = await window.huangquan.projectContext().catch(() => ({ file: '', content: '' }))
+    if (pc && pc.file) setProjectContext(pc)
+  } catch { /* 忽略 */ }
   // 多模型策略接入 —— mainModel/longTextModel/codeModel/fastModel（"providerId::model" 或 "model"）
   const gNow = gSnap
   const mc = pickModels(gSnap, cfg, p, content, images)
@@ -264,8 +272,11 @@ export async function runSend(
         // v0.3.1 D1: 清空边界 = 任务起始消息(userMsg.id 首次出现)之后的所有中间 assistant 文本(插话 user 消息不破坏边界)
     const lastUserIdx = finalSession.messages.map(m => m.id).indexOf(userMsg.id)
         const thisRound = lastUserIdx >= 0 ? finalSession.messages.slice(lastUserIdx) : finalSession.messages
-        const midTexts = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
+        // 单气泡合并去重: DeepSeek 等模型工具调用前预答与最终回复相同则丢弃重复段
+        const roundMid = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
         const llmText = res.text || ''; const hasTools = toolLog.length > 0
+        const lastMid = roundMid[roundMid.length - 1]
+        const midTexts = (lastMid && llmText && lastMid === llmText) ? roundMid.slice(0, -1) : roundMid
         let finalContent = [ ...midTexts, llmText ].filter(Boolean).join('\n\n')
         // 工具日志已改为写入右侧终端面板(terminal), 不再拼进消息正文(原死代码块已删除)
         // 中间轮 assistant 文本已并入最终气泡，清空其 content（UI 单气泡，API 上下文仍保留占位）
