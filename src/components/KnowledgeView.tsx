@@ -2,8 +2,19 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
 import { ScrollMark, UploadMark, SearchMark, AskMark, DocMark, TrashMark } from './themed-icons'
 
+/* ─── 藏书阁（原知识库） ──────────────────────────────
+ * 给黄泉提供私人资料库：
+ * 1. 卷宗录入 —— 导入 txt/md/json/csv，主进程分块写入向量库
+ * 2. 寻章检索 —— 语义搜索已导入的内容
+ * 3. 卷宗库   —— 展示已导入文件，可删除
+ * 4. 典籍问答 —— 基于检索结果组织回答上下文
+ * 数据载体：memory.json 中以 [doc] 开头的 facts 记录文件元数据，
+ *           正文块存在 memory-vector.json 的向量库中。
+ */
+
 /* ─── types ─── */
 
+// 卷宗元数据：导入文件时写入 memory facts（前缀 [doc]），用于列表展示与删除
 interface DocMeta {
   name: string
   path: string
@@ -11,12 +22,15 @@ interface DocMeta {
   size: number
 }
 
+// 检索命中：content 为命中的正文块，score 为相关度（0~1）
 interface SearchResult {
   content: string
   score: number
 }
 
+// 允许导入的格式
 const SUPPORTED_FORMATS = ['.txt', '.md', '.json', '.csv']
+// 卷宗元数据在记忆中的标记前缀
 const DOC_TAG = '[doc]'
 
 /* ─── helpers ─── */
@@ -318,6 +332,7 @@ export default function KnowledgeView() {
 
   /* ── load docs from memory ── */
 
+  // 加载卷宗列表：从记忆 facts 中筛出 [doc] 前缀的元数据并解析
   const loadDocs = useCallback(async () => {
     try {
       const mem = await window.huangquan.memory.load()
@@ -344,6 +359,7 @@ export default function KnowledgeView() {
 
   /* ── import ── */
 
+  // 卷宗录入：选择文件 → 校验格式 → 交给主进程分块入向量库 → 记录元数据
   const handleImport = async () => {
     setImportMsg('')
     let path: string | null = null
@@ -411,6 +427,7 @@ export default function KnowledgeView() {
 
   /* ── delete ── */
 
+  // 删除卷宗：从记忆 facts 中移除对应元数据（向量库内容保留，可后续优化为联动删除）
   const handleDelete = async (idx: number) => {
     const doc = docs[idx]
     if (!doc) return
@@ -425,6 +442,7 @@ export default function KnowledgeView() {
 
   /* ── search ── */
 
+  // 寻章检索：调主进程语义搜索，返回相关正文块
   const handleSearch = async () => {
     const q = searchQ.trim()
     if (!q) return
@@ -448,6 +466,8 @@ export default function KnowledgeView() {
 
   /* ── Q&A ── */
 
+  // 典籍问答：检索 top5 片段拼成上下文展示（当前版本不直接调模型，
+  // 后续可把上下文交给对话模型生成正式回答）
   const handleQa = async () => {
     const q = qaQ.trim()
     if (!q) return

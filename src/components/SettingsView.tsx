@@ -95,6 +95,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
     { key: 'advanced', icon: <SettingsIcon size={15} />, label: '引擎' },
     { key: 'cron', icon: <HourglassMark size={15} />, label: '定时任务' },
+    // 藏书阁（原知识库）：私人文档的录入/检索/问答
     { key: 'knowledge', icon: <ScrollMark size={15} />, label: '藏书阁' },
     { key: 'plugins', icon: <MaskMark size={15} />, label: '式神' },
     { key: 'about', icon: <Info size={15} />, label: '关于' },

@@ -77,12 +77,14 @@ export function registerMemoryIpc(deps: {
     return true
   })
   ipcMain.handle('memory:search', async (_e, query: string) => {
+    // 语义搜索入口：刷新嵌入配置后查询向量库，最多返回 5 条
     try { refreshEmbeddingConfig(); return await getVM().searchMemory(query, 5) } catch { return [] }
   })
   ipcMain.handle('memory:addVector', async (_e, content: string) => {
     try { refreshEmbeddingConfig(); getVM().addMemory(content); getVM().saveMemory(); return true } catch { return false }
   })
   ipcMain.handle('memory:importFile', async (_e, filePath: string) => {
+    // 卷宗录入：读取文件 → 按段落/分块大小切块 → 与现有记忆做语义去重 → 写入向量库
     try {
       if (!fs.existsSync(filePath)) return false
       // ragChunkSize/ragThreshold/ragAutoSave 设置接入
