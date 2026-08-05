@@ -94,10 +94,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'skin', icon: <Palette size={15} />, label: '外观' },
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
     { key: 'advanced', icon: <SettingsIcon size={15} />, label: '引擎' },
-    { key: 'cron', icon: <Clock size={15} />, label: '定时任务' },
-    { key: 'knowledge', icon: <Library size={15} />, label: '知识库' },
-    { key: 'plugins', icon: <Package size={15} />, label: '插件' },
-    { key: 'code', icon: <Code2 size={15} />, label: '代码工坊' },
+    { key: 'cron', icon: <Clock size={15} />, label: '更漏' },
+    { key: 'knowledge', icon: <Library size={15} />, label: '藏书阁' },
+    { key: 'plugins', icon: <Package size={15} />, label: '式神' },
+    { key: 'code', icon: <Code2 size={15} />, label: '符文工坊' },
     { key: 'about', icon: <Info size={15} />, label: '关于' },
   ]
 
@@ -115,10 +115,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     ['stats', ['缓存', '统计', '用量', '命中']],
     ['advanced', ['引擎', '性能', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
     ['about', ['关于', '版本', '更新']],
-    ['cron', ['定时', '任务', 'cron']],
-    ['knowledge', ['知识', '文档', '导入', '知识库']],
-    ['plugins', ['插件']],
-    ['code', ['代码', '工坊', '编程', '脚本']],
+    ['cron', ['定时', '任务', '更漏', '轮', 'cron']],
+    ['knowledge', ['知识', '文档', '导入', '知识库', '藏书', '典籍', '书', '检索', 'rag']],
+    ['plugins', ['插件', '式神', '契约', 'plugin']],
+    ['code', ['代码', '工坊', '符文', '沙箱', '编程', '脚本']],
   ]
 
   return (

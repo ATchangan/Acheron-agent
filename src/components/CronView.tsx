@@ -585,9 +585,9 @@ export default function CronView() {
       <div style={S.header}>
         <div style={S.titleRow}>
           <span style={S.icon}>🪷</span>
-          <h2 style={S.title}>↻ 定时任务</h2>
+          <h2 style={S.title}>↻ 更漏</h2>
         </div>
-        <p style={S.subtitle}>定时任务 · 自动化执行</p>
+        <p style={S.subtitle}>时辰更漏 · 到点即行</p>
       </div>
 
       {/* body */}

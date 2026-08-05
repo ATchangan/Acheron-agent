@@ -237,7 +237,7 @@ export default function PluginsView() {
         <div>
           <h2>🎭 黄泉式神録</h2>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginTop: 2 }}>
-            插件拡張 · 契約式神
+            契约式神 · 插件接入
           </span>
         </div>
         <button

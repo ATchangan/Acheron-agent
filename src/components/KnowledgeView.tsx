@@ -498,8 +498,8 @@ export default function KnowledgeView() {
         <div style={S.headerTitle}>
           <span style={S.headerIcon}>📚</span>
           <div>
-            <h1 style={S.headerH1}>◇ 知识库</h1>
-            <span style={S.headerSub}>私有知识库 · 语义检索增强</span>
+            <h1 style={S.headerH1}>◇ 藏书阁</h1>
+            <span style={S.headerSub}>私人典籍 · 语义寻章</span>
           </div>
         </div>
         <div style={S.statsRow}>
