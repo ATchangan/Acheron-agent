@@ -15,7 +15,7 @@ export interface UserMsgResult {
   images?: string[]
   userMsg: Message
   userMsgId: string
-  tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number }>
+  tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number; outputTokens?: number }>
   isVisualTask: boolean
   imgPathMatch: RegExpMatchArray | null
 }
@@ -58,7 +58,7 @@ export async function buildUserMessage(deps: BuildUserMsgDeps, contentIn: string
   // 追加用户消息到 store —— 立即上屏（不再等视觉分析，避免界面停留初始状态）
   const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
   // 本任务 token 基线(主 Agent + 全部子 Agent 消耗都计入 sessTok, 任务结束时算增量)
-  const tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number }> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
+  const tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number; outputTokens?: number }> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
   const userMsgId = userMsg.id
   set(s => {
     const session = s.sessions.find(x => x.id === sid)!

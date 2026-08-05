@@ -35,6 +35,7 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
           const missT = u.prompt_cache_miss_tokens || 0
           const writeT = u.cache_creation_input_tokens || 0
           const inputT = u.prompt_tokens || u.input_tokens || 0
+          const outT = u.completion_tokens || (u as { output_tokens?: number }).output_tokens || 0
           usage = { ...u, _readTokens: readT, _inputTokens: inputT, _writeTokens: writeT }
           // v0.3.4 T1: 实测校准 —— 按模型 EMA 更新估算系数(actual vs 估算总量)
           calibrateTokens(model, u.total_tokens || (inputT + (u.completion_tokens || 0)), estTokens)
@@ -52,8 +53,8 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
             // 前端镜像(右侧面板实时显示)
             if (sid2) set(s => {
               const ss = s.sessTok[sid2] || {}
-              const c2 = ss[model] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, hitReqs: 0 }
-              return { sessTok: { ...s.sessTok, [sid2]: { ...ss, [model]: { requests: c2.requests + 1, readTokens: c2.readTokens + readT, inputTokens: c2.inputTokens + inputT, writeTokens: c2.writeTokens + writeT, hitReqs: c2.hitReqs + (readT > 0 ? 1 : 0) } } } }
+              const c2 = ss[model] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, outputTokens: 0, hitReqs: 0 }
+              return { sessTok: { ...s.sessTok, [sid2]: { ...ss, [model]: { requests: c2.requests + 1, readTokens: c2.readTokens + readT, inputTokens: c2.inputTokens + inputT, writeTokens: c2.writeTokens + writeT, outputTokens: c2.outputTokens + outT, hitReqs: c2.hitReqs + (readT > 0 ? 1 : 0) } } } }
             })
           }
         } else { usage = u }

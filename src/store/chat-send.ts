@@ -42,7 +42,7 @@ export interface S {
   curModel: string
   sessCache: Record<string, { hits: number; misses: number }>
   modelCache: Record<string, { hits: number; misses: number }>
-  sessTok: Record<string, Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number }>>
+  sessTok: Record<string, Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }>>
   activeAgents: string[]
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>
@@ -65,6 +65,7 @@ export async function runSend(
   images?: string[],
   attachments?: Message['attachments']
 ): Promise<void> {
+  const taskStart = Date.now() // 任务总时长起点(含工具执行, 用于最终气泡 ⏱ 显示)
   const set = deps.set
   const get = deps.get
   const st0 = get()
@@ -297,14 +298,15 @@ export async function runSend(
       let taskTok = 0
       for (const [mk, c] of Object.entries(tokNow)) {
         const b = tokBase[mk]
-        taskTok += (c.readTokens - (b?.readTokens || 0)) + (c.inputTokens - (b?.inputTokens || 0)) + (c.writeTokens - (b?.writeTokens || 0))
+        // 总消耗 = 输入(已含缓存命中) + 输出 + 缓存写入; 不再重复加 readTokens
+        taskTok += (c.inputTokens - (b?.inputTokens || 0)) + (c.outputTokens - (b?.outputTokens || 0)) + (c.writeTokens - (b?.writeTokens || 0))
       }
       if (taskTok > 0) {
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map((m, idx) => {
           if (m.role === 'assistant') {
             let lastAi = -1
             for (let k = x.messages.length - 1; k >= 0; k--) if (x.messages[k].role === 'assistant') { lastAi = k; break }
-            if (idx === lastAi) return { ...m, meta: { ...m.meta, taskTokens: taskTok } }
+            if (idx === lastAi) return { ...m, meta: { ...m.meta, taskTokens: taskTok, taskMs: Date.now() - taskStart } }
           }
           return m
         }) } : x) }))
@@ -336,6 +338,15 @@ export async function runSend(
       return get().send(content, undefined, attachments)
     }
     console.error('[黄泉Agent] send error:', e)
+    // 异常后清理悬空 tool_calls 消息(无对应 tool 结果): 否则下次请求 API 400
+    try {
+      set(s => ({ sessions: s.sessions.map(x => {
+        if (x.id !== sid) return x
+        const msgs = x.messages
+        const keep = (m: Message) => !m.tool_calls?.length || m.tool_calls.some(tc => msgs.some(t => t.role === 'tool' && t.tool_call_id === tc.id))
+        return { ...x, messages: msgs.filter(keep) }
+      }) }))
+    } catch { /* 忽略 */ }
     // 异常/插话中止时清理当前流式 assistant 残留（避免多气泡）
     try {
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsg?.id && !m.content ? { ...m, content: '' } : m) } : x) }))
