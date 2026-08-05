@@ -1,6 +1,6 @@
 # 更新日志
 
-## v0.3.1（2026-08-04）
+## v0.3.1（2026-08-05）
 
 ### 会话修复（块 A~F）
 - 会话级并发状态模块 `session-state.ts`：取代全局 `window.__huangquan_agent` / 全局 streaming / 全局 taskGen
