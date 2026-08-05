@@ -342,7 +342,7 @@ ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
     try { for (const f of fs.readdirSync(tmpDir)) { if (f.startsWith('codebox_') && Date.now() - fs.statSync(join(tmpDir, f)).mtimeMs > 60000) { try { fs.unlinkSync(join(tmpDir, f)) } catch (e) { console.debug('[swallow]', e) } } } } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     fs.writeFileSync(fp, code, 'utf-8')
     const cmd = lang === 'python' ? `python "${fp}"` : lang === 'node' ? `node "${fp}"` : `echo "unsupported: ${lang}"`
-    exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024, encoding: 'utf-8', env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' } }, (err, stdout, stderr) => {
       resolve(err ? (stderr || err.message) : stdout)
       try { fs.unlinkSync(fp) } catch (e) { console.debug('[swallow]', e) }
     })

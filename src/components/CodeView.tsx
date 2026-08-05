@@ -112,31 +112,34 @@ export default function CodeView() {
       // 尝试 codebox sandbox，回退到 exec
       const codebox = (window.huangquan.computer.codebox) as
         ((l: string, c: string) => Promise<string>) | undefined
+      // 临时文件必须落在执行时的工作目录内, 否则 exec(cwd=工作目录) 找不到相对路径
+      const paths = await window.huangquan.getPaths().catch(() => null)
+      const baseDir = paths && paths.workDir ? String(paths.workDir).replace(/[\\/]+$/, '') : ''
+      const tmp = (name: string) => (baseDir ? baseDir + '\\' + name : name)
 
       if (lang === 'powershell') {
         // PowerShell: 写入临时文件然后执行
-        const psPath = `__huangquan_temp.ps1`
+        const psPath = tmp('__huangquan_temp.ps1')
         await window.huangquan.computer.writeFile(psPath, code)
         result = await window.huangquan.computer.exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psPath}"`)
         await window.huangquan.computer.exec(`del "${psPath}" 2>nul || rm "${psPath}" 2>/dev/null || true`)
       } else if (lang === 'bash') {
         // Bash: 写入临时文件然后执行
-        const shPath = `__huangquan_temp.sh`
+        const shPath = tmp('__huangquan_temp.sh')
         await window.huangquan.computer.writeFile(shPath, code)
         result = await window.huangquan.computer.exec(`bash "${shPath}"`)
         await window.huangquan.computer.exec(`rm -f "${shPath}"`)
-      } else if (codebox) {
+      } else if ((lang === 'python' || lang === 'javascript') && codebox) {
         // 使用 codebox sandbox
         const langMap: Record<string, string> = {
           python: 'python',
-          javascript: 'javascript',
-          typescript: 'typescript',
+          javascript: 'node',
         }
         result = await codebox(langMap[lang] || lang, code)
       } else {
         // fallback: 写入文件后执行
         const ext = extForLang(lang)
-        const tmpPath = `__huangquan_temp${ext}`
+        const tmpPath = tmp('__huangquan_temp' + ext)
         await window.huangquan.computer.writeFile(tmpPath, code)
 
         const cmdMap: Record<string, string> = {
