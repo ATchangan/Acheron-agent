@@ -22,11 +22,11 @@ const EXPR_PRESETS = [
 ]
 
 const TEMPLATES = [
-  { name: '每日早报', expr: 'at 08:00', prompt: '生成今日早报，包含天气、新闻摘要、日程提醒和建议。' },
-  { name: '系统巡检', expr: 'every 30m', prompt: '执行系统巡检：检查CPU、内存、磁盘使用率，报告异常指标。' },
-  { name: '邮件摘要', expr: 'every 1h', prompt: '检查收件箱新邮件，生成简要摘要并按重要程度排序。' },
-  { name: '知识复习', expr: 'at 18:00', prompt: '从记忆库中随机抽取3条知识条目进行复习回顾。' },
-  { name: '备份提醒', expr: 'at 17:00', prompt: '检查最新备份时间，如超过24小时未备份则发出提醒。' },
+  { name: '晓报', expr: 'at 08:00', prompt: '生成今日早报，包含天气、新闻摘要、日程提醒和建议。' },
+  { name: '巡更', expr: 'every 30m', prompt: '执行系统巡检：检查CPU、内存、磁盘使用率，报告异常指标。' },
+  { name: '鸿雁', expr: 'every 1h', prompt: '检查收件箱新邮件，生成简要摘要并按重要程度排序。' },
+  { name: '温故', expr: 'at 18:00', prompt: '从记忆库中随机抽取3条知识条目进行复习回顾。' },
+  { name: '留档', expr: 'at 17:00', prompt: '检查最新备份时间，如超过24小时未备份则发出提醒。' },
 ]
 
 const FILTER_TABS: { value: FilterTab; label: string }[] = [
@@ -584,10 +584,10 @@ export default function CronView() {
       {/* header */}
       <div style={S.header}>
         <div style={S.titleRow}>
-          <span style={S.icon}>🪷</span>
-          <h2 style={S.title}>↻ 定时任务</h2>
+          <span style={S.icon}>⌛</span>
+          <h2 style={S.title}>定时任务</h2>
         </div>
-        <p style={S.subtitle}>定时任务 · 自动化执行</p>
+        <p style={S.subtitle}>定时任务 · 到点即行</p>
       </div>
 
       {/* body */}
@@ -661,7 +661,7 @@ export default function CronView() {
           <div style={S.createRow}>
             <input
               style={S.inputSmall}
-               placeholder="任务内容（到点自动执行）"
+               placeholder="任务内容（到点即行）"
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addTask() }}

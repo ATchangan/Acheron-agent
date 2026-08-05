@@ -496,7 +496,7 @@ export default function KnowledgeView() {
       {/* header */}
       <div style={S.header}>
         <div style={S.headerTitle}>
-          <span style={S.headerIcon}>📚</span>
+          <span style={S.headerIcon}>📜</span>
           <div>
             <h1 style={S.headerH1}>◇ 藏书阁</h1>
             <span style={S.headerSub}>私人典籍 · 寻章摘句</span>
@@ -528,7 +528,7 @@ export default function KnowledgeView() {
               disabled={importing}
               style={{ opacity: importing ? 0.6 : 1 }}
             >
-              {importing ? '导入中...' : '选择文件'}
+              {importing ? '录入中…' : '选择文件'}
             </button>
             <span style={S.formatHint}>
               支持格式：{SUPPORTED_FORMATS.join('、')}
@@ -577,7 +577,7 @@ export default function KnowledgeView() {
                 <div key={i} style={S.resultItem}>
                   <div style={S.resultHeader}>
                     <span style={{ color: 'var(--text-muted)' }}>结果 {i + 1}</span>
-                    <span style={S.resultScore}>相关度: {(r.score * 100).toFixed(0)}%</span>
+                    <span style={S.resultScore}>契合度: {(r.score * 100).toFixed(0)}%</span>
                   </div>
                   <div style={S.resultContent}>
                     {r.content.slice(0, 600)}
@@ -640,7 +640,7 @@ export default function KnowledgeView() {
           <div style={S.sectionTitle}>
             <span style={S.sectionIcon}>💬</span>典籍问答
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
-              基于检索结果组织回答
+              依据卷宗作答
             </span>
           </div>
           <div style={S.qaInputRow}>
@@ -656,12 +656,12 @@ export default function KnowledgeView() {
               onClick={handleQa}
               disabled={qaLoading || !qaQ.trim()}
             >
-              {qaLoading ? '检索中...' : '提问'}
+              {qaLoading ? '寻章中…' : '发问'}
             </button>
           </div>
           {qaA && (
             <div style={S.qaContextBox}>
-              <div style={S.qaLabel}>📖 上下文回答</div>
+              <div style={S.qaLabel}>📖 参考回答</div>
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{qaA}</div>
             </div>
           )}

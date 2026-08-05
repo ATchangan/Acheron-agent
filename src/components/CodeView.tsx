@@ -301,7 +301,7 @@ export default function CodeView() {
       {/* ═══ Header ═══ */}
       <div style={S.header}>
         <div style={S.titleRow}>
-          <span style={S.icon}>⚒️</span>
+          <span style={S.icon}>🪄</span>
           <div>
             <h1 style={S.title}>⌘ 符文工坊</h1>
             <p style={S.subtitle}>符文沙盘 · 即写即运行 · {history.length} 条历史</p>

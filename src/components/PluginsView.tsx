@@ -235,7 +235,7 @@ export default function PluginsView() {
       {/* 顶部 */}
       <div style={s.header}>
         <div>
-          <h2>🎭 黄泉式神録</h2>
+          <h2>👺 黄泉式神录</h2>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginTop: 2 }}>
             契约式神 · 插件接入
           </span>
