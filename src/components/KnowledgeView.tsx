@@ -521,6 +521,7 @@ export default function KnowledgeView() {
           <div>
             <h1 style={S.headerH1}>◇ 藏书阁</h1>
             <span style={S.headerSub}>私人典籍 · 寻章摘句</span>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>支持 txt / md / json / csv，导入后可在对话中检索引用</div>
           </div>
         </div>
         <div style={S.statsRow}>

@@ -240,6 +240,7 @@ export default function PluginsView() {
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginTop: 2 }}>
             契约式神 · 插件接入
           </span>
+          <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginTop: 2 }}>安装第三方能力（插件）扩展黄泉的本领</div>
         </div>
         <button
           className="btn-primary"

@@ -589,6 +589,7 @@ export default function CronView() {
           <h2 style={S.title}>定时任务</h2>
         </div>
         <p style={S.subtitle}>定时任务 · 到点即行</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>设定名称、时辰与内容，到点自动执行；可一键套用下方模板</p>
       </div>
 
       {/* body */}
