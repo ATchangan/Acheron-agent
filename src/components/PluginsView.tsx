@@ -232,11 +232,11 @@ export default function PluginsView() {
 
   // ── 主渲染 ──────────────────────────────────────────
   return (
-    <div className="settings-view">
+    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto', height: '100%' }}>
       {/* 顶部 */}
       <div style={s.header}>
         <div>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><MaskMark size={26} />黄泉式神录</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 20, fontWeight: 600, color: 'var(--accent)', margin: '0 0 12px' }}><MaskMark size={26} />黄泉式神录</h2>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginTop: 2 }}>
             契约式神 · 插件接入
           </span>
