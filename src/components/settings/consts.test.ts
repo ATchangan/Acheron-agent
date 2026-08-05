@@ -11,6 +11,8 @@ describe('detectCaps 模型能力识别', () => {
     expect(detectCaps(['gpt-4o'])).toContain('多模态')
     expect(detectCaps(['qwen3-vl-plus'])).toContain('多模态')
     expect(detectCaps(['glm-4v-plus'])).toContain('多模态')
+    expect(detectCaps(['glm-4.5v'])).toContain('多模态')
+    expect(detectCaps(['glm-4.6v-flash'])).toContain('多模态')
   })
 
   it('图片生成模型归为图片', () => {

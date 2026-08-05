@@ -1,6 +1,7 @@
 ﻿import React from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, StepSetting } from '../settings-ui'
+import { detectCaps } from './consts'
 
 // v0.3.1 块 H: 策略 tab(从 SettingsView 拆分, 行为零变化)
 export default function StrategyTab() {
@@ -31,12 +32,8 @@ export default function StrategyTab() {
         {(() => {
           const visCands: { id: string; label: string; pname: string; mname: string; keyed: boolean }[] = []
           const pushFrom = (pname: string, models: string[], keyed: boolean) => {
-            // 能力校验 —— 区分 识图多模态/绘图模型/纯文本; 绘图模型(seedream/dall/flux/sdxl/cogview 等)禁止进入视觉理解列表
-            const hits = (models || []).filter((m: string) => {
-              const ml = m.toLowerCase()
-              if (/(dall|flux|sdxl|stable-diffusion|seedream|cogview|imagen|midjourney|\bmj\b|draw|文生图|图片生成|image-gen|text2img|video-gen|sora|kling|runway|pika|veo)/.test(ml)) return false
-              return /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|qwen2-vl|glm-4v|llava|yi-vision|internvl|deepseek-vl|step-1v|moonshot-v1|minimax-vl|识图|多模态/i.test(ml)
-            })
+            // 能力校验 —— 用 detectCaps 区分识图多模态/绘图/纯文本; 绘图与视频模型不会归为多模态
+            const hits = (models || []).filter((m: string) => detectCaps([m]).includes('多模态'))
             hits.forEach((m: string) => { const id = pname + '::' + m; if (!visCands.some(c => c.id === id)) visCands.push({ id, label: pname + ' · ' + m, pname, mname: m, keyed }) })
           }
           providers.forEach(pr => pushFrom(pr.name, pr.models || [], !!pr.apiKey))

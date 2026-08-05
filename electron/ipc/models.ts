@@ -68,6 +68,11 @@ export function registerModelsIpc(deps: {
         page++
       }
       const filtered = [...allIds].filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
+      // 智谱 /models 只返回文字模型，视觉模型需按已知 ID 补充(glm-4v/4.5v/4.6v 系列)
+      if (/bigmodel\.cn/i.test(base)) {
+        const glmVision = ['glm-4v-flash', 'glm-4v-plus', 'glm-4.5v', 'glm-4.6v', 'glm-4.6v-flash']
+        for (const id of glmVision) if (!filtered.includes(id)) filtered.push(id)
+      }
       return { ok: true, models: filtered }
     } catch (e: unknown) {
       const msg = (e instanceof Error ? e.message : String(e))

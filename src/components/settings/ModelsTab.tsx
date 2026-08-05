@@ -222,7 +222,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
             <option value="">— 选择视觉辅助模型 —</option>
             {providers.filter(pr => pr.id !== p?.id && (pr.models || []).some((m: string) => /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(m.toLowerCase()))).map(pr => (
               <optgroup key={pr.id} label={pr.name}>
-                {(pr.models || []).filter((m: string) => /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(m.toLowerCase())).map((m: string) => <option key={m} value={m}>{m}</option>)}
+            {(pr.models || []).filter((m: string) => detectCaps([m]).includes('多模态')).map((m: string) => <option key={m} value={m}>{m}</option>)}
               </optgroup>
             ))}
           </select>

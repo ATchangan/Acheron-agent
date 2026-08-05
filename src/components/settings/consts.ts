@@ -49,7 +49,7 @@ export const detectCaps = (models: string[]): string[] => {
   for (const m of models || []) {
     const ml = String(m).toLowerCase()
     // 多模态：能理解图像/视频的对话模型
-    if (/(gpt-4o|gpt-4\.1|gpt-4-turbo|claude|gemini|vision|\bvlm?\b|4v|omni|qwen-vl|qwen2-vl|qwen2\.5-vl|qwen3-vl|glm-4v|glm-5v|llava|yi-vision|internvl|minicpm-v|moondream|pixtral|phi-vision|llama-3\.2-vision|deepseek-vl|step-1v|hunyuan-vision|doubao.*vision|kimi-vl|spark.*vision|ocr|识图|多模态|multimodal)/.test(ml)) caps.add('多模态')
+    if (/(gpt-4o|gpt-4\.1|gpt-4-turbo|claude|gemini|vision|\bvlm?\b|4v|\d+v|omni|qwen-vl|qwen2-vl|qwen2\.5-vl|qwen3-vl|glm-4v|glm-5v|llava|yi-vision|internvl|minicpm-v|moondream|pixtral|phi-vision|llama-3\.2-vision|deepseek-vl|step-1v|hunyuan-vision|doubao.*vision|kimi-vl|spark.*vision|ocr|识图|多模态|multimodal)/.test(ml)) caps.add('多模态')
     // 图片生成
     if (/(image|img|flux|dall|sdxl|stable-diffusion|seedream|cogview|wanx|kolors|ernie-vilg|midjourney|draw|文生图|图生图|text2img|t2i|image-gen|imagegen|photogen|qwen-image|hunyuan-image|recraft|ideogram|fooocus|comfyui|imagen)/.test(ml)) caps.add('图片')
     // 视频生成

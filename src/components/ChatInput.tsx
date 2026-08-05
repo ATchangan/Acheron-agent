@@ -80,7 +80,7 @@ export default function ChatInput() {
   const currentModel = modelSel || defaultKey || '未配置'
   const curModelName = (currentModel.includes('::') ? currentModel.split('::').pop() : currentModel) || ''
   // 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
-  const supportsVision = !currentModel || currentModel === '未配置' || /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(curModelName.toLowerCase())
+  const supportsVision = !currentModel || currentModel === '未配置' || detectCaps([curModelName]).includes('多模态')
   const visionAssist = !supportsVision
   const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
   const ctxColor = ctxRatio > 0.9 ? 'var(--danger)' : ctxRatio > 0.7 ? 'var(--warning)' : 'var(--accent)'

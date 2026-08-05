@@ -49,7 +49,7 @@ export const WORKFLOWS: Record<string, { name: string; triggers: string[]; steps
   ]},
 }
 
-export const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'glm-4v', 'minimax-vl', 'deepseek-vl', 'internvl', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision', 'agnes-image', 'seedream', 'cogview', 'seedance', 'doubao-seedance', 'wanx', 'kling']
+export const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'qwen2.5-vl', 'qwen3-vl', 'glm-4v', 'glm-4.5v', 'glm-4.6v', 'glm-4.1v', 'minimax-vl', 'deepseek-vl', 'internvl', 'internvl2', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision', 'minicpm-v', 'pixtral', 'phi-vision', 'llama-3.2-vision', 'moondream', 'hunyuan-vision', 'doubao-vision', 'ocr', 'agnes-image', 'seedream', 'cogview', 'seedance', 'doubao-seedance', 'wanx', 'kling']
 
 export const DOMAIN_RE: Record<string, RegExp> = {
   '银狼': /安全|漏洞|审查|bug|风险|检查|审计|防护|攻击|渗透|注入|权限|扫描|加密|认证|授权|越权|XSS|SQL注入|CSRF|DDoS|后门|木马|病毒|防火墙|沙箱|隔离|签名|证书|安全策略|加固|修复漏洞|review|security|audit|scan|vuln/,
