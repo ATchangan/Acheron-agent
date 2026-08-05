@@ -37,15 +37,6 @@ export const MaskMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
   </svg>
 )
 
-// 符文（符文工坊）
-export const RuneMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}>
-    <path d="M12 3.2l8.2 8.8-8.2 8.8L3.8 12z" />
-    <path d="M12 3.2v17.6M3.8 12h16.4" />
-    <path d="M9 9l6 6M15 9l-6 6" />
-  </svg>
-)
-
 // ─── 通用小图标（与上述大图标同一套手绘风） ───
 export const PlusMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
   <svg {...base(size)}><path d="M12 5v14M5 12h14" /></svg>
@@ -69,37 +60,6 @@ export const LinkMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
   <svg {...base(size)}>
     <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
     <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
-  </svg>
-)
-
-export const SaveMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}>
-    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-    <path d="M17 21v-8H7v8M7 3v5h8" />
-  </svg>
-)
-
-export const ClearMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M8 8l8 8M16 8l-8 8" />
-  </svg>
-)
-
-export const RunMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}><path d="M7 4l13 8-13 8z" /></svg>
-)
-
-export const EditMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}>
-    <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
-  </svg>
-)
-
-export const OutputMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}>
-    <path d="M4 17l6-5-6-5" />
-    <path d="M12 19h8" />
   </svg>
 )
 
@@ -174,12 +134,5 @@ export const TagMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
   <svg {...base(size)}>
     <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10z" />
     <circle cx="7.5" cy="7.5" r="1.5" />
-  </svg>
-)
-
-export const HistoryMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg {...base(size)}>
-    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-    <path d="M3 3v5h5M12 7v5l3 2" />
   </svg>
 )
