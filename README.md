@@ -12,7 +12,7 @@
 
 ### 星穹列车 Agent 编队
 
-内置 7 个 Agent，都有完整工具权限，支持交接（handoff）和并行分发（dispatch）：
+内置 7 个 Agent，各有领域工具白名单，支持交接（handoff）和并行分发（dispatch）：
 
 - 姬子：主控调度，负责任务分解、分发和汇总
 - 三月七：文档处理，分析、报告、翻译
@@ -88,13 +88,18 @@ Acheron-agent/
 │   └── plugins/loader.ts      # 插件加载(vm 沙箱执行层)
 ├── src/                       # React 渲染进程
 │   ├── store/
-│   │   ├── chat.ts            # 工具实现 + Agent 编队 + 权限检查
+│   │   ├── tools.ts           # 40+ 工具 Schema + 角色白名单过滤
+│   │   ├── agents.ts          # Agent 编队(7 角色/能力路由/记忆范围)
+│   │   ├── chat.ts            # 聊天主 store(消息流/工具调用编排)
 │   │   ├── chat-send.ts       # 发送主逻辑
+│   │   ├── chat-round.ts      # 历史轮次折叠(token 优化)
+│   │   ├── context.ts         # 上下文组装/记忆裁剪/任务归档
+│   │   ├── model-pick.ts      # 模型选择/自动探测/视觉补全
 │   │   ├── session-state.ts   # 会话级并发状态(多会话互不串台)
 │   │   └── settings.ts        # 人设/主题/供应商设置
 │   ├── types.ts               # 全库统一类型来源(tsc strict 门禁)
 │   ├── components/
-│   │   ├── settings/          # 13 个设置 tab(拆分自 SettingsView)
+│   │   ├── settings/          # 15 个设置 tab(拆分自 SettingsView)
 │   │   └── ...                # 聊天/文件树/浏览器/悬浮窗等界面
 ├── resources/
 │   ├── skills/                # 4 组内置技能
