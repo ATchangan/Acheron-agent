@@ -65,7 +65,7 @@ export default function AgentsView() {
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={S.title}>Agent 编队管理</div>
       <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginBottom: 16 }}>
-        工具白名单决定每个 Agent 可调用的工具;记忆范围 global=跨会话共享 / private=仅本 Agent。模型偏好 v0.4 生效(本版仅存储)。
+        在这里设置每位角色的工具范围和记忆范围：全局记忆所有角色共享，私有记忆仅自己可见。模型偏好将在后续版本生效。
       </div>
       {savedMsg && <div style={{ color: 'var(--success)', fontSize: 'calc(var(--ui-font-size) - 1px)', marginBottom: 10 }}>{savedMsg}</div>}
       {Object.entries(agents).map(([name, ag]) => {
@@ -78,7 +78,7 @@ export default function AgentsView() {
           <div key={name} style={{ ...S.card, borderColor: isActive ? 'var(--accent)' : 'var(--border)' }}>
             <div style={S.row}>
               <span style={{ fontSize: 22 }}>{ag.icon}</span>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 'calc(var(--ui-font-size) + 1px)' }}>
                   {name}
                   {isActive && <span style={{ ...S.badge, background: 'var(--accent)', color: 'var(--on-accent)', marginLeft: 8 }}>工作中</span>}
@@ -91,7 +91,7 @@ export default function AgentsView() {
               </span>
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {(ag.capabilities || []).map(c => <span key={c} style={{ ...S.chip, color: 'var(--accent)', borderColor: 'var(--accent)' }}>能力:{c}</span>)}
+              {(ag.capabilities || []).map(c => <span key={c} style={{ ...S.chip, color: 'var(--accent)', borderColor: 'var(--accent)' }}>擅长:{({ dispatch: '任务调度', doc: '文档处理', security: '安全审查', automation: '自动化', chat: '陪伴沟通', vision: '视觉设计', code: '开发' } as Record<string, string>)[c] || c}</span>)}
               {ag.model ? <span style={{ ...S.chip }}>模型偏好: {ag.model}</span> : null}
             </div>
             <div style={S.label}>工具白名单 {isAll ? '(全工具)' : `(${curTools.length} 项)`}</div>
@@ -107,7 +107,7 @@ export default function AgentsView() {
                     )
                   })}
                 </div>
-                <div style={S.label}>模型偏好(v0.4 生效, 本版仅存储)</div>
+                <div style={S.label}>模型偏好（后续版本生效）</div>
                 <input
                   value={draftModel}
                   onChange={e => setDraftModel(e.target.value)}

@@ -13,14 +13,14 @@ export default function StrategyTab() {
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
-        <div style={S.section}>多模型策略</div>
-        <div style={S.hint}>统一调度各能力模型：文字对话、视觉理解、图片生成、视频生成、语音识别，全部联动下方已配置的供应商</div>
+        <div style={S.section}>模型选择</div>
+        <div style={S.hint}>为对话、视觉、图片、视频、语音分别选择使用的模型；未配置时自动用默认供应商</div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '10px 0 6px' }}>文字模型（联动供应商）</div>
         <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>主对话模型</div><div style={S.hint}>由聊天输入框右侧模型选择器指定（选择即生效），此处不再单独设置</div></div>
         <div style={S.row}><div style={S.label}>长文本模型</div><select style={S.sel} value={g.longTextModel || ''} onChange={e => save({ longTextModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>文档分析 / 长上下文任务</div></div>
         <div style={S.row}><div style={S.label}>代码模型</div><select style={S.sel} value={g.codeModel || ''} onChange={e => save({ codeModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>代码生成 / 审查</div></div>
         <div style={S.row}><div style={S.label}>快速响应模型</div><select style={S.sel} value={g.fastModel || ''} onChange={e => save({ fastModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>简单任务 / 工具调度</div></div>
-        <Toggle checked={g.autoFastModel !== false} onChange={v => save({ autoFastModel: v })} label="简单任务自动使用快速模型" hint="Token < 2000 且 工具调用 ≤ 2 次时切换" />
+        <Toggle checked={g.autoFastModel !== false} onChange={v => save({ autoFastModel: v })} label="简单问题用更快模型" hint="简单提问自动换更快的模型，省时省流量" />
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '16px 0 6px' }}>调度绑定（所有模型公用，含自定义）</div>
         <div style={S.row}><div style={S.label}>小模型</div><select style={S.sel} value={g.smallModel || ''} onChange={e => save({ smallModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>轻量任务（简单问答 / 单步工具）</div></div>
         <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>大模型</div><select style={S.sel} value={g.largeModel || ''} onChange={e => save({ largeModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>复杂任务（多步骤 / 代码 / 文档）</div></div>

@@ -27,7 +27,7 @@ export default function CollabTab(props: {
       </div>
       <div style={S.card}>
         <div style={S.section}>编队成员</div>
-        <div style={S.hint}>点击开关启用/禁用编队成员。关闭的Agent在对话中不可被 handoff 调用。</div>
+        <div style={S.hint}>开关决定哪些角色可以参与协作；被关闭的角色不会再被任务调用。</div>
         {[
           ['姬子', '☕', '总指挥官，任务分配与最终验收'],
           ['银狼', '🐺', '代码审查、安全审计、质量门禁'],
@@ -46,9 +46,9 @@ export default function CollabTab(props: {
         })}
       </div>
       <div style={S.card}>
-        <div style={S.section}>Handoff 交接规则</div>
+        <div style={S.section}>任务交接规则</div>
         <Toggle checked={g.handoffContext !== false} onChange={v => save({ handoffContext: v })} label="传递完整上下文" hint="交接时带上需求背景、已有代码、约束条件" />
-        <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接Agent完成任务后自动回到主Agent" />
+        <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接的角色完成任务后自动交回" />
         <div style={S.row}><div style={S.label}>最大连续交接次数</div><input type="number" style={S.inp} value={g.maxHandoffChain || 3} onChange={e => save({ maxHandoffChain: parseInt(e.target.value) || 3 })} /></div>
       </div>
       <div style={S.card}>

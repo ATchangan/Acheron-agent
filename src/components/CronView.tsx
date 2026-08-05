@@ -661,7 +661,7 @@ export default function CronView() {
           <div style={S.createRow}>
             <input
               style={S.inputSmall}
-              placeholder="提示词 (AI 收到此提示后执行)"
+               placeholder="任务内容（到点自动执行）"
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addTask() }}

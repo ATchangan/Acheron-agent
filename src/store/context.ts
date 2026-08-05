@@ -430,12 +430,12 @@ export function buildContextualMessages(
   // v0.3.2 T4/T5: 动态段统一追加 system 尾部(顺序固定: workflows → 记忆), 头部区块保持字节级稳定(供应商前缀缓存)
   const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
-  // Codex 吸收: 项目指令注入(AGENTS.md 约定, 有则注入 system 尾部)
+  // 项目约定注入(工作目录项目文件, 有则注入 system 尾部)
   const projectCtx = getProjectContext()
-  if (projectCtx.file && projectCtx.content) sp += '\n## 项目指令(' + projectCtx.file + ')\n' + projectCtx.content + '\n'
+  if (projectCtx.file && projectCtx.content) sp += '\n## 项目约定\n' + projectCtx.content + '\n'
   // v0.3.5 T2: workflowLazy 关闭时恒注入完整工作流列表
   if (currentMode === 'work') sp += '\n' + buildWorkflowsBlock(lastUserText, opts.gSnap.perf?.workflowLazy === false)
-  // Hermes 吸收: 记忆冻结快照(任务内各轮一致), 无冻结时回退实时计算
+  // 记忆冻结快照(任务内各轮一致), 无冻结时回退实时计算
   sp += '\n' + (getFrozenMemory() ?? memoryBlock(lastUserText))
   // v0.3.3 T3: 归档记录追加 system 尾部(最多 5 条, 每条含目标/结论/产出物/工具)
   if (archives.length) {

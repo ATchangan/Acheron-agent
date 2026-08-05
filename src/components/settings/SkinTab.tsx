@@ -44,7 +44,7 @@ export default function SkinTab() {
         </div>
       </div>
       <div style={S.card}><div style={S.section}>主题（配色体系）</div>
-        <div style={S.hint}>6 套预设主题 + 自定义配色；主题只控制配色，与背景皮肤互相独立</div>
+        <div style={S.hint}>6 套预设主题 + 自定义配色；主题只管配色，和背景皮肤互不影响</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
           {THEME_META.map(t => {
             const active = currentTheme(g) === t.id

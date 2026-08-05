@@ -14,7 +14,7 @@ export default function AdvancedTab() {
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
         <div style={S.section}>渲染加速</div>
-        <div style={S.hint}>应用自动识别本机 GPU:检测到可用 GPU 即自动启用硬件加速;无 GPU 或驱动异常时自动降级 CPU 软件渲染,无需手动指定。切换后需重启应用生效。</div>
+        <div style={S.hint}>自动识别电脑显卡：能用硬件加速就用，不能用就 CPU 渲染，无需手动设置。切换后需重启应用生效。</div>
         <div style={S.row}><div style={S.label}>渲染模式</div><select style={S.sel} value={g.rendererMode || 'auto'} onChange={e => save({ rendererMode: e.target.value })}>
           <option value="auto">自动识别(推荐,自动探测GPU)</option><option value="gpu">强制 GPU 加速</option><option value="cpu">CPU 软件渲染(兼容)</option>
         </select></div>
@@ -24,34 +24,35 @@ export default function AdvancedTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>执行控制</div>
-        <NumSetting label="工具调用上限" hint="单轮任务最多 LLM 工具调用轮次" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
+        <NumSetting label="工具调用上限" hint="单次任务最多执行多少轮操作" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
         <NumSetting label="失败重试次数" hint="单个工具失败后重试次数（0=不重试）" value={g.retryCount ?? 3} min={0} max={10} unit="次" onChange={v => save({ retryCount: v })} />
         <NumSetting label="工具超时" hint="单工具调用超时阈值" value={g.toolTimeout || 120} min={10} max={600} unit="秒" onChange={v => save({ toolTimeout: v })} />
-        <NumSetting label="熔断阈值" hint="同工具+同参数重复调用上限" value={g.meltdownLimit || 3} min={1} max={10} unit="次" onChange={v => save({ meltdownLimit: v })} />
+        <NumSetting label="熔断阈值" hint="同一操作反复触发到上限时自动停止" value={g.meltdownLimit || 3} min={1} max={10} unit="次" onChange={v => save({ meltdownLimit: v })} />
         <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读类工具（read/ls/search 等）并发执行，减少等待时间" />
       </div>
       <div style={S.card}>
         <div style={S.section}>上下文管理</div>
         {/* v0.3.4 T2: 缓存友好度提示 —— system 头部保持稳定即可最大化供应商前缀缓存命中 */}
-        <div style={S.hint}>上下文缓存: 供应商按请求前缀自动命中缓存, 命中部分价格大幅降低。保持 system 提示词头部不变即可最大化命中; Agent 切换(handoff)后首请求缓存失效属正常。</div>
-        <NumSetting label="压缩触发阈值" hint="Token 用量超过模型上限此比例时触发智能压缩" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
+        <div style={S.hint}>保持系统提示词稳定可降低每次请求费用；切换角色后首次请求费用略高属正常。</div>
+        <NumSetting label="压缩触发阈值" hint="对话变长时自动精简较早的内容" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
       </div>
-      {/* v0.3.5 T2: 性能优化开关区 —— 0.3.2~0.3.5 全部 token 优化, 默认全开, 单点可回退 */}
       <div style={S.card}>
-        <div style={S.section}>性能优化（Token）</div>
-        <div style={S.hint}>0.3.2~0.3.5 全部优化默认开启，可单点关闭回退旧行为。关闭只影响注入量，不改变执行逻辑。</div>
-        <div style={S.hint}>当前开启 {11 - Object.values(g.perf || {}).filter(v => v === false).length}/11 项 · 预计闲聊场景节省约 60%~70%、复杂任务 50%+（以基准报告为准）</div>
-        <Toggle checked={g.perf?.toolWhitelist !== false} onChange={v => save({ perf: { ...(g.perf || {}), toolWhitelist: v } })} label="工具白名单注入" hint="按 Agent 只注入其领域工具（0.3.2 T1）" />
-        <Toggle checked={g.perf?.resultSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), resultSlim: v } })} label="工具结果瘦身" hint="超 1500 字符截断保留头尾+关键行（0.3.2 T3）" />
-        <Toggle checked={g.perf?.memoryTrim !== false} onChange={v => save({ perf: { ...(g.perf || {}), memoryTrim: v } })} label="记忆按需裁剪" hint="按相关度注入 + 总量护栏（0.3.2 T4）" />
-        <Toggle checked={g.perf?.workflowLazy !== false} onChange={v => save({ perf: { ...(g.perf || {}), workflowLazy: v } })} label="工作流按需注入" hint="命中触发词才注入完整列表（0.3.2 T5）" />
-        <Toggle checked={g.perf?.roundFold !== false} onChange={v => save({ perf: { ...(g.perf || {}), roundFold: v } })} label="历史轮次折叠" hint="旧工具轮次折叠为归档摘要（0.3.2 T6）" />
-        <Toggle checked={g.perf?.outputCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), outputCap: v } })} label="输出上限分级" hint="闲聊短消息上限 800（0.3.2 T7）" />
-        <Toggle checked={g.perf?.imgDowngrade !== false} onChange={v => save({ perf: { ...(g.perf || {}), imgDowngrade: v } })} label="历史图片降级" hint="旧轮次图片降级文字，最新消息保留（0.3.3 T1）" />
-        <Toggle checked={g.perf?.argSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), argSlim: v } })} label="工具参数截断" hint="超长参数截断，定位字段保留（0.3.3 T2）" />
-        <Toggle checked={g.perf?.taskArchive !== false} onChange={v => save({ perf: { ...(g.perf || {}), taskArchive: v } })} label="跨任务归档" hint="完成任务折叠为归档记录（0.3.3 T3）" />
-        <Toggle checked={g.perf?.parallelCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), parallelCap: v } })} label="并行结果护栏" hint="并行结果总量超限自动瘦身（0.3.5 T1）" />
-        <Toggle checked={g.perf?.interjectMerge !== false} onChange={v => save({ perf: { ...(g.perf || {}), interjectMerge: v } })} label="插话合并" hint="多段插话合并单条注入（0.3.4 T3）" />
+        <div style={S.section}>流量与性能</div>
+        <div style={S.hint}>以下优化默认开启，可单独关闭；关闭后相关功能回到旧行为。</div>
+        <div style={S.hint}>当前开启 {11 - Object.values(g.perf || {}).filter(v => v === false).length}/11 项</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 14px', alignItems: 'start' }}>
+          <Toggle checked={g.perf?.toolWhitelist !== false} onChange={v => save({ perf: { ...(g.perf || {}), toolWhitelist: v } })} label="按任务精简工具" hint="不同任务只展示用得到的工具" />
+          <Toggle checked={g.perf?.resultSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), resultSlim: v } })} label="长内容精简" hint="过长结果只保留开头结尾和关键信息" />
+          <Toggle checked={g.perf?.memoryTrim !== false} onChange={v => save({ perf: { ...(g.perf || {}), memoryTrim: v } })} label="记忆按需取用" hint="只取与当前话题相关的记忆" />
+          <Toggle checked={g.perf?.workflowLazy !== false} onChange={v => save({ perf: { ...(g.perf || {}), workflowLazy: v } })} label="工作流按需显示" hint="提到工作流时才显示完整模板" />
+          <Toggle checked={g.perf?.roundFold !== false} onChange={v => save({ perf: { ...(g.perf || {}), roundFold: v } })} label="旧步骤自动折叠" hint="较早的工具步骤合并成摘要" />
+          <Toggle checked={g.perf?.outputCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), outputCap: v } })} label="简短回复限长" hint="简单闲聊限制回答长度" />
+          <Toggle checked={g.perf?.imgDowngrade !== false} onChange={v => save({ perf: { ...(g.perf || {}), imgDowngrade: v } })} label="旧图片不重复发送" hint="历史图片只发一次，需要时再取" />
+          <Toggle checked={g.perf?.argSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), argSlim: v } })} label="长参数精简" hint="过长的工具参数只保留关键部分" />
+          <Toggle checked={g.perf?.taskArchive !== false} onChange={v => save({ perf: { ...(g.perf || {}), taskArchive: v } })} label="任务记录自动归档" hint="完成任务自动归档，跨任务引用不丢" />
+          <Toggle checked={g.perf?.parallelCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), parallelCap: v } })} label="并行结果精简" hint="同时返回过多结果时自动精简" />
+          <Toggle checked={g.perf?.interjectMerge !== false} onChange={v => save({ perf: { ...(g.perf || {}), interjectMerge: v } })} label="连续插话合并" hint="连续补充的指令合并成一条" />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
           <button style={S.btn('ghost')} onClick={() => { save({ perf: {} }); showToast('已恢复全部默认（全开）') }}>恢复默认</button>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>改动即时生效并自动保存</span>
@@ -59,10 +60,10 @@ export default function AdvancedTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>交互与通知</div>
-        <Toggle checked={g.notifyEnabled !== false} onChange={v => save({ notifyEnabled: v })} label="桌面通知" hint="Agent 完成/异常时通过 bridge_notify 推送系统通知" />
-        <Toggle checked={g.episodicMemory !== false} onChange={v => save({ episodicMemory: v })} label="情景记忆" hint="自动记录文件操作到审计日志（audit_log 可回溯）" />
-        <Toggle checked={g.singleBubble !== false} onChange={v => save({ singleBubble: v })} label="单气泡渲染" hint="整轮任务合并为一条消息（关闭则每步工具调用独立显示气泡）" />
-        <NumSetting label="卡片最大高度" hint="show_card 交互卡片的最高像素" value={g.cardMaxHeight || 500} min={100} max={2000} unit="px" onChange={v => save({ cardMaxHeight: v })} />
+        <Toggle checked={g.notifyEnabled !== false} onChange={v => save({ notifyEnabled: v })} label="桌面通知" hint="任务完成或出错时弹出系统通知" />
+        <Toggle checked={g.episodicMemory !== false} onChange={v => save({ episodicMemory: v })} label="操作记录" hint="自动记录文件操作，可随时查看历史" />
+        <Toggle checked={g.singleBubble !== false} onChange={v => save({ singleBubble: v })} label="合并为一条回复" hint="整轮任务合并为一条消息；关闭后每一步单独显示" />
+        <NumSetting label="卡片最大高度" hint="卡片类内容的最大高度" value={g.cardMaxHeight || 500} min={100} max={2000} unit="px" onChange={v => save({ cardMaxHeight: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>路径与权限</div>

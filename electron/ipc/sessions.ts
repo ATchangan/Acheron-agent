@@ -15,7 +15,7 @@ export function registerSessionIpc(deps: {
 }): void {
   const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone } = deps
 
-  // ─── Hermes 吸收: 会话全文关键词搜索(轻量版; 0.4.0 升级 FTS5 后端) ───
+  // ─── 会话全文关键词搜索(轻量版; 0.4.0 升级 FTS5 后端) ───
   ipcMain.handle('sessions:search', (_e, query: string, limit?: number) => searchSessionsInDir(sessionsDir, query, limit))
 
   // v0.3.1 E: 每会话串行保存队列 + meta 与写盘绑定(FIX-4/5/7)

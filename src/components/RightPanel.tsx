@@ -3,7 +3,7 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import FileTree from './FileTree'
 import ResizeBar from './ResizeBar'
-import { Folder, FolderPlus, FilePlus, RefreshCw, MoreHorizontal } from 'lucide-react'
+import { Folder, FolderPlus, FilePlus, RefreshCw, MoreHorizontal, FileText } from 'lucide-react'
 
 
 export default function RightPanel() {
@@ -20,6 +20,11 @@ export default function RightPanel() {
   const [treeKey, setTreeKey] = useState(0)
   const [creating, setCreating] = useState<'dir' | 'file' | null>(null)
   const [createName, setCreateName] = useState('')
+  // 项目约定状态 —— 工作目录变化时重新探测
+  const [projectCtx, setProjectCtx] = useState<{ file: string; content: string; path: string }>({ file: '', content: '', path: '' })
+  useEffect(() => {
+    window.huangquan.projectContext().then(setProjectCtx).catch(() => setProjectCtx({ file: '', content: '', path: '' }))
+  }, [workDir])
 
   // v0.3.0: 工作目录变化时文件树立即刷新(设置页修改实时生效, 不依赖 5s 轮询)
   const firstWd = useRef(true)
@@ -98,6 +103,12 @@ export default function RightPanel() {
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)', cursor: 'pointer' }} title="新建文件夹" onClick={() => { setCreating('dir'); setCreateName('') }}><FolderPlus size={12} /></span>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--success)', cursor: 'pointer' }} title="新建文件" onClick={() => { setCreating('file'); setCreateName('') }}><FilePlus size={12} /></span>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', cursor: 'pointer' }} title="刷新" onClick={() => setTreeKey(k => k + 1)}><RefreshCw size={12} /></span>
+            {/* 项目约定状态(点击打开编辑) */}
+            <span
+              style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: projectCtx.file ? 'var(--success)' : 'var(--text-muted)', cursor: projectCtx.file ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center' }}
+              title={projectCtx.file ? `项目约定已加载，点击打开编辑\n\n${projectCtx.content.slice(0, 300)}` : '工作目录没有项目约定文件'}
+              onClick={() => { if (projectCtx.path) { try { window.huangquan.computer.openFile(projectCtx.path) } catch { /* 忽略 */ } } }}
+            ><FileText size={12} />{projectCtx.file ? ' ✓' : ''}</span>
           </div>
           {creating && (
             <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>

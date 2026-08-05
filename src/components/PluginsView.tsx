@@ -19,7 +19,7 @@ export default function PluginsView() {
   const [installMsg, setInstallMsg] = useState('')
   const [installing, setInstalling] = useState(false)
 
-  // ── プラグイン走査 ──────────────────────────────────
+  // ── 插件扫描 ──────────────────────────────────
   const scanPlugins = useCallback(async () => {
     setLoading(true)
     setScanError(null)
@@ -34,7 +34,7 @@ export default function PluginsView() {
       try {
         entries = await window.huangquan.computer.readDir(pluginsDir)
       } catch {
-        // プラグインディレクトリが存在しない場合
+        // 插件目录不存在时
         setPlugins([])
         setLoading(false)
         return
@@ -42,7 +42,7 @@ export default function PluginsView() {
 
       const dirs = entries.filter((e) => e.isDirectory)
 
-      // 保存済みのプラグイン設定を読込
+      // 读取已保存的插件设置
       const memory = await window.huangquan.memory.load()
       const savedState: Record<string, PluginState> =
         (memory.plugins || {}) as Record<string, PluginState>
@@ -68,7 +68,7 @@ export default function PluginsView() {
       }
       setPlugins(loaded)
     } catch (e: unknown) {
-      setScanError(errMsg(e) || 'プラグイン走査エラー')
+      setScanError(errMsg(e) || '插件扫描失败')
     } finally {
       setLoading(false)
     }
@@ -78,7 +78,7 @@ export default function PluginsView() {
     scanPlugins()
   }, [scanPlugins])
 
-  // ── 有効/無効 切替 ──────────────────────────────────
+  // ── 启用/禁用 切换 ──────────────────────────────────
   const togglePlugin = async (pluginName: string) => {
     const next = plugins.map((p) =>
       p.manifest.name === pluginName ? { ...p, enabled: !p.enabled } : p,
@@ -119,7 +119,7 @@ export default function PluginsView() {
       const workspaceDir = sysInfo.workspaceDir
       const pluginsDir = workspaceDir.replace(/[\\/]workspace$/, '') + '/plugins'
 
-      // プラグインディレクトリの内容を確認
+        // 检查插件目录内容
       let entries: { name: string; isDirectory: boolean }[]
       try {
         entries = await window.huangquan.computer.readDir(localPath)
@@ -129,12 +129,12 @@ export default function PluginsView() {
         return
       }
 
-      // ローカルパスが直接プラグインディレクトリの場合
+        // 本地路径直接是插件目录的情况
       let srcDir = localPath
       // manifest.json があるかチェック
       const hasManifest = entries.some((e) => e.name === 'manifest.json')
       if (!hasManifest) {
-        // サブディレクトリを探す
+        // 查找子目录
         for (const e of entries) {
           if (!e.isDirectory) continue
           try {
@@ -149,7 +149,7 @@ export default function PluginsView() {
         }
       }
 
-      // manifest を読んでプラグイン名を取得
+        // 读取 manifest 获取插件名
       let pluginName = ''
       try {
         const raw = await window.huangquan.computer.readFile(
@@ -164,7 +164,7 @@ export default function PluginsView() {
       const platform = sysInfo.platform
       const isWindows = platform === 'win32'
 
-      // ディレクトリをコピー
+      // 复制目录
       if (isWindows) {
         await window.huangquan.computer.exec(
           `xcopy "${srcDir}" "${destDir}" /E /I /Y`,
@@ -195,7 +195,7 @@ export default function PluginsView() {
       const workspaceDir = sysInfo.workspaceDir
       const pluginsDir = workspaceDir.replace(/[\\/]workspace$/, '') + '/plugins'
 
-      // URL からプラグイン名を推測
+      // 从 URL 推测插件名
       const urlParts = gitUrl.replace(/\.git$/, '').split('/')
       const repoName = urlParts[urlParts.length - 1] || 'plugin'
 
@@ -282,12 +282,12 @@ export default function PluginsView() {
           {installType === 'local' && (
             <div className="provider-form">
               <div className="form-row">
-                <label>プラグインディレクトリ</label>
+                <label>插件目录</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     className="dropdown-input"
                     style={{ flex: 1, marginBottom: 0 }}
-                    placeholder="プラグインのフォルダパス..."
+                    placeholder="插件文件夹路径..."
                     value={localPath}
                     onChange={(e) => setLocalPath(e.target.value)}
                   />
@@ -372,12 +372,12 @@ export default function PluginsView() {
             まだ契約式神がいません
           </p>
           <p className="empty-hint">
-            「+ 契約」ボタンからプラグインをインストールしてください
+            点击「+ 安装」即可安装插件
           </p>
         </div>
       )}
 
-      {/* プラグイン一覧 */}
+      {/* 插件列表 */}
       {!loading &&
         plugins.map((p) => {
           const cat = CATEGORIES[p.category] || CATEGORIES['oni']
@@ -437,7 +437,7 @@ export default function PluginsView() {
                       e.stopPropagation()
                       togglePlugin(p.manifest.name)
                     }}
-                    title={p.enabled ? '有効' : '無効'}
+                    title={p.enabled ? '禁用' : '启用'}
                   />
                   <span style={s.expandHint}>
                     {isExpanded ? '▲' : '▼'}
@@ -472,7 +472,7 @@ export default function PluginsView() {
                       {p.manifest.license && (
                         <span>ライセンス: {p.manifest.license}</span>
                       )}
-                      <span>ディレクトリ: {p.dirName}</span>
+                      <span>目录: {p.dirName}</span>
                     </div>
                   </div>
 

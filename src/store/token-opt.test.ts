@@ -234,7 +234,7 @@ describe('0.3.5 T2 perf 开关接线', () => {
   })
 })
 
-describe('Hermes 吸收: 记忆安全扫描', () => {
+describe('记忆安全扫描', () => {
   it('识别 API Key 模式', () => {
     expect(scanMemoryText('我的 key 是 sk-abcdefghijklmnop1234567890').ok).toBe(false)
     expect(scanMemoryText('github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_abcdef').ok).toBe(false)
@@ -249,7 +249,7 @@ describe('Hermes 吸收: 记忆安全扫描', () => {
   })
 })
 
-describe('Hermes 吸收: 记忆冻结快照', () => {
+describe('记忆冻结快照', () => {
   it('freeze 后返回冻结内容, clear 后回退 null', () => {
     clearFrozenMemory()
     expect(getFrozenMemory()).toBeNull()

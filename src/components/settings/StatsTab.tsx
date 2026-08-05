@@ -12,7 +12,7 @@ export default function StatsTab() {
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
         <div style={S.section}>模型缓存统计</div>
-        <div style={S.hint}>统计所有聊天会话中每个模型在 API 调用时的缓存命中情况。命中率 = 缓存读取 token ÷ 输入总 token(token 口径,反映实际节省的输入量;请求级命中在 DeepSeek 自动缓存下恒 100%,仅作明细参考)。数据永久本地保存(model-cache-stats.json)，重启不丢失，删除历史会话不影响统计。</div>
+        <div style={S.hint}>查看每个模型在调用中的缓存命中情况。命中率越高越省钱；数据保存在本地，重启不丢失，删除历史会话不影响统计。</div>
         {Object.keys(modelStats).length === 0 ? (
           <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '12px 0', textAlign: 'center' }}>暂无使用记录 —— 调用模型产生 API 请求后，该模型会自动出现在表格中</div>
         ) : (

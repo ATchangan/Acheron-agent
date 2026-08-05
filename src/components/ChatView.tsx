@@ -111,7 +111,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       ) : !session || msgs.length === 0 ? (
         <div className="chat-center-empty">
           <div className="avatar-hex">{agentAvatarImg ? <img src={agentAvatarImg} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" /> : (agentAvatar || '泉')}</div><h1>黄泉Agent</h1>
-          <p>{mode === 'chat' ? '雨停了没多久。你是循着声音来的，还是碰巧路过？' : '需要什么操作？'}</p>
+          <p>{mode === 'chat' ? '雨停了没多久。你是循着声音来的，还是碰巧路过？' : '说吧，这次要处理什么？'}</p>
           <span className="memory-badge">{mode === 'chat' ? '◇ 聊天模式' : '◇ 工作模式'}</span>
         </div>
       ) : (

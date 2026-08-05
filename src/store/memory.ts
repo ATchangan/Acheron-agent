@@ -8,7 +8,7 @@ import type { SessionData, MemoryData } from '../global'
 let episodicTimer: ReturnType<typeof setTimeout> | null = null
 let episodicPending: { op: string; path: string; status: string; ts: number }[] = []
 
-// ─── Hermes 吸收: 记忆安全扫描 ─────────────────────────────────
+// ─── 记忆安全扫描 ─────────────────────────────────
 // 写入前检测 凭证/API Key/提示注入 模式, 命中则拒绝保存(防敏感信息落盘 + 防记忆投毒)
 const SECRET_PATTERNS: RegExp[] = [
   /\bsk-[A-Za-z0-9]{16,}\b/,             // OpenAI/DeepSeek 风格
@@ -39,7 +39,7 @@ export function scanMemoryText(text: string): { ok: boolean; reason?: string } {
   return { ok: true }
 }
 
-// ─── Hermes 吸收: 记忆冻结快照 + 使用率 ─────────────────────────
+// ─── 记忆冻结快照 + 使用率 ─────────────────────────
 // 会话开始(首次发送)时冻结一次记忆快照, 本轮任务内所有轮次复用同一快照:
 // ① 保留前缀缓存友好(记忆不变) ② 避免任务中途记忆变化干扰执行
 let frozenSnapshot: string | null = null
@@ -54,10 +54,10 @@ export function getFrozenMemory(): string | null {
 }
 export function clearFrozenMemory(): void { frozenSnapshot = null; frozenAt = 0 }
 
-// 记忆使用率(容量感知) —— Hermes 容量管理理念: Agent 能看到记忆占用
+// 记忆使用率(容量感知): 让 Agent 能看到记忆占用
 function memoryUsageLine(): string {
   const { pinned, facts, summaries } = globalMemoryCache
-  return `（记忆: 置顶 ${pinned.length}/10 · 长期 ${facts.length}/500 · 摘要 ${summaries.length}/200，超出可让用户清理或自行整理）`
+  return `（置顶 ${pinned.length}/10 · 长期 ${facts.length}/500 · 摘要 ${summaries.length}/200，写满后旧内容会自动清理）`
 }
 export async function recordEpisodic(name: string, args: Record<string, unknown>, result: string) {
   if (['write', 'edit', 'mkdir', 'exec_command', 'read', 'codebox', 'import_doc', 'save_memory'].includes(name)) {
@@ -92,7 +92,7 @@ export async function autoExtractMemory(sid: string, sessions: SessionData[]) {
   if (last.length < 2) return
   try {
     const text = last.map(m => `${m.role === 'user' ? '阳间' : '泉'}:${(m.content || '').slice(0, 150)}`).join(' | ')
-    // Hermes 吸收: 安全扫描 —— 敏感/注入内容不进自动摘要
+    // 安全扫描 —— 敏感/注入内容不进自动摘要
     if (!scanMemoryText(text).ok) return
     const mem = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [] }))
     mem.summaries.push({ content: `[auto ${new Date().toLocaleDateString('zh-CN')}] ${text.slice(0, 300)}`, timestamp: Date.now() })
@@ -145,6 +145,6 @@ export function memoryBlock(userMsg?: string): string {
   // 总量护栏 2500 字符: 置顶全量保留, 按 长期→情景 从尾部裁剪
   if (trim) while (parts.join('\n\n').length > 2500 && parts.length > 1) parts.pop()
   const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
-  // Hermes 吸收: 头部显示记忆使用率(容量自管理)
+  // 头部显示记忆使用率
   return parts.length ? '\n' + memoryUsageLine() + '\n\n' + parts.join('\n\n') + tail : ''
 }

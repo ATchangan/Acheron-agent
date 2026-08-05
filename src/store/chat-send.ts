@@ -115,10 +115,10 @@ export async function runSend(
   // 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
   const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
   // 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
-  // Hermes 吸收: 刷新后冻结本次任务记忆快照(会话内各轮一致, 前缀缓存友好)
+  // 刷新后冻结本次任务记忆快照(会话内各轮一致, 前缀缓存友好)
   await refreshMemoryCache().catch(() => {})
   freezeMemory(content)
-  // Codex 吸收: 读取工作目录项目指令 AGENTS.md(约定自动注入上下文)
+  // 读取工作目录项目约定文件(约定自动注入上下文)
   try {
     const pc = await window.huangquan.projectContext().catch(() => ({ file: '', content: '' }))
     if (pc && pc.file) setProjectContext(pc)
@@ -264,7 +264,7 @@ export async function runSend(
       const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, lastMidSave)
       res = tr.res; toolLog = tr.toolLog; lastMidSave = tr.lastMidSave
       if (tr.switchTo) { curP = tr.switchTo.p; model = tr.switchTo.model; set({ curModel: model }); updateContextLimit(model) }
-      // 4. 单气泡 + Hermes 风格日志
+      // 4. 单气泡合并
       set({ stage: null }) // 任务完成, 思考气泡消失
       const finalSession = get().sessions.find(x => x.id === sid)
       if (finalSession) {
