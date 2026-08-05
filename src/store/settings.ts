@@ -151,7 +151,7 @@ function applySkin(dataUrl: string | null) {
 export function clearSkinInlineVars() {
   const r = document.documentElement.style
   const vars = ['--text-primary', '--text-secondary', '--text-muted', '--border', '--bg-elevated',
-    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary']
+    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary', '--accent']
   for (const v of vars) r.removeProperty(v)
   // 重放自定义主题覆盖(若有) —— 避免把用户自定义配色也一并清掉
   const g = useSettingsStore.getState().general

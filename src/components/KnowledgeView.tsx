@@ -362,13 +362,13 @@ export default function KnowledgeView() {
     }
 
     setImporting(true)
-    setImportMsg(`⏳ 正在导入 ${name} ...`)
+      setImportMsg(`⏳ 正在录入 ${name} …`)
 
     try {
       // memory.importFile is a runtime extension
       const api = window.huangquan.memory
       if (typeof api.importFile !== 'function') {
-        setImportMsg('❌ memory.importFile 不可用（请确认后端已启用向量记忆）')
+        setImportMsg('❌ 卷宗录入接口不可用（请确认后端已开启检索能力）')
         setImporting(false)
         return
       }
@@ -395,11 +395,11 @@ export default function KnowledgeView() {
         mem.facts.push(`${DOC_TAG}${JSON.stringify(doc)}`)
         await window.huangquan.memory.save(mem)
 
-        setImportMsg(`✅ ${name} 导入成功`)
+        setImportMsg(`✅ ${name} 录入成功`)
         await loadDocs()
         setTimeout(() => setImportMsg(''), 3000)
       } else {
-        setImportMsg(`❌ ${name} 导入失败`)
+        setImportMsg(`❌ ${name} 录入失败`)
       }
     } catch (e: unknown) {
       setImportMsg(`❌ 错误: ${errMsg(e)}`)
@@ -439,7 +439,7 @@ export default function KnowledgeView() {
       const hits: SearchResult[] = await api.search(q)
       setResults(hits || [])
     } catch (e: unknown) {
-      setResults([{ content: `❌ 搜索出错: ${errMsg(e)}`, score: 0 }])
+    setResults([{ content: `❌ 寻章出错: ${errMsg(e)}`, score: 0 }])
     } finally {
       setSearching(false)
     }
@@ -455,7 +455,7 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
-        setQaA('❌ 语义搜索不可用，无法构建问答上下文。')
+      setQaA('❌ 寻章检索不可用，无法组织回答。')
         setQaLoading(false)
         return
       }
@@ -463,7 +463,7 @@ export default function KnowledgeView() {
       // 1. semantic search for relevant chunks
       const hits: SearchResult[] = await api.search(q)
       if (!hits || hits.length === 0) {
-        setQaA('📭 知识库中未找到相关内容。请先导入文档。')
+        setQaA('📭 藏书阁中未找到相关内容。请先录入卷宗。')
         setQaLoading(false)
         return
       }
@@ -476,14 +476,14 @@ export default function KnowledgeView() {
 
       // 3. Format the answer as context + question
       setQaA(
-        `📖 **基于知识库的参考回答**\n\n` +
+        `📖 **基于藏书阁的参考回答**\n\n` +
           `**问题：** ${q}\n\n` +
-          `**检索到 ${hits.length} 个相关片段，TOP ${topHits.length}：**\n\n` +
+          `**检索到 ${hits.length} 个相关片段，取前 ${topHits.length} 条：**\n\n` +
           context +
-          `\n\n---\n💡 *提示：可连接 LLM 模型将上述上下文作为 system prompt 获得更精确回答*`
+          `\n\n---\n💡 *提示：可将上述检索结果交给对话模型，获得更精确的回答*`
       )
     } catch (e: unknown) {
-      setQaA(`❌ 问答出错: ${errMsg(e)}`)
+      setQaA(`❌ 回答出错: ${errMsg(e)}`)
     } finally {
       setQaLoading(false)
     }
@@ -499,17 +499,17 @@ export default function KnowledgeView() {
           <span style={S.headerIcon}>📚</span>
           <div>
             <h1 style={S.headerH1}>◇ 藏书阁</h1>
-            <span style={S.headerSub}>私人典籍 · 语义寻章</span>
+            <span style={S.headerSub}>私人典籍 · 寻章摘句</span>
           </div>
         </div>
         <div style={S.statsRow}>
           <div style={S.statBadge}>
             <span style={S.statVal}>{stats.totalDocs}</span>
-            <span>文档</span>
+            <span>卷宗</span>
           </div>
           <div style={S.statBadge}>
             <span style={S.statVal}>{stats.lastImport === '暂无' ? '—' : stats.lastImport.split(' ')[0]}</span>
-            <span>最近导入</span>
+            <span>最近录入</span>
           </div>
         </div>
       </div>
@@ -519,7 +519,7 @@ export default function KnowledgeView() {
         {/* ── 1. Import ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>📥</span>文档导入
+            <span style={S.sectionIcon}>📥</span>卷宗录入
           </div>
           <div style={S.importRow}>
             <button
@@ -553,12 +553,12 @@ export default function KnowledgeView() {
         {/* ── 2. Search ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>🔍</span>语义搜索
+            <span style={S.sectionIcon}>🔍</span>寻章检索
           </div>
           <div style={S.searchRow}>
             <input
               style={S.searchInput}
-              placeholder="输入查询内容..."
+              placeholder="输入要寻章的内容…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -568,7 +568,7 @@ export default function KnowledgeView() {
               onClick={handleSearch}
               disabled={searching || !searchQ.trim()}
             >
-              {searching ? '搜索中...' : '搜索'}
+              {searching ? '寻章中…' : '寻章'}
             </button>
           </div>
           {results.length > 0 && (
@@ -576,7 +576,7 @@ export default function KnowledgeView() {
               {results.map((r, i) => (
                 <div key={i} style={S.resultItem}>
                   <div style={S.resultHeader}>
-                    <span style={{ color: 'var(--text-muted)' }}>结果 #{i + 1}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>结果 {i + 1}</span>
                     <span style={S.resultScore}>相关度: {(r.score * 100).toFixed(0)}%</span>
                   </div>
                   <div style={S.resultContent}>
@@ -587,19 +587,19 @@ export default function KnowledgeView() {
               ))}
             </div>
           )}
-          {searching && <div className="empty-hint" style={{ textAlign: 'center' }}>搜索中...</div>}
+          {searching && <div className="empty-hint" style={{ textAlign: 'center' }}>寻章中…</div>}
         </div>
 
         {/* ── 3. Document Library ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>📋</span>文档库
+            <span style={S.sectionIcon}>📋</span>卷宗库
             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
-              （{docs.length} 份文档）
+              （{docs.length} 份卷宗）
             </span>
           </div>
           {docs.length === 0 ? (
-            <div style={S.emptyHint}>暂无文档，请先导入文件。</div>
+            <div style={S.emptyHint}>暂无卷宗，请先录入文件。</div>
           ) : (
             <div style={S.docList}>
               {docs.map((d, i) => (
@@ -625,7 +625,7 @@ export default function KnowledgeView() {
                   <button
                     className="btn-icon btn-danger"
                     onClick={() => handleDelete(i)}
-                    title="删除文档"
+                    title="删除卷宗"
                   >
                     🗑
                   </button>
@@ -638,15 +638,15 @@ export default function KnowledgeView() {
         {/* ── 4. Q&A ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>💬</span>知识问答
+            <span style={S.sectionIcon}>💬</span>典籍问答
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
-              基于检索结果构建回答上下文
+              基于检索结果组织回答
             </span>
           </div>
           <div style={S.qaInputRow}>
             <input
               style={S.qaInput}
-              placeholder="输入问题..."
+              placeholder="输入问题…"
               value={qaQ}
               onChange={(e) => setQaQ(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleQa()}
