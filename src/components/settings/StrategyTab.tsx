@@ -42,7 +42,9 @@ export default function StrategyTab() {
           providers.forEach(pr => pushFrom(pr.name, pr.models || [], !!pr.apiKey))
           mediaProviders.forEach(mp => pushFrom(mp.name, [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])], !!mp.apiKey))
           providers.forEach(pr => { if (pr.apiKey && (pr.models || []).length && !visCands.some(c => c.pname === pr.name)) visCands.push({ id: pr.name + '::' + (pr.models || [])[0], label: pr.name + ' · ' + (pr.models || [])[0] + '（自动）', pname: pr.name, mname: (pr.models || [])[0], keyed: true }) })
-          const curList: string[] = Array.isArray(g.visionModels) ? [...g.visionModels] : (g.visionModel ? [g.visionModel] : [])
+          // 只保留当前仍有效的候选 —— 过期条目(供应商已删/模型已清/绘图模型)不再占排序位, 勾选后从 #1 开始
+          const curList: string[] = (Array.isArray(g.visionModels) ? [...g.visionModels] : (g.visionModel ? [g.visionModel] : []))
+            .filter(id => visCands.some(c => c.id === id))
           const toggleVis = (id: string) => {
             const next = curList.includes(id) ? curList.filter(x => x !== id) : [...curList, id]
             save({ visionModels: next, visionModel: next.length ? next[0] : '' })
