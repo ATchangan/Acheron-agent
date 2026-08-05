@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import type { CronJob, MemoryData } from '../global'
+import { HourglassMark } from './themed-icons'
 
 // ─── 型 ──────────────────────────────────────────────
 
@@ -584,7 +585,7 @@ export default function CronView() {
       {/* header */}
       <div style={S.header}>
         <div style={S.titleRow}>
-          <span style={S.icon}>⌛</span>
+          <span style={S.icon}><HourglassMark size={28} /></span>
           <h2 style={S.title}>定时任务</h2>
         </div>
         <p style={S.subtitle}>定时任务 · 到点即行</p>

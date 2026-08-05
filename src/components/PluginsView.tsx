@@ -3,6 +3,7 @@ import { errMsg } from '../utils/safe'
 import { CATEGORIES, CATEGORY_HINT, CAT_COLORS, YELLOW_RIVER } from './plugin-types'
 import type { PluginManifest, PluginInfo, PluginState } from './plugin-types'
 import { s } from './plugin-styles'
+import { MaskMark } from './themed-icons'
 
 // v0.3.1 块 K: 插件视图主组件(类型/样式已拆分, 行为零变化)
 export default function PluginsView() {
@@ -235,7 +236,7 @@ export default function PluginsView() {
       {/* 顶部 */}
       <div style={s.header}>
         <div>
-          <h2>👺 黄泉式神录</h2>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><MaskMark size={26} />黄泉式神录</h2>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-muted)', marginTop: 2 }}>
             契约式神 · 插件接入
           </span>

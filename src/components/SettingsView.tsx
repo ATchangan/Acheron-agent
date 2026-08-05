@@ -7,6 +7,7 @@ import type { MediaProvider, ProviderConfig, MemoryData } from '../global'
 import type { GeneralSettings } from '../types'
 import { updateContextLimit, useChatStore } from '../store/chat'
 import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw } from 'lucide-react'
+import { HourglassMark, ScrollMark, MaskMark, RuneMark } from './themed-icons'
 import { errMsg } from '../utils/safe'
 import AboutTab from './settings/AboutTab'
 import ModelsTab from './settings/ModelsTab'
@@ -94,10 +95,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'skin', icon: <Palette size={15} />, label: '外观' },
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
     { key: 'advanced', icon: <SettingsIcon size={15} />, label: '引擎' },
-    { key: 'cron', icon: '⌛', label: '定时任务' },
-    { key: 'knowledge', icon: '📜', label: '藏书阁' },
-    { key: 'plugins', icon: '👺', label: '式神' },
-    { key: 'code', icon: '🪄', label: '符文工坊' },
+    { key: 'cron', icon: <HourglassMark size={15} />, label: '定时任务' },
+    { key: 'knowledge', icon: <ScrollMark size={15} />, label: '藏书阁' },
+    { key: 'plugins', icon: <MaskMark size={15} />, label: '式神' },
+    { key: 'code', icon: <RuneMark size={15} />, label: '符文工坊' },
     { key: 'about', icon: <Info size={15} />, label: '关于' },
   ]
 

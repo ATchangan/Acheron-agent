@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
+import { ScrollMark } from './themed-icons'
 
 /* ─── types ─── */
 
@@ -496,7 +497,7 @@ export default function KnowledgeView() {
       {/* header */}
       <div style={S.header}>
         <div style={S.headerTitle}>
-          <span style={S.headerIcon}>📜</span>
+          <span style={S.headerIcon}><ScrollMark size={24} /></span>
           <div>
             <h1 style={S.headerH1}>◇ 藏书阁</h1>
             <span style={S.headerSub}>私人典籍 · 寻章摘句</span>

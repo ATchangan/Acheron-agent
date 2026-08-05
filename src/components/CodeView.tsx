@@ -3,6 +3,7 @@ import { errMsg } from '../utils/safe'
 import type { Lang, HistoryEntry, Template } from './code-data'
 import { LANGS, TEMPLATES, detectLang, extForLang, colors } from './code-data'
 import { S } from './code-styles'
+import { RuneMark } from './themed-icons'
 
 // v0.3.1 块 K: 代码工坊主组件(数据/样式已拆分, 行为零变化)
 export default function CodeView() {
@@ -301,7 +302,7 @@ export default function CodeView() {
       {/* ═══ Header ═══ */}
       <div style={S.header}>
         <div style={S.titleRow}>
-          <span style={S.icon}>🪄</span>
+          <span style={S.icon}><RuneMark size={26} /></span>
           <div>
             <h1 style={S.title}>⌘ 符文工坊</h1>
             <p style={S.subtitle}>符文沙盘 · 即写即运行 · {history.length} 条历史</p>
