@@ -21,11 +21,11 @@ export interface Template {
 }
 
 export const LANGS: { id: Lang; label: string; ext: string; icon: string }[] = [
-  { id: 'python',     label: 'Python',     ext: '.py',  icon: '🐍' },
-  { id: 'javascript', label: 'JavaScript', ext: '.js',  icon: '🟨' },
-  { id: 'typescript', label: 'TypeScript', ext: '.ts',  icon: '🔷' },
-  { id: 'powershell', label: 'PowerShell', ext: '.ps1', icon: '💙' },
-  { id: 'bash',       label: 'Bash',       ext: '.sh',  icon: '🐚' },
+{ id: 'python',     label: 'Python',     ext: '.py',  icon: 'Py' },
+{ id: 'javascript', label: 'JavaScript', ext: '.js',  icon: 'JS' },
+{ id: 'typescript', label: 'TypeScript', ext: '.ts',  icon: 'TS' },
+{ id: 'powershell', label: 'PowerShell', ext: '.ps1', icon: 'PS' },
+{ id: 'bash',       label: 'Bash',       ext: '.sh',  icon: 'sh' },
 ]
 
 /* ─── 模板 ─────────────────────────────────────────────── */
@@ -249,9 +249,9 @@ Write-Host "总进程数: $((Get-Process).Count)"`,
 ]
 
 export const TEMPLATES: Template[] = [
-  ...PY_TEMPLATES.map(t => ({ ...t, label: `🐍 ${t.label}` })),
-  ...NODE_TEMPLATES.map(t => ({ ...t, label: `🟨 ${t.label}` })),
-  ...PS_TEMPLATES.map(t => ({ ...t, label: `💙 ${t.label}` })),
+...PY_TEMPLATES.map(t => ({ ...t, label: `Py · ${t.label}` })),
+...NODE_TEMPLATES.map(t => ({ ...t, label: `JS · ${t.label}` })),
+...PS_TEMPLATES.map(t => ({ ...t, label: `PS · ${t.label}` })),
 ]
 
 /* ─── 辅助函数 ────────────────────────────────────────── */

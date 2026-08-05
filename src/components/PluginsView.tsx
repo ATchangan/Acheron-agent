@@ -3,7 +3,7 @@ import { errMsg } from '../utils/safe'
 import { CATEGORIES, CATEGORY_HINT, CAT_COLORS, YELLOW_RIVER } from './plugin-types'
 import type { PluginManifest, PluginInfo, PluginState } from './plugin-types'
 import { s } from './plugin-styles'
-import { MaskMark } from './themed-icons'
+import { MaskMark, FolderMark, LinkMark, EmptyMark, InfoMark, LockMark, ToolMark, BoltMark, TagMark } from './themed-icons'
 
 // v0.3.1 块 K: 插件视图主组件(类型/样式已拆分, 行为零变化)
 export default function PluginsView() {
@@ -270,13 +270,13 @@ export default function PluginsView() {
               style={s.installTab(installType === 'local')}
               onClick={() => { setInstallType('local'); setInstallMsg('') }}
             >
-              📁 本地目录
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><FolderMark size={13} />本地目录</span>
             </button>
             <button
               style={s.installTab(installType === 'git')}
               onClick={() => { setInstallType('git'); setInstallMsg('') }}
             >
-              🔗 仓库地址
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><LinkMark size={13} />仓库地址</span>
             </button>
           </div>
 
@@ -368,7 +368,7 @@ export default function PluginsView() {
             padding: '40px 20px',
           }}
         >
-          <div style={s.emptyIcon}>📭</div>
+          <div style={s.emptyIcon}><EmptyMark size={40} /></div>
           <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--ui-font-size)', marginBottom: 6 }}>
           还没有安装任何插件
           </p>
@@ -451,7 +451,7 @@ export default function PluginsView() {
                 <div style={s.expandBody}>
               {/* 基本信息 */}
                   <div>
-                    <div style={s.sectionTitle}>📋 基本信息</div>
+                    <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><InfoMark size={12} />基本信息</div>
                     <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                       {p.manifest.author && (
                         <span>作者：{p.manifest.author}</span>
@@ -480,7 +480,7 @@ export default function PluginsView() {
                   {/* 权限 */}
                   {p.manifest.permissions && p.manifest.permissions.length > 0 && (
                     <div>
-                      <div style={s.sectionTitle}>🔐 权限</div>
+                      <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><LockMark size={12} />权限</div>
                       <div>
                         {p.manifest.permissions.map((perm) => (
                           <span key={perm} style={s.permChip}>
@@ -494,7 +494,7 @@ export default function PluginsView() {
                   {/* 工具列表 */}
                   {p.manifest.tools && p.manifest.tools.length > 0 && (
                     <div>
-                      <div style={s.sectionTitle}>🔧 提供工具</div>
+                      <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><ToolMark size={12} />提供工具</div>
                       {p.manifest.tools.map((t, i) => (
                         <div key={i} style={s.toolRow}>
                           <span style={s.toolName}>{t.name}</span>
@@ -509,7 +509,7 @@ export default function PluginsView() {
                   {/* 命令列表 */}
                   {p.manifest.commands && p.manifest.commands.length > 0 && (
                     <div>
-                      <div style={s.sectionTitle}>⚡ 命令</div>
+                      <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><BoltMark size={12} />命令</div>
                       {p.manifest.commands.map((c, i) => (
                         <div key={i} style={s.toolRow}>
                           <span style={s.toolName}>{c.name}</span>
@@ -523,7 +523,7 @@ export default function PluginsView() {
 
                   {/* 类别切换 */}
                   <div>
-                    <div style={s.sectionTitle}>🏷️ 类别</div>
+                    <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><TagMark size={12} />类别</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {Object.entries(CATEGORIES).map(([key, val]) => (
                         <button

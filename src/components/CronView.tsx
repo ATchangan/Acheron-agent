@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import type { CronJob, MemoryData } from '../global'
-import { HourglassMark } from './themed-icons'
+import { HourglassMark, PlusMark, TemplateMark, AskMark, TrashMark } from './themed-icons'
 
 // ─── 型 ──────────────────────────────────────────────
 
@@ -596,12 +596,12 @@ export default function CronView() {
         {/* ── create section ── */}
         <div style={S.createCard}>
           <div style={S.createTitle}>
-            <span>📯</span> 新增轮回
+            <PlusMark size={14} /> 新增轮回
           </div>
 
           {/* templates */}
           <div style={S.templateSection}>
-            <div style={S.templateLabel}>📋 快速模板</div>
+            <div style={{ ...S.templateLabel, display: 'inline-flex', alignItems: 'center', gap: 5 }}><TemplateMark size={12} />快速模板</div>
             <div style={S.templateRow}>
               {TEMPLATES.map((tpl) => (
                 <button
@@ -740,8 +740,8 @@ export default function CronView() {
                   <span style={S.statusDot(isEnabled)} />
                   {displayName}
                   {isEnabled && t.nextRun && (
-                    <span style={S.countdownBadge}>
-                      ⏳ {countdown(Number(t.nextRun) || 0)}
+                    <span style={{ ...S.countdownBadge, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <HourglassMark size={12} />{countdown(Number(t.nextRun) || 0)}
                     </span>
                   )}
                 </div>
@@ -760,7 +760,7 @@ export default function CronView() {
                     onClick={() => setDelId(t.id)}
                     title="删除"
                   >
-                    ✕
+                    <TrashMark size={13} />
                   </button>
                 </div>
               </div>
@@ -789,14 +789,14 @@ export default function CronView() {
                 <div style={S.metaItem}>
                   <span style={S.metaLabel}>状态</span>
                   <span style={{ color: isEnabled ? 'var(--success)' : '#9999AA', fontWeight: 600 }}>
-                    {isEnabled ? '⚡ 运行中' : '⏸ 已停用'}
+                    {isEnabled ? '● 运行中' : '○ 已停用'}
                   </span>
                 </div>
               </div>
 
               {/* prompt preview */}
-              <div style={S.promptPreview} title={t.prompt}>
-                💬 {t.prompt}
+              <div style={{ ...S.promptPreview, display: 'flex', alignItems: 'center', gap: 5 }} title={t.prompt}>
+                <AskMark size={12} /> {t.prompt}
               </div>
             </div>
           )

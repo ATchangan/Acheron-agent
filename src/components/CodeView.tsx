@@ -3,7 +3,7 @@ import { errMsg } from '../utils/safe'
 import type { Lang, HistoryEntry, Template } from './code-data'
 import { LANGS, TEMPLATES, detectLang, extForLang, colors } from './code-data'
 import { S } from './code-styles'
-import { RuneMark } from './themed-icons'
+import { RuneMark, TemplateMark, FolderMark, SaveMark, ClearMark, RunMark, EditMark, OutputMark, HistoryMark, HourglassMark } from './themed-icons'
 
 // v0.3.1 块 K: 代码工坊主组件(数据/样式已拆分, 行为零变化)
 export default function CodeView() {
@@ -93,7 +93,7 @@ export default function CodeView() {
       const facts = (data.facts || []).filter(f => !f.startsWith('[codehist]'))
       await window.huangquan.memory.save({ facts, summaries: data.summaries || [] })
       setHistory([])
-      showToast('🗑️ 执行历史已清除')
+    showToast('执行历史已清除')
     } catch {
       showToast('⚠️ 清除失败')
     }
@@ -192,7 +192,7 @@ export default function CodeView() {
     setOutput('')
     setDuration(null)
     setShowTemplates(false)
-    showToast(`📋 已加载模板: ${tpl.label}`)
+    showToast(`已加载模板：${tpl.label}`)
     setTimeout(() => textareaRef.current?.focus(), 50)
   }, [showToast])
 
@@ -207,7 +207,7 @@ export default function CodeView() {
       setCode(content)
       setOutput('')
       setDuration(null)
-      showToast(`📂 已打开: ${path.split(/[/\\]/).pop()}`)
+    showToast(`已打开：${path.split(/[/\\]/).pop()}`)
     } catch (e: unknown) {
       showToast(`⚠️ 打开失败: ${errMsg(e) || '未知错误'}`)
     }
@@ -219,7 +219,7 @@ export default function CodeView() {
       const filename = `huangquan_script${ext}`
       if (!filename) return
       await window.huangquan.computer.writeFile(filename, code)
-      showToast(`💾 已保存: ${filename}`)
+    showToast(`已保存：${filename}`)
     } catch (e: unknown) {
       showToast(`⚠️ 保存失败: ${errMsg(e) || '未知错误'}`)
     }
@@ -230,7 +230,7 @@ export default function CodeView() {
     setCode('')
     setOutput('')
     setDuration(null)
-    showToast('🧹 编辑器已清空')
+    showToast('编辑器已清空')
     textareaRef.current?.focus()
   }, [showToast])
 
@@ -240,7 +240,7 @@ export default function CodeView() {
     setCode(entry.code)
     setOutput(entry.output)
     setDuration(entry.duration)
-    showToast('📜 已加载历史记录')
+    showToast('已加载历史记录')
   }, [showToast])
 
   /* ── 关闭模板下拉 (点击外部) ── */
@@ -304,7 +304,7 @@ export default function CodeView() {
         <div style={S.titleRow}>
           <span style={S.icon}><RuneMark size={26} /></span>
           <div>
-            <h1 style={S.title}>⌘ 符文工坊</h1>
+            <h1 style={S.title}>符文工坊</h1>
             <p style={S.subtitle}>符文沙盘 · 即写即运行 · {history.length} 条历史</p>
           </div>
         </div>
@@ -330,7 +330,7 @@ export default function CodeView() {
               style={S.actionBtn('var(--accent)')}
               onClick={() => setShowTemplates(v => !v)}
             >
-              📋 模板
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><TemplateMark size={13} />模板</span>
             </button>
             {showTemplates && (
               <div style={S.templateOverlay}>
@@ -350,13 +350,13 @@ export default function CodeView() {
           </div>
 
           <button style={S.actionBtn()} onClick={handleOpenFile}>
-            📂 打开文件
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><FolderMark size={13} />打开文件</span>
           </button>
           <button style={S.actionBtn()} onClick={handleSaveFile}>
-            💾 保存
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SaveMark size={13} />保存</span>
           </button>
           <button style={S.actionBtn()} onClick={handleClear}>
-            🧹 清空
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ClearMark size={13} />清空</span>
           </button>
 
           <div style={{ flex: 1 }} />
@@ -370,7 +370,9 @@ export default function CodeView() {
             onClick={handleRun}
             disabled={running}
           >
-            {running ? '⏳ 执行中...' : '▶ 运行'}
+            {running
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><HourglassMark size={13} />执行中…</span>
+              : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><RunMark size={13} />运行</span>}
           </button>
         </div>
       </div>
@@ -380,8 +382,8 @@ export default function CodeView() {
         {/* ── 编辑器 (上60%) ── */}
         <div style={S.editorPane}>
           <div style={S.editorHeader}>
-            <span style={S.editorLabel}>
-              📝 {LANGS.find(l => l.id === lang)?.icon} {LANGS.find(l => l.id === lang)?.label} 编辑器
+            <span style={{ ...S.editorLabel, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <EditMark size={13} /> {LANGS.find(l => l.id === lang)?.icon} {LANGS.find(l => l.id === lang)?.label} 编辑器
             </span>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)' }}>
               {code.length} 字符 · {lineCount} 行 · Ctrl+Enter 运行
@@ -412,10 +414,10 @@ export default function CodeView() {
         {/* ── 输出面板 (下40%) ── */}
         <div style={S.outputPane}>
           <div style={S.outputHeader}>
-            <span style={S.outputLabel}>🖥️ 执行输出</span>
+            <span style={{ ...S.outputLabel, display: 'inline-flex', alignItems: 'center', gap: 5 }}><OutputMark size={13} />执行输出</span>
             {duration !== null && (
               <span style={S.outputDuration}>
-                ⏱ {duration >= 1000 ? `${(duration / 1000).toFixed(2)}s` : `${duration}ms`}
+            {duration >= 1000 ? `${(duration / 1000).toFixed(2)}s` : `${duration}ms`}
               </span>
             )}
           </div>
@@ -424,7 +426,7 @@ export default function CodeView() {
               output
             ) : (
               <span style={S.consolePlaceholder}>
-                {'> 点击「▶ 运行」或按 Ctrl+Enter 执行代码...'}
+                  {'点击「运行」或按 Ctrl+Enter 执行代码…'}
               </span>
             )}
           </pre>
@@ -434,7 +436,7 @@ export default function CodeView() {
         {showHistory && history.length > 0 && (
           <div style={S.historyPanel}>
             <div style={S.historyHeader}>
-              <span style={S.historyTitle}>📜 执行历史 ({history.length})</span>
+            <span style={{ ...S.historyTitle, display: 'inline-flex', alignItems: 'center', gap: 5 }}><HistoryMark size={12} />执行历史 ({history.length})</span>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button style={S.historyClear} onClick={clearHistory}>
                   清除
@@ -476,7 +478,7 @@ export default function CodeView() {
               style={{ ...S.actionBtn(), fontSize: 'calc(var(--ui-font-size) - 3px)' }}
               onClick={() => setShowHistory(true)}
             >
-              📜 显示历史 ({history.length})
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><HistoryMark size={12} />显示历史 ({history.length})</span>
             </button>
           </div>
         )}

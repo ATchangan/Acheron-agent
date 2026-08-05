@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
-import { ScrollMark } from './themed-icons'
+import { ScrollMark, UploadMark, SearchMark, AskMark, DocMark, TrashMark } from './themed-icons'
 
 /* ─── types ─── */
 
@@ -464,7 +464,7 @@ export default function KnowledgeView() {
       // 1. semantic search for relevant chunks
       const hits: SearchResult[] = await api.search(q)
       if (!hits || hits.length === 0) {
-        setQaA('📭 藏书阁中未找到相关内容。请先录入卷宗。')
+        setQaA('藏书阁中未找到相关内容。请先录入卷宗。')
         setQaLoading(false)
         return
       }
@@ -477,11 +477,11 @@ export default function KnowledgeView() {
 
       // 3. Format the answer as context + question
       setQaA(
-        `📖 **基于藏书阁的参考回答**\n\n` +
+        `**基于藏书阁的参考回答**\n\n` +
           `**问题：** ${q}\n\n` +
           `**检索到 ${hits.length} 个相关片段，取前 ${topHits.length} 条：**\n\n` +
           context +
-          `\n\n---\n💡 *提示：可将上述检索结果交给对话模型，获得更精确的回答*`
+          `\n\n---\n*提示：可将上述检索结果交给对话模型，获得更精确的回答*`
       )
     } catch (e: unknown) {
       setQaA(`❌ 回答出错: ${errMsg(e)}`)
@@ -520,7 +520,7 @@ export default function KnowledgeView() {
         {/* ── 1. Import ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>📥</span>卷宗录入
+            <span style={S.sectionIcon}><UploadMark size={13} /></span>卷宗录入
           </div>
           <div style={S.importRow}>
             <button
@@ -554,7 +554,7 @@ export default function KnowledgeView() {
         {/* ── 2. Search ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>🔍</span>寻章检索
+            <span style={S.sectionIcon}><SearchMark size={13} /></span>寻章检索
           </div>
           <div style={S.searchRow}>
             <input
@@ -594,7 +594,7 @@ export default function KnowledgeView() {
         {/* ── 3. Document Library ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>📋</span>卷宗库
+            <span style={S.sectionIcon}><ScrollMark size={13} /></span>卷宗库
             <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
               （{docs.length} 份卷宗）
             </span>
@@ -616,7 +616,7 @@ export default function KnowledgeView() {
                 >
                   <div style={S.docInfo}>
                     <span style={S.docName} title={d.path}>
-                      📄 {d.name}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><DocMark size={12} />{d.name}</span>
                     </span>
                     <span style={S.docMeta}>
                       <span>{new Date(d.importedAt).toLocaleString('zh-CN')}</span>
@@ -628,7 +628,7 @@ export default function KnowledgeView() {
                     onClick={() => handleDelete(i)}
                     title="删除卷宗"
                   >
-                    🗑
+            <TrashMark size={13} />
                   </button>
                 </div>
               ))}
@@ -639,7 +639,7 @@ export default function KnowledgeView() {
         {/* ── 4. Q&A ── */}
         <div style={S.section}>
           <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}>💬</span>典籍问答
+            <span style={S.sectionIcon}><AskMark size={13} /></span>典籍问答
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
               依据卷宗作答
             </span>
@@ -662,7 +662,7 @@ export default function KnowledgeView() {
           </div>
           {qaA && (
             <div style={S.qaContextBox}>
-              <div style={S.qaLabel}>📖 参考回答</div>
+              <div style={{ ...S.qaLabel, display: 'flex', alignItems: 'center', gap: 5 }}><DocMark size={12} />参考回答</div>
               <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{qaA}</div>
             </div>
           )}
