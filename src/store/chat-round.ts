@@ -5,6 +5,8 @@ import type { GeneralSettings } from '../types'
 import { updateContextLimit } from './context'
 import { recordEpisodic } from './memory'
 import { runTool, setCached } from './runtime'
+import { slimToolResult } from './context'
+import { debugLog } from '../utils/safe'
 import { getTaskGenFor } from './session-state'
 import { resolveModel } from './model-pick'
 import { hasInterjectForSid, drainInterjections, peekInterjectKind } from './interject'
@@ -50,7 +52,7 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
     // v0.3.1 M2: 改向熔断 —— 用户发改向指令(别做了/重新来/换一个等)时, 工具链中途跳出
     if (peekInterjectKind(sid) === 'retarget') {
-      console.log('[插话] 检测到改向指令, 熔断当前工具链')
+      debugLog('[插话] 检测到改向指令, 熔断当前工具链')
       toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
       break
     }
@@ -68,7 +70,7 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     const runOne = async (tc: ToolCallItem) => {
       // v0.3.1 M2: 改向熔断(工具粒度) —— 每个工具 await 前检查 retarget, 并行批内也能中途跳出
       if (peekInterjectKind(sid) === 'retarget') {
-        console.log('[插话] 检测到改向指令, 熔断当前工具链')
+        debugLog('[插话] 检测到改向指令, 熔断当前工具链')
         toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
         return { tc, r: 'E:改向指令熔断' }
       }
@@ -76,7 +78,7 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
       const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '🔧 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
       r2 = await runTool(tc.name, tc.args, cfg); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms });
       set({ stage: { sid, phase: 'tool', label: '✓ ' + tc.name, detail: (r2 && r2.length > 50 ? r2.slice(0, 50) + '…' : (r2 || '')) } })
-      if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = String(tc.args.agent_name); const curAg = get().activeAgents || []; const maxChain = gSnap.maxHandoffChain || 3; if (!curAg.includes(to) && curAg.length >= maxChain) { return { tc, r: 'E:交接链已达上限(' + maxChain + '), 请在当前 Agent 直接完成任务, 不要再交接' } } set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }
+      if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = String(tc.args.agent_name); const curAg = get().sessions.find(x => x.id === sid)?.activeAgents || []; const maxChain = gSnap.maxHandoffChain || 3; if (!curAg.includes(to) && curAg.length >= maxChain) { return { tc, r: 'E:交接链已达上限(' + maxChain + '), 请在当前 Agent 直接完成任务, 不要再交接' } } set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, activeAgents: (x.activeAgents || []).includes(to) ? x.activeAgents : [...(x.activeAgents || []), to] } : x) })) }; return { tc, r: r2 } }
     const writes = ['write', 'edit', 'exec_command', 'mkdir', 'codebox']
     if (doParallel) {
       // 读类并行，写类串行；结果按 tc 一一对应收集，避免同名工具结果错配
@@ -86,6 +88,15 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
       const pResults = await Promise.all(readTcs.map(runOne))
       results.push(...pResults)
       for (const tc of writeTcs) { results.push(await runOne(tc)) }
+      // v0.3.5 T1: 并行结果总量护栏 —— 总字符 >6000 且结果 >4 个时, 按长度降序保留前 4 个全量, 其余瘦身(terminal 仍保留完整版)
+      if (gSnap.perf?.parallelCap !== false) {
+        const totalLen = results.reduce((s, x) => s + x.r.length, 0)
+        if (totalLen > 6000 && results.length > 4) {
+          const ranked = [...results].sort((a, b) => b.r.length - a.r.length)
+          const keepFull = new Set(ranked.slice(0, 4))
+          for (const x of results) if (!keepFull.has(x)) x.r = slimToolResult(x.r)
+        }
+      }
       for (const { tc, r } of results) {
         set(s => { const cur = { ...s.sessions.find(x => x.id === sid)! }; cur.messages = [...cur.messages, { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }]; const entry = { id: uuidv4(), name: tc.name, args: tc.args, result: r, time: Date.now() }; return { sessions: s.sessions.map(x => x.id === sid ? cur : x), terminal: [...s.terminal, entry] } })
       }

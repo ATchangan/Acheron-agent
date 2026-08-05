@@ -51,14 +51,12 @@ export function registerSkillsIpc(deps: {
     } catch { return null }
   })
   ipcMain.handle('skills:create', (_e, name: string, content: string) => {
-    console.log('[SKILLS:CREATE] called', name, 'skillsDir=', skillsDir)
     try {
       const dir = join(skillsDir, name)
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(join(dir, 'SKILL.md'), content, 'utf-8')
-      console.log('[SKILLS:CREATE] ok', dir)
       return true
-    } catch (e: unknown) { const em = e instanceof Error ? e.message : String(e); console.log('[SKILLS:CREATE] ERR', em); return 'Error: ' + em }
+    } catch (e: unknown) { const em = e instanceof Error ? e.message : String(e); return 'Error: ' + em }
   })
   // 本地技能安装 —— 复制本地技能目录到 skillsDir(只读源, 校验目录名)
   ipcMain.handle('skills:installLocal', async (_e, srcPath: string) => {

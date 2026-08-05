@@ -1,6 +1,7 @@
 ﻿import { create } from 'zustand'
 import type { SettingsData, ProviderConfig, MediaProvider } from '../global'
 import type { GeneralSettings } from '../types'
+import { setDebugLogging } from '../utils/safe'
 
 interface SettingsStore extends SettingsData {
   loaded: boolean
@@ -150,7 +151,7 @@ function applySkin(dataUrl: string | null) {
 export function clearSkinInlineVars() {
   const r = document.documentElement.style
   const vars = ['--text-primary', '--text-secondary', '--text-muted', '--border', '--bg-elevated',
-    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary']
+    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary', '--accent']
   for (const v of vars) r.removeProperty(v)
   // 重放自定义主题覆盖(若有) —— 避免把用户自定义配色也一并清掉
   const g = useSettingsStore.getState().general
@@ -261,7 +262,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   general: {
     theme: 'dark', mode: 'work',
     // 无头浏览器网页解析工具配置
-    webReadEnabled: true,        // 总开关: 关闭后 Agent 无法调用 web_read
+  webReadEnabled: true,        // 总开关: 关闭后无法调用网页读取
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
     webReadTimeout: 15000,       // 页面加载超时(ms)
     webReadUA: '',               // 自定义浏览器 User-Agent(空=默认)
@@ -278,6 +279,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       const data = await window.huangquan.settings.load()
       // 默认人设填充（仅当用户从未设置时）—— 默认选中黄泉预设
       let filled = false
+      // 历史脏数据修复: disabledTools 保序去重(曾出现 270 个重复 media_img/media_video)
+      if (Array.isArray(data.general?.disabledTools) && data.general.disabledTools.length > 0) {
+        const uniq = [...new Set(data.general.disabledTools as string[])]
+        if (uniq.length !== data.general.disabledTools.length) {
+          data.general.disabledTools = uniq
+          filled = true
+        }
+      }
       if (!data.general?.rolePreset) { data.general.rolePreset = 'huangquan'; filled = true }
       if (!data.general?.chatPersona) { data.general.chatPersona = DEFAULT_CHAT_PERSONA; filled = true }
       if (!data.general?.workPersona) { data.general.workPersona = DEFAULT_WORK_PERSONA; filled = true }
@@ -311,6 +320,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     // logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
     try {
       const lv = (get().general)?.logLevel || 'info'
+      setDebugLogging(lv === 'debug')
       if (lv === 'silent') { console.log = () => {}; console.warn = () => {}; console.error = () => {} }
       else if (lv === 'error') { console.log = () => {}; console.warn = () => {} }
       else if (lv === 'warn') { console.log = () => {} }

@@ -1,7 +1,7 @@
 // src/store/chat-llm.ts —— LLM 流式调用封装(v0.3.1 补丁 D: 从 chat-send.ts 拆出, 行为零变化)
 import type { ProviderConfig, UsageData, ToolCallDelta } from '../global'
 import type { GeneralSettings } from '../types'
-import { updateContextLimit, buildContextualMessages, isVisionModel } from './context'
+import { updateContextLimit, buildContextualMessages, isVisionModel, outputLimit, estimateTokens, calibrateTokens } from './context'
 import { getActiveTools, costedReqs } from './runtime'
 import type { S } from './chat-send'
 import type { CallResult, ToolCallItem } from './chat-round'
@@ -35,7 +35,10 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
           const missT = u.prompt_cache_miss_tokens || 0
           const writeT = u.cache_creation_input_tokens || 0
           const inputT = u.prompt_tokens || u.input_tokens || 0
+          const outT = u.completion_tokens || (u as { output_tokens?: number }).output_tokens || 0
           usage = { ...u, _readTokens: readT, _inputTokens: inputT, _writeTokens: writeT }
+          // v0.3.4 T1: 实测校准 —— 按模型 EMA 更新估算系数(actual vs 估算总量)
+          calibrateTokens(model, u.total_tokens || (inputT + (u.completion_tokens || 0)), estTokens)
           // 同一次请求的 usage 只统计/累加一次(流式 usage 可能多次到达, 防重复)
           if (!costedReqs.has(rid)) {
             // 防止无限增长(每 500 条裁剪一半)
@@ -50,8 +53,8 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
             // 前端镜像(右侧面板实时显示)
             if (sid2) set(s => {
               const ss = s.sessTok[sid2] || {}
-              const c2 = ss[model] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, hitReqs: 0 }
-              return { sessTok: { ...s.sessTok, [sid2]: { ...ss, [model]: { requests: c2.requests + 1, readTokens: c2.readTokens + readT, inputTokens: c2.inputTokens + inputT, writeTokens: c2.writeTokens + writeT, hitReqs: c2.hitReqs + (readT > 0 ? 1 : 0) } } } }
+              const c2 = ss[model] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, outputTokens: 0, hitReqs: 0 }
+              return { sessTok: { ...s.sessTok, [sid2]: { ...ss, [model]: { requests: c2.requests + 1, readTokens: c2.readTokens + readT, inputTokens: c2.inputTokens + inputT, writeTokens: c2.writeTokens + writeT, outputTokens: c2.outputTokens + outT, hitReqs: c2.hitReqs + (readT > 0 ? 1 : 0) } } } }
             })
           }
         } else { usage = u }
@@ -86,10 +89,16 @@ export function createCallLLM(deps: CallLlmDeps): (aid: string, ridArg?: string)
       }))
       cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; try { if (tc.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { console.warn('[黄泉Agent] 工具参数解析失败:', tc?.function?.name, String(tc?.function?.arguments || '').slice(0, 100)) } }))
       const cur = get().sessions.find(x => x.id === sid)!
-      const msgs = buildContextualMessages(cur.messages, isVisionModel(model), { gSnap, cl: get().cl, spIshiki: get().spIshiki, spFallback: get().sp, agent: cur.agent, onAgentRoute: (role) => { if (role) { set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, agent: role as string, activeAgents: (x.activeAgents || []).includes(role as string) ? x.activeAgents : [...(x.activeAgents || []), role as string] } : x) })); try { window.__huangquan_agent = role as string } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } } } })
+      const msgs = buildContextualMessages(cur.messages, isVisionModel(model), { gSnap, cl: get().cl, spIshiki: get().spIshiki, spFallback: get().sp, agent: cur.agent, onAgentRoute: (role) => { if (role) { set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, agent: role as string, activeAgents: (x.activeAgents || []).includes(role as string) ? x.activeAgents : [...(x.activeAgents || []), role as string] } : x) })) } } })
       // 更新上下文用量
       const estCu = msgs.reduce((s,m) => s + (typeof m.content === 'string' ? m.content.length : Array.isArray(m.content) ? (m.content as { text?: string }[]).reduce((t:number,p:{ text?: string }) => t + ((p.text)?.length || 0), 0) : 0), 0)
       set({ cu: estCu })
-      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: gSnap.maxTokens || undefined, tools: getActiveTools(), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
+      // v0.3.4 T1: 估算 token 总量(供校准; 与压缩共用同一估算函数)
+      const estTokens = msgs.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : ''), 0)
+      // v0.3.2 T7: 输出上限分级(纯函数; 闲聊短消息降为 800, 其余保持全局上限)
+      // v0.3.5 T2: outputCap 开关关闭时恒用全局 maxTokens
+      const lastUserText = [...cur.messages].reverse().find(m => m.role === 'user' && typeof m.content === 'string')?.content || ''
+      const maxTokens = gSnap.perf?.outputCap === false ? (gSnap.maxTokens || undefined) : outputLimit(lastUserText, gSnap)
+      window.huangquan.llm.chat({ requestId: rid, sid, provider: curP.type, model, apiKey: curP.apiKey, baseUrl: curP.baseUrl, messages: msgs, temperature: gSnap.temperature ?? 0.7, max_tokens: maxTokens, tools: getActiveTools(cur.agent), headers: curP.headers }).catch(e => { cbs.forEach(f => f()); reject(e) })
     })
 }

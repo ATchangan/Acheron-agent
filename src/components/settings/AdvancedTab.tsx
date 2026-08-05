@@ -14,42 +14,66 @@ export default function AdvancedTab() {
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
         <div style={S.section}>渲染加速</div>
-        <div style={S.hint}>应用自动识别本机 GPU:检测到可用 GPU 即自动启用硬件加速;无 GPU 或驱动异常时自动降级 CPU 软件渲染,无需手动指定。切换后需重启应用生效。</div>
+        <div style={S.hint}>自动识别电脑显卡：能用硬件加速就用，不能用就改用软件渲染，无需手动设置。切换后需重启应用生效。</div>
         <div style={S.row}><div style={S.label}>渲染模式</div><select style={S.sel} value={g.rendererMode || 'auto'} onChange={e => save({ rendererMode: e.target.value })}>
-          <option value="auto">自动识别(推荐,自动探测GPU)</option><option value="gpu">强制 GPU 加速</option><option value="cpu">CPU 软件渲染(兼容)</option>
+          <option value="auto">自动识别（推荐，自动探测显卡）</option><option value="gpu">强制显卡加速</option><option value="cpu">软件渲染（兼容）</option>
         </select></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-          <button style={S.btn('ghost')} onClick={async () => { try { const st = await window.huangquan?.web.rendererStatus(); if (st) alert('渲染状态:\n模式: ' + st.mode + '\nGPU 加速: ' + st.gpuAcceleration + '\nWebGL: ' + st.webgl + '\nCanvas2D: ' + st.canvas2d) } catch { /* 忽略 */ } }}>查看当前渲染状态</button>
+          <button style={S.btn('ghost')} onClick={async () => { try { const st = await window.huangquan?.web.rendererStatus(); if (st) alert('渲染状态：\n模式：' + st.mode + '\n显卡加速：' + st.gpuAcceleration + '\nWebGL：' + st.webgl + '\n画布渲染：' + st.canvas2d) } catch { /* 忽略 */ } }}>查看当前渲染状态</button>
         </div>
       </div>
       <div style={S.card}>
         <div style={S.section}>执行控制</div>
-        <NumSetting label="工具调用上限" hint="单轮任务最多 LLM 工具调用轮次" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
+        <NumSetting label="工具调用上限" hint="单次任务最多执行多少轮操作" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
         <NumSetting label="失败重试次数" hint="单个工具失败后重试次数（0=不重试）" value={g.retryCount ?? 3} min={0} max={10} unit="次" onChange={v => save({ retryCount: v })} />
         <NumSetting label="工具超时" hint="单工具调用超时阈值" value={g.toolTimeout || 120} min={10} max={600} unit="秒" onChange={v => save({ toolTimeout: v })} />
-        <NumSetting label="熔断阈值" hint="同工具+同参数重复调用上限" value={g.meltdownLimit || 3} min={1} max={10} unit="次" onChange={v => save({ meltdownLimit: v })} />
-        <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读类工具（read/ls/search 等）并发执行，减少等待时间" />
+        <NumSetting label="熔断阈值" hint="同一操作反复触发到上限时自动停止" value={g.meltdownLimit || 3} min={1} max={10} unit="次" onChange={v => save({ meltdownLimit: v })} />
+        <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读取类工具（读取/列出/搜索等）并发执行，减少等待时间" />
       </div>
       <div style={S.card}>
         <div style={S.section}>上下文管理</div>
-        <NumSetting label="压缩触发阈值" hint="Token 用量超过模型上限此比例时触发智能压缩" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
+        {/* v0.3.4 T2: 缓存友好度提示 —— system 头部保持稳定即可最大化供应商前缀缓存命中 */}
+        <div style={S.hint}>保持系统提示词稳定可降低每次请求费用；切换角色后首次请求费用略高属正常。</div>
+        <NumSetting label="压缩触发阈值" hint="对话变长时自动精简较早的内容" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
+      </div>
+      <div style={S.card}>
+        <div style={S.section}>流量与性能</div>
+        <div style={S.hint}>以下优化默认开启，可单独关闭；关闭后相关功能回到旧行为。</div>
+        <div style={S.hint}>当前开启 {11 - Object.values(g.perf || {}).filter(v => v === false).length}/11 项</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 14px', alignItems: 'start' }}>
+          <Toggle checked={g.perf?.toolWhitelist !== false} onChange={v => save({ perf: { ...(g.perf || {}), toolWhitelist: v } })} label="按任务精简工具" hint="不同任务只展示用得到的工具" />
+          <Toggle checked={g.perf?.resultSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), resultSlim: v } })} label="长内容精简" hint="过长结果只保留开头结尾和关键信息" />
+          <Toggle checked={g.perf?.memoryTrim !== false} onChange={v => save({ perf: { ...(g.perf || {}), memoryTrim: v } })} label="记忆按需取用" hint="只取与当前话题相关的记忆" />
+          <Toggle checked={g.perf?.workflowLazy !== false} onChange={v => save({ perf: { ...(g.perf || {}), workflowLazy: v } })} label="工作流按需显示" hint="提到工作流时才显示完整模板" />
+          <Toggle checked={g.perf?.roundFold !== false} onChange={v => save({ perf: { ...(g.perf || {}), roundFold: v } })} label="旧步骤自动折叠" hint="较早的工具步骤合并成摘要" />
+          <Toggle checked={g.perf?.outputCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), outputCap: v } })} label="简短回复限长" hint="简单闲聊限制回答长度" />
+          <Toggle checked={g.perf?.imgDowngrade !== false} onChange={v => save({ perf: { ...(g.perf || {}), imgDowngrade: v } })} label="旧图片不重复发送" hint="历史图片只发一次，需要时再取" />
+          <Toggle checked={g.perf?.argSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), argSlim: v } })} label="长参数精简" hint="过长的工具参数只保留关键部分" />
+          <Toggle checked={g.perf?.taskArchive !== false} onChange={v => save({ perf: { ...(g.perf || {}), taskArchive: v } })} label="任务记录自动归档" hint="完成任务自动归档，跨任务引用不丢" />
+          <Toggle checked={g.perf?.parallelCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), parallelCap: v } })} label="并行结果精简" hint="同时返回过多结果时自动精简" />
+          <Toggle checked={g.perf?.interjectMerge !== false} onChange={v => save({ perf: { ...(g.perf || {}), interjectMerge: v } })} label="连续插话合并" hint="连续补充的指令合并成一条" />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <button style={S.btn('ghost')} onClick={() => { save({ perf: {} }); showToast('已恢复全部默认（全开）') }}>恢复默认</button>
+          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>改动即时生效并自动保存</span>
+        </div>
       </div>
       <div style={S.card}>
         <div style={S.section}>交互与通知</div>
-        <Toggle checked={g.notifyEnabled !== false} onChange={v => save({ notifyEnabled: v })} label="桌面通知" hint="Agent 完成/异常时通过 bridge_notify 推送系统通知" />
-        <Toggle checked={g.episodicMemory !== false} onChange={v => save({ episodicMemory: v })} label="情景记忆" hint="自动记录文件操作到审计日志（audit_log 可回溯）" />
-        <Toggle checked={g.singleBubble !== false} onChange={v => save({ singleBubble: v })} label="单气泡渲染" hint="整轮任务合并为一条消息（关闭则每步工具调用独立显示气泡）" />
-        <NumSetting label="卡片最大高度" hint="show_card 交互卡片的最高像素" value={g.cardMaxHeight || 500} min={100} max={2000} unit="px" onChange={v => save({ cardMaxHeight: v })} />
+        <Toggle checked={g.notifyEnabled !== false} onChange={v => save({ notifyEnabled: v })} label="桌面通知" hint="任务完成或出错时弹出系统通知" />
+        <Toggle checked={g.episodicMemory !== false} onChange={v => save({ episodicMemory: v })} label="操作记录" hint="自动记录文件操作，可随时查看历史" />
+        <Toggle checked={g.singleBubble !== false} onChange={v => save({ singleBubble: v })} label="合并为一条回复" hint="整轮任务合并为一条消息；关闭后每一步单独显示" />
+        <NumSetting label="卡片最大高度" hint="卡片类内容的最大高度" value={g.cardMaxHeight || 500} min={100} max={2000} unit="px" onChange={v => save({ cardMaxHeight: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>路径与权限</div>
         <div style={S.label}>工作目录</div>
-        <div style={S.hint}>Agent 默认读写文件的根目录</div>
+        <div style={S.hint}>默认读写文件的根目录</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, position: 'relative' }}>
           <input style={{ ...S.inp, flex: 1 }} value={g.workDir || ''} placeholder="如 D:\桌面\黄泉工作台" onChange={e => save({ workDir: e.target.value })} />
           <span style={{ flexShrink: 0, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex' }} title="选择工作目录" onClick={async () => { const path = await window.huangquan.computer.selectDir(); if (path) save({ workDir: path }) }}><MoreHorizontal size={16} /></span>
         </div>
-        <div style={{ marginTop: 14 }}><div style={S.label}>文件操作权限</div><div style={S.hint}>控制 Agent 对文件系统的操作范围</div></div>
+        <div style={{ marginTop: 14 }}><div style={S.label}>文件操作权限</div><div style={S.hint}>控制对文件系统的操作范围</div></div>
         <select style={{ ...S.sel, width: '100%', marginTop: 6 }} value={g.filePermission || 'full'} onChange={e => save({ filePermission: e.target.value })}>
           <option value="full">完整权限 — 读写执行均可</option>
           <option value="ask">操作前询问 — 写/删操作需人工确认</option>
@@ -58,16 +82,16 @@ export default function AdvancedTab() {
         </select>
       </div>
       <div style={S.card}>
-        <div style={S.section}>RAG 向量库</div>
-        <div style={S.hint}>语义记忆存储配置（import_doc / recall_memory 使用）</div>
+        <div style={S.section}>语义检索向量库</div>
+        <div style={S.hint}>语义记忆存储配置（导入文档、回忆记忆时使用）</div>
         <div style={{ marginTop: 10, padding: 10, border: '1px solid ' + C.border, borderRadius: 8, background: C.input }}>
-          <div style={S.label}>嵌入引擎(语义检索)</div>
-          <div style={S.hint}>填入 OpenAI 兼容的 /embeddings 服务(如本地 LM Studio 加载 embedding 模型, 或 OpenAI 官方)。留空则使用内置关键词检索。</div>
+          <div style={S.label}>向量嵌入引擎（语义检索）</div>
+          <div style={S.hint}>填入兼容 OpenAI 的向量接口（例如本地服务加载向量模型，或官方接口）。留空则使用内置关键词检索。</div>
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <div style={{ flex: 2 }}><div style={S.label}>Base URL</div><input style={S.inp} placeholder="http://127.0.0.1:1234/v1" value={g.embeddingBaseUrl || ''} onChange={e => save({ embeddingBaseUrl: e.target.value })} /></div>
+            <div style={{ flex: 2 }}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} placeholder="http://127.0.0.1:1234/v1" value={g.embeddingBaseUrl || ''} onChange={e => save({ embeddingBaseUrl: e.target.value })} /></div>
             <div style={{ flex: 1.2 }}><div style={S.label}>模型名</div><input style={S.inp} placeholder="text-embedding-3-small / bge-m3" value={g.embeddingModel || ''} onChange={e => save({ embeddingModel: e.target.value })} /></div>
           </div>
-          <div style={{ marginTop: 8 }}><div style={S.label}>API Key（本地服务可留空）</div><input type="password" style={S.inp} placeholder="sk-..." value={g.embeddingApiKey || ''} onChange={e => save({ embeddingApiKey: e.target.value })} /></div>
+          <div style={{ marginTop: 8 }}><div style={S.label}>密钥（API Key，本地服务可留空）</div><input type="password" style={S.inp} placeholder="sk-..." value={g.embeddingApiKey || ''} onChange={e => save({ embeddingApiKey: e.target.value })} /></div>
           <div style={S.hint}>保存后, 新写入的语义记忆将自动生成向量, 检索优先使用向量相似度; 未配置或服务不可用时自动回退关键词检索。</div>
         </div>
         <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
@@ -80,19 +104,19 @@ export default function AdvancedTab() {
         </div>
       </div>
       <div style={S.card}>
-        <div style={S.section}>语音 TTS / ASR</div>
-        <Toggle checked={g.ttsEnabled === true} onChange={v => save({ ttsEnabled: v })} label="TTS 语音合成" hint="消息下方 按钮朗读回复（Windows 内置语音引擎, 离线可用）" />
+        <div style={S.section}>语音合成 / 语音识别</div>
+        <Toggle checked={g.ttsEnabled === true} onChange={v => save({ ttsEnabled: v })} label="语音合成（TTS）" hint="消息下方的朗读按钮会读出回复（Windows 内置语音引擎，离线可用）" />
       </div>
       <div style={S.card}>
         <div style={S.section}>日志与调试</div>
         <div style={S.label}>日志级别</div>
         <select style={{ ...S.sel, width: '100%', marginTop: 6 }} value={g.logLevel || 'info'} onChange={e => save({ logLevel: e.target.value })}>
-          <option value="debug">Debug — 全部日志（含工具调用详情）</option>
-          <option value="info">ℹInfo — 常规信息（默认）</option>
-          <option value="warn">Warn — 仅警告和错误</option>
-          <option value="error">Error — 仅错误</option>
+          <option value="debug">调试 — 全部日志（含工具调用详情）</option>
+          <option value="info">信息 — 常规信息（默认）</option>
+          <option value="warn">警告 — 仅警告和错误</option>
+          <option value="error">错误 — 仅错误</option>
         </select>
-        <Toggle checked={g.devTools !== false} onChange={v => save({ devTools: v })} label="开发者工具" hint="启动时自动打开 Electron DevTools" />
+        <Toggle checked={g.devTools !== false} onChange={v => save({ devTools: v })} label="开发者工具" hint="启动时自动打开调试工具" />
       </div>
       <div style={S.card}>
         <div style={S.section}>网络与代理</div>

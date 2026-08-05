@@ -18,7 +18,7 @@ export const S = {
   hint: { fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginTop: 5, lineHeight: 1.5 },
 }
 
-// Toggle switch component (Hermes-style)
+// Toggle switch component
 
 
 export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }> = ({ checked, onChange, label, hint }) => (

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import type { CronJob, MemoryData } from '../global'
+import { HourglassMark, PlusMark, TemplateMark, AskMark, TrashMark } from './themed-icons'
 
 // ─── 型 ──────────────────────────────────────────────
 
@@ -22,11 +23,11 @@ const EXPR_PRESETS = [
 ]
 
 const TEMPLATES = [
-  { name: '每日早报', expr: 'at 08:00', prompt: '生成今日早报，包含天气、新闻摘要、日程提醒和建议。' },
-  { name: '系统巡检', expr: 'every 30m', prompt: '执行系统巡检：检查CPU、内存、磁盘使用率，报告异常指标。' },
-  { name: '邮件摘要', expr: 'every 1h', prompt: '检查收件箱新邮件，生成简要摘要并按重要程度排序。' },
-  { name: '知识复习', expr: 'at 18:00', prompt: '从记忆库中随机抽取3条知识条目进行复习回顾。' },
-  { name: '备份提醒', expr: 'at 17:00', prompt: '检查最新备份时间，如超过24小时未备份则发出提醒。' },
+  { name: '晓报', expr: 'at 08:00', prompt: '生成今日早报，包含天气、新闻摘要、日程提醒和建议。' },
+  { name: '巡更', expr: 'every 30m', prompt: '执行系统巡检：检查CPU、内存、磁盘使用率，报告异常指标。' },
+  { name: '鸿雁', expr: 'every 1h', prompt: '检查收件箱新邮件，生成简要摘要并按重要程度排序。' },
+  { name: '温故', expr: 'at 18:00', prompt: '从记忆库中随机抽取3条知识条目进行复习回顾。' },
+  { name: '留档', expr: 'at 17:00', prompt: '检查最新备份时间，如超过24小时未备份则发出提醒。' },
 ]
 
 const FILTER_TABS: { value: FilterTab; label: string }[] = [
@@ -584,10 +585,11 @@ export default function CronView() {
       {/* header */}
       <div style={S.header}>
         <div style={S.titleRow}>
-          <span style={S.icon}>🪷</span>
-          <h2 style={S.title}>↻ 定时任务</h2>
+          <span style={S.icon}><HourglassMark size={28} /></span>
+          <h2 style={S.title}>定时任务</h2>
         </div>
-        <p style={S.subtitle}>定时任务 · 自动化执行</p>
+        <p style={S.subtitle}>定时任务 · 到点即行</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>设定名称、时辰与内容，到点自动执行；可一键套用下方模板</p>
       </div>
 
       {/* body */}
@@ -595,12 +597,12 @@ export default function CronView() {
         {/* ── create section ── */}
         <div style={S.createCard}>
           <div style={S.createTitle}>
-            <span>📯</span> 新增轮回
+            <PlusMark size={14} /> 新增轮回
           </div>
 
           {/* templates */}
           <div style={S.templateSection}>
-            <div style={S.templateLabel}>📋 快速模板</div>
+            <div style={{ ...S.templateLabel, display: 'inline-flex', alignItems: 'center', gap: 5 }}><TemplateMark size={12} />快速模板</div>
             <div style={S.templateRow}>
               {TEMPLATES.map((tpl) => (
                 <button
@@ -650,7 +652,7 @@ export default function CronView() {
             <div style={S.createRow}>
               <input
                 style={{ ...S.input, flex: 1 }}
-                placeholder="自定义表达式 (例: every 10m / at 14:30)"
+                placeholder="自定义表达式（例如：every 10m 或 at 14:30）"
                 value={customExpr}
                 onChange={(e) => setCustomExpr(e.target.value)}
               />
@@ -661,7 +663,7 @@ export default function CronView() {
           <div style={S.createRow}>
             <input
               style={S.inputSmall}
-              placeholder="提示词 (AI 收到此提示后执行)"
+               placeholder="任务内容（到点即行）"
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addTask() }}
@@ -739,8 +741,8 @@ export default function CronView() {
                   <span style={S.statusDot(isEnabled)} />
                   {displayName}
                   {isEnabled && t.nextRun && (
-                    <span style={S.countdownBadge}>
-                      ⏳ {countdown(Number(t.nextRun) || 0)}
+                    <span style={{ ...S.countdownBadge, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <HourglassMark size={12} />{countdown(Number(t.nextRun) || 0)}
                     </span>
                   )}
                 </div>
@@ -759,7 +761,7 @@ export default function CronView() {
                     onClick={() => setDelId(t.id)}
                     title="删除"
                   >
-                    ✕
+                    <TrashMark size={13} />
                   </button>
                 </div>
               </div>
@@ -788,14 +790,14 @@ export default function CronView() {
                 <div style={S.metaItem}>
                   <span style={S.metaLabel}>状态</span>
                   <span style={{ color: isEnabled ? 'var(--success)' : '#9999AA', fontWeight: 600 }}>
-                    {isEnabled ? '⚡ 运行中' : '⏸ 已停用'}
+                    {isEnabled ? '● 运行中' : '○ 已停用'}
                   </span>
                 </div>
               </div>
 
               {/* prompt preview */}
-              <div style={S.promptPreview} title={t.prompt}>
-                💬 {t.prompt}
+              <div style={{ ...S.promptPreview, display: 'flex', alignItems: 'center', gap: 5 }} title={t.prompt}>
+                <AskMark size={12} /> {t.prompt}
               </div>
             </div>
           )

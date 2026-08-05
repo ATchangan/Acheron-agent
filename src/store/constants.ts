@@ -7,7 +7,9 @@ export const STREAM_THROTTLE_MS = 40       // 流式渲染节流
 export const TOOL_ROUND_DEFAULT = 50       // 工具轮次上限默认值(设置项 maxToolRounds 兜底)
 export const COMPACT_MSG_DEFAULT = 20      // 压缩阈值默认消息数
 export const COMPACT_TOKEN_DEFAULT = 50000 // 压缩阈值默认 token
-export const COMPACT_RATIO_DEFAULT = 0.7   // 压缩阈值默认占比
+// 压缩阈值默认占比 0.7 —— v0.3.4 T4 基准说明: 以 scripts/token-baseline.mjs 三档(0.60/0.70/0.80)
+// 对比后写入最终决策; 当前维持 0.7(数据待真实模型跑数后回填)
+export const COMPACT_RATIO_DEFAULT = 0.7
 
 export const CACHE_TTL: Record<string, number> = {
   read: 30000, ls: 30000, grep: 30000, find: 30000,
@@ -47,7 +49,7 @@ export const WORKFLOWS: Record<string, { name: string; triggers: string[]; steps
   ]},
 }
 
-export const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'glm-4v', 'minimax-vl', 'deepseek-vl', 'internvl', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision', 'agnes-image', 'seedream', 'cogview', 'seedance', 'doubao-seedance', 'wanx', 'kling']
+export const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'qwen2.5-vl', 'qwen3-vl', 'glm-4v', 'glm-4.5v', 'glm-4.6v', 'glm-4.1v', 'minimax-vl', 'deepseek-vl', 'internvl', 'internvl2', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision', 'minicpm-v', 'pixtral', 'phi-vision', 'llama-3.2-vision', 'moondream', 'hunyuan-vision', 'doubao-vision', 'ocr', 'agnes-image', 'seedream', 'cogview', 'seedance', 'doubao-seedance', 'wanx', 'kling']
 
 export const DOMAIN_RE: Record<string, RegExp> = {
   '银狼': /安全|漏洞|审查|bug|风险|检查|审计|防护|攻击|渗透|注入|权限|扫描|加密|认证|授权|越权|XSS|SQL注入|CSRF|DDoS|后门|木马|病毒|防火墙|沙箱|隔离|签名|证书|安全策略|加固|修复漏洞|review|security|audit|scan|vuln/,

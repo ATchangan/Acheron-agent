@@ -31,7 +31,7 @@ const ProgressHeader: React.FC<{ steps: PlanStep[]; status: PlanStatus }> = ({ s
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN COMPONENT
+// 主组件
 // ═══════════════════════════════════════════════════════════════
 
 export default ProgressHeader

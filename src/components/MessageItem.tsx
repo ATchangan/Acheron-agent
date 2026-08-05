@@ -38,7 +38,7 @@ const fmtTime = (ms?: number) => {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
 }
 
-export default function MessageItem({ message, streaming }: Props) {
+function MessageItem({ message, streaming }: Props) {
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
@@ -110,7 +110,7 @@ export default function MessageItem({ message, streaming }: Props) {
       <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
         <div className="message-body">
           <div className="tool-call-block" style={{ borderColor: isError ? 'var(--danger)' : 'var(--accent-green)', background: isError ? 'var(--danger-soft)' : 'var(--success-soft)' }}>
-            <div className="tool-call-header" style={{ color: isError ? 'var(--danger)' : 'var(--accent-green)' }}>{isError ? '✗ Error(' + toolName + ')' : '✓ ' + toolName}</div>
+            <div className="tool-call-header" style={{ color: isError ? 'var(--danger)' : 'var(--accent-green)' }}>{isError ? '✗ 出错（' + toolName + '）' : '✓ ' + toolName}</div>
             <pre className="tool-call-output">{truncated}</pre>
           </div>
         </div>
@@ -163,6 +163,9 @@ export default function MessageItem({ message, streaming }: Props) {
     // 反思内容不再静默丢弃 —— 提取为可折叠「💭 反思」块
     // 多段反思内容拼接保留, 不再只留最后一段
     clean = clean.replace(/<reflect>([\s\S]*?)<\/reflect>/g, (_s: string, body: string) => { const b = body.trim(); reflect = reflect ? reflect + '\n' + b : b; return '' }).trim()
+    // 超长文本渲染保护: 防止 ReactMarkdown 解析超大内容导致渲染进程栈溢出
+    const MAX_RENDER = 30000
+    if (clean.length > MAX_RENDER) clean = clean.slice(0, MAX_RENDER) + '\n\n…[内容过长已截断，需要完整内容可让助手重新输出]'
     return (
       <div className="markdown-body">
         {clean && <ReactMarkdown remarkPlugins={[remarkGfm]}>{clean || (streaming ? '' : '...')}</ReactMarkdown>}
@@ -210,7 +213,10 @@ export default function MessageItem({ message, streaming }: Props) {
             <button className="send-btn" onClick={saveEdit} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="保存修改">✓</button>
             <button className="send-btn stop-btn" onClick={() => setEditing(false)} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="取消">✕</button>
           </div>
-        ) : <div className="message-text">{message.content}</div>) : renderAssistantContent(message.content)}
+        ) : <div className="message-text">{message.content}</div>) : String(message.role) === 'tool' ? (
+          // 工具结果: 纯文本渲染, 不经过 markdown 解析(长结果可安全折叠)
+          <pre className="tool-call-output" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', maxHeight: 320, overflowY: 'auto' }}>{String(message.content || '').slice(0, 8000)}{(message.content || '').length > 8000 ? '\n…[内容过长已截断]' : ''}</pre>
+        ) : renderAssistantContent(message.content)}
         <div className={`message-footer ${isUser ? 'footer-right' : 'footer-left'}`}>
           {showTimestamps === 'always' && <span className="footer-time">{timeText}</span>}
           {!isUser && (
@@ -226,13 +232,17 @@ export default function MessageItem({ message, streaming }: Props) {
               </FooterBtn>
               {(message.meta?.ttft !== undefined || message.meta?.duration !== undefined || message.usage) && (
                 <span style={{ color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 3px)', marginLeft: 4, display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
-                  {message.meta?.ttft !== undefined && <span title="首字延迟 (TTFT)">⚡{fmtTime(message.meta.ttft)}</span>}
-                  {message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
+                  {message.meta?.ttft !== undefined && <span title="首字延迟（收到首个字符的耗时）">⚡{fmtTime(message.meta.ttft)}</span>}
+                  {message.meta?.taskMs !== undefined
+                    ? <span title="任务总时长（含工具执行）">⏱{fmtTime(message.meta.taskMs)}</span>
+                    : message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
                   {(message.usage || message.meta?.taskTokens) && (() => {
-                    // 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
+                    // 任务结束消息优先显示「本任务总消耗」(主角色 + 全部子角色)
                     const total = message.meta?.taskTokens || message.usage?.total_tokens || ((message.usage?.prompt_tokens || 0) + (message.usage?.completion_tokens || 0))
-                    const speed = message.meta?.duration ? Math.round(message.usage?.completion_tokens || 0 / (message.meta.duration / 1000)) : 0
-                    return <span title={message.meta?.taskTokens ? '本任务总消耗(主 Agent + 全部子 Agent)' : '本次回复消耗 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全Agent)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
+                    const speed = message.meta?.duration && (message.usage?.completion_tokens || 0) > 0
+                      ? Math.round((message.usage?.completion_tokens || 0) / (message.meta.duration / 1000))
+                      : 0
+                    return <span title={message.meta?.taskTokens ? '本任务总消耗（主角色 + 全部子角色）' : '本次回复消耗的词元总数'}>{total} 词元{message.meta?.taskTokens ? '（全角色）' : ''}{speed > 0 ? ' · ' + speed + ' 词元/秒' : ''}</span>
                   })()}
                 </span>
               )}
@@ -252,3 +262,6 @@ export default function MessageItem({ message, streaming }: Props) {
     </div>
   )
 }
+
+// 流式输出时仅重渲染内容变化的消息(长会话性能关键)
+export default React.memo(MessageItem)

@@ -1,8 +1,22 @@
 ﻿import React, { useEffect, useRef } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
+import { sessionTokens } from '../store/context'
 import MessageItem from './MessageItem'
 import ChatInput from './ChatInput'
+
+// 单条消息渲染错误边界: 某条消息渲染异常时降级为纯文本, 防止拖垮整个渲染进程
+class MsgBoundary extends React.Component<{ children: React.ReactNode }, { err: boolean }> {
+  state = { err: false }
+  static getDerivedStateFromError() { return { err: true } }
+  componentDidCatch(e: unknown) { console.error('[MsgBoundary]', e) }
+  render() {
+    if (this.state.err) {
+      return <div className="message-item" style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 2px)' }}>这条消息渲染异常，已折叠显示</div>
+    }
+    return this.props.children
+  }
+}
 
 export default function ChatView({ onNavigate }: { onNavigate: (v: string) => void }) {
   const session = useChatStore(s => s.cur())
@@ -20,15 +34,26 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   // 任一供应商已配置即可对话(原只检查 providers[0], 首个无 key 的供应商会挡住全部)
   const hasProvider = providers.some(p => p.apiKey)
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [session?.messages, stage])
+  // 仅在接近底部时自动滚动(流式输出不打扰用户往上翻看)
+  useEffect(() => {
+    const el = endRef.current
+    if (!el) return
+    const list = el.parentElement
+    if (!list) return
+    const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 160
+    if (nearBottom) el.scrollIntoView({ behavior: 'smooth' })
+  }, [session?.messages, stage])
 
   const switchMode = (m: string) => { if (m !== mode) setMode(m) }
 
   // 消息过滤：单气泡模式下隐藏 tool 角色和纯 tool_calls 消息；多气泡模式下全部展示
   const msgs = session?.messages || []
   const singleBubble = useSettingsStore.getState().general.singleBubble !== false
+  // v0.3.2 T8: 会话累计 token 展示(从消息 usage 重算, 消息变化时更新)
+  const tokSum = React.useMemo(() => sessionTokens(msgs), [msgs])
+  const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
   // 单气泡终极过滤 —— 隐藏 tool/tool_calls/空消息，且连续 assistant 合并为单条（UI 层兜底，杜绝多气泡）
-  const displayMsgs = (() => {
+  const displayMsgs = React.useMemo(() => {
     const out: typeof msgs = []
     for (const m of msgs) {
       // 工具过程(调用卡片+结果块)统一显示在「思考气泡」内, 单气泡模式消息流保持干净(只有用户+最终回答)
@@ -56,7 +81,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       }
     }
     return out
-  })()
+  }, [msgs, singleBubble])
 
   const lastMsg = msgs.slice(-1)[0]
   const isGeneratingText = streaming && lastMsg?.role === 'assistant' && lastMsg?.content && lastMsg.content.length > 0
@@ -96,23 +121,24 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
         <button className={`tab-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => switchMode('chat')}>聊天</button>
         <button className={`tab-btn ${mode === 'work' ? 'active' : ''}`} onClick={() => switchMode('work')}>工作</button>
         {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }} title={workDir}>📁 {workDir.split(/[/\\]/).pop()}</span>}
+        <span title="本会话累计用量（来自实际请求统计）" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>≈ 输入 {fmtK(tokSum.input)} / 输出 {fmtK(tokSum.output)}</span>
       </div>
 
       {!hasProvider ? (
         <div className="chat-center-empty">
-          <div className="avatar-hex">{agentAvatarImg ? <img src={agentAvatarImg} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" /> : (agentAvatar || '泉')}</div><h1>黄泉Agent</h1><p>请先添加 API Provider</p>
+          <div className="avatar-hex">{agentAvatarImg ? <img src={agentAvatarImg} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" /> : (agentAvatar || '泉')}</div><h1>黄泉</h1><p>请先在「模型服务」中配置一个服务商</p>
           <button className="btn-primary" style={{ marginTop: 8 }} onClick={() => onNavigate('settings')}>前往设置</button>
         </div>
       ) : !session || msgs.length === 0 ? (
         <div className="chat-center-empty">
-          <div className="avatar-hex">{agentAvatarImg ? <img src={agentAvatarImg} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" /> : (agentAvatar || '泉')}</div><h1>黄泉Agent</h1>
-          <p>{mode === 'chat' ? '雨停了没多久。你是循着声音来的，还是碰巧路过？' : '需要什么操作？'}</p>
+          <div className="avatar-hex">{agentAvatarImg ? <img src={agentAvatarImg} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" /> : (agentAvatar || '泉')}</div><h1>黄泉</h1>
+          <p>{mode === 'chat' ? '雨停了没多久。你是循着声音来的，还是碰巧路过？' : '说吧，这次要处理什么？'}</p>
           <span className="memory-badge">{mode === 'chat' ? '◇ 聊天模式' : '◇ 工作模式'}</span>
         </div>
       ) : (
         <>
           <div className="message-list">
-            {displayMsgs.map(msg => (<MessageItem key={msg.id} message={msg} streaming={streaming} />))}
+            {displayMsgs.map(msg => (<MsgBoundary key={msg.id}><MessageItem message={msg} streaming={streaming} /></MsgBoundary>))}
             {renderThinkingBubble()}
             <div ref={endRef} />
           </div>

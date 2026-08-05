@@ -27,7 +27,6 @@ export function registerSettingsIpc(deps: {
             }
           }
           if (g !== data?.general) data.general = g
-          console.log('[SETTINGS] loaded providers:', data?.providers?.length)
           return data
         }
       }

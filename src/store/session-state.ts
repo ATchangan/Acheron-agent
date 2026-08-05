@@ -3,7 +3,7 @@
 // 用法: 由 chat.ts 持有并读写; 禁止其他模块直接 import 本模块内部可变值（只读导出）
 import type { SessionData } from '../global'
 
-// ── FIX-1: 会话级 Agent 身份 ──────────────────────────────
+// ── FIX-1: 会话级角色身份 ──────────────────────────────
 // SessionData 字段: agent? / agentManual? / activeAgents?（见 global.d.ts）
 export function getSessionAgent(s: SessionData): string | undefined { return s.agent }
 export function setSessionAgent(s: SessionData, name: string | undefined, manual?: boolean): SessionData {

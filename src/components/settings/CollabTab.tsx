@@ -19,15 +19,15 @@ export default function CollabTab(props: {
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
-        <div style={S.section}>多 Agent 协作模式</div>
+        <div style={S.section}>多角色协作模式</div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
           {['自动', '手动', '关闭'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 6, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: (g.collabMode || '自动') === s ? '#fff' : C.muted, background: (g.collabMode || '自动') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.collabMode || '自动') === s} onChange={() => save({ collabMode: s })} />{s}</label>)}
         </div>
-        <NumSetting label="最大同时活跃 Agent" hint="" value={g.maxAgents || 5} min={1} max={10} unit="个" onChange={v => save({ maxAgents: v })} />
+        <NumSetting label="最多同时活跃角色" hint="" value={g.maxAgents || 5} min={1} max={10} unit="个" onChange={v => save({ maxAgents: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>编队成员</div>
-        <div style={S.hint}>点击开关启用/禁用编队成员。关闭的Agent在对话中不可被 handoff 调用。</div>
+        <div style={S.hint}>开关决定哪些角色可以参与协作；被关闭的角色不会再被任务调用。</div>
         {[
           ['姬子', '☕', '总指挥官，任务分配与最终验收'],
           ['银狼', '🐺', '代码审查、安全审计、质量门禁'],
@@ -46,14 +46,14 @@ export default function CollabTab(props: {
         })}
       </div>
       <div style={S.card}>
-        <div style={S.section}>Handoff 交接规则</div>
+        <div style={S.section}>任务交接规则</div>
         <Toggle checked={g.handoffContext !== false} onChange={v => save({ handoffContext: v })} label="传递完整上下文" hint="交接时带上需求背景、已有代码、约束条件" />
-        <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接Agent完成任务后自动回到主Agent" />
+        <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接的角色完成任务后自动交回" />
         <div style={S.row}><div style={S.label}>最大连续交接次数</div><input type="number" style={S.inp} value={g.maxHandoffChain || 3} onChange={e => save({ maxHandoffChain: parseInt(e.target.value) || 3 })} /></div>
       </div>
       <div style={S.card}>
         <div style={S.section}>交叉验证</div>
-        <Toggle checked={g.crossValidation === true} onChange={v => save({ crossValidation: v })} label="启用交叉验证" hint="关键任务由两个 Agent 独立执行后对比" />
+        <Toggle checked={g.crossValidation === true} onChange={v => save({ crossValidation: v })} label="启用交叉验证" hint="关键任务由两个角色独立执行后对比" />
         {g.crossValidation === true && <>
           <Toggle checked={g.cvCodeReview !== false} onChange={v => save({ cvCodeReview: v })} label="代码审查触发" hint="生成代码后自动触发" />
           <Toggle checked={g.cvSecurity !== false} onChange={v => save({ cvSecurity: v })} label="安全相关操作" />
@@ -66,7 +66,7 @@ export default function CollabTab(props: {
           <div style={S.label}>不一致处理</div>
           <select style={S.sel} value={g.cvConflictAction || 'report'} onChange={e => save({ cvConflictAction: e.target.value })}>
             <option value="report">汇报差异，由用户裁决</option>
-            <option value="vote">Agent 自行投票决定</option>
+            <option value="vote">角色自行投票决定</option>
             <option value="conservative">以更保守方案为准</option>
           </select>
         </>}
@@ -95,7 +95,7 @@ export default function CollabTab(props: {
       </div>
       <div style={S.card}>
         <div style={S.section}>已安装技能</div>
-        <div style={S.hint}>可复用的知识/流程模块，由 Agent 自动学习或手动安装</div>
+        <div style={S.hint}>可复用的知识/流程模块，由角色自动学习或手动安装</div>
         {(() => {
           let removed: string[] = []
           try { removed = JSON.parse(localStorage.getItem('hq_removed_skills') || '[]') } catch (e) { /* ignore */ console.debug('[swallow]', e) }

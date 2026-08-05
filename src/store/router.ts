@@ -1,10 +1,10 @@
-﻿// src/store/router.ts —— 领域检测/意图路由/多Agent调度(v0.3.0 M2→M3)
+﻿// src/store/router.ts —— 领域检测/意图路由/多角色调度(v0.3.0 M2→M3)
 // 职责: routeAgent 意图路由 —— M3 起: 能力路由(第一顺位) + DOMAIN_RE(第二) + 长度兜底(第三)
 // 迁移自 chat.ts 行为基线), M3 新增能力路由
 import { DOMAIN_RE } from './constants'
 import { useSettingsStore } from './settings'
 
-// v0.3.0 M3: 能力路由关键词表(第一顺位) —— 命中 1 个能力 → 该 Agent; ≥2 → 姬子 dispatch; chat 为闲聊兜底不主动命中
+// v0.3.0 M3: 能力路由关键词表(第一顺位) —— 命中 1 个能力 → 该角色; ≥2 → 姬子 dispatch; chat 为闲聊兜底不主动命中
 const CAPABILITY_KEYWORDS: Record<string, string[]> = {
   code: ['代码', '脚本', '项目', 'bug', '修复', '开发', '编程', '写个', '实现', '重构'],
   doc: ['文档', '报告', '翻译', '总结', '纪要', '整理', '校对'],
@@ -39,7 +39,7 @@ export function routeAgent(userMessage: string): string | null {
   for (const [name, re] of Object.entries(DOMAIN_RE)) {
     if (re.test(t)) return disabled.includes(name) ? null : name
   }
-  // 简单任务判定 —— 无任何领域命中且消息很短(闲聊/简单问答/单步指令) → 不路由, 主 Agent 直接完成
+  // 简单任务判定 —— 无任何领域命中且消息很短(闲聊/简单问答/单步指令) → 不路由, 主角色直接完成
   if (t.trim().length < 30) return null
   // 姬子：架构/系统/复杂任务 + 默认兜底(长消息无领域命中视为复杂任务)
   return disabled.includes('姬子') ? null : '姬子'

@@ -36,7 +36,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   }
   const fetchModels = async () => {
     if (!p) return
-    if (!p.baseUrl) { showToast('请先填写 Base URL'); return }
+    if (!p.baseUrl) { showToast('请先填写接口地址'); return }
     setLoading(true)
     try {
       const r = await window.huangquan.models.detect(p.baseUrl, p.apiKey || '', { type: p.type, anthropic: p.type === 'Anthropic Claude' })
@@ -49,11 +49,18 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   const selectProvider = (name: string) => {
     useSettingsStore.getState().save()
     setMediaSelIdx(-1)
-    const idx = providers.findIndex(x => x.name === name)
+    let idx = providers.findIndex(x => x.name === name)
+    // 未配置过的供应商: 自动创建条目(预填 PRESETS 默认 baseUrl/type), 让用户直接填 Key 即可应用
+    if (idx < 0) {
+      const pre = PRESETS[name]
+      const np: ProviderConfig = { id: 'auto_' + Date.now(), name, type: pre?.type || 'OpenAI Compatible', apiKey: '', baseUrl: pre?.url || '', models: [], selectedModel: '' }
+      useSettingsStore.getState().addProvider(np)
+      idx = useSettingsStore.getState().providers.findIndex(x => x.name === name)
+    }
     setSelIdx(idx)
     // v0.3.0: 自动加载默认 BaseURL/API 类型(仅空字段, 用户自定义优先)
     const pre = PRESETS[name]
-    const prov = providers[idx]
+    const prov = useSettingsStore.getState().providers[idx]
     if (prov && pre) {
       const patch: Partial<ProviderConfig> = {}
       if (!prov.baseUrl && pre.url) patch.baseUrl = pre.url
@@ -63,6 +70,26 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   }
   const [detectModal, setDetectModal] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
   const [detectSel, setDetectSel] = useState<string[]>([])
+  // 有密钥但还没有任何模型时，自动读取一次（新填密钥或打开已有配置都会触发；失败可手动点「读取模型」重试）
+  const autoFired = React.useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!p || !p.baseUrl || !p.apiKey || (p.models && p.models.length > 0)) return
+    if (autoFired.current.has(p.id)) return
+    autoFired.current.add(p.id)
+    const t = setTimeout(async () => {
+      try {
+        const base = p.baseUrl || ''
+        const key = p.apiKey || ''
+        const r = await window.huangquan.models.detect(base, key, { type: p.type, anthropic: p.type === 'Anthropic Claude' })
+        if (r.ok && r.models && r.models.length > 0) {
+          const items = r.models.map((m: string) => ({ model: m, caps: detectCaps([m]) }))
+          setDetectModal({ providerId: p.id, items })
+          setDetectSel([])
+        }
+      } catch { /* 静默失败，用户可手动重试 */ }
+    }, 900)
+    return () => clearTimeout(t)
+  }, [p?.id, p?.apiKey, p?.baseUrl, p?.models?.length])
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ width: 160, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto' }}>
@@ -94,7 +121,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
               }
             }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-              <span style={{ display: 'flex', gap: 3, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{cfg ? caps.slice(0, 3).map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: CAP_COLORS[c] || C.text, background: 'rgba(150,150,160,0.13)', padding: '1px 5px', borderRadius: 8 }}>{c}</span>) : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted, background: 'rgba(150,150,160,0.13)', padding: '1px 6px', borderRadius: 8 }}>未配置</span>}</span>
+              <span style={{ display: 'flex', gap: 3, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{cfg ? caps.slice(0, 3).map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: CAP_COLORS[c] || C.text, background: 'rgba(150,150,160,0.13)', padding: '1px 5px', borderRadius: 8 }}>{c}</span>) : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted, background: 'rgba(150,150,160,0.13)', padding: '1px 6px', borderRadius: 8 }}>未设置</span>}</span>
             </div>
           }
           const groupTitle = (txt: string) => <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, paddingLeft: 4, marginTop: 10 }}>{txt}</div>
@@ -117,14 +144,14 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
           return (
             <>
               {groupTitle('已配置')}
-              {cfgItems.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '4px 10px 8px' }}>暂无已配置平台（填好 API Key 后自动分类置顶）</div>}
+              {cfgItems.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '4px 10px 8px' }}>暂无已配置平台（填好密钥后自动分类置顶）</div>}
               {capOrder.map(g => cfgItems.filter(x => mainCap(x.caps) === g).length > 0 && (
                 <div key={g}>
                   {subTitle(g)}
                   {cfgItems.filter(x => mainCap(x.caps) === g).map(x => row(x.name, x.kind, true, x.caps))}
                 </div>
               ))}
-              {groupTitle('未配置')}
+              {groupTitle('未设置')}
               {uncfgNames.map(n => {
                 const kind = providers.some(pp => pp.name === n) ? 'provider' : mediaProviders.some(mp => mp.name === n) ? 'media' : (allNames.includes(n) ? 'provider' : 'media')
                 return row(n, kind, false, [])
@@ -135,17 +162,17 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         })()}
       </div>
       <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-        {mediaSelIdx >= 0 ? <MediaForm mediaSelIdx={mediaSelIdx} showToast={showToast} /> : !p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>选择左侧供应商</div> : <>
+        {mediaSelIdx >= 0 ? <MediaForm mediaSelIdx={mediaSelIdx} showToast={showToast} /> : !p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>从左侧选择一个供应商开始配置</div> : <>
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
               <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
               <button style={S.btn('danger')} onClick={() => removeProvider(p.id)}>删除</button>
             </div>
-            <div style={S.row}><div style={S.label}>API Key{PRESETS[p.name]?.noKey ? '（本地服务无需）' : ''}</div>
+            <div style={S.row}><div style={S.label}>密钥（API Key）{PRESETS[p.name]?.noKey ? '（本地服务无需）' : ''}</div>
               <input style={S.inp} type="password" value={p.apiKey || ''} placeholder={PRESETS[p.name]?.noKey ? '本地服务无需密钥' : 'sk-...'} onChange={e => updateProvider(p.id, { apiKey: e.target.value })} /></div>
-            <div style={S.row}><div style={S.label}>Base URL</div><input style={S.inp} value={p.baseUrl || ''} onChange={e => updateProvider(p.id, { baseUrl: e.target.value })} /></div>
-            <div style={S.row}><div style={S.label}>API 类型</div><select style={S.sel} value={p.type || 'OpenAI Compatible'} onChange={e => updateProvider(p.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-            <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>Headers</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="key=value" value={p.headers || ''} onChange={e => updateProvider(p.id, { headers: e.target.value })} /></div>
+            <div style={S.row}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} value={p.baseUrl || ''} onChange={e => updateProvider(p.id, { baseUrl: e.target.value })} /></div>
+            <div style={S.row}><div style={S.label}>接口类型</div><select style={S.sel} value={p.type || 'OpenAI Compatible'} onChange={e => updateProvider(p.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>请求头（Headers）</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="键=值" value={p.headers || ''} onChange={e => updateProvider(p.id, { headers: e.target.value })} /></div>
           </div>
           <div style={S.card}>
             <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
@@ -161,7 +188,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
             })}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
               {modelInput !== null ? <>
-                <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型 ID..." value={modelInput} onChange={e => setModelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }} autoFocus />
+                <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput} onChange={e => setModelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }} autoFocus />
                 <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }}>确认</button>
                 <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setModelInput(null)}>取消</button>
               </> : <button style={S.btn('primary')} onClick={() => setModelInput('')}>添加模型</button>}
@@ -171,6 +198,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
                 <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: testState.ok ? 'var(--success)' : 'var(--danger)', marginLeft: 4 }}>{testState.msg}</span>
               )}
             </div>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginTop: 6 }}>若接口列表不全，可点「添加模型」手动输入模型 ID（如智谱视觉模型、方舟豆包模型）</div>
           </div>
           <div style={{ ...S.card, marginBottom: 0 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, padding: '2px 0' }}>调度绑定已移至「策略」页 — 所有模型公用</div>
@@ -181,8 +209,8 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         <div style={{ ...S.card, width: 380, padding: 24 }}>
           <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 18 }}>自定义供应商</div>
           <input style={{ ...S.inp, marginBottom: 10 }} placeholder="名称" value={newName} onChange={e => setNewName(e.target.value)} />
-          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="API Key" value={newKey} onChange={e => setNewKey(e.target.value)} />
-          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="Base URL" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="密钥（API Key）" value={newKey} onChange={e => setNewKey(e.target.value)} />
+          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="接口地址（Base URL）" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
           <select style={{ ...S.sel, marginBottom: 14, width: '100%' }} value={newType} onChange={e => setNewType(e.target.value)}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}><button style={S.btn('ghost')} onClick={() => setShowNew(false)}>取消</button><button style={S.btn('primary')} onClick={() => { if (!newName) return; addProvider({ id: 'custom_' + Date.now(), name: newName, type: newType, apiKey: newKey, baseUrl: newUrl, models: [], selectedModel: '' }); setShowNew(false) }}>保存</button></div>
         </div>
@@ -195,7 +223,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
             <option value="">— 选择视觉辅助模型 —</option>
             {providers.filter(pr => pr.id !== p?.id && (pr.models || []).some((m: string) => /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(m.toLowerCase()))).map(pr => (
               <optgroup key={pr.id} label={pr.name}>
-                {(pr.models || []).filter((m: string) => /gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(m.toLowerCase())).map((m: string) => <option key={m} value={m}>{m}</option>)}
+            {(pr.models || []).filter((m: string) => detectCaps([m]).includes('多模态')).map((m: string) => <option key={m} value={m}>{m}</option>)}
               </optgroup>
             ))}
           </select>
@@ -209,7 +237,11 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal(null)}>
           <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
-            <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 12 }}>已从接口读取 {detectModal.items.length} 个模型，勾选后点击「添加所选」才能使用</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, flex: 1 }}>已从接口读取 {detectModal.items.length} 个模型，勾选后点击「添加所选」才能使用</span>
+              <button style={S.btn('ghost')} onClick={() => setDetectSel(detectModal.items.map(x => x.model))}>全选</button>
+              <button style={S.btn('ghost')} onClick={() => setDetectSel([])}>清空</button>
+            </div>
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
               {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>

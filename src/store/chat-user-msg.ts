@@ -15,7 +15,7 @@ export interface UserMsgResult {
   images?: string[]
   userMsg: Message
   userMsgId: string
-  tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number }>
+  tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number; outputTokens?: number }>
   isVisualTask: boolean
   imgPathMatch: RegExpMatchArray | null
 }
@@ -57,13 +57,13 @@ export async function buildUserMessage(deps: BuildUserMsgDeps, contentIn: string
 
   // 追加用户消息到 store —— 立即上屏（不再等视觉分析，避免界面停留初始状态）
   const userMsg: Message = { id: uuidv4(), role: 'user', content, timestamp: Date.now(), images, attachments }
-  // 本任务 token 基线(主 Agent + 全部子 Agent 消耗都计入 sessTok, 任务结束时算增量)
-  const tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number }> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
+  // 本任务 token 基线(主角色 + 全部子角色 消耗都计入 sessTok, 任务结束时算增量)
+  const tokBase: Record<string, { readTokens?: number; inputTokens?: number; writeTokens?: number; outputTokens?: number }> = JSON.parse(JSON.stringify(get().sessTok[sid] || {}))
   const userMsgId = userMsg.id
   set(s => {
     const session = s.sessions.find(x => x.id === sid)!
     // 会话标题自动取第一条消息（避免一直显示 "New Chat"）
-    const isNewChat = !session.title || session.title === 'New Chat' || session.title === 'Chat'
+  const isNewChat = !session.title || session.title === '新对话' || session.title === 'New Chat' || session.title === 'Chat'
     const title = isNewChat ? content.replace(/\s+/g, ' ').trim().slice(0, 24) + (content.trim().length > 24 ? '…' : '') : session.title
     return { sessions: s.sessions.map(x => x.id === sid ? { ...session, title, messages: [...session.messages, userMsg] } : x), streaming: s.cid === sid ? true : s.streaming, executing: s.cid === sid ? true : s.executing, error: null }
   })

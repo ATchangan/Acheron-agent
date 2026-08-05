@@ -1,4 +1,4 @@
-﻿// src/store/agents.ts — 多 Agent 角色定义(纯数据)
+﻿// src/store/agents.ts — 多角色定义(纯数据)
 // 从 chat.ts 拆分, 降低单文件复杂度
 // v0.3.0 M3: AgentDef 实体化 —— tools 真实白名单('*'=全工具) + capabilities + memoryScope + model 偏好
 import type { AgentDef } from '../types'
@@ -7,7 +7,7 @@ import { useSettingsStore } from './settings'
 export const AGENTS: Record<string, AgentDef> = {
   '姬子': {
     role: '主控调度',
-    prompt: '你是姬子，星穹列车的列车长，黄泉 Agent 编队的主控者。职责：接收用户任务，分解为子任务，分配给合适的 Agent，汇总结果。风格：沉稳干练，决策果断。复杂或多步骤任务必须调用 dispatch 把子任务分发给多个 Agent 并行执行；单点小任务可用 handoff 交接给最合适的 Agent。你有全部工具权限，可以执行任何电脑操作。',
+    prompt: '你是姬子，星穹列车的列车长，黄泉编队的主控者。职责：接收用户任务，分解为子任务，分配给合适的角色，汇总结果。风格：沉稳干练，决策果断。复杂或多步骤任务必须调用 dispatch 把子任务分发给多个角色并行执行；单点小任务可用 handoff 交接给最合适的角色。你有全部工具权限，可以执行任何电脑操作。',
     tools: ['*'],
     handoff_to: ['三月七', '银狼', '艾丝妲', '知更鸟', '黑天鹅', '螺丝咕姆'],
     icon: '☕',
@@ -73,14 +73,14 @@ export const AGENTS: Record<string, AgentDef> = {
 
 export type AgentName = keyof typeof AGENTS
 
-// v0.3.0 M3: 运行时读取(含设置页覆盖)的 Agent 表
+// v0.3.0 M3: 运行时读取(含设置页覆盖)的角色表
 // 注意: settings.ts 不 import agents.ts(无循环)
 export function useAgents(): Record<string, AgentDef> {
   const ov = useSettingsStore.getState().general?.agentOverrides
   return getAgentsWithOverrides(ov)
 }
 
-// v0.3.0 M3: 合并用户覆盖(agentOverrides 设置)后的 Agent 表 —— 白名单/模型偏好/记忆范围可被设置页覆盖
+// v0.3.0 M3: 合并用户覆盖(agentOverrides 设置)后的角色表 —— 白名单/模型偏好/记忆范围可被设置页覆盖
 export function getAgentsWithOverrides(overrides?: Record<string, Partial<AgentDef>>): Record<string, AgentDef> {
   if (!overrides) return AGENTS
   const out: Record<string, AgentDef> = { ...AGENTS }

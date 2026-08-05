@@ -81,7 +81,7 @@ declare global {
         onProgress: (cb: (d: { received: number; total: number }) => void) => () => void
       }
       appInfo: () => Promise<{ version: string; electron: string; node: string }>
-      projectContext: () => Promise<{ file: string; content: string }>
+      projectContext: () => Promise<{ file: string; content: string; path: string }>
       computer: {
         exec: (cmd: string) => Promise<string>
         readFile: (path: string, offset?: number, limit?: number) => Promise<string>

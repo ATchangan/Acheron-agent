@@ -3,7 +3,7 @@ import type { Message, SessionData, LLMMessage, SettingsData, UsageData, Provide
 import type { GeneralSettings } from '../types'
 import { useSettingsStore } from './settings'
 import { TOOLS } from './tools'
-import { safeIPC, errMsg } from '../utils/safe'
+import { safeIPC, errMsg, debugLog } from '../utils/safe'
 import { CACHE_TTL, WORKFLOWS } from './constants'
 import { estimateTokens, getModelContextLimit, updateContextLimit, isVisionModel, buildPrompt, buildContextualMessages } from './context'
 import { recordEpisodic, autoExtractMemory, refreshMemoryCache, freezeMemory } from './memory'
@@ -23,7 +23,8 @@ import { refreshPluginTools } from './plugins'
 
 // v0.3.1 块 C/D: 会话级任务代号表 + send 幂等指纹(模块级, 串行入口安全)
 export const taskGenBySid: Record<string, number> = {}
-let lastMidSave = 0 // v0.3.1 D3: 长任务中途保存时间戳
+// v0.3.1 D3: 长任务中途保存时间戳 —— 按会话隔离(双会话并发时 A 保存不压掉 B)
+const midSaveBySid: Record<string, number> = {}
 
 // v0.3.0 M5: 工具调用循环中的扁平工具项(组件收集, 非 API delta)
 interface ToolCallItem {
@@ -41,7 +42,7 @@ export interface S {
   curModel: string
   sessCache: Record<string, { hits: number; misses: number }>
   modelCache: Record<string, { hits: number; misses: number }>
-  sessTok: Record<string, Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number }>>
+  sessTok: Record<string, Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }>>
   activeAgents: string[]
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>
@@ -64,6 +65,7 @@ export async function runSend(
   images?: string[],
   attachments?: Message['attachments']
 ): Promise<void> {
+  const taskStart = Date.now() // 任务总时长起点(含工具执行, 用于最终气泡 ⏱ 显示)
   const set = deps.set
   const get = deps.get
   const st0 = get()
@@ -105,7 +107,7 @@ export async function runSend(
   // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
   const wasInterjecting = st0.streaming
 
-  // v0.3.1 B1: 会话级 Agent 状态接管 —— 新任务开始不清 agent（会话字段保持, 避免多会话并发覆盖）
+  // v0.3.1 B1: 会话级角色状态接管 —— 新任务开始不清 agent（会话字段保持, 避免多会话并发覆盖）
   // 全局 activeAgents/__huangquan_agent 由会话字段读写迁移（块 B）取代, window 仅保留兼容镜像
 
   // 1. 获取 provider 和模型
@@ -115,10 +117,10 @@ export async function runSend(
   // 已配置供应商优先(原 providers[0] 可能无 key, 首个空配置会挡住对话)
   const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) { set({ streaming: false, executing: false, error: '请先配置 API Provider' }); return }
   // 发送前刷新全局记忆缓存（置顶/长期记忆对所有会话生效）
-  // Hermes 吸收: 刷新后冻结本次任务记忆快照(会话内各轮一致, 前缀缓存友好)
+  // 刷新后冻结本次任务记忆快照(会话内各轮一致, 前缀缓存友好)
   await refreshMemoryCache().catch(() => {})
-  freezeMemory()
-  // Codex 吸收: 读取工作目录项目指令 AGENTS.md(约定自动注入上下文)
+  freezeMemory(content)
+  // 读取工作目录项目约定文件(约定自动注入上下文)
   try {
     const pc = await window.huangquan.projectContext().catch(() => ({ file: '', content: '' }))
     if (pc && pc.file) setProjectContext(pc)
@@ -129,13 +131,13 @@ export async function runSend(
   const main = mc.main, isSimple = mc.isSimple, fast = mc.fast, small = mc.small, large = mc.large
   let curP = mc.chosen.p, model = mc.chosen.model
   // 调度选择日志(定位切换失效问题)
-  console.log('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
+  debugLog('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
   set({ curModel: model || '' })
   // 暴露最近一次实际发送模型(验证调度绑定/多模型策略接线)
   
   updateContextLimit(model)
 
-  // 记录当前活跃 Agent（路由结果），供右侧面板展示
+  // 记录当前活跃角色（路由结果），供右侧面板展示
   const recordAgent = (name: string) => {
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, activeAgents: (x.activeAgents || []).includes(name) ? x.activeAgents : [...(x.activeAgents || []), name] } : x) }))
   }
@@ -158,7 +160,7 @@ export async function runSend(
   const visQueue = buildVisionCandidates(p)
     .filter(c => 'apiKey' in c.vp && c.vp.apiKey && c.vp.baseUrl)
     .map(c => ({ p: c.vp as ProviderConfig, model: c.vm }))
-  console.log('[MODEL] 视觉任务判定:', isVisualTask, '| 当前模型:', model, '| 视觉队列:', visQueue.map(q => q.model).join(',') || '(空)')
+  debugLog('[MODEL] 视觉任务判定:', isVisualTask, '| 当前模型:', model, '| 视觉队列:', visQueue.map(q => q.model).join(',') || '(空)')
   if (isVisualTask) {
     // 队列非空 → 强制使用队列第一个可用模型(按优先级); 当前模型已在队列则保持
     const curInQueue = visQueue.find(q => q.model === model)
@@ -169,7 +171,7 @@ export async function runSend(
         
         content = content + '\n\n[识图任务已使用视觉模型:' + model + ']'
         switchedVision = true
-        console.log('[MODEL] 视觉任务强制切换队列模型:', model)
+        debugLog('[MODEL] 视觉任务强制切换队列模型:', model)
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
       }
     } else if (isVisionModel(model)) {
@@ -185,7 +187,7 @@ export async function runSend(
         
         content = content + '\n\n[已自动切换模型:' + model + '(支持图片分析)]'
         switchedVision = true
-        console.log('[MODEL] 视觉任务自动切换:', model)
+        debugLog('[MODEL] 视觉任务自动切换:', model)
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
       } else {
         // 无可用视觉模型: 走辅助视觉分析, 分析失败则提示
@@ -246,14 +248,14 @@ export async function runSend(
           if (q.model !== model && tried.length > 0) { curP = q.p; model = q.model; switchedVision = true; set({ curModel: model }); updateContextLimit(model) }
           tried.push(model)
           try { okRes = await callLLM(aid, rid1); clear(); break }
-          catch (e) { lastErr = e; clear(); console.log('[MODEL] 视觉模型调用失败, 顺位下一个:', model, '->', String(e).slice(0, 120)); continue }
+          catch (e) { lastErr = e; clear(); debugLog('[MODEL] 视觉模型调用失败, 顺位下一个:', model, '->', String(e).slice(0, 120)); continue }
         }
         if (okRes) res = okRes
         else {
           res = { text: '', tcs: [] }
           const whyTxt = '所有视觉模型均调用失败：' + tried.join('、') + (lastErr ? '（' + String((lastErr as { message?: string })?.message || lastErr).slice(0, 150) + '）' : '')
           set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: '[识图失败] ' + whyTxt } : m) } : x) }))
-          console.log('[MODEL] 视觉队列全部失败:', whyTxt)
+          debugLog('[MODEL] 视觉队列全部失败:', whyTxt)
           break // 跳出 while 主循环(本轮结束, 用户可见报错)
         }
       } else {
@@ -261,10 +263,10 @@ export async function runSend(
       }
 
       // 3. 工具调用循环(拆至 chat-round.ts, 行为零变化)
-      const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, lastMidSave)
-      res = tr.res; toolLog = tr.toolLog; lastMidSave = tr.lastMidSave
+      const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, midSaveBySid[sid] || 0)
+      res = tr.res; toolLog = tr.toolLog; midSaveBySid[sid] = tr.lastMidSave
       if (tr.switchTo) { curP = tr.switchTo.p; model = tr.switchTo.model; set({ curModel: model }); updateContextLimit(model) }
-      // 4. 单气泡 + Hermes 风格日志
+      // 4. 单气泡合并
       set({ stage: null }) // 任务完成, 思考气泡消失
       const finalSession = get().sessions.find(x => x.id === sid)
       if (finalSession) {
@@ -272,7 +274,8 @@ export async function runSend(
         // v0.3.1 D1: 清空边界 = 任务起始消息(userMsg.id 首次出现)之后的所有中间 assistant 文本(插话 user 消息不破坏边界)
     const lastUserIdx = finalSession.messages.map(m => m.id).indexOf(userMsg.id)
         const thisRound = lastUserIdx >= 0 ? finalSession.messages.slice(lastUserIdx) : finalSession.messages
-        // 单气泡合并去重: DeepSeek 等模型工具调用前预答与最终回复相同则丢弃重复段
+        // 单气泡合并: DeepSeek 等模型在工具调用前会先输出一遍预答, 工具执行后再次输出最终回答,
+        // 若把两者都并入会重复。检测中间文本与最终输出相同则丢弃该重复段(保留更早的阶段性说明)
         const roundMid = thisRound.filter(m => m.role === 'assistant' && m.content && m.id !== aid).map(m => m.content as string)
         const llmText = res.text || ''; const hasTools = toolLog.length > 0
         const lastMid = roundMid[roundMid.length - 1]
@@ -289,20 +292,21 @@ export async function runSend(
       if (myGen !== getTaskGenFor(taskGenBySid, sid) || !hasInterjectForSid(sid)) break
     }
 
-    // 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
+    // 本任务总消耗 = sessTok 增量(含主角色 与全部子角色), 写到最后一条 assistant 消息
     try {
       const tokNow = get().sessTok[sid] || {}
       let taskTok = 0
       for (const [mk, c] of Object.entries(tokNow)) {
         const b = tokBase[mk]
-        taskTok += (c.readTokens - (b?.readTokens || 0)) + (c.inputTokens - (b?.inputTokens || 0)) + (c.writeTokens - (b?.writeTokens || 0))
+        // 总消耗 = 输入(已含缓存命中) + 输出 + 缓存写入; 不再重复加 readTokens
+        taskTok += (c.inputTokens - (b?.inputTokens || 0)) + (c.outputTokens - (b?.outputTokens || 0)) + (c.writeTokens - (b?.writeTokens || 0))
       }
       if (taskTok > 0) {
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map((m, idx) => {
           if (m.role === 'assistant') {
             let lastAi = -1
             for (let k = x.messages.length - 1; k >= 0; k--) if (x.messages[k].role === 'assistant') { lastAi = k; break }
-            if (idx === lastAi) return { ...m, meta: { ...m.meta, taskTokens: taskTok } }
+            if (idx === lastAi) return { ...m, meta: { ...m.meta, taskTokens: taskTok, taskMs: Date.now() - taskStart } }
           }
           return m
         }) } : x) }))
@@ -334,6 +338,15 @@ export async function runSend(
       return get().send(content, undefined, attachments)
     }
     console.error('[黄泉Agent] send error:', e)
+    // 异常后清理悬空 tool_calls 消息(无对应 tool 结果): 否则下次请求 API 400
+    try {
+      set(s => ({ sessions: s.sessions.map(x => {
+        if (x.id !== sid) return x
+        const msgs = x.messages
+        const keep = (m: Message) => !m.tool_calls?.length || m.tool_calls.some(tc => msgs.some(t => t.role === 'tool' && t.tool_call_id === tc.id))
+        return { ...x, messages: msgs.filter(keep) }
+      }) }))
+    } catch { /* 忽略 */ }
     // 异常/插话中止时清理当前流式 assistant 残留（避免多气泡）
     try {
       set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsg?.id && !m.content ? { ...m, content: '' } : m) } : x) }))
@@ -348,7 +361,7 @@ export async function runSend(
       curP = origP; model = origModel
       set({ curModel: model }); updateContextLimit(model)
       
-      console.log('[MODEL] 视觉任务结束, 还原主力模型:', model)
+      debugLog('[MODEL] 视觉任务结束, 还原主力模型:', model)
     }
   }
 }

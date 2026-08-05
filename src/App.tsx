@@ -46,6 +46,10 @@ function resolveTheme(g: GeneralSettings): string {
 
 function applyAppearance(g: GeneralSettings) {
   const r = document.documentElement.style
+  // 先清掉可能残留的内联变量(自定义配色/皮肤写入), 否则会盖住预设主题, 导致切主题"没反应"
+  const staleVars = ['--text-primary', '--text-secondary', '--text-muted', '--border', '--bg-elevated',
+    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary', '--accent']
+  for (const v of staleVars) r.removeProperty(v)
   // 主题 = data-theme 6 套 CSS token 块(不再内联变量)
   document.documentElement.setAttribute('data-theme', resolveTheme(g))
   // Custom theme colors override (from settings)

@@ -11,6 +11,14 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: resolve(__dirname, 'src/index.html'),
+      output: {
+        // 分包: 框架/渲染库/图标 独立 chunk, 首屏与更新后缓存更友好
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          markdown: ['react-markdown', 'remark-gfm'],
+          icons: ['lucide-react'],
+        },
+      },
     },
   },
   resolve: {

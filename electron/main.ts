@@ -183,7 +183,7 @@ import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-ve
 import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
   mainWindow?.webContents.send('cron:trigger', prompt)
 })).catch(() => {})
-// 多Agent体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
+// 多角色体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
 import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})
@@ -202,11 +202,10 @@ function startServer(): Promise<number> {
       if (!fp.startsWith(distDir)) { res.writeHead(403); res.end('403'); return }
       fs.readFile(fp, (err, data) => {
         if (err) { res.writeHead(404); res.end('404'); return }
-        // 静态资源缓存头(HTML 不缓存, 其余资源 1h)
-        const isHtml = reqPath.endsWith('.html') || reqPath === '/'
+        // 静态资源一律不缓存: 桌面本地服务, 避免端口复用/热重启时浏览器命中旧 JS 导致界面显示旧版
         res.writeHead(200, {
           'Content-Type': mime[extname(fp)] || 'application/octet-stream',
-          'Cache-Control': isHtml ? 'no-cache' : 'public, max-age=3600',
+          'Cache-Control': 'no-cache',
         })
         res.end(data)
       })

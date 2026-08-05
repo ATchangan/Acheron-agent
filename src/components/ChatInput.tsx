@@ -2,14 +2,15 @@
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
-import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Lightbulb, Zap, Flame, Sparkles as SparklesIcon, Send, Square, ImagePlus, Gauge, Brain, Crown } from 'lucide-react'
+import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Send, Square, ImagePlus } from 'lucide-react'
 import { api } from '../services/ipc'
+import { detectCaps } from './settings/consts'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
 type ThinkLevel = 'off' | 'quick' | 'medium' | 'deep' | 'extreme' | 'ultra'
 const PERM_ICONS: Record<FilePerm, React.ReactNode> = { auto: <Shield size={14} />, full: <Unlock size={14} />, ask: <Lock size={14} />, readonly: <Eye size={14} /> }
 const PERM_LABELS: Record<FilePerm, string> = { auto: '自动审核', full: '完整权限', ask: '操作前询问', readonly: '只读' }
-const THINK_ICONS: Record<ThinkLevel, React.ReactNode> = { off: <Lightbulb size={14} />, quick: <Gauge size={14} />, medium: <Brain size={14} />, deep: <Flame size={14} />, extreme: <SparklesIcon size={14} />, ultra: <Crown size={14} /> }
+const THINK_ICONS: Record<ThinkLevel, React.ReactNode> = { off: '🕯️', quick: '🍃', medium: '🌊', deep: '🔥', extreme: '⚡', ultra: '👑' }
 
 // 统一图标按钮组件 — 最小 32x32 触摸区域
 const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.ReactNode; style?: React.CSSProperties; disabled?: boolean }> =
@@ -55,10 +56,10 @@ export default function ChatInput() {
   // 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const classifyModel = (m: string): 'text' | 'image' | 'video' | 'audio' => {
-    const ml = m.toLowerCase()
-    if (/image|img|flux|dall|sdxl|\bsd-|mj-|seedream|cogview|wanx|kolors|ernie-vilg/i.test(ml)) return 'image'
-    if (/video|vid|seedance|kling|pika|runway|gen3|gen4|t2v/i.test(ml)) return 'video'
-    if (/asr|tts|whisper|voice|audio|iflytek/i.test(ml)) return 'audio'
+    const caps = detectCaps([m])
+    if (caps.includes('图片')) return 'image'
+    if (caps.includes('视频')) return 'video'
+    if (caps.includes('语音')) return 'audio'
     return 'text'
   }
   const cfgProviders = providers.filter(pp => !!pp.apiKey && (pp.models || []).length)
@@ -79,7 +80,7 @@ export default function ChatInput() {
   const currentModel = modelSel || defaultKey || '未配置'
   const curModelName = (currentModel.includes('::') ? currentModel.split('::').pop() : currentModel) || ''
   // 主模型不支持视觉时仍可上传 —— send() 会自动用视觉辅助模型分析
-  const supportsVision = !currentModel || currentModel === '未配置' || /gpt-4o|gpt-4-turbo|gpt-4\.1|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava/i.test(curModelName.toLowerCase())
+  const supportsVision = !currentModel || currentModel === '未配置' || detectCaps([curModelName]).includes('多模态')
   const visionAssist = !supportsVision
   const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
   const ctxColor = ctxRatio > 0.9 ? 'var(--danger)' : ctxRatio > 0.7 ? 'var(--warning)' : 'var(--accent)'
@@ -291,9 +292,9 @@ export default function ChatInput() {
         </div>
 
         <div className="input-right">
-          {/* Agent 选择器 */}
+          {/* 角色选择器 */}
           <select className="model-select" style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '4px 8px', maxWidth: 80, height: 28, borderRadius: 5 }}
-            onChange={e => { const v = e.target.value; window.__huangquan_agent = v; window.__huangquan_agent_manual = v !== '' }}
+            onChange={e => { const v = e.target.value; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: v || undefined, agentManual: !!v } : x) })) }}
             defaultValue="">
             <option value="">自动</option>
             <option value="姬子">☕ 主控</option>
@@ -330,7 +331,7 @@ export default function ChatInput() {
 
           {/* Token 用量环 */}
           <svg width="28" height="28" style={{ flexShrink: 0 }}>
-            <title>{(contextUsed / 1024).toFixed(1)}K / {(contextLimit / 1024).toFixed(0)}K tokens</title>
+            <title>上下文用量：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
             <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
             <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
               strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
@@ -352,14 +353,14 @@ export default function ChatInput() {
                 <Square size={16} fill="currentColor" />
               </button>
               <button className="send-btn" onClick={handleSend}
-                title="发送 (Enter) · 工作中发送=补充指令"
+                title="发送（回车）· 工作中发送即补充指令"
                 style={{ width: 36, height: 36, minWidth: 36, borderRadius: 8, fontSize: 18 }}>
                 <Send size={17} />
               </button>
             </>
           ) : (
             <button className="send-btn" onClick={handleSend} disabled={!canSend}
-              title="发送 (Enter)"
+              title="发送（回车）"
               style={{ width: 36, height: 36, minWidth: 36, borderRadius: 8, fontSize: 18 }}>
               <Send size={17} />
             </button>

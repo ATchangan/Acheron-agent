@@ -308,7 +308,7 @@ export default function SkillsView() {
                 </select>
               </div>
               <div className="form-row">
-                <label>法术内容 <span className="form-hint">(Markdown)</span></label>
+                <label>法术内容 <span className="form-hint">（富文本）</span></label>
                 <textarea
                   style={S.textarea}
                   value={newContent}

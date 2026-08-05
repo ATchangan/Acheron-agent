@@ -2,12 +2,14 @@
 // 职责: 子任务并行(subRounds 循环)/结果汇总。runDispatch 迁移自 chat.ts runTool 的 dispatch case(行为未改)
 // 注意: 依赖 chat.ts 的 useChatStore(运行时循环依赖, 函数体内延迟解析, 安全)
 import { useAgents } from './agents'
-import { TOOLS } from './tools'
+import { TOOLS, filterToolsByAgent } from './tools'
 import { buildPrompt } from './context'
 import { useChatStore } from './chat'
 import { SUB_ROUND_LIMIT } from './constants'
+import { resolveModel } from './model-pick'
 import type { ProviderConfig, ToolCallDelta, ChunkData, SettingsData, LLMMessage } from '../global'
 import type { ToolSpec } from '../types'
+import type { GeneralSettings } from '../types'
 import { errMsg } from '../utils/safe'
 
 export async function runDispatch(
@@ -24,21 +26,29 @@ export async function runDispatch(
         const cfg = snapCfg || await window.huangquan.settings.load()
         // 已配置供应商优先(原 providers[0] 可能无 key, 分发失败)
         const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) return 'E:未配置 Provider，无法分发'
-        const model = p.selectedModel || p.models[0] || ''
         const out: string[] = []
-        // 分发开始：所有子 Agent 一并显示（并发协作）
+        // 分发开始：所有子角色 一并显示（并发协作）
         const validAgents = tasks.map(t => t.agent).filter(n => agents[n])
-        useChatStore.setState(s => ({ activeAgents: [...new Set([...s.activeAgents, ...validAgents])] }))
-        // 并行执行子任务（每个子 Agent 独立系统提示词 + 真实工具调用循环 —— 子 Agent 也能调用工具真正干活）
+        // 子任务活跃角色写入当前会话字段(全局 activeAgents 会跨会话串扰)
+        const dispatchSid = useChatStore.getState().cid
+        if (dispatchSid) useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === dispatchSid ? { ...x, activeAgents: [...new Set([...(x.activeAgents || []), ...validAgents])] } : x) }))
+        // 并行执行子任务（每个子角色独立系统提示词 + 真实工具调用循环 —— 子角色也能调用工具真正干活）
         const dispStartGen = getTaskGen()
         const results = await Promise.all(tasks.map(async (t) => {
           const ag = agents[t.agent]
-          if (!ag) return { agent: t.agent, task: t.task, error: 'unknown agent' }
-          // v0.3.0 M3: 上下文隔离 —— 子 Agent 只含身份+任务, 不拼接全局历史/记忆/工具列表
+          if (!ag) return { agent: t.agent, task: t.task, error: '未知角色' }
+          // 子任务模型策略: 代码类任务用 codeModel, 文档/总结类用 longTextModel, 其余用主模型
+          const gNow = (snapCfg?.general || {}) as GeneralSettings
+          const taskTxt = (t.task || '').toLowerCase()
+          const isCode = /(代码|脚本|函数|重构|bug|测试|typescript|javascript|python|html|css|sql)/.test(taskTxt)
+          const isLong = /(总结|分析|翻译|报告|文档|调研|搜索|整理|写作|文章)/.test(taskTxt)
+          const model = (isCode ? resolveModel(gNow, cfg, p, 'codeModel') : isLong ? resolveModel(gNow, cfg, p, 'longTextModel') : null)?.model || p.selectedModel || p.models[0] || ''
+          // v0.3.0 M3: 上下文隔离 —— 子角色 只含身份+任务, 不拼接全局历史/记忆/工具列表
           const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
-          // 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)
+          // 子角色 不嵌套协作工具(防递归 dispatch/handoff)
           const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
-          const agTools = (ag.tools.includes('*') ? TOOLS : TOOLS.filter((tt: ToolSpec) => ag.tools.includes(tt.function.name))).filter((tt: ToolSpec) => !COLLAB_TOOLS.includes(tt.function.name))
+          // v0.3.2 T1: 与主请求共用同一白名单过滤函数(过滤基仍为 TOOLS 不含插件, 现状保持)
+          const agTools = filterToolsByAgent(TOOLS, t.agent).filter((tt: ToolSpec) => !COLLAB_TOOLS.includes(tt.function.name))
           const rid = 'sub' + Date.now() + '_' + tasks.indexOf(t) + '_' + Math.random().toString(36).slice(2, 6)
           const subMsgs: LLMMessage[] = [
             { role: 'system', content: sp },
@@ -48,9 +58,11 @@ export async function runDispatch(
           let subRounds = 0
           let subRetried = false
           const subRun = () => new Promise<string>((resolve) => {
+            // 子任务总超时兜底(180s): 防 LLM 挂起导致 dispatch 永久等待
+            const subTimeout = setTimeout(() => resolve(subText || '(子任务超时)'), 60000)
             const step = () => {
               subRounds++
-              if (subRounds > SUB_ROUND_LIMIT) { resolve(subText || '(子任务轮次上限)'); return }
+              if (subRounds > SUB_ROUND_LIMIT) { clearTimeout(subTimeout); resolve(subText || '(子任务轮次上限)'); return }
               // 防御性清理 —— 丢弃孤儿 tool 消息(前面不是带 tool_calls 的 assistant), 防止 DeepSeek 400
               const clean: LLMMessage[] = []
               for (const mm of subMsgs) {
@@ -67,12 +79,13 @@ export async function runDispatch(
               let settled = false
               const settle = () => {
                 if (settled) return; settled = true
+                clearTimeout(subTimeout)
                 cbs.forEach(f => f())
                 if (tcs.length) {
                   ;(async () => {
                     for (const tc of tcs) {
                       const tcId = tc.id || 'c' + Date.now() + Math.random().toString(36).slice(2, 6)
-                      // v0.3.0 M3: 子 Agent 工具白名单守卫(LLM 幻觉兜底)
+                      // v0.3.0 M3: 子角色工具白名单守卫(LLM 幻觉兜底)
                       if (!ag.tools.includes('*') && !ag.tools.includes(tc.name)) { subMsgs.push({ role: 'assistant', content: null, reasoning_content: '', tool_calls: [{ id: tcId, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] }); subMsgs.push({ role: 'tool', content: 'E:权限不足，该 Agent 无权调用 ' + tc.name, tool_call_id: tcId }); continue }
                       const rr = await runToolFn(tc.name, tc.args || {}, cfg)
                       subMsgs.push({ role: 'assistant', content: null, reasoning_content: '', tool_calls: [{ id: tcId, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
@@ -88,7 +101,7 @@ export async function runDispatch(
               cbs.push(window.huangquan.llm.onChunk((d: ChunkData) => { if (d && d.requestId && d.requestId !== rid) return; if (d.content) text += d.content; if (d.done) setTimeout(settle, 200) }))
               cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; if (tc?.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) }))
               cbs.push(window.huangquan.llm.onError((e: unknown) => {
-                if (settled) return; settled = true; cbs.forEach(f => f())
+                if (settled) return; settled = true; clearTimeout(subTimeout); cbs.forEach(f => f())
                 // 用户终止任务后不重试(终止由 taskGen 变化标记)
                 if (getTaskGen() !== dispStartGen) { resolve('已终止'); return }
                 const em = e as { error?: string }
@@ -97,7 +110,7 @@ export async function runDispatch(
                 resolve('E:' + msg)
               }))
               window.huangquan.llm.chat({ provider: p.type, model, apiKey: p.apiKey, baseUrl: p.baseUrl, messages: subMsgs, tools: agTools, requestId: rid }).catch((e: unknown) => {
-                if (settled) return; settled = true; cbs.forEach(f => f())
+                if (settled) return; settled = true; clearTimeout(subTimeout); cbs.forEach(f => f())
                 if (getTaskGen() !== dispStartGen) { resolve('已终止'); return }
                 const msg = errMsg(e)
                 if (!subRetried) { subRetried = true; setTimeout(step, 400); return }
@@ -111,7 +124,7 @@ export async function runDispatch(
         }))
         for (const x of results) {
           const xr = x as { error?: string; result?: string }
-          const err = xr.error ? ' (未知Agent)' : ''
+  const err = xr.error ? '（未知角色）' : ''
           out.push(`【${x.agent}${err}】${xr.error || ''}\n任务: ${x.task}\n结果: ${xr.result || '(empty)'}`)
         }
         return '📤 分发完成，共 ' + tasks.length + ' 个子任务：\n\n' + out.join('\n\n---\n\n')

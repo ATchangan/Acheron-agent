@@ -40,7 +40,7 @@ if (typeof window !== 'undefined' && window.huangquan?.plugins) refreshPluginToo
 
 // Token 估算（中英混合）
 
-// ─── v0.2: 多Agent 编队（改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
+// ─── v0.2: 多角色编队（改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
 
 
 // ─── v0.2: 模型上下文窗口自动检测 ──────────────────────
@@ -74,7 +74,7 @@ export const useChatStore = create<S>((set, get) => ({
       if (wd) useSettingsStore.getState().setWorkDir(wd)
     }
     if (wd) window.huangquan.computer.exec('if (-not (Test-Path "' + wd + '")) { New-Item -ItemType Directory -Path "' + wd + '" -Force }').catch(() => {})
-    const sessions = await Promise.all(metas.map((m: SessionMeta) => window.huangquan.sessions.load(m.id).catch(() => ({ id: m.id, title: 'Chat', messages: [], mode: 'work' }))))
+    const sessions = await Promise.all(metas.map((m: SessionMeta) => window.huangquan.sessions.load(m.id).catch(() => ({ id: m.id, title: '对话', messages: [], mode: 'work' }))))
     // 启动巡检 —— 磁盘↔内存对账: 删除"磁盘存在但列表无归属"的孤立会话文件(删除会话未同步清理的孤儿消息)
     try {
       const diskIds: string[] = (await window.huangquan.sessions.audit?.()) || [] as string[]
@@ -84,7 +84,7 @@ export const useChatStore = create<S>((set, get) => ({
       }
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     // 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
-    const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode }
+    const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode }
     // 清理历史空会话（从未发过消息的），避免启动多次后堆积垃圾文件
     const stale = sessions.filter(s => s.messages.length === 0)
     for (const s of stale) { window.huangquan.sessions.delete(s.id).catch(() => {}) }
@@ -104,7 +104,7 @@ export const useChatStore = create<S>((set, get) => ({
     const sessions = [...get().sessions]
     const ms = sessions.filter(s => (s.mode || 'work') === m)
     if (ms.length === 0) {
-      const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode: m }
+      const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
       sessions.unshift(ns)
       window.huangquan.sessions.save(safeIPC(ns))
       set({ sessions, cid: ns.id, sp })
@@ -115,7 +115,7 @@ export const useChatStore = create<S>((set, get) => ({
 
   create: () => {
     const m = useSettingsStore.getState().general.mode || 'work'
-    const ns: SessionData = { id: uuidv4(), title: 'New Chat', messages: [], mode: m }
+    const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
     // 新会话独立,不继承其他会话的流式/执行状态
     set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [] }))
     window.huangquan.sessions.save(safeIPC(ns))
@@ -137,7 +137,7 @@ export const useChatStore = create<S>((set, get) => ({
   del: (id) => {
     window.huangquan.sessions.delete(id)
     // 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
-    // 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃 Agent/插话队列)
+    // 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃角色/插话队列)
     if (id === get().cid) clearInterjectForSid(id)
     set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal, activeAgents: s.cid === id ? [] : s.activeAgents } })
   },

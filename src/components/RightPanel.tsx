@@ -3,7 +3,7 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import FileTree from './FileTree'
 import ResizeBar from './ResizeBar'
-import { Folder, FolderPlus, FilePlus, RefreshCw, MoreHorizontal } from 'lucide-react'
+import { Folder, FolderPlus, FilePlus, RefreshCw, MoreHorizontal, FileText } from 'lucide-react'
 
 
 export default function RightPanel() {
@@ -20,6 +20,11 @@ export default function RightPanel() {
   const [treeKey, setTreeKey] = useState(0)
   const [creating, setCreating] = useState<'dir' | 'file' | null>(null)
   const [createName, setCreateName] = useState('')
+  // 项目约定状态 —— 工作目录变化时重新探测
+  const [projectCtx, setProjectCtx] = useState<{ file: string; content: string; path: string }>({ file: '', content: '', path: '' })
+  useEffect(() => {
+    window.huangquan.projectContext().then(setProjectCtx).catch(() => setProjectCtx({ file: '', content: '', path: '' }))
+  }, [workDir])
 
   // v0.3.0: 工作目录变化时文件树立即刷新(设置页修改实时生效, 不依赖 5s 轮询)
   const firstWd = useRef(true)
@@ -56,7 +61,7 @@ export default function RightPanel() {
     <aside className="sidebar-right" style={{ position: 'relative' }}>
       <div className="right-top-name"><h3>黄泉</h3></div>
 
-      {/* 多Agent 协作实时面板 —— 常驻置顶，显示当前正在调用的 Agent（多个并发时全部显示） */}
+      {/* 多角色协作实时面板 —— 常驻置顶，显示当前正在调用的角色（多个并发时全部显示） */}
       <div className="sys-bar" style={{ marginBottom: 8, border: '1px solid rgba(var(--skin-accent),.4)', background: 'rgba(var(--skin-accent),.08)', borderRadius: 8, padding: '8px 10px' }}>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: 'var(--accent)', marginBottom: 6, letterSpacing: 1 }}>协作调度</div>
         {streaming || executing ? (
@@ -84,9 +89,9 @@ export default function RightPanel() {
       {/* 系统信息: CPU/RAM/GPU 实时占用 */}
       {perf && (
         <div className="sys-bar">
-          <div className="sys-item"><span className="sys-label">CPU</span><span style={{ color: perf.cpuPct > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
-          <div className="sys-item"><span className="sys-label">RAM</span><span>{fmt(perf.memUsed)}/{fmt(perf.memTotal)} ({perf.memPct}%)</span></div>
-          <div className="sys-item" title={perf.gpuName ? '当前 GPU: ' + perf.gpuName : ''}><span className="sys-label">GPU</span><span style={{ color: (perf.gpuPct || 0) > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
+          <div className="sys-item"><span className="sys-label">处理器</span><span style={{ color: perf.cpuPct > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
+          <div className="sys-item"><span className="sys-label">内存</span><span>{fmt(perf.memUsed)}/{fmt(perf.memTotal)} ({perf.memPct}%)</span></div>
+          <div className="sys-item" title={perf.gpuName ? '当前显卡：' + perf.gpuName : ''}><span className="sys-label">显卡</span><span style={{ color: (perf.gpuPct || 0) > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
         </div>
       )}
       {workDir && (
@@ -98,6 +103,12 @@ export default function RightPanel() {
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)', cursor: 'pointer' }} title="新建文件夹" onClick={() => { setCreating('dir'); setCreateName('') }}><FolderPlus size={12} /></span>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--success)', cursor: 'pointer' }} title="新建文件" onClick={() => { setCreating('file'); setCreateName('') }}><FilePlus size={12} /></span>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', cursor: 'pointer' }} title="刷新" onClick={() => setTreeKey(k => k + 1)}><RefreshCw size={12} /></span>
+            {/* 项目约定状态(点击打开编辑) */}
+            <span
+              style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: projectCtx.file ? 'var(--success)' : 'var(--text-muted)', cursor: projectCtx.file ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center' }}
+              title={projectCtx.file ? `项目约定已加载，点击打开编辑\n\n${projectCtx.content.slice(0, 300)}` : '工作目录没有项目约定文件'}
+              onClick={() => { if (projectCtx.path) { try { window.huangquan.computer.openFile(projectCtx.path) } catch { /* 忽略 */ } } }}
+            ><FileText size={12} />{projectCtx.file ? ' ✓' : ''}</span>
           </div>
           {creating && (
             <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
