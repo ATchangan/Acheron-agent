@@ -6,65 +6,13 @@ import { useSettingsStore } from './settings'
 import { useAgents } from './agents'
 import type { Message, VisionContent, LLMMessage } from '../global'
 import type { GeneralSettings } from '../types'
-import { WORKFLOWS, VISION_MODEL_HINTS, MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT } from './constants'
+import { WORKFLOWS, MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT } from './constants'
 import { memoryBlock, getFrozenMemory } from './memory'
 import { getProjectContext } from './project-ctx'
-import { useChatStore } from './chat'
 import { routeAgent } from './router'
-
-// v0.3.4 T1: 按模型隔离的实测校准系数(初始 1.0, EMA 平滑, 限幅 0.3~3 防单次异常拉偏)
-const scaleByModel = new Map<string, number>()
-export function calibrateTokens(model: string, actual: number, estimated: number): void {
-  if (!model || !actual || !estimated) return
-  const cur = scaleByModel.get(model) ?? 1.0
-  const ratio = Math.min(3, Math.max(0.3, actual / estimated))
-  scaleByModel.set(model, cur * 0.8 + ratio * 0.2)
-}
-export function getCalibrationScale(model: string): number {
-  return scaleByModel.get(model) ?? 1.0
-}
-function getScale(): number {
-  const m = useChatStore.getState().curModel || ''
-  return scaleByModel.get(m) ?? 1.0
-}
-
-// v0.3.4 T1: 分层估算 —— 代码块(/3.5) + 中文(×1.2) + URL(段级) + 剩余(/4), 最后乘实测校准系数
-export function estimateTokens(text: string): number {
-  if (!text) return 0
-  const s = getScale()
-  let base = 0
-  const codeBlocks = text.match(/```[\s\S]*?```/g) || []
-  for (const b of codeBlocks) base += b.length / 3.5
-  const rest = text.replace(/```[\s\S]*?```/g, '')
-  const cn = (rest.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length
-  base += cn * 1.2
-  const urlM = rest.match(/[a-z]+:\/\/[^\s"'<>]+/gi) || []
-  for (const u of urlM) base += 2 + u.split(/[\/?#]/).length
-  const nonCn = rest.replace(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g, '').replace(/[a-z]+:\/\/[^\s"'<>]+/gi, '')
-  base += nonCn.length / 4
-  return Math.max(1, Math.round(base * s))
-}
-
-// v0.3.2 T7: 输出上限分级(纯函数, 只降明确闲聊场景; 代码/文件/任务类保持全局上限, 杜绝截断风险)
-export function outputLimit(userMsg: string, cfg: GeneralSettings): number | undefined {
-  const base = cfg.maxTokens || 4096
-  if (userMsg.length < 40 && !/(代码|文件|报告|项目|脚本|写|改|建|查|找|分析)/.test(userMsg)) {
-    return Math.min(base, 800)
-  }
-  return base
-}
-
-// v0.3.2 T8: 会话累计 token 统计 —— 从消息 usage 重算(不新增存储; 兼容 input/output 两种命名)
-export function sessionTokens(msgs: Message[]): { input: number; output: number } {
-  let input = 0, output = 0
-  for (const m of msgs) {
-    const u = m.usage
-    if (!u) continue
-    input += u.input_tokens || u.prompt_tokens || 0
-    output += (u as { output_tokens?: number }).output_tokens || u.completion_tokens || 0
-  }
-  return { input, output }
-}
+import { estimateTokens } from './context-utils'
+// 纯函数工具已拆至 context-utils.ts, re-export 保持调用方兼容
+export { calibrateTokens, getCalibrationScale, estimateTokens, outputLimit, sessionTokens, getModelContextLimit, updateContextLimit, isVisionModel } from './context-utils'
 
 // v0.3.2 T5: workflows 按需注入 —— 命中触发词注入完整模板列表, 未命中只保留一行引导(两种形态, 前缀缓存可接受)
 // v0.3.5 T2: workflowLazy 关闭时恒注入完整列表(0.3.0 行为)
@@ -191,52 +139,6 @@ export function buildTaskArchives(msgs: Message[]): { keep: Message[]; archives:
     keep = blocks[blockIdx] ? msgs.slice(msgs.indexOf(blocks[blockIdx][0])) : msgs.slice(msgs.length)
   }
   return { keep, archives }
-}
-
-function getModelContextLimit(modelName: string): number {
-  const m = modelName.toLowerCase()
-  // 百万级
-  if (m.includes('deepseek-v4') || m.includes('deepseek-chat') || m.includes('deepseek-reasoner')) return 1048576
-  if (m.includes('gpt-4.1')) return 1048576
-  if (m.includes('gemini-2.5') || m.includes('gemini-2') || m.includes('gemini-1.5')) return 1048576
-  // 20万级
-  if (m.includes('o3') || m.includes('o4') || m.includes('o1')) return 200000
-  if (m.includes('claude-4') || m.includes('claude-3.5') || m.includes('claude-3') || m.includes('claude-2')) return 200000
-  if (m.includes('yi-')) return 200000
-  // 26万
-  if (m.includes('qwen3')) return 262144
-  if (m.includes('minimax')) return 245760
-  // 13万
-  if (m.includes('deepseek-v3')) return 131072
-  if (m.includes('gpt-4o')) return 131072
-  if (m.includes('gpt-4-turbo')) return 131072
-  if (m.includes('qwen2.5') || m.includes('qwen')) return 131072
-  if (m.includes('glm-4') || m.includes('glm')) return 131072
-  if (m.includes('ernie-4.5')) return 131072
-  if (m.includes('moonshot') || m.includes('kimi')) return 131072
-  if (m.includes('doubao') || m.includes('skylark')) return 131072
-  // 其他
-  if (m.includes('gpt-4-32k')) return 32768
-  if (m.includes('gpt-4')) return 8192
-  if (m.includes('gpt-3.5-turbo-16k')) return 16384
-  if (m.includes('gpt-3.5')) return 4096
-  if (m.includes('deepseek')) return 65536
-  if (m.includes('gemini')) return 32768
-  if (m.includes('ernie')) return 8192
-  // 默认 64K
-  return 65536
-}
-function updateContextLimit(modelName: string) {
-  const limit = getModelContextLimit(modelName)
-  const s = useChatStore.getState()
-  if (s.cl !== limit) useChatStore.setState({ cl: limit })
-}
-// 导出供外部调用（模型切换时实时更新）
-export { updateContextLimit, getModelContextLimit }
-
-export function isVisionModel(m: string): boolean {
-  const ml = (m || '').toLowerCase()
-  return VISION_MODEL_HINTS.some(v => ml.includes(v))
 }
 
 export function buildPrompt(mode: string, ishiki: string): string {
@@ -443,7 +345,7 @@ export function buildContextualMessages(
   }
   // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
-  let agentRole = collabOff ? null : (opts.agent || window.__huangquan_agent)
+  let agentRole = collabOff ? null : opts.agent
   // 自动检测：根据用户最后一条消息内容匹配最合适的 Agent
   if (!agentRole) {
     const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
@@ -451,7 +353,7 @@ export function buildContextualMessages(
     if (txt) { agentRole = routeAgent(txt) || undefined }
   }
   // 路由确定的 Agent 记入协作状态
-  if (agentRole && !opts.agent && !window.__huangquan_agent) {
+  if (agentRole && !opts.agent) {
     opts.onAgentRoute(agentRole)
   }
   if (agentRole) {
@@ -491,7 +393,6 @@ export function buildContextualMessages(
     }
   }
   // 暴露最近一次 system prompt(验证思考模式/人设等接线)
-  try { window.__lastSp = sp || '' /* 供 check-prefix-stable.mjs 使用 */ } catch (e) { /* ignore */ console.debug('[swallow]', e) }
   // v0.3.1 M4: 序列断言 —— 返回前校验 assistant(tool_calls) 后必须紧跟 tool 消息(插话重排正确性兜底)
   assertAlternates(d)
   return sp ? [{ role: 'system', content: sp }, ...d] : d

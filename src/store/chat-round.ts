@@ -6,6 +6,7 @@ import { updateContextLimit } from './context'
 import { recordEpisodic } from './memory'
 import { runTool, setCached } from './runtime'
 import { slimToolResult } from './context'
+import { debugLog } from '../utils/safe'
 import { getTaskGenFor } from './session-state'
 import { resolveModel } from './model-pick'
 import { hasInterjectForSid, drainInterjections, peekInterjectKind } from './interject'
@@ -51,7 +52,7 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     if (myGen !== getTaskGenFor(taskGenBySid, sid)) break
     // v0.3.1 M2: 改向熔断 —— 用户发改向指令(别做了/重新来/换一个等)时, 工具链中途跳出
     if (peekInterjectKind(sid) === 'retarget') {
-      console.log('[插话] 检测到改向指令, 熔断当前工具链')
+      debugLog('[插话] 检测到改向指令, 熔断当前工具链')
       toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
       break
     }
@@ -69,7 +70,7 @@ export async function runToolRound(ctx: RoundCtx, res: CallResult, toolLog: { na
     const runOne = async (tc: ToolCallItem) => {
       // v0.3.1 M2: 改向熔断(工具粒度) —— 每个工具 await 前检查 retarget, 并行批内也能中途跳出
       if (peekInterjectKind(sid) === 'retarget') {
-        console.log('[插话] 检测到改向指令, 熔断当前工具链')
+        debugLog('[插话] 检测到改向指令, 熔断当前工具链')
         toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
         return { tc, r: 'E:改向指令熔断' }
       }

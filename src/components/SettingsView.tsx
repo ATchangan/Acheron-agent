@@ -6,7 +6,7 @@ import { DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA, extractSkinColors, clearSki
 import type { MediaProvider, ProviderConfig, MemoryData } from '../global'
 import type { GeneralSettings } from '../types'
 import { updateContextLimit, useChatStore } from '../store/chat'
-import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw } from 'lucide-react'
+import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw, Clock, Code2, Library, Package } from 'lucide-react'
 import { errMsg } from '../utils/safe'
 import AboutTab from './settings/AboutTab'
 import ModelsTab from './settings/ModelsTab'
@@ -20,6 +20,10 @@ import ToolsTab from './settings/ToolsTab'
 import AdvancedTab from './settings/AdvancedTab'
 import CollabTab from './settings/CollabTab'
 import SkillsTab from './settings/SkillsTab'
+import CronView from './CronView'
+import KnowledgeView from './KnowledgeView'
+import PluginsView from './PluginsView'
+import CodeView from './CodeView'
 
 const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean; img?: string[]; video?: string[]; audio?: string[] }> = {
   '即梦Jimeng': { type: 'multi', url: 'https://ark.cn-beijing.volces.com/api/v3', img: ['seedream-4.0', 'seedream-3.0', 'cogview-4'], video: ['seedance2.0', 'seedance2.0fast', 'doubao-seedance'] },
@@ -90,6 +94,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'skin', icon: <Palette size={15} />, label: '外观' },
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
     { key: 'advanced', icon: <SettingsIcon size={15} />, label: '引擎' },
+    { key: 'cron', icon: <Clock size={15} />, label: '定时任务' },
+    { key: 'knowledge', icon: <Library size={15} />, label: '知识库' },
+    { key: 'plugins', icon: <Package size={15} />, label: '插件' },
+    { key: 'code', icon: <Code2 size={15} />, label: '代码工坊' },
     { key: 'about', icon: <Info size={15} />, label: '关于' },
   ]
 
@@ -107,6 +115,10 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     ['stats', ['缓存', '统计', '用量', '命中']],
     ['advanced', ['引擎', '性能', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
     ['about', ['关于', '版本', '更新']],
+    ['cron', ['定时', '任务', 'cron']],
+    ['knowledge', ['知识', '文档', '导入', '知识库']],
+    ['plugins', ['插件']],
+    ['code', ['代码', '工坊', '编程', '脚本']],
   ]
 
   return (
@@ -154,7 +166,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
 
         {/* Content */}
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'about' ? <AboutTab /> : null}
+          {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'code' ? <CodeView /> : tab === 'about' ? <AboutTab /> : null}
         </div>
       </div>
       {/* 新建工作流弹窗(Electron prompt 不支持) */}

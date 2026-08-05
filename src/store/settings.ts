@@ -1,6 +1,7 @@
 ﻿import { create } from 'zustand'
 import type { SettingsData, ProviderConfig, MediaProvider } from '../global'
 import type { GeneralSettings } from '../types'
+import { setDebugLogging } from '../utils/safe'
 
 interface SettingsStore extends SettingsData {
   loaded: boolean
@@ -319,6 +320,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
     // logLevel 设置接入 —— 控制渲染进程 console 输出(debug/info/warn/error/silent)
     try {
       const lv = (get().general)?.logLevel || 'info'
+      setDebugLogging(lv === 'debug')
       if (lv === 'silent') { console.log = () => {}; console.warn = () => {}; console.error = () => {} }
       else if (lv === 'error') { console.log = () => {}; console.warn = () => {} }
       else if (lv === 'warn') { console.log = () => {} }

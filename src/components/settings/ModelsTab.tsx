@@ -49,11 +49,18 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   const selectProvider = (name: string) => {
     useSettingsStore.getState().save()
     setMediaSelIdx(-1)
-    const idx = providers.findIndex(x => x.name === name)
+    let idx = providers.findIndex(x => x.name === name)
+    // 未配置过的供应商: 自动创建条目(预填 PRESETS 默认 baseUrl/type), 让用户直接填 Key 即可应用
+    if (idx < 0) {
+      const pre = PRESETS[name]
+      const np: ProviderConfig = { id: 'auto_' + Date.now(), name, type: pre?.type || 'OpenAI Compatible', apiKey: '', baseUrl: pre?.url || '', models: [], selectedModel: '' }
+      useSettingsStore.getState().addProvider(np)
+      idx = useSettingsStore.getState().providers.findIndex(x => x.name === name)
+    }
     setSelIdx(idx)
     // v0.3.0: 自动加载默认 BaseURL/API 类型(仅空字段, 用户自定义优先)
     const pre = PRESETS[name]
-    const prov = providers[idx]
+    const prov = useSettingsStore.getState().providers[idx]
     if (prov && pre) {
       const patch: Partial<ProviderConfig> = {}
       if (!prov.baseUrl && pre.url) patch.baseUrl = pre.url

@@ -76,6 +76,8 @@ export interface GeneralSettings {
   cardMaxHeight?: number
   singleBubble?: boolean
   disabledTools?: string[]
+  // 工具级权限表(deny/ask/full): 并入设置存储, 取代 localStorage 明文
+  toolPerms?: Record<string, string>
   autoSave?: boolean
   maxSessions?: number
   temperature?: number

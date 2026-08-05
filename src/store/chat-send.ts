@@ -3,7 +3,7 @@ import type { Message, SessionData, LLMMessage, SettingsData, UsageData, Provide
 import type { GeneralSettings } from '../types'
 import { useSettingsStore } from './settings'
 import { TOOLS } from './tools'
-import { safeIPC, errMsg } from '../utils/safe'
+import { safeIPC, errMsg, debugLog } from '../utils/safe'
 import { CACHE_TTL, WORKFLOWS } from './constants'
 import { estimateTokens, getModelContextLimit, updateContextLimit, isVisionModel, buildPrompt, buildContextualMessages } from './context'
 import { recordEpisodic, autoExtractMemory, refreshMemoryCache, freezeMemory } from './memory'
@@ -131,7 +131,7 @@ export async function runSend(
   const main = mc.main, isSimple = mc.isSimple, fast = mc.fast, small = mc.small, large = mc.large
   let curP = mc.chosen.p, model = mc.chosen.model
   // 调度选择日志(定位切换失效问题)
-  console.log('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
+  debugLog('[MODEL] 选择:', model, '@', curP?.name || '?', '| 简单任务:', isSimple, '| 调度: 小=' + (small?.model || '-') + ' 大=' + (large?.model || '-') + ' 主=' + (main.model || '-'))
   set({ curModel: model || '' })
   // 暴露最近一次实际发送模型(验证调度绑定/多模型策略接线)
   
@@ -160,7 +160,7 @@ export async function runSend(
   const visQueue = buildVisionCandidates(p)
     .filter(c => 'apiKey' in c.vp && c.vp.apiKey && c.vp.baseUrl)
     .map(c => ({ p: c.vp as ProviderConfig, model: c.vm }))
-  console.log('[MODEL] 视觉任务判定:', isVisualTask, '| 当前模型:', model, '| 视觉队列:', visQueue.map(q => q.model).join(',') || '(空)')
+  debugLog('[MODEL] 视觉任务判定:', isVisualTask, '| 当前模型:', model, '| 视觉队列:', visQueue.map(q => q.model).join(',') || '(空)')
   if (isVisualTask) {
     // 队列非空 → 强制使用队列第一个可用模型(按优先级); 当前模型已在队列则保持
     const curInQueue = visQueue.find(q => q.model === model)
@@ -171,7 +171,7 @@ export async function runSend(
         
         content = content + '\n\n[识图任务已使用视觉模型:' + model + ']'
         switchedVision = true
-        console.log('[MODEL] 视觉任务强制切换队列模型:', model)
+        debugLog('[MODEL] 视觉任务强制切换队列模型:', model)
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
       }
     } else if (isVisionModel(model)) {
@@ -187,7 +187,7 @@ export async function runSend(
         
         content = content + '\n\n[已自动切换模型:' + model + '(支持图片分析)]'
         switchedVision = true
-        console.log('[MODEL] 视觉任务自动切换:', model)
+        debugLog('[MODEL] 视觉任务自动切换:', model)
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
       } else {
         // 无可用视觉模型: 走辅助视觉分析, 分析失败则提示
@@ -248,14 +248,14 @@ export async function runSend(
           if (q.model !== model && tried.length > 0) { curP = q.p; model = q.model; switchedVision = true; set({ curModel: model }); updateContextLimit(model) }
           tried.push(model)
           try { okRes = await callLLM(aid, rid1); clear(); break }
-          catch (e) { lastErr = e; clear(); console.log('[MODEL] 视觉模型调用失败, 顺位下一个:', model, '->', String(e).slice(0, 120)); continue }
+          catch (e) { lastErr = e; clear(); debugLog('[MODEL] 视觉模型调用失败, 顺位下一个:', model, '->', String(e).slice(0, 120)); continue }
         }
         if (okRes) res = okRes
         else {
           res = { text: '', tcs: [] }
           const whyTxt = '所有视觉模型均调用失败：' + tried.join('、') + (lastErr ? '（' + String((lastErr as { message?: string })?.message || lastErr).slice(0, 150) + '）' : '')
           set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === aid ? { ...m, content: '[识图失败] ' + whyTxt } : m) } : x) }))
-          console.log('[MODEL] 视觉队列全部失败:', whyTxt)
+          debugLog('[MODEL] 视觉队列全部失败:', whyTxt)
           break // 跳出 while 主循环(本轮结束, 用户可见报错)
         }
       } else {
@@ -361,7 +361,7 @@ export async function runSend(
       curP = origP; model = origModel
       set({ curModel: model }); updateContextLimit(model)
       
-      console.log('[MODEL] 视觉任务结束, 还原主力模型:', model)
+      debugLog('[MODEL] 视觉任务结束, 还原主力模型:', model)
     }
   }
 }

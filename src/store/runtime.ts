@@ -19,6 +19,8 @@ import { errMsg } from '../utils/safe'
 
 export const toolCache = new Map<string, { result: string; ts: number }>()
 export const costedReqs = new Set<string>()
+// watch_file 状态(模块级, 取代 window.__watchState 全局)
+const watchState: Record<string, string> = {}
 
 export function getCached(key: string, ttlKey: string): string | null {
   const e = toolCache.get(key); if (!e) return null
@@ -212,7 +214,11 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
     // 每工具权限表(ToolsView 配置)接入 —— IPC API 名 → agent 工具名映射
     // ToolsView 的 BUILTIN_TOOLS 用 IPC 名(readFile/exec...), runTool 用 agent 名(read/exec_command...), 不映射则权限设置部分失效
     try {
-      const perms = JSON.parse(localStorage.getItem('huangquan_tool_perms') || '{}') as Record<string, string>
+      // 工具权限: 优先设置存储(general.toolPerms); 兼容 localStorage 旧数据(有值则作为初始来源)
+      let perms = useSettingsStore.getState().general.toolPerms || {}
+      if (!Object.keys(perms).length) {
+        try { const old = JSON.parse(localStorage.getItem('huangquan_tool_perms') || '{}') as Record<string, string>; if (Object.keys(old).length) perms = old } catch { perms = {} }
+      }
       const IPC_TO_TOOL: Record<string, string> = { readFile: 'read', writeFile: 'write', readDir: 'ls', exec: 'exec_command', systemInfo: 'system_info', processList: 'process_list', killProcess: 'kill_process', clipboardRead: 'clipboard_read', clipboardWrite: 'clipboard_write', cron_task: 'schedule_task', browse: 'web_read', browse_screenshot: 'web_read' }
       const ipcKey = Object.keys(IPC_TO_TOOL).find(k => IPC_TO_TOOL[k] === name)
       const lv = perms[name] || (ipcKey ? perms[ipcKey] : undefined)
@@ -383,8 +389,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'watch_file': {
         if (!A.path) return 'E:need path'
         const watchKey = A.path
-        const prevState = window.__watchState || {}
-        ;window.__watchState = prevState
+        const prevState = watchState
         try {
           const content = await window.huangquan.computer.readFile(A.path)
           // 强哈希(内容全量), 修复弱哈希误判(同长同前缀内容变化不识别)

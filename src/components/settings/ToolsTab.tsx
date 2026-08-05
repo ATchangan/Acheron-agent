@@ -3,6 +3,10 @@ import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
 
 // v0.3.1 块 H: 工具 tab(从 SettingsView 拆分, 行为零变化)
+
+// 工具级权限管理列表(常用内置工具): 点击循环 放行 → 询问 → 禁用
+const PERM_TOOLS = ['read', 'write', 'edit', 'exec_command', 'mkdir', 'grep', 'find', 'ls', 'codebox', 'web_search', 'web_fetch', 'web_read', 'browse', 'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process', 'save_memory', 'recall_memory', 'import_doc', 'schedule_task', 'mcp_connect', 'mcp_call']
+
 export default function ToolsTab() {
   const g = useSettingsStore(s => s.general) || {}
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -57,6 +61,25 @@ export default function ToolsTab() {
         <div style={{ textAlign: 'right', marginTop: 8, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
           <button style={S.btn('danger')} onClick={() => save({ disabledTools: ['read', 'write', 'edit', 'mkdir', 'ls', 'grep', 'find', 'exec_command', 'codebox', 'browse', 'browse_screenshot', 'web_search', 'web_fetch', 'screenshot', 'clipboard_read', 'clipboard_write', 'system_info', 'process_list', 'kill_process', 'read_image', 'import_doc', 'show_card', 'mcp_connect', 'mcp_call', 'schedule_task', 'list_schedules', 'watch_file', 'list_workflows', 'run_workflow', 'bridge_notify', 'save_goal', 'list_goals', 'save_memory', 'recall_memory', 'audit_log'] })}>全部禁用</button>
           <button style={S.btn('ghost')} onClick={() => save({ disabledTools: [] })}>恢复默认</button>
+        </div>
+      </div>
+      <div style={S.card}>
+        <div style={S.section}>工具权限</div>
+        <div style={S.hint}>点击切换单个工具权限：🟢 放行 → 🟡 询问（需人工确认）→ 🔴 禁用。区别于上方的整体开关（禁用=完全不加载）。</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+          {PERM_TOOLS.map(t => {
+            const cur = (g.toolPerms || {})[t] || 'allow'
+            const next = cur === 'allow' ? 'ask' : cur === 'ask' ? 'deny' : 'allow'
+            return (
+              <span key={t} onClick={() => save({ toolPerms: { ...(g.toolPerms || {}), [t]: next } })}
+                style={{ padding: '4px 10px', borderRadius: 8, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)',
+                  color: cur === 'allow' ? C.green : cur === 'ask' ? C.accent : C.danger,
+                  background: cur === 'allow' ? 'rgba(0,180,0,0.06)' : cur === 'ask' ? C.accentBg : 'rgba(255,50,50,0.06)' }}
+                title={`当前: ${cur === 'allow' ? '放行' : cur === 'ask' ? '询问' : '禁用'}，点击切换`}>
+                {t} {cur === 'allow' ? '🟢' : cur === 'ask' ? '🟡' : '🔴'}
+              </span>
+            )
+          })}
         </div>
       </div>
       <div style={S.card}>
