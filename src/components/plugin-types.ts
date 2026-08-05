@@ -45,8 +45,8 @@ export const CATEGORY_HINT: Record<string, string> = {
 
 export const YELLOW_RIVER = 'var(--accent)'
 
-// ─── インラインスタイル ───────────────────────────────
-// カテゴリ色
+// ─── 内联样式 ─────────────────────────────────────────
+// 类别颜色
 export const CAT_COLORS: Record<string, string> = {
   oni: 'var(--danger)',
   yokai: 'var(--warning)',

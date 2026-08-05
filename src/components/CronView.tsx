@@ -650,7 +650,7 @@ export default function CronView() {
             <div style={S.createRow}>
               <input
                 style={{ ...S.input, flex: 1 }}
-                placeholder="自定义表达式 (例: every 10m / at 14:30)"
+                placeholder="自定义表达式（例如：every 10m 或 at 14:30）"
                 value={customExpr}
                 onChange={(e) => setCustomExpr(e.target.value)}
               />

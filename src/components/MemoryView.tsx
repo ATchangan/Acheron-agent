@@ -79,7 +79,7 @@ export default function MemoryView() {
         <button style={{...s.btn('var(--warning)'), marginLeft: 0}} onClick={addPinned}>添加</button>
       </div>
 
-      {pinnedFacts.length === 0 ? <div style={s.empty}>暂无置顶记忆 — 在对话中说"记住xxx"即可写入</div> :
+      {pinnedFacts.length === 0 ? <div style={s.empty}>暂无置顶记忆 — 在对话中说「记住…」即可写入</div> :
         pinnedFacts.map((f, i) => (
           <div key={i} style={s.card}>
             <span style={s.factText}>{f.length > 200 ? f.slice(0, 200) + '...' : f}</span>

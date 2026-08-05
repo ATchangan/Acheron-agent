@@ -28,13 +28,13 @@ export default function SkinTab() {
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}><div style={S.section}>头像</div>
-        <div style={S.hint}>上传图片作为头像，或使用 emoji 文字。留空默认"泉"。</div>
+  <div style={S.hint}>上传图片作为头像，或使用表情/文字。留空默认「泉」。</div>
         <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
             {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
           </div>
           <div style={{ flex: 1 }}>
-            <input style={S.inp} value={g.agentAvatar || ''} placeholder="emoji 或文字（如 🌂）" onChange={e => save({ agentAvatar: e.target.value })} maxLength={4} />
+  <input style={S.inp} value={g.agentAvatar || ''} placeholder="表情或文字（例如 🌂）" onChange={e => save({ agentAvatar: e.target.value })} maxLength={4} />
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <input type="file" accept="image/*" style={{ display: 'none' }} id="avatarImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => save({ agentAvatarImage: r.result as string }); r.readAsDataURL(f) }} />
               <button style={S.btn('primary')} onClick={() => document.getElementById('avatarImg')?.click()}>上传图片</button>
@@ -82,7 +82,7 @@ export default function SkinTab() {
                 else if (ck === 'text') r.setProperty('--text-primary', e.target.value)
                 save({ customColors: next })
               }} style={{ width: 36, height: 26, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
-              <input style={{ ...S.inp, flex: 1 }} value={cc || ''} placeholder="#RRGGBB" onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} />
+  <input style={{ ...S.inp, flex: 1 }} value={cc || ''} placeholder="颜色代码（例如 #RRGGBB）" onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} />
             </div>
           })}
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>

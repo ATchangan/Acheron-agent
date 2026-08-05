@@ -36,7 +36,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   }
   const fetchModels = async () => {
     if (!p) return
-    if (!p.baseUrl) { showToast('请先填写 Base URL'); return }
+    if (!p.baseUrl) { showToast('请先填写接口地址'); return }
     setLoading(true)
     try {
       const r = await window.huangquan.models.detect(p.baseUrl, p.apiKey || '', { type: p.type, anthropic: p.type === 'Anthropic Claude' })
@@ -70,6 +70,27 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   }
   const [detectModal, setDetectModal] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
   const [detectSel, setDetectSel] = useState<string[]>([])
+  // 填入密钥后自动读取一次模型（仅当该供应商还没有任何模型时；失败可手动点「读取模型」重试）
+  const prevKey = React.useRef('')
+  useEffect(() => {
+    const k = p?.apiKey || ''
+    const justEntered = prevKey.current === '' && k !== '' && !!p && !!p.baseUrl && !(p.models && p.models.length > 0)
+    prevKey.current = k
+    if (!justEntered || !p) return
+    const t = setTimeout(async () => {
+      try {
+        const base = p.baseUrl || ''
+        const key = p.apiKey || ''
+        const r = await window.huangquan.models.detect(base, key, { type: p.type, anthropic: p.type === 'Anthropic Claude' })
+        if (r.ok && r.models && r.models.length > 0) {
+          const items = r.models.map((m: string) => ({ model: m, caps: detectCaps([m]) }))
+          setDetectModal({ providerId: p.id, items })
+          setDetectSel([])
+        }
+      } catch { /* 静默失败，用户可手动重试 */ }
+    }, 1200)
+    return () => clearTimeout(t)
+  }, [p?.apiKey, p?.baseUrl, p?.id])
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ width: 160, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto' }}>
@@ -124,7 +145,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
           return (
             <>
               {groupTitle('已配置')}
-              {cfgItems.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '4px 10px 8px' }}>暂无已配置平台（填好 API Key 后自动分类置顶）</div>}
+              {cfgItems.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '4px 10px 8px' }}>暂无已配置平台（填好密钥后自动分类置顶）</div>}
               {capOrder.map(g => cfgItems.filter(x => mainCap(x.caps) === g).length > 0 && (
                 <div key={g}>
                   {subTitle(g)}
@@ -148,11 +169,11 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
               <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
               <button style={S.btn('danger')} onClick={() => removeProvider(p.id)}>删除</button>
             </div>
-            <div style={S.row}><div style={S.label}>API Key{PRESETS[p.name]?.noKey ? '（本地服务无需）' : ''}</div>
+            <div style={S.row}><div style={S.label}>密钥（API Key）{PRESETS[p.name]?.noKey ? '（本地服务无需）' : ''}</div>
               <input style={S.inp} type="password" value={p.apiKey || ''} placeholder={PRESETS[p.name]?.noKey ? '本地服务无需密钥' : 'sk-...'} onChange={e => updateProvider(p.id, { apiKey: e.target.value })} /></div>
-            <div style={S.row}><div style={S.label}>Base URL</div><input style={S.inp} value={p.baseUrl || ''} onChange={e => updateProvider(p.id, { baseUrl: e.target.value })} /></div>
-            <div style={S.row}><div style={S.label}>API 类型</div><select style={S.sel} value={p.type || 'OpenAI Compatible'} onChange={e => updateProvider(p.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-            <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>Headers</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="key=value" value={p.headers || ''} onChange={e => updateProvider(p.id, { headers: e.target.value })} /></div>
+            <div style={S.row}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} value={p.baseUrl || ''} onChange={e => updateProvider(p.id, { baseUrl: e.target.value })} /></div>
+            <div style={S.row}><div style={S.label}>接口类型</div><select style={S.sel} value={p.type || 'OpenAI Compatible'} onChange={e => updateProvider(p.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>请求头（Headers）</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="键=值" value={p.headers || ''} onChange={e => updateProvider(p.id, { headers: e.target.value })} /></div>
           </div>
           <div style={S.card}>
             <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
@@ -168,7 +189,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
             })}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
               {modelInput !== null ? <>
-                <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型 ID..." value={modelInput} onChange={e => setModelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }} autoFocus />
+                <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput} onChange={e => setModelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }} autoFocus />
                 <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }}>确认</button>
                 <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setModelInput(null)}>取消</button>
               </> : <button style={S.btn('primary')} onClick={() => setModelInput('')}>添加模型</button>}
@@ -188,8 +209,8 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         <div style={{ ...S.card, width: 380, padding: 24 }}>
           <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 18 }}>自定义供应商</div>
           <input style={{ ...S.inp, marginBottom: 10 }} placeholder="名称" value={newName} onChange={e => setNewName(e.target.value)} />
-          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="API Key" value={newKey} onChange={e => setNewKey(e.target.value)} />
-          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="Base URL" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
+          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="密钥（API Key）" value={newKey} onChange={e => setNewKey(e.target.value)} />
+          <input style={{ ...S.inp, marginBottom: 10 }} placeholder="接口地址（Base URL）" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
           <select style={{ ...S.sel, marginBottom: 14, width: '100%' }} value={newType} onChange={e => setNewType(e.target.value)}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}><button style={S.btn('ghost')} onClick={() => setShowNew(false)}>取消</button><button style={S.btn('primary')} onClick={() => { if (!newName) return; addProvider({ id: 'custom_' + Date.now(), name: newName, type: newType, apiKey: newKey, baseUrl: newUrl, models: [], selectedModel: '' }); setShowNew(false) }}>保存</button></div>
         </div>
@@ -216,7 +237,11 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal(null)}>
           <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
-            <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 12 }}>已从接口读取 {detectModal.items.length} 个模型，勾选后点击「添加所选」才能使用</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, flex: 1 }}>已从接口读取 {detectModal.items.length} 个模型，勾选后点击「添加所选」才能使用</span>
+              <button style={S.btn('ghost')} onClick={() => setDetectSel(detectModal.items.map(x => x.model))}>全选</button>
+              <button style={S.btn('ghost')} onClick={() => setDetectSel([])}>清空</button>
+            </div>
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
               {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>

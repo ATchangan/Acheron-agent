@@ -110,7 +110,7 @@ function MessageItem({ message, streaming }: Props) {
       <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
         <div className="message-body">
           <div className="tool-call-block" style={{ borderColor: isError ? 'var(--danger)' : 'var(--accent-green)', background: isError ? 'var(--danger-soft)' : 'var(--success-soft)' }}>
-            <div className="tool-call-header" style={{ color: isError ? 'var(--danger)' : 'var(--accent-green)' }}>{isError ? '✗ Error(' + toolName + ')' : '✓ ' + toolName}</div>
+            <div className="tool-call-header" style={{ color: isError ? 'var(--danger)' : 'var(--accent-green)' }}>{isError ? '✗ 出错（' + toolName + '）' : '✓ ' + toolName}</div>
             <pre className="tool-call-output">{truncated}</pre>
           </div>
         </div>
@@ -232,7 +232,7 @@ function MessageItem({ message, streaming }: Props) {
               </FooterBtn>
               {(message.meta?.ttft !== undefined || message.meta?.duration !== undefined || message.usage) && (
                 <span style={{ color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 3px)', marginLeft: 4, display: 'inline-flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
-                  {message.meta?.ttft !== undefined && <span title="首字延迟 (TTFT)">⚡{fmtTime(message.meta.ttft)}</span>}
+                  {message.meta?.ttft !== undefined && <span title="首字延迟（收到首个字符的耗时）">⚡{fmtTime(message.meta.ttft)}</span>}
                   {message.meta?.taskMs !== undefined
                     ? <span title="任务总时长（含工具执行）">⏱{fmtTime(message.meta.taskMs)}</span>
                     : message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
@@ -242,7 +242,7 @@ function MessageItem({ message, streaming }: Props) {
                     const speed = message.meta?.duration && (message.usage?.completion_tokens || 0) > 0
                       ? Math.round((message.usage?.completion_tokens || 0) / (message.meta.duration / 1000))
                       : 0
-                    return <span title={message.meta?.taskTokens ? '本任务总消耗（主角色 + 全部子角色）' : '本次回复消耗的 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全角色)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
+                    return <span title={message.meta?.taskTokens ? '本任务总消耗（主角色 + 全部子角色）' : '本次回复消耗的词元总数'}>{total} 词元{message.meta?.taskTokens ? '（全角色）' : ''}{speed > 0 ? ' · ' + speed + ' 词元/秒' : ''}</span>
                   })()}
                 </span>
               )}

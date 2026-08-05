@@ -499,7 +499,7 @@ export default function KnowledgeView() {
           <span style={S.headerIcon}>📚</span>
           <div>
             <h1 style={S.headerH1}>◇ 知识库</h1>
-            <span style={S.headerSub}>私有知识库 · RAG 检索增强</span>
+            <span style={S.headerSub}>私有知识库 · 语义检索增强</span>
           </div>
         </div>
         <div style={S.statsRow}>

@@ -15,37 +15,55 @@ export function registerModelsIpc(deps: {
       const isAnthropic = !!(opts?.type === 'Anthropic Claude' || opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
       const isAzure = !!opts?.type?.includes('Azure') || /openai\.azure\.com/i.test(base)
       const isGemini = !!opts?.type?.includes('Gemini') || /generativelanguage\.googleapis\.com/i.test(base)
-      let url: string
-      const headers: Record<string, string> = {}
-      if (isAnthropic) {
-        url = base.replace(/\/v\d+$/i, '') + '/v1/models'
-        headers['x-api-key'] = apiKey || ''
-        headers['anthropic-version'] = '2023-06-01'
-      } else if (isAzure) {
-        const root = base.replace(/\/openai\/?.*$/i, '')
-        url = root + '/openai/models?api-version=2024-06-01'
-        headers['api-key'] = apiKey || ''
-      } else if (isGemini) {
-        url = base.replace(/\/v\d+(beta)?\/?$/i, '') + '/v1beta/models?key=' + encodeURIComponent(apiKey || '')
-      } else {
-        url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
-        headers['Authorization'] = 'Bearer ' + (apiKey || '')
+      // 分页拉取全部模型 —— OpenAI 兼容接口用 after/last_id，Gemini 用 pageToken
+      const allIds = new Set<string>()
+      let page = 0
+      let cursor: string | null = null
+      const seenCursors = new Set<string>()
+      while (page < 50) {
+        let url: string
+        const headers: Record<string, string> = {}
+        if (isAnthropic) {
+          url = base.replace(/\/v\d+$/i, '') + '/v1/models'
+          headers['x-api-key'] = apiKey || ''
+          headers['anthropic-version'] = '2023-06-01'
+        } else if (isAzure) {
+          const root = base.replace(/\/openai\/?.*$/i, '')
+          url = root + '/openai/models?api-version=2024-06-01'
+          headers['api-key'] = apiKey || ''
+        } else if (isGemini) {
+          url = base.replace(/\/v\d+(beta)?\/?$/i, '') + '/v1beta/models?key=' + encodeURIComponent(apiKey || '')
+          if (cursor) url += '&pageToken=' + encodeURIComponent(cursor)
+        } else {
+          url = /\/v\d+$/i.test(base) ? base + '/models' : base + '/v1/models'
+          if (cursor) url += (url.includes('?') ? '&' : '?') + 'after=' + encodeURIComponent(cursor)
+          headers['Authorization'] = 'Bearer ' + (apiKey || '')
+        }
+        const res = await netFetch(url, { headers, signal: AbortSignal.timeout(15000) })
+        if (!res.ok) {
+          const hint = res.status === 401 ? 'API Key 无效或未授权'
+            : res.status === 403 ? '禁止访问（Key 无权限或地区限制）'
+            : res.status === 404 ? '接口路径不存在，请检查 Base URL'
+            : res.status === 410 ? '接口已废弃，请更新 Base URL'
+            : ''
+          return { ok: false, error: 'HTTP ' + res.status + (hint ? '：' + hint : '') }
+        }
+        const data = JSON.parse(await res.text())
+        // Gemini 返回 { models: [{ name: "models/gemini-..." }] }，需清理前缀
+        const pageIds = isGemini
+          ? (data.models || []).map((m: { name?: string }) => String(m.name || '').replace(/^models\//, '')).filter(Boolean)
+          : (data.data || []).map((m: { id?: string }) => String(m.id || '')).filter(Boolean)
+        for (const id of pageIds) allIds.add(id)
+        // 确定是否还有下一页：优先 OpenAI 风格，其次 Gemini 风格
+        let next: string | null = null
+        if (data.has_more && data.last_id) next = String(data.last_id)
+        else if (data.nextPageToken || data.next_page_token) next = String(data.nextPageToken || data.next_page_token)
+        if (!next || seenCursors.has(next)) break
+        seenCursors.add(next)
+        cursor = next
+        page++
       }
-      const res = await netFetch(url, { headers, signal: AbortSignal.timeout(15000) })
-      if (!res.ok) {
-        const hint = res.status === 401 ? 'API Key 无效或未授权'
-          : res.status === 403 ? '禁止访问（Key 无权限或地区限制）'
-          : res.status === 404 ? '接口路径不存在，请检查 Base URL'
-          : res.status === 410 ? '接口已废弃，请更新 Base URL'
-          : ''
-        return { ok: false, error: 'HTTP ' + res.status + (hint ? '：' + hint : '') }
-      }
-      const data = JSON.parse(await res.text())
-      // Gemini 返回 { models: [{ name: "models/gemini-..." }] }，需清理前缀
-      const ids = isGemini
-        ? (data.models || []).map((m: { name?: string }) => String(m.name || '').replace(/^models\//, '')).filter(Boolean)
-        : (data.data || []).map((m: { id: string }) => m.id).filter(Boolean)
-      const filtered = ids.filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
+      const filtered = [...allIds].filter((id: string) => !id.includes('embedding') && !id.includes('rerank'))
       return { ok: true, models: filtered }
     } catch (e: unknown) {
       const msg = (e instanceof Error ? e.message : String(e))

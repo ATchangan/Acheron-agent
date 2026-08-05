@@ -58,7 +58,7 @@ export default function StrategyTab() {
           }
           return (
             <div style={{ border: '1px solid ' + C.border, borderRadius: 8, padding: '6px 8px', maxHeight: 180, overflowY: 'auto', background: C.input }}>
-              {visCands.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: 6 }}>暂无已配置的视觉模型候选（请先在供应商中填入 API Key 并读取模型）</div>}
+              {visCands.length === 0 && <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: 6 }}>暂无已配置的视觉模型候选（请先在模型服务中填入密钥并读取模型）</div>}
               {visCands.map(c => {
                 const idx = curList.indexOf(c.id)
                 const on = idx >= 0
@@ -66,7 +66,7 @@ export default function StrategyTab() {
                 return (
                   <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: on ? C.text : C.label }}>
                     <input type="checkbox" checked={on} onChange={() => toggleVis(c.id)} style={{ accentColor: C.accent }} />
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!alive && <span style={{ color: 'var(--danger)' }}>（已失效）</span>}{!c.keyed && <span style={{ color: 'var(--warning)' }}>（未填Key）</span>}</span>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!alive && <span style={{ color: 'var(--danger)' }}>（已失效）</span>}{!c.keyed && <span style={{ color: 'var(--warning)' }}>（未填密钥）</span>}</span>
                     <span style={{ display: 'flex', gap: 2 }}>
                       <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, -1)} disabled={!on || idx === 0}>↑</button>
                       <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, 1)} disabled={!on || idx === curList.length - 1}>↓</button>
@@ -83,7 +83,7 @@ export default function StrategyTab() {
         <div style={S.section}>图片生成（联动供应商）</div>
         <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaImgProvider || ''} onChange={e => save({ mediaImgProvider: e.target.value })}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.imgModels || []).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select><div style={S.hint}>选择供应商中的图片生成平台</div></div>
         <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaImgModel || ''} onChange={e => save({ mediaImgModel: e.target.value })}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.imgModels || []).length).flatMap(mp2 => (mp2.imgModels || []).map(m => ({ id: mp2.id + '::' + m, label: mp2.name + ' · ' + m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-        <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaImgMode || 'text2image'} onChange={e => save({ mediaImgMode: e.target.value })}><option value="text2image">文生图 text2image</option><option value="image2image">图生图 image2image</option></select></div>
+  <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaImgMode || 'text2image'} onChange={e => save({ mediaImgMode: e.target.value })}><option value="text2image">文生图</option><option value="image2image">图生图</option></select></div>
         <div style={S.row}><div style={S.label}>默认比例</div><select style={S.sel} value={g.mediaImgRatio || '1:1'} onChange={e => save({ mediaImgRatio: e.target.value })}>{[['1:1', '1:1'], ['16:9', '16:9'], ['9:16', '9:16'], ['4:3', '4:3'], ['3:4', '3:4'], ['3:2', '3:2'], ['2:3', '2:3'], ['21:9', '21:9']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         <div style={S.row}><div style={S.label}>默认并发</div><input type="number" style={S.num} min={1} max={9} value={g.mediaImgConcurrency || 1} onChange={e => save({ mediaImgConcurrency: parseInt(e.target.value) || 1 })} /><span style={S.hint}>一次生成张数（1~9）</span></div>
         <Toggle checked={g.autoMediaImg !== false} onChange={v => save({ autoMediaImg: v })} label="自动生图" hint="对话中遇到「画/生成一张图片」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
@@ -92,7 +92,7 @@ export default function StrategyTab() {
         <div style={S.section}>视频生成（联动供应商）</div>
         <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaVideoProvider || ''} onChange={e => save({ mediaVideoProvider: e.target.value })}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.videoModels || []).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
         <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaVideoModel || ''} onChange={e => save({ mediaVideoModel: e.target.value })}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.videoModels || []).length).flatMap(mp2 => (mp2.videoModels || []).map(m => ({ id: mp2.id + '::' + m, label: mp2.name + ' · ' + m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-        <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaVideoMode || 'text2video'} onChange={e => save({ mediaVideoMode: e.target.value })}><option value="text2video">文生视频 text2video</option><option value="image2video">图生视频 image2video</option></select></div>
+  <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaVideoMode || 'text2video'} onChange={e => save({ mediaVideoMode: e.target.value })}><option value="text2video">文生视频</option><option value="image2video">图生视频</option></select></div>
         <StepSetting label="默认时长" hint="视频生成默认时长" value={g.mediaVideoDuration || 5} min={4} max={15} unit=" 秒" onChange={v => save({ mediaVideoDuration: v })} />
         <Toggle checked={g.autoMediaVideo !== false} onChange={v => save({ autoMediaVideo: v })} label="自动生视频" hint="对话中遇到「生成/制作一个视频」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
       </div>
@@ -100,7 +100,7 @@ export default function StrategyTab() {
         <div style={S.section}>语音识别 / 合成（联动供应商）</div>
         <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaAudioProvider || ''} onChange={e => save({ mediaAudioProvider: e.target.value })}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.audioModels || []).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
         <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaAudioModel || ''} onChange={e => save({ mediaAudioModel: e.target.value })}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.audioModels || []).length).flatMap(mp2 => (mp2.audioModels || []).map(m => ({ id: mp2.id + '::' + m, label: mp2.name + ' · ' + m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-        <Toggle checked={g.ttsEnabled !== false} onChange={v => save({ ttsEnabled: v })} label="启用语音合成 (TTS)" />
+  <Toggle checked={g.ttsEnabled !== false} onChange={v => save({ ttsEnabled: v })} label="启用语音合成" />
       </div>
     </div>
   )

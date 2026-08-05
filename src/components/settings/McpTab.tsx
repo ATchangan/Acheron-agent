@@ -16,12 +16,12 @@ export default function McpTab() {
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
-        <div style={S.section}>MCP 服务器（stdio）</div>
-        <div style={S.hint}>通过标准输入输出接口连接本地 MCP 服务器，为助手提供外部工具</div>
+        <div style={S.section}>MCP 服务器（本地命令）</div>
+        <div style={S.hint}>通过标准输入输出接口连接本地 MCP 服务器，为助手扩展外部工具</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input style={{ ...S.inp, flex: 1 }} placeholder="服务器名称" value={mcpName} onChange={e => setMcpName(e.target.value)} />
-          <input style={{ ...S.inp, flex: 1.5 }} placeholder="启动命令（如 npx / node）" value={mcpCmd} onChange={e => setMcpCmd(e.target.value)} />
-          <input style={{ ...S.inp, flex: 1.5 }} placeholder="参数（空格分隔，如 -y @modelcontextprotocol/server-filesystem C:/）" value={mcpArgs} onChange={e => setMcpArgs(e.target.value)} />
+          <input style={{ ...S.inp, flex: 1.5 }} placeholder="启动命令（例如 npx 或 node）" value={mcpCmd} onChange={e => setMcpCmd(e.target.value)} />
+          <input style={{ ...S.inp, flex: 1.5 }} placeholder="参数（空格分隔，例如 -y @modelcontextprotocol/server-filesystem C:/）" value={mcpArgs} onChange={e => setMcpArgs(e.target.value)} />
           <button style={S.btn('primary')} onClick={async () => { if (!mcpName || !mcpCmd) { showToast('请填写名称和命令'); return } const r = await window.huangquan.mcpConnect(mcpName, mcpCmd, mcpArgs.split(/\s+/).filter(Boolean)); showToast(typeof r === 'string' ? r : ('已连接：' + mcpName)); setMcpName(''); setMcpCmd(''); setMcpArgs(''); window.huangquan.mcpList?.().then((s) => setMcpServers(s || [])) }}>连接</button>
         </div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.text, margin: '8px 0 6px' }}>已连接服务器</div>
@@ -37,11 +37,11 @@ export default function McpTab() {
         ))}
       </div>
       <div style={S.card}>
-        <div style={S.section}>MCP 服务器（SSE）</div>
-        <div style={S.hint}>通过 HTTP 连接远程 MCP 服务器</div>
+        <div style={S.section}>MCP 服务器（远程接口）</div>
+        <div style={S.hint}>通过 HTTP 接口连接远程 MCP 服务器</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <input style={{ ...S.inp, flex: 1 }} placeholder="服务器名称" value={mcpSseName} onChange={e => setMcpSseName(e.target.value)} />
-          <input style={{ ...S.inp, flex: 2 }} placeholder="SSE URL（如 http://localhost:8080/sse）" value={mcpSseUrl} onChange={e => setMcpSseUrl(e.target.value)} />
+          <input style={{ ...S.inp, flex: 2 }} placeholder="接口地址（例如 http://localhost:8080/sse）" value={mcpSseUrl} onChange={e => setMcpSseUrl(e.target.value)} />
           <button style={S.btn('primary')} onClick={async () => { if (!mcpSseName || !mcpSseUrl) { showToast('请填写名称和 URL'); return } const r = await window.huangquan.mcpSSEConnect(mcpSseName, mcpSseUrl); showToast(typeof r === 'string' ? r : ('已连接：' + mcpSseName + '（' + (Array.isArray(r) ? r.length : 0) + ' 工具）')); setMcpSseName(''); setMcpSseUrl('') }}>连接</button>
         </div>
       </div>

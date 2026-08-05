@@ -26,8 +26,8 @@ export default function StatsTab() {
                   <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="请求级命中率 = 命中请求 ÷ 总请求">请求命中率</th>
                   <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>缓存读取</th>
                   <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>缓存写入</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="未命中缓存的输入 token(prompt_cache_miss_tokens)">缓存未命中</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="输入总 token(缓存读取 + 未命中)">输入总 token</th>
+      <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="未命中缓存的输入用量（prompt_cache_miss_tokens）">缓存未命中</th>
+      <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="输入总用量（缓存读取 + 未命中）">输入总用量</th>
                   <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="官方口径命中率 = 缓存读取 ÷ (缓存读取 + 缓存未命中)">命中率</th>
                   <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>操作</th>
                 </tr>
@@ -56,7 +56,7 @@ export default function StatsTab() {
                       <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--accent)' }}>{fmtTok(writeT)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center', color: '#d98a5f' }}>{fmtTok(missT2)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fmtTok(inputT)}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }} title="缓存读取 token ÷ 输入总 token">{rate}{rate !== '—' ? '%' : ''}</td>
+      <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }} title="缓存读取用量 ÷ 输入总用量">{rate}{rate !== '—' ? '%' : ''}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                         <button style={{ ...S.btn('ghost'), height: 20, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 6px' }} onClick={async () => { await window.huangquan.modelStats.resetOne(m); const s = await window.huangquan.modelStats.get(); setModelStats(s?.models || {}); }}>重置</button>
                       </td>

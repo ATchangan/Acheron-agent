@@ -89,9 +89,9 @@ export default function RightPanel() {
       {/* 系统信息: CPU/RAM/GPU 实时占用 */}
       {perf && (
         <div className="sys-bar">
-          <div className="sys-item"><span className="sys-label">CPU</span><span style={{ color: perf.cpuPct > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
-          <div className="sys-item"><span className="sys-label">RAM</span><span>{fmt(perf.memUsed)}/{fmt(perf.memTotal)} ({perf.memPct}%)</span></div>
-          <div className="sys-item" title={perf.gpuName ? '当前 GPU: ' + perf.gpuName : ''}><span className="sys-label">GPU</span><span style={{ color: (perf.gpuPct || 0) > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
+          <div className="sys-item"><span className="sys-label">处理器</span><span style={{ color: perf.cpuPct > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
+          <div className="sys-item"><span className="sys-label">内存</span><span>{fmt(perf.memUsed)}/{fmt(perf.memTotal)} ({perf.memPct}%)</span></div>
+          <div className="sys-item" title={perf.gpuName ? '当前显卡：' + perf.gpuName : ''}><span className="sys-label">显卡</span><span style={{ color: (perf.gpuPct || 0) > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
         </div>
       )}
       {workDir && (

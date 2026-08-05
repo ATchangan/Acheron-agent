@@ -24,10 +24,10 @@ export default function PluginsView() {
     setLoading(true)
     setScanError(null)
     try {
-      // システム情報から workspaceDir を取得 → userData/plugins を導出
+      // 从系统信息获取工作区目录 → 推导插件目录
       const sysInfo = await window.huangquan.computer.systemInfo()
       const workspaceDir = sysInfo.workspaceDir
-      // workspaceDir = userData/workspace なので、pluginsDir = userData/plugins
+      // 工作区目录 = userData/workspace，插件目录 = userData/plugins
       const pluginsDir = workspaceDir.replace(/[\\/]workspace$/, '') + '/plugins'
 
       let entries: { name: string; isDirectory: boolean }[]
@@ -63,7 +63,7 @@ export default function PluginsView() {
               'oni',
           })
         } catch {
-          // manifest がない or パース失敗 → スキップ
+        // 缺少清单或解析失败 → 跳过
         }
       }
       setPlugins(loaded)
@@ -87,7 +87,7 @@ export default function PluginsView() {
     await persistState(next)
   }
 
-  // ── カテゴリ変更 ────────────────────────────────────
+  // ── 类别切换 ────────────────────────────────────────
   const setCategory = async (pluginName: string, cat: string) => {
     const next = plugins.map((p) =>
       p.manifest.name === pluginName ? { ...p, category: cat } : p,
@@ -109,7 +109,7 @@ export default function PluginsView() {
     } catch (e) { /* best effort */ console.debug('[swallow]', e) }
   }
 
-  // ── ローカルからインストール ──────────────────────
+  // ── 本地安装 ────────────────────────────────────────
   const installLocal = async () => {
     if (!localPath.trim()) return
     setInstalling(true)
@@ -124,14 +124,14 @@ export default function PluginsView() {
       try {
         entries = await window.huangquan.computer.readDir(localPath)
       } catch {
-        setInstallMsg('❌ 指定されたパスが存在しません')
+        setInstallMsg('❌ 指定的路径不存在')
         setInstalling(false)
         return
       }
 
         // 本地路径直接是插件目录的情况
       let srcDir = localPath
-      // manifest.json があるかチェック
+      // 检查是否存在 manifest.json
       const hasManifest = entries.some((e) => e.name === 'manifest.json')
       if (!hasManifest) {
         // 查找子目录
@@ -175,17 +175,17 @@ export default function PluginsView() {
         )
       }
 
-      setInstallMsg('✅ インストール成功')
+      setInstallMsg('✅ 安装成功')
       setLocalPath('')
       await scanPlugins()
     } catch (e: unknown) {
-      setInstallMsg(`❌ ${errMsg(e) || 'インストール失敗'}`)
+      setInstallMsg(`❌ ${errMsg(e) || '安装失败'}`)
     } finally {
       setInstalling(false)
     }
   }
 
-  // ── Git からインストール ───────────────────────────
+  // ── 从仓库安装 ──────────────────────────────────────
   const installGit = async () => {
     if (!gitUrl.trim()) return
     setInstalling(true)
@@ -207,18 +207,18 @@ export default function PluginsView() {
       if (result.toLowerCase().includes('fatal') || result.toLowerCase().includes('error')) {
         setInstallMsg(`❌ ${result.slice(0, 200)}`)
       } else {
-        setInstallMsg('✅ クローン成功')
+        setInstallMsg('✅ 克隆成功')
         setGitUrl('')
         await scanPlugins()
       }
     } catch (e: unknown) {
-      setInstallMsg(`❌ ${errMsg(e) || 'クローン失敗'}`)
+      setInstallMsg(`❌ ${errMsg(e) || '克隆失败'}`)
     } finally {
       setInstalling(false)
     }
   }
 
-  // ── ローカルパス選択 ──────────────────────────────
+  // ── 选择本地路径 ────────────────────────────────────
   const browseLocal = async () => {
     const dir = await window.huangquan.computer.selectDir()
     if (dir) setLocalPath(dir)
@@ -229,10 +229,10 @@ export default function PluginsView() {
   const enabled = plugins.filter((p) => p.enabled).length
   const disabled = total - enabled
 
-  // ── 主要レンダリング ──────────────────────────────
+  // ── 主渲染 ──────────────────────────────────────────
   return (
     <div className="settings-view">
-      {/* ヘッダ */}
+      {/* 顶部 */}
       <div style={s.header}>
         <div>
           <h2>🎭 黄泉式神録</h2>
@@ -244,14 +244,14 @@ export default function PluginsView() {
           className="btn-primary"
           onClick={() => setShowInstall(!showInstall)}
         >
-          {showInstall ? '閉じる' : '+ 契約'}
+          {showInstall ? '收起' : '+ 安装'}
         </button>
       </div>
 
-      {/* 統計バー */}
+      {/* 统计栏 */}
       <div style={s.statsBar}>
         <span style={s.statChip}>
-          総数 <strong style={{ color: YELLOW_RIVER }}>{total}</strong>
+          总数 <strong style={{ color: YELLOW_RIVER }}>{total}</strong>
         </span>
         <span style={s.statChip}>
           启用 <strong style={{ color: 'var(--success)' }}>{enabled}</strong>
@@ -261,7 +261,7 @@ export default function PluginsView() {
         </span>
       </div>
 
-      {/* インストールフォーム */}
+      {/* 安装表单 */}
       {showInstall && (
         <div style={s.installForm}>
           <div style={s.installTabs}>
@@ -269,13 +269,13 @@ export default function PluginsView() {
               style={s.installTab(installType === 'local')}
               onClick={() => { setInstallType('local'); setInstallMsg('') }}
             >
-              📁 ローカル
+              📁 本地目录
             </button>
             <button
               style={s.installTab(installType === 'git')}
               onClick={() => { setInstallType('git'); setInstallMsg('') }}
             >
-              🔗 Git URL
+              🔗 仓库地址
             </button>
           </div>
 
@@ -287,12 +287,12 @@ export default function PluginsView() {
                   <input
                     className="dropdown-input"
                     style={{ flex: 1, marginBottom: 0 }}
-                    placeholder="插件文件夹路径..."
+                    placeholder="插件文件夹路径…"
                     value={localPath}
                     onChange={(e) => setLocalPath(e.target.value)}
                   />
                   <button className="btn-small" onClick={browseLocal}>
-                    選択
+                    选择
                   </button>
                 </div>
               </div>
@@ -301,7 +301,7 @@ export default function PluginsView() {
                 onClick={installLocal}
                 disabled={installing || !localPath.trim()}
               >
-                {installing ? 'インストール中…' : 'インストール'}
+                {installing ? '安装中…' : '安装'}
               </button>
             </div>
           )}
@@ -309,7 +309,7 @@ export default function PluginsView() {
           {installType === 'git' && (
             <div className="provider-form">
               <div className="form-row">
-                <label>Git リポジトリ URL</label>
+                <label>仓库地址</label>
                 <input
                   className="dropdown-input"
                   placeholder="https://github.com/user/plugin.git"
@@ -322,7 +322,7 @@ export default function PluginsView() {
                 onClick={installGit}
                 disabled={installing || !gitUrl.trim()}
               >
-                {installing ? 'クローン中…' : 'クローン'}
+                {installing ? '克隆中…' : '克隆'}
               </button>
             </div>
           )}
@@ -339,20 +339,20 @@ export default function PluginsView() {
         </div>
       )}
 
-      {/* エラー表示 */}
+      {/* 错误提示 */}
       {scanError && (
         <div className="provider-form">
           <p style={s.msgError}>⚠️ {scanError}</p>
           <button className="btn-small" onClick={scanPlugins} style={{ marginTop: 8 }}>
-            再試行
+            重试
           </button>
         </div>
       )}
 
-      {/* ローディング */}
+      {/* 加载中 */}
       {loading && (
         <p className="empty-tip" style={{ padding: 40 }}>
-          式神を召喚中...
+          正在加载…
         </p>
       )}
 
@@ -369,7 +369,7 @@ export default function PluginsView() {
         >
           <div style={s.emptyIcon}>📭</div>
           <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--ui-font-size)', marginBottom: 6 }}>
-            まだ契約式神がいません
+          还没有安装任何插件
           </p>
           <p className="empty-hint">
             点击「+ 安装」即可安装插件
@@ -397,7 +397,7 @@ export default function PluginsView() {
                   'var(--border)'
               }}
             >
-              {/* カードヘッダ */}
+      {/* 卡片头部 */}
               <div
                 style={s.cardHeader}
                 onClick={() =>
@@ -424,7 +424,7 @@ export default function PluginsView() {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {p.manifest.description || '説明なし'}
+                      {p.manifest.description || '暂无说明'}
                     </div>
                   </div>
                 </div>
@@ -448,12 +448,12 @@ export default function PluginsView() {
               {/* 展開詳細 */}
               {isExpanded && (
                 <div style={s.expandBody}>
-                  {/* メタデータ */}
+              {/* 基本信息 */}
                   <div>
-                    <div style={s.sectionTitle}>📋 メタデータ</div>
+                    <div style={s.sectionTitle}>📋 基本信息</div>
                     <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                       {p.manifest.author && (
-                        <span>作者: {p.manifest.author}</span>
+                        <span>作者：{p.manifest.author}</span>
                       )}
                       {p.manifest.homepage && (
                         <span>
@@ -470,16 +470,16 @@ export default function PluginsView() {
                         </span>
                       )}
                       {p.manifest.license && (
-                        <span>ライセンス: {p.manifest.license}</span>
+                        <span>许可协议：{p.manifest.license}</span>
                       )}
-                      <span>目录: {p.dirName}</span>
+                      <span>目录：{p.dirName}</span>
                     </div>
                   </div>
 
-                  {/* 権限 */}
+                  {/* 权限 */}
                   {p.manifest.permissions && p.manifest.permissions.length > 0 && (
                     <div>
-                      <div style={s.sectionTitle}>🔐 権限</div>
+                      <div style={s.sectionTitle}>🔐 权限</div>
                       <div>
                         {p.manifest.permissions.map((perm) => (
                           <span key={perm} style={s.permChip}>
@@ -490,25 +490,25 @@ export default function PluginsView() {
                     </div>
                   )}
 
-                  {/* ツール一覧 */}
+                  {/* 工具列表 */}
                   {p.manifest.tools && p.manifest.tools.length > 0 && (
                     <div>
-                      <div style={s.sectionTitle}>🔧 提供ツール</div>
+                      <div style={s.sectionTitle}>🔧 提供工具</div>
                       {p.manifest.tools.map((t, i) => (
                         <div key={i} style={s.toolRow}>
                           <span style={s.toolName}>{t.name}</span>
                           <span style={{ color: 'var(--text-muted)' }}>
-                            — {t.description || '説明なし'}
+                            — {t.description || '暂无说明'}
                           </span>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* コマンド一覧 */}
+                  {/* 命令列表 */}
                   {p.manifest.commands && p.manifest.commands.length > 0 && (
                     <div>
-                      <div style={s.sectionTitle}>⚡ コマンド</div>
+                      <div style={s.sectionTitle}>⚡ 命令</div>
                       {p.manifest.commands.map((c, i) => (
                         <div key={i} style={s.toolRow}>
                           <span style={s.toolName}>{c.name}</span>
@@ -520,9 +520,9 @@ export default function PluginsView() {
                     </div>
                   )}
 
-                  {/* カテゴリ変更 */}
+                  {/* 类别切换 */}
                   <div>
-                    <div style={s.sectionTitle}>🏷️ カテゴリ</div>
+                    <div style={s.sectionTitle}>🏷️ 类别</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {Object.entries(CATEGORIES).map(([key, val]) => (
                         <button

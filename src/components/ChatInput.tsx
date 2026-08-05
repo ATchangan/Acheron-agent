@@ -330,7 +330,7 @@ export default function ChatInput() {
 
           {/* Token 用量环 */}
           <svg width="28" height="28" style={{ flexShrink: 0 }}>
-            <title>{(contextUsed / 1024).toFixed(1)}K / {(contextLimit / 1024).toFixed(0)}K tokens</title>
+            <title>上下文用量：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
             <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
             <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
               strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
@@ -352,14 +352,14 @@ export default function ChatInput() {
                 <Square size={16} fill="currentColor" />
               </button>
               <button className="send-btn" onClick={handleSend}
-                title="发送 (Enter) · 工作中发送=补充指令"
+                title="发送（回车）· 工作中发送即补充指令"
                 style={{ width: 36, height: 36, minWidth: 36, borderRadius: 8, fontSize: 18 }}>
                 <Send size={17} />
               </button>
             </>
           ) : (
             <button className="send-btn" onClick={handleSend} disabled={!canSend}
-              title="发送 (Enter)"
+              title="发送（回车）"
               style={{ width: 36, height: 36, minWidth: 36, borderRadius: 8, fontSize: 18 }}>
               <Send size={17} />
             </button>

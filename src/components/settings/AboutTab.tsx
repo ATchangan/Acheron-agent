@@ -29,7 +29,7 @@ export default function AboutTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>软件更新</div>
-        <div style={S.hint}>从 GitHub Releases 检查最新版本并下载安装包</div>
+                <div style={S.hint}>从 GitHub 发布页检查最新版本并下载安装包</div>
         <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <button style={S.btn('primary')} onClick={async () => {
             setUpt({ ...upt, checking: true, info: null, error: '', downloading: false, progress: null })

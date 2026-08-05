@@ -16,9 +16,31 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
   const [loading2, setLoading2] = useState(false)
   const [detectModal2, setDetectModal2] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
   const [detectSel2, setDetectSel2] = useState<string[]>([])
+  // 填入密钥后自动读取一次模型（仅当该平台还没有任何模型时；失败可手动点「读取模型」重试）
+  const prevKey2 = React.useRef('')
+  React.useEffect(() => {
+    const k = mp?.apiKey || ''
+    const hasModels = !!mp && ((mp.imgModels || []).length > 0 || (mp.videoModels || []).length > 0 || (mp.audioModels || []).length > 0)
+    const justEntered = prevKey2.current === '' && k !== '' && !!mp && !!mp.baseUrl && !hasModels
+    prevKey2.current = k
+    if (!justEntered || !mp) return
+    const t = setTimeout(async () => {
+      try {
+        const base = mp.baseUrl || ''
+        const key = mp.apiKey || ''
+        const r = await window.huangquan.models.detect(base, key, { type: mp.type, anthropic: mp.type === 'Anthropic Claude' })
+        if (r.ok && r.models && r.models.length > 0) {
+          const items = r.models.map((m: string) => ({ model: m, caps: detectCaps([m]) }))
+          setDetectModal2({ providerId: mp.id, items })
+          setDetectSel2([])
+        }
+      } catch { /* 静默失败，用户可手动重试 */ }
+    }, 1200)
+    return () => clearTimeout(t)
+  }, [mp?.apiKey, mp?.baseUrl, mp?.id])
   if (!mp) return null
   const detect2 = async () => {
-    if (!mp.baseUrl) { showToast('请先填写 Base URL'); return }
+    if (!mp.baseUrl) { showToast('请先填写接口地址'); return }
     setLoading2(true)
     try {
       const r = await window.huangquan.models.detect(mp.baseUrl, mp.apiKey || '', { type: mp.type, anthropic: mp.type === 'Anthropic Claude' })
@@ -37,11 +59,11 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
           <button style={S.btn('danger')} onClick={() => removeMediaProvider(mp.id)}>删除</button>
         </div>
         <div style={S.row}><div style={S.label}>平台名称</div><input style={S.inp} value={mp.name} onChange={e => { /* 名称不可编辑 */ }} /></div>
-        <div style={S.row}><div style={S.label}>API Key{MEDIA_PRESETS[mp.name]?.noKey ? '（本地服务无需）' : ''}</div>
+        <div style={S.row}><div style={S.label}>密钥（API Key）{MEDIA_PRESETS[mp.name]?.noKey ? '（本地服务无需）' : ''}</div>
           <input style={S.inp} type="password" value={mp.apiKey || ''} placeholder={MEDIA_PRESETS[mp.name]?.noKey ? '本地服务无需密钥' : 'sk-...'} onChange={e => updateMediaProvider(mp.id, { apiKey: e.target.value })} /></div>
-        <div style={S.row}><div style={S.label}>Base URL</div><input style={S.inp} value={mp.baseUrl || ''} onChange={e => updateMediaProvider(mp.id, { baseUrl: e.target.value })} /></div>
-        <div style={S.row}><div style={S.label}>API 类型</div><select style={S.sel} value={mp.type || 'OpenAI Compatible'} onChange={e => updateMediaProvider(mp.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-        <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>Headers</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="key=value" value={mp.headers || ''} onChange={e => updateMediaProvider(mp.id, { headers: e.target.value })} /></div>
+        <div style={S.row}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} value={mp.baseUrl || ''} onChange={e => updateMediaProvider(mp.id, { baseUrl: e.target.value })} /></div>
+        <div style={S.row}><div style={S.label}>接口类型</div><select style={S.sel} value={mp.type || 'OpenAI Compatible'} onChange={e => updateMediaProvider(mp.id, { type: e.target.value })}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+        <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>请求头（Headers）</div><textarea style={{ ...S.inp, height: 44, resize: 'vertical', padding: '8px 12px', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="键=值" value={mp.headers || ''} onChange={e => updateMediaProvider(mp.id, { headers: e.target.value })} /></div>
       </div>
       <div style={S.card}>
         <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
@@ -67,7 +89,7 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
         })()}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
           {modelInput2 !== null ? <>
-            <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型 ID..." value={modelInput2} onChange={e => setModelInput2(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }} autoFocus />
+            <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput2} onChange={e => setModelInput2(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }} autoFocus />
             <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }}>确认</button>
             <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setModelInput2(null)}>取消</button>
           </> : <button style={S.btn('primary')} onClick={() => setModelInput2('')}>添加模型</button>}
@@ -80,7 +102,11 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
         <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal2(null)}>
           <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
-            <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, marginBottom: 12 }}>已从接口读取 {detectModal2.items.length} 个模型，勾选后点击「添加所选」才能使用</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, flex: 1 }}>已从接口读取 {detectModal2.items.length} 个模型，勾选后点击「添加所选」才能使用</span>
+              <button style={S.btn('ghost')} onClick={() => setDetectSel2(detectModal2.items.map(x => x.model))}>全选</button>
+              <button style={S.btn('ghost')} onClick={() => setDetectSel2([])}>清空</button>
+            </div>
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
               {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal2.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>

@@ -123,7 +123,7 @@ export default function AgentsView() {
               <>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {isAll
-                    ? <span style={{ ...S.chip }}>全部工具 (含 handoff/dispatch/list_agents)</span>
+                    ? <span style={{ ...S.chip }}>全部工具（含交接、派发、任务列表）</span>
                     : curTools.slice(0, 8).map(t => <span key={t} style={S.chip}>{t}</span>)}
                   {!isAll && curTools.length > 8 && <span style={S.chip}>+{curTools.length - 8} 项</span>}
                 </div>
