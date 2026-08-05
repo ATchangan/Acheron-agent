@@ -163,6 +163,9 @@ function MessageItem({ message, streaming }: Props) {
     // 反思内容不再静默丢弃 —— 提取为可折叠「💭 反思」块
     // 多段反思内容拼接保留, 不再只留最后一段
     clean = clean.replace(/<reflect>([\s\S]*?)<\/reflect>/g, (_s: string, body: string) => { const b = body.trim(); reflect = reflect ? reflect + '\n' + b : b; return '' }).trim()
+    // 超长文本渲染保护: 防止 ReactMarkdown 解析超大内容导致渲染进程栈溢出
+    const MAX_RENDER = 30000
+    if (clean.length > MAX_RENDER) clean = clean.slice(0, MAX_RENDER) + '\n\n…[内容过长已截断，需要完整内容可让助手重新输出]'
     return (
       <div className="markdown-body">
         {clean && <ReactMarkdown remarkPlugins={[remarkGfm]}>{clean || (streaming ? '' : '...')}</ReactMarkdown>}
@@ -210,7 +213,10 @@ function MessageItem({ message, streaming }: Props) {
             <button className="send-btn" onClick={saveEdit} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="保存修改">✓</button>
             <button className="send-btn stop-btn" onClick={() => setEditing(false)} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="取消">✕</button>
           </div>
-        ) : <div className="message-text">{message.content}</div>) : renderAssistantContent(message.content)}
+        ) : <div className="message-text">{message.content}</div>) : String(message.role) === 'tool' ? (
+          // 工具结果: 纯文本渲染, 不经过 markdown 解析(长结果可安全折叠)
+          <pre className="tool-call-output" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', maxHeight: 320, overflowY: 'auto' }}>{String(message.content || '').slice(0, 8000)}{(message.content || '').length > 8000 ? '\n…[内容过长已截断]' : ''}</pre>
+        ) : renderAssistantContent(message.content)}
         <div className={`message-footer ${isUser ? 'footer-right' : 'footer-left'}`}>
           {showTimestamps === 'always' && <span className="footer-time">{timeText}</span>}
           {!isUser && (

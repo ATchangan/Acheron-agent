@@ -5,6 +5,19 @@ import { sessionTokens } from '../store/context'
 import MessageItem from './MessageItem'
 import ChatInput from './ChatInput'
 
+// 单条消息渲染错误边界: 某条消息渲染异常时降级为纯文本, 防止拖垮整个渲染进程
+class MsgBoundary extends React.Component<{ children: React.ReactNode }, { err: boolean }> {
+  state = { err: false }
+  static getDerivedStateFromError() { return { err: true } }
+  componentDidCatch(e: unknown) { console.error('[MsgBoundary]', e) }
+  render() {
+    if (this.state.err) {
+      return <div className="message-item" style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 2px)' }}>这条消息渲染异常，已折叠显示</div>
+    }
+    return this.props.children
+  }
+}
+
 export default function ChatView({ onNavigate }: { onNavigate: (v: string) => void }) {
   const session = useChatStore(s => s.cur())
   const streaming = useChatStore(s => s.streaming)
@@ -125,7 +138,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       ) : (
         <>
           <div className="message-list">
-            {displayMsgs.map(msg => (<MessageItem key={msg.id} message={msg} streaming={streaming} />))}
+            {displayMsgs.map(msg => (<MsgBoundary key={msg.id}><MessageItem message={msg} streaming={streaming} /></MsgBoundary>))}
             {renderThinkingBubble()}
             <div ref={endRef} />
           </div>

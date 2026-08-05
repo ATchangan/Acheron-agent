@@ -278,6 +278,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       const data = await window.huangquan.settings.load()
       // 默认人设填充（仅当用户从未设置时）—— 默认选中黄泉预设
       let filled = false
+      // 历史脏数据修复: disabledTools 保序去重(曾出现 270 个重复 media_img/media_video)
+      if (Array.isArray(data.general?.disabledTools) && data.general.disabledTools.length > 0) {
+        const uniq = [...new Set(data.general.disabledTools as string[])]
+        if (uniq.length !== data.general.disabledTools.length) {
+          data.general.disabledTools = uniq
+          filled = true
+        }
+      }
       if (!data.general?.rolePreset) { data.general.rolePreset = 'huangquan'; filled = true }
       if (!data.general?.chatPersona) { data.general.chatPersona = DEFAULT_CHAT_PERSONA; filled = true }
       if (!data.general?.workPersona) { data.general.workPersona = DEFAULT_WORK_PERSONA; filled = true }
