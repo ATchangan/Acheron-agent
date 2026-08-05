@@ -107,7 +107,7 @@ export async function runSend(
   // v0.2: 插话模式下不重置 streaming，让 UI 平滑过渡
   const wasInterjecting = st0.streaming
 
-  // v0.3.1 B1: 会话级 Agent 状态接管 —— 新任务开始不清 agent（会话字段保持, 避免多会话并发覆盖）
+  // v0.3.1 B1: 会话级角色状态接管 —— 新任务开始不清 agent（会话字段保持, 避免多会话并发覆盖）
   // 全局 activeAgents/__huangquan_agent 由会话字段读写迁移（块 B）取代, window 仅保留兼容镜像
 
   // 1. 获取 provider 和模型
@@ -137,7 +137,7 @@ export async function runSend(
   
   updateContextLimit(model)
 
-  // 记录当前活跃 Agent（路由结果），供右侧面板展示
+  // 记录当前活跃角色（路由结果），供右侧面板展示
   const recordAgent = (name: string) => {
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, activeAgents: (x.activeAgents || []).includes(name) ? x.activeAgents : [...(x.activeAgents || []), name] } : x) }))
   }
@@ -292,7 +292,7 @@ export async function runSend(
       if (myGen !== getTaskGenFor(taskGenBySid, sid) || !hasInterjectForSid(sid)) break
     }
 
-    // 本任务总消耗 = sessTok 增量(含主 Agent 与全部子 Agent), 写到最后一条 assistant 消息
+    // 本任务总消耗 = sessTok 增量(含主角色 与全部子角色), 写到最后一条 assistant 消息
     try {
       const tokNow = get().sessTok[sid] || {}
       let taskTok = 0

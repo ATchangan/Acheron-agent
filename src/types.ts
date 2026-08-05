@@ -96,7 +96,7 @@ export interface GeneralSettings {
   skinMask?: string
   skinSecondary?: string
   themePreset?: string
-  // v0.3.0 M3: Agent 覆盖(AgentsView 白名单/模型偏好/记忆范围编辑)
+// v0.3.0 M3: 角色覆盖(AgentsView 白名单/模型偏好/记忆范围编辑)
   agentOverrides?: Record<string, Partial<AgentDef>>
   // +: 运行期字段(人设/皮肤/浏览器/记忆/提示词注入等)
   rolePreset?: string

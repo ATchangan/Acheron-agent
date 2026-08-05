@@ -61,7 +61,7 @@ export default function RightPanel() {
     <aside className="sidebar-right" style={{ position: 'relative' }}>
       <div className="right-top-name"><h3>黄泉</h3></div>
 
-      {/* 多Agent 协作实时面板 —— 常驻置顶，显示当前正在调用的 Agent（多个并发时全部显示） */}
+      {/* 多角色协作实时面板 —— 常驻置顶，显示当前正在调用的角色（多个并发时全部显示） */}
       <div className="sys-bar" style={{ marginBottom: 8, border: '1px solid rgba(var(--skin-accent),.4)', background: 'rgba(var(--skin-accent),.08)', borderRadius: 8, padding: '8px 10px' }}>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: 'var(--accent)', marginBottom: 6, letterSpacing: 1 }}>协作调度</div>
         {streaming || executing ? (

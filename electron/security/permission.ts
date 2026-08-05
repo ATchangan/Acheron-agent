@@ -1,5 +1,5 @@
 // electron/security/permission.ts — 安全权限系统
-// 对标 HanaAgent 的权限分级机制
+// 对标 Hana角色的权限分级机制
 
 type RiskLevel = 'L0'|'L1'|'L2'|'L3'|'L4'
 type Operation = 'read'|'write'|'delete'|'execute'

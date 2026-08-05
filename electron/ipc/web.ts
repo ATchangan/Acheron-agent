@@ -58,7 +58,7 @@ export function registerWebIpc(deps: {
       try { cfg = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general || {} } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       // 直接读文件时 cookie 是密文, 需解密后传给 web_read
       if (typeof cfg.webReadCookies === 'string' && cfg.webReadCookies.startsWith('__ENC__')) cfg.webReadCookies = decKey(cfg.webReadCookies)
-      // 总开关: 关闭后 Agent 无法调用 web_read
+      // 总开关: 关闭后 角色无法调用 web_read
       if (cfg.webReadEnabled === false) {
         return JSON.stringify({ ok: false, error: 'web_read 已被禁用', advice: '请在 设置 → 工具 → 无头浏览器网页解析工具 中开启总开关' })
       }

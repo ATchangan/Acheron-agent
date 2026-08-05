@@ -183,7 +183,7 @@ import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-ve
 import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
   mainWindow?.webContents.send('cron:trigger', prompt)
 })).catch(() => {})
-// 多Agent体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
+// 多角色体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
 import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})

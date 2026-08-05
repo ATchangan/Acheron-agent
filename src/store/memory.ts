@@ -54,7 +54,7 @@ export function getFrozenMemory(): string | null {
 }
 export function clearFrozenMemory(): void { frozenSnapshot = null; frozenAt = 0 }
 
-// 记忆使用率(容量感知): 让 Agent 能看到记忆占用
+// 记忆使用率(容量感知): 让 角色能看到记忆占用
 function memoryUsageLine(): string {
   const { pinned, facts, summaries } = globalMemoryCache
   return `（置顶 ${pinned.length}/10 · 长期 ${facts.length}/500 · 摘要 ${summaries.length}/200，写满后旧内容会自动清理）`

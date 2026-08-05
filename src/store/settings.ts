@@ -262,7 +262,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   general: {
     theme: 'dark', mode: 'work',
     // 无头浏览器网页解析工具配置
-    webReadEnabled: true,        // 总开关: 关闭后 Agent 无法调用 web_read
+  webReadEnabled: true,        // 总开关: 关闭后无法调用网页读取
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
     webReadTimeout: 15000,       // 页面加载超时(ms)
     webReadUA: '',               // 自定义浏览器 User-Agent(空=默认)

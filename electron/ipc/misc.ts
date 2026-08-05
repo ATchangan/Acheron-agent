@@ -56,7 +56,7 @@ export function registerMiscIpc(deps: {
   })
   ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
   // ─── 项目约定文件注入 ───
-  // 工作目录存在 AGENTS.md / .agents.md 时, 其约定自动进入 Agent 上下文(限长 4000 字符)
+  // 工作目录存在 AGENTS.md / .agents.md 时, 其约定自动进入角色上下文(限长 4000 字符)
   ipcMain.handle('get:projectContext', () => {
     try {
       for (const name of ['AGENTS.md', '.agents.md']) {

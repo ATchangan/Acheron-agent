@@ -27,25 +27,25 @@ export async function runDispatch(
         // 已配置供应商优先(原 providers[0] 可能无 key, 分发失败)
         const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) return 'E:未配置 Provider，无法分发'
         const out: string[] = []
-        // 分发开始：所有子 Agent 一并显示（并发协作）
+        // 分发开始：所有子角色 一并显示（并发协作）
         const validAgents = tasks.map(t => t.agent).filter(n => agents[n])
         // 子任务活跃角色写入当前会话字段(全局 activeAgents 会跨会话串扰)
         const dispatchSid = useChatStore.getState().cid
         if (dispatchSid) useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === dispatchSid ? { ...x, activeAgents: [...new Set([...(x.activeAgents || []), ...validAgents])] } : x) }))
-        // 并行执行子任务（每个子 Agent 独立系统提示词 + 真实工具调用循环 —— 子 Agent 也能调用工具真正干活）
+        // 并行执行子任务（每个子角色独立系统提示词 + 真实工具调用循环 —— 子角色也能调用工具真正干活）
         const dispStartGen = getTaskGen()
         const results = await Promise.all(tasks.map(async (t) => {
           const ag = agents[t.agent]
-          if (!ag) return { agent: t.agent, task: t.task, error: 'unknown agent' }
+          if (!ag) return { agent: t.agent, task: t.task, error: '未知角色' }
           // 子任务模型策略: 代码类任务用 codeModel, 文档/总结类用 longTextModel, 其余用主模型
           const gNow = (snapCfg?.general || {}) as GeneralSettings
           const taskTxt = (t.task || '').toLowerCase()
           const isCode = /(代码|脚本|函数|重构|bug|测试|typescript|javascript|python|html|css|sql)/.test(taskTxt)
           const isLong = /(总结|分析|翻译|报告|文档|调研|搜索|整理|写作|文章)/.test(taskTxt)
           const model = (isCode ? resolveModel(gNow, cfg, p, 'codeModel') : isLong ? resolveModel(gNow, cfg, p, 'longTextModel') : null)?.model || p.selectedModel || p.models[0] || ''
-          // v0.3.0 M3: 上下文隔离 —— 子 Agent 只含身份+任务, 不拼接全局历史/记忆/工具列表
+          // v0.3.0 M3: 上下文隔离 —— 子角色 只含身份+任务, 不拼接全局历史/记忆/工具列表
           const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
-          // 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)
+          // 子角色 不嵌套协作工具(防递归 dispatch/handoff)
           const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
           // v0.3.2 T1: 与主请求共用同一白名单过滤函数(过滤基仍为 TOOLS 不含插件, 现状保持)
           const agTools = filterToolsByAgent(TOOLS, t.agent).filter((tt: ToolSpec) => !COLLAB_TOOLS.includes(tt.function.name))
@@ -85,7 +85,7 @@ export async function runDispatch(
                   ;(async () => {
                     for (const tc of tcs) {
                       const tcId = tc.id || 'c' + Date.now() + Math.random().toString(36).slice(2, 6)
-                      // v0.3.0 M3: 子 Agent 工具白名单守卫(LLM 幻觉兜底)
+                      // v0.3.0 M3: 子角色工具白名单守卫(LLM 幻觉兜底)
                       if (!ag.tools.includes('*') && !ag.tools.includes(tc.name)) { subMsgs.push({ role: 'assistant', content: null, reasoning_content: '', tool_calls: [{ id: tcId, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] }); subMsgs.push({ role: 'tool', content: 'E:权限不足，该 Agent 无权调用 ' + tc.name, tool_call_id: tcId }); continue }
                       const rr = await runToolFn(tc.name, tc.args || {}, cfg)
                       subMsgs.push({ role: 'assistant', content: null, reasoning_content: '', tool_calls: [{ id: tcId, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
@@ -124,7 +124,7 @@ export async function runDispatch(
         }))
         for (const x of results) {
           const xr = x as { error?: string; result?: string }
-          const err = xr.error ? ' (未知Agent)' : ''
+  const err = xr.error ? '（未知角色）' : ''
           out.push(`【${x.agent}${err}】${xr.error || ''}\n任务: ${x.task}\n结果: ${xr.result || '(empty)'}`)
         }
         return '📤 分发完成，共 ' + tasks.length + ' 个子任务：\n\n' + out.join('\n\n---\n\n')

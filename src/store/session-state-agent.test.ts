@@ -6,12 +6,12 @@ const baseSession: SessionData = {
   id: 's1', title: 'Chat', messages: [], mode: 'work',
 }
 
-describe('session-state 会话级 Agent 身份', () => {
+describe('session-state 会话级角色身份', () => {
   it('getSessionAgent 未设置时返回 undefined', () => {
     expect(getSessionAgent(baseSession)).toBeUndefined()
   })
 
-  it('setSessionAgent 写入 agent 字段', () => {
+  it('setSessionAgent 写入角色字段', () => {
     const s = setSessionAgent(baseSession, '螺丝咕姆')
     expect(s.agent).toBe('螺丝咕姆')
     expect(s.agentManual).toBeFalsy()

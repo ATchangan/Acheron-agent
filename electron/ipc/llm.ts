@@ -192,7 +192,7 @@ ipcMain.handle('llm:chat', async (event, params: LLMChatParams) => {
   }
 })
 
-// 非流式单次 LLM 调用 —— 多 Agent 分发时子 Agent 独立执行
+  // 非流式单次 LLM 调用 —— 多角色分发时子角色独立执行
 ipcMain.handle('llm:chatOnce', async (_e, params: LLMChatParams) => {
   const { provider, model, apiKey, baseUrl, messages } = params
   try {

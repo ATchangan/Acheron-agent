@@ -97,11 +97,11 @@ export function getActiveTools(agentName?: string): ToolSpec[] {
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   // v0.3.0 M4: 插件工具并入(有 index.js 实现的插件, plugin_ 前缀防冲突)
   const merged = [...TOOLS, ...PLUGIN_TOOLS]
-  // v0.3.2 T1: Agent 白名单裁剪(主请求; 子任务在 subtask.ts 用同一函数, 过滤基为 TOOLS 不含插件——现状保持)
+  // v0.3.2 T1: 角色白名单裁剪(主请求; 子任务在 subtask.ts 用同一函数, 过滤基为 TOOLS 不含插件——现状保持)
   // v0.3.5 T2: toolWhitelist 开关关闭时返回全量(0.3.1 行为)
   // ⚠ 顺序锁定: filter 保序(TOOLS 原序 + PLUGIN_TOOLS 原序) —— 禁止 sort/Set 去重, 破坏顺序会打断供应商前缀缓存
   const filtered = agentName && useSettingsStore.getState().general.perf?.toolWhitelist !== false ? filterToolsByAgent(merged, agentName) : merged
-  // 协作模式=关闭 时彻底禁用多 Agent 协作工具(handoff/dispatch/list_agents)
+  // 协作模式=关闭 时彻底禁用多角色协作工具(handoff/dispatch/list_agents)
   const collabMode = String(useSettingsStore.getState().general.collabMode || '自动')
   // v0.3.0: 媒体自动调用开关(策略页可调) —— 关闭则不注入生成工具
   const g0 = useSettingsStore.getState().general
@@ -191,12 +191,12 @@ export async function analyzeWithVision(p: ProviderConfig | MediaProvider, image
 
 export async function runTool(name: string, a: Record<string, unknown>, snapCfg?: SettingsData): Promise<string> {
   const A = a as unknown as Record<string, string>
-  // v0.3.0 M3: 当前 Agent 工具白名单过滤(主 Agent/handoff 场景; 子 Agent 由 subtask 守卫)
+  // v0.3.0 M3: 当前角色工具白名单过滤(主角色/handoff 场景; 子角色由 subtask 守卫)
   const curAg = useChatStore.getState().cur()?.agent || window.__huangquan_agent
   if (curAg) {
     const agDef = useAgents()[curAg]
-    // 协作/基础工具恒放行(与 filterToolsByAgent 注入层一致): 专业 Agent 也能 dispatch/handoff/session_search
-    if (agDef && !agDef.tools.includes('*') && !['handoff', 'dispatch', 'list_agents', 'session_search'].includes(name) && !agDef.tools.includes(name)) return 'E:权限不足，该 Agent 无权调用 ' + name
+    // 协作/基础工具恒放行(与 filterToolsByAgent 注入层一致): 专业角色也能 dispatch/handoff/session_search
+    if (agDef && !agDef.tools.includes('*') && !['handoff', 'dispatch', 'list_agents', 'session_search'].includes(name) && !agDef.tools.includes(name)) return 'E:权限不足，该角色无权调用 ' + name
   }
   // v0.3.0 M4: 插件工具 —— plugin_<plugin>__<tool> → IPC vm 沙箱执行
   if (name.startsWith('plugin_')) {
@@ -334,10 +334,10 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'mcp_call': { if (!A.server||!A.tool) return 'E:need server+tool'; const mc = await window.huangquan.mcpCall(A.server, A.tool, (A.args || '{}') as unknown as Record<string, unknown>); return typeof mc === 'string' ? mc : JSON.stringify(mc) }
       case 'set_workdir': { if (!A.path) return 'E:need path'; try { await window.huangquan?.computer.setWorkDir(A.path) } catch (e) { /* ignore */ console.debug('[swallow]', e) }; return '工作目录已设为(本次会话): ' + A.path }
       case 'set_theme': { if (!A.theme) return 'E:need theme'; useSettingsStore.getState().setTheme(A.theme); document.documentElement.setAttribute('data-theme', A.theme); return '主题已切换为: ' + A.theme }
-      // v0.2: 多Agent/工作流
-      case 'handoff': { const agents = useAgents(); if (!A.agent_name) return 'E:need agent_name'; const ag = agents[A.agent_name]; if (!ag) return 'E:unknown agent: ' + A.agent_name + ' (可用: ' + Object.keys(agents).join(', ') + ')'; const dAgents: string[] = useSettingsStore.getState().general.disabledAgents || []; if (dAgents.includes(A.agent_name)) return 'E:该 Agent 已被禁用: ' + A.agent_name + ' (设置→协作 中可重新启用)'; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: A.agent_name, agentManual: false } : x) })); useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(A.agent_name) ? s.activeAgents : [...s.activeAgents, A.agent_name] })); return `✅ 已交接给 ${A.agent_name}(${ag.role})。原因: ${A.reason || '能力边界外'}。现在你以 ${A.agent_name} 的身份继续执行。\n\n【${A.agent_name} 身份】${ag.prompt}` }
+      // v0.2: 多角色/工作流
+      case 'handoff': { const agents = useAgents(); if (!A.agent_name) return 'E:缺少角色名'; const ag = agents[A.agent_name]; if (!ag) return 'E:未知角色: ' + A.agent_name + ' (可用: ' + Object.keys(agents).join(', ') + ')'; const dAgents: string[] = useSettingsStore.getState().general.disabledAgents || []; if (dAgents.includes(A.agent_name)) return 'E:该角色已被禁用: ' + A.agent_name + ' (设置→协作 中可重新启用)'; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: A.agent_name, agentManual: false } : x) })); useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(A.agent_name) ? s.activeAgents : [...s.activeAgents, A.agent_name] })); return `✅ 已交接给 ${A.agent_name}(${ag.role})。原因: ${A.reason || '能力边界外'}。现在你以 ${A.agent_name} 的身份继续执行。\n\n【${A.agent_name} 身份】${ag.prompt}` }
       case 'list_agents': { return Object.entries(useAgents()).map(([n,ag]) => `${ag.icon} **${n}** (${ag.role}): ${ag.prompt.slice(0,80)}... | 工具: ${ag.tools.join(', ')}`).join('\n\n') }
-      // 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
+      // 任务分发 —— 并行分发给多个子角色独立执行（chatOnce 非流式），真正实现多角色协作
       case 'dispatch': {
         // 参数容错: 兼容 数组 / {tasks:[...]} / JSON 字符串 三种格式(DeepSeek 等模型传参风格不一)
         const dTasks = parseDispatchTasks(A.tasks ?? A.plan ?? '[]')

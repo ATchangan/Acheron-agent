@@ -6,7 +6,7 @@ describe('context 序列断言兜底(M4-2)', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   it('合法序列零告警', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const d: LLMMessage[] = [
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: null, tool_calls: [{ id: 't1', type: 'function', function: { name: 'exec_command', arguments: '{}' } }] },
@@ -19,7 +19,7 @@ describe('context 序列断言兜底(M4-2)', () => {
   })
 
   it('违规序列(assistant(tool_calls) 后是 user)触发告警 —— 兜底生效', () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const d: LLMMessage[] = [
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: null, tool_calls: [{ id: 't1', type: 'function', function: { name: 'exec_command', arguments: '{}' } }] },

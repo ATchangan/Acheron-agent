@@ -149,11 +149,11 @@ export function buildPrompt(mode: string, ishiki: string): string {
   // ── System Prompt 标准 10 段结构 ──
   const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
   const identity = '## 身份\n' + ishiki.slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
-  const userInfo = '## 用户\n称呼：老板。专注代码与办公场景的全能助手。\n'
+  const userInfo = '## 用户\n称呼：老板。关注代码与办公自动化场景。\n'
   // 聊天人设/工作人设严格隔离 —— 聊天模式只用 chatPersona(未设置用聊天默认人格), 工作模式只用 workPersona(未设置用工作默认人格), 互不混用
   const gp = useSettingsStore.getState().general
   const defaultChatPersona = '轻松自然的聊天伙伴。语气温和自然，像朋友一样交流，适当回应情绪，言简意赅；不堆砌术语，不主动调用工具，除非用户明确要求。'
-  const defaultWorkPersona = '务实执行型全能代码办公助手。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / AI建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。'
+  const defaultWorkPersona = '务实执行型工作模式。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / 机器学习建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。'
   const chatP = String(gp.chatPersona || '').trim()
   const workP = String(gp.workPersona || '').trim()
   const persona = '## 人格\n' + (mode === 'chat' ? (chatP || defaultChatPersona) : (workP || defaultWorkPersona)) + '\n'
@@ -174,10 +174,10 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const pinned = '## 固定规则\n- 所有产出保存到工作台目录，按任务创建独立文件夹\n- 代码需求同步配套接口文档、部署说明、测试用例\n- 批量重复任务优先自动化脚本\n- 输出完毕自行核查事实/逻辑/计算错误\n'
   // 时间戳移到 prompt 最末尾 —— 保持前缀稳定, 最大化 DeepSeek 缓存命中
   const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
-  // v0.2: 多Agent编队
-  const multiAgent = '## 多Agent编队\n你属于黄泉Agent编队的一员。编队成员：\n' +
+  // v0.2: 多角色编队
+  const multiAgent = '## 多角色编队\n你属于黄泉编队的一员。编队成员：\n' +
     Object.entries(useAgents()).map(([n,ag]) => `- ${ag.icon} ${n} (${ag.role}): ${ag.tools.includes('*') ? '全工具权限' : '专业领域(' + (ag.capabilities || []).join('/') + ')'}`).join('\n') +
-    '\n使用 handoff 工具将任务交接给更合适的Agent；复杂任务用 dispatch 把子任务分发给多个 Agent 并行执行；使用 list_agents 查看编队信息。\n'
+    '\n使用 handoff 工具将任务交接给更合适的角色；复杂任务用 dispatch 把子任务分发给多个角色并行执行；使用 list_agents 查看编队信息。\n'
   const base = yuan + identity + userInfo + persona + appearance + tools + think + pinned + env
 
   // 自定义人设覆盖 + 动态设置
@@ -343,16 +343,16 @@ export function buildContextualMessages(
   if (archives.length) {
     sp += '\n## 任务归档\n' + archives.slice(-5).map(a => `- 目标: ${a.goal} | 结论: ${a.conclusion} | 产出物: ${a.outputs.join(', ') || '无'} | 工具: ${a.tools}`).join('\n') + '\n(如需早期细节请用工具重新读取或 recall_memory)\n'
   }
-  // 注入 Agent 角色(collabMode=关闭 时彻底禁用)
+  // 注入角色(collabMode=关闭 时彻底禁用)
   const collabOff = gSnap.collabMode === '关闭'
   let agentRole = collabOff ? null : opts.agent
-  // 自动检测：根据用户最后一条消息内容匹配最合适的 Agent
+  // 自动检测：根据用户最后一条消息内容匹配最合适的角色
   if (!agentRole) {
     const lastUserMsg = [...d].reverse().find(m => m.role === 'user')
     const txt = (typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '').toLowerCase()
     if (txt) { agentRole = routeAgent(txt) || undefined }
   }
-  // 路由确定的 Agent 记入协作状态
+  // 路由确定的角色记入协作状态
   if (agentRole && !opts.agent) {
     opts.onAgentRoute(agentRole)
   }
@@ -361,7 +361,7 @@ export function buildContextualMessages(
     if (ag) sp += '\n\n## 当前身份\n' + ag.icon + ' ' + agentRole + ' — ' + ag.role + '\n' + ag.prompt +
       // v0.3.2 T9: 工具名单不再冗余注入(tools 参数已按白名单提供 schema), 只保留一行范围描述维持边界感知
       '\n可用工具范围: ' + (ag.tools.includes('*') ? '全部' : '本专业领域工具集(详见工具列表)')
-    // 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个 Agent
+    // 主控调度铁律 —— 多领域任务必须 dispatch 分发，确保链路出现多个角色
     if (agentRole === '姬子') {
       sp += '\n\n【调度铁律】只有涉及多个专业领域的复杂任务（如代码+文档、设计+开发、分析+总结、开发+测试+审查）才调用 dispatch 分发；简单任务（单步问答、简短说明、单个文件操作、闲聊等）一律直接完成，绝对禁止 dispatch 或 handoff，不得小题大做。'
     }
@@ -403,7 +403,7 @@ export function assertAlternates(d: LLMMessage[]): void {
   for (let i = 0; i < d.length - 1; i++) {
     const cur = d[i]
     if (cur.role === 'assistant' && cur.tool_calls && d[i + 1].role !== 'tool') {
-      console.log('[序列校验] 相邻消息非法: assistant(tool_calls) 后是 ' + d[i + 1].role + ' (位置 ' + i + '), 插话重排可能被破坏')
+      console.warn('[序列校验] 相邻消息非法: assistant(tool_calls) 后是 ' + d[i + 1].role + ' (位置 ' + i + '), 插话重排可能被破坏')
     }
   }
 }

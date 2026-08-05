@@ -4,9 +4,9 @@
 import type { ToolSpec } from '../types'
 import { useAgents } from './agents'
 
-// v0.3.2 T1: Agent 工具白名单统一过滤(主请求与子任务共用同一函数源)
+// v0.3.2 T1: 角色工具白名单统一过滤(主请求与子任务共用同一函数源)
 // 规则: 协作工具(handoff/dispatch/list_agents)始终保留; 插件工具(plugin_ 前缀)恒保留(用户显式安装授权);
-//       其余仅注入该 Agent 白名单内工具。filter 保序(TOOLS 原序 + PLUGIN_TOOLS 原序), 禁止 sort/Set 去重
+//       其余仅注入该角色白名单内工具。filter 保序(TOOLS 原序 + PLUGIN_TOOLS 原序), 禁止 sort/Set 去重
 export function filterToolsByAgent(tools: ToolSpec[], agentName: string): ToolSpec[] {
   const ag = useAgents()[agentName]
   if (!ag || ag.tools.includes('*')) return tools
@@ -46,9 +46,9 @@ export const TOOLS: ToolSpec[] = [
   { type: 'function', function: { name: 'list_schedules', description: 'list_schedules() 列出全部定时任务', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'mcp_connect', description: 'mcp_connect(name, command, args) 连接 MCP 服务器(args 为字符串数组)', parameters: { type: 'object', properties: { name: { type: 'string' }, command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['name', 'command'] } } },
   { type: 'function', function: { name: 'mcp_call', description: 'mcp_call(server, tool, args) 调用 MCP 工具', parameters: { type: 'object', properties: { server: { type: 'string' }, tool: { type: 'string' }, args: { type: 'object' } }, required: ['server', 'tool'] } } },
-  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason) 将任务交接给另一 Agent 并切换身份执行', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['姬子','三月七','银狼','艾丝妲','知更鸟','黑天鹅','螺丝咕姆'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
-  { type: 'function', function: { name: 'dispatch', description: 'dispatch(tasks) 并行分发子任务给多个 Agent 独立执行并汇总; tasks=[{agent, task}]', parameters: { type: 'object', properties: { tasks: { type: 'array', items: { type: 'object', properties: { agent: { type: 'string' }, task: { type: 'string' } }, required: ['agent', 'task'] } }, reason: { type: 'string' } }, required: ['tasks'] } } },
-  { type: 'function', function: { name: 'list_agents', description: 'list_agents() 列出全部 Agent', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason) 将任务交接给另一角色并切换身份执行', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['姬子','三月七','银狼','艾丝妲','知更鸟','黑天鹅','螺丝咕姆'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
+  { type: 'function', function: { name: 'dispatch', description: 'dispatch(tasks) 并行分发子任务给多个角色独立执行并汇总; tasks=[{agent, task}]', parameters: { type: 'object', properties: { tasks: { type: 'array', items: { type: 'object', properties: { agent: { type: 'string' }, task: { type: 'string' } }, required: ['agent', 'task'] } }, reason: { type: 'string' } }, required: ['tasks'] } } },
+  { type: 'function', function: { name: 'list_agents', description: 'list_agents() 列出全部角色', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'list_workflows', description: 'list_workflows() 列出工作流模板', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'run_workflow', description: 'run_workflow(workflow_id, variables?) 按模板运行工作流', parameters: { type: 'object', properties: { workflow_id: { type: 'string' }, variables: { type: 'object' } }, required: ['workflow_id'] } } },
   { type: 'function', function: { name: 'read_image', description: 'read_image(path) 读取图片为 dataURL(脚本内部用; 用户提供图片路径时系统自动处理)', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },

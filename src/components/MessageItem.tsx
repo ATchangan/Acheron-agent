@@ -237,7 +237,7 @@ function MessageItem({ message, streaming }: Props) {
                     ? <span title="任务总时长（含工具执行）">⏱{fmtTime(message.meta.taskMs)}</span>
                     : message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
                   {(message.usage || message.meta?.taskTokens) && (() => {
-                    // 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
+                    // 任务结束消息优先显示「本任务总消耗」(主角色 + 全部子角色)
                     const total = message.meta?.taskTokens || message.usage?.total_tokens || ((message.usage?.prompt_tokens || 0) + (message.usage?.completion_tokens || 0))
                     const speed = message.meta?.duration && (message.usage?.completion_tokens || 0) > 0
                       ? Math.round((message.usage?.completion_tokens || 0) / (message.meta.duration / 1000))

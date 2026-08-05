@@ -5,7 +5,7 @@ import { TOOLS } from '../store/tools'
 import { useChatStore } from '../store/chat'
 import type { AgentDef } from '../types'
 
-// v0.3.0 M3: Agent 实体化管理页 —— 工具白名单(标签+可编辑勾选)/模型偏好(仅存储)/记忆范围徽标
+// v0.3.0 M3: 角色实体化管理页 —— 工具白名单(标签+可编辑勾选)/模型偏好(仅存储)/记忆范围徽标
 // 编辑保存进 settings.agentOverrides, 运行时由 useAgents() 合并生效
 
 const S = {
@@ -47,7 +47,7 @@ export default function AgentsView() {
     const next = { ...overrides, [name]: { ...(overrides[name] || {}), tools: draftTools, model: draftModel || undefined } }
     useSettingsStore.getState().updateGeneral({ agentOverrides: next })
     setEditAgent(null)
-    toast(`已保存「${name}」的 Agent 配置(重启后持续生效)`)
+    toast(`已保存「${name}」的角色配置（重启后持续生效）`)
   }
 
   const resetOne = (name: string) => {

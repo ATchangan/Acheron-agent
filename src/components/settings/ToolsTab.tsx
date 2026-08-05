@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
+import { TOOLS } from '../../store/tools'
+import { useAgents } from '../../store/agents'
 
 // v0.3.1 块 H: 工具 tab(从 SettingsView 拆分, 行为零变化)
 
@@ -9,10 +11,17 @@ const PERM_TOOLS = ['read', 'write', 'edit', 'exec_command', 'mkdir', 'grep', 'f
 
 export default function ToolsTab() {
   const g = useSettingsStore(s => s.general) || {}
+  const agentsMap = useAgents()
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const save = (patch: Partial<import('../../types').GeneralSettings>) => { useSettingsStore.setState(s2 => ({ general: { ...(s2.general || {}), ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
+  const [sys, setSys] = useState<{ version: string; electron: string; node: string } | null>(null)
+  const [skillCount, setSkillCount] = useState(0)
+  useEffect(() => {
+    window.huangquan.appInfo().then(setSys).catch(() => {})
+    window.huangquan.skills.list().then((l) => setSkillCount(Array.isArray(l) ? l.length : 0)).catch(() => {})
+  }, [])
   const [pluginList, setPluginList] = useState<{ plugin: string; name: string; description: string }[]>([])
   useEffect(() => { window.huangquan.plugins.tools().then((l) => setPluginList(Array.isArray(l) ? l : [])).catch(() => setPluginList([])) }, [])
   const pluginPerm = (g?.pluginPerm) || {}
@@ -192,9 +201,9 @@ export default function ToolsTab() {
         <div style={S.section}>系统信息</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
-            ['版本', 'v0.3.1'], ['Electron', '32.x'], ['React', '18.3'], ['Zustand', '4.5'],
-            ['构建', new Date().toLocaleDateString('zh-CN')], ['工具数', '27'],
-            ['Agent数', '7'], ['技能数', '4+']
+            ['版本', sys?.version ? 'v' + sys.version : '…'], ['平台', '黄泉Agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
+            ['Node', sys?.node || '…'], ['工具数', String(TOOLS.length)], ['角色数', String(Object.keys(agentsMap).length)],
+            ['技能数', skillCount ? String(skillCount) : '…']
           ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}
         </div>
       </div>

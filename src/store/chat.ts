@@ -40,7 +40,7 @@ if (typeof window !== 'undefined' && window.huangquan?.plugins) refreshPluginToo
 
 // Token 估算（中英混合）
 
-// ─── v0.2: 多Agent 编队（改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
+// ─── v0.2: 多角色编队（改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
 
 
 // ─── v0.2: 模型上下文窗口自动检测 ──────────────────────
@@ -137,7 +137,7 @@ export const useChatStore = create<S>((set, get) => ({
   del: (id) => {
     window.huangquan.sessions.delete(id)
     // 缓存命中统计永久保留 —— 删除历史会话不影响设置页统计(本地持久化)
-    // 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃 Agent/插话队列)
+    // 删除会话时同步清理关联运行时状态(磁盘文件已删; 内存 sessions 过滤 + 终端日志/活跃角色/插话队列)
     if (id === get().cid) clearInterjectForSid(id)
     set(s => { const f = s.sessions.filter(x => x.id !== id); return { sessions: f, cid: s.cid === id ? (f[0]?.id || null) : s.cid, terminal: s.cid === id ? [] : s.terminal, activeAgents: s.cid === id ? [] : s.activeAgents } })
   },

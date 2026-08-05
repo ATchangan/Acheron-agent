@@ -291,7 +291,7 @@ export default function ChatInput() {
         </div>
 
         <div className="input-right">
-          {/* Agent 选择器 */}
+          {/* 角色选择器 */}
           <select className="model-select" style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '4px 8px', maxWidth: 80, height: 28, borderRadius: 5 }}
             onChange={e => { const v = e.target.value; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: v || undefined, agentManual: !!v } : x) })) }}
             defaultValue="">
