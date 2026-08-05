@@ -6,8 +6,10 @@ import { TOOLS, filterToolsByAgent } from './tools'
 import { buildPrompt } from './context'
 import { useChatStore } from './chat'
 import { SUB_ROUND_LIMIT } from './constants'
+import { resolveModel } from './model-pick'
 import type { ProviderConfig, ToolCallDelta, ChunkData, SettingsData, LLMMessage } from '../global'
 import type { ToolSpec } from '../types'
+import type { GeneralSettings } from '../types'
 import { errMsg } from '../utils/safe'
 
 export async function runDispatch(
@@ -24,7 +26,6 @@ export async function runDispatch(
         const cfg = snapCfg || await window.huangquan.settings.load()
         // 已配置供应商优先(原 providers[0] 可能无 key, 分发失败)
         const p = cfg.providers.find((x: ProviderConfig) => x.apiKey && x.baseUrl) || cfg.providers[0]; if (!p) return 'E:未配置 Provider，无法分发'
-        const model = p.selectedModel || p.models[0] || ''
         const out: string[] = []
         // 分发开始：所有子 Agent 一并显示（并发协作）
         const validAgents = tasks.map(t => t.agent).filter(n => agents[n])
@@ -36,6 +37,12 @@ export async function runDispatch(
         const results = await Promise.all(tasks.map(async (t) => {
           const ag = agents[t.agent]
           if (!ag) return { agent: t.agent, task: t.task, error: 'unknown agent' }
+          // 子任务模型策略: 代码类任务用 codeModel, 文档/总结类用 longTextModel, 其余用主模型
+          const gNow = (snapCfg?.general || {}) as GeneralSettings
+          const taskTxt = (t.task || '').toLowerCase()
+          const isCode = /(代码|脚本|函数|重构|bug|测试|typescript|javascript|python|html|css|sql)/.test(taskTxt)
+          const isLong = /(总结|分析|翻译|报告|文档|调研|搜索|整理|写作|文章)/.test(taskTxt)
+          const model = (isCode ? resolveModel(gNow, cfg, p, 'codeModel') : isLong ? resolveModel(gNow, cfg, p, 'longTextModel') : null)?.model || p.selectedModel || p.models[0] || ''
           // v0.3.0 M3: 上下文隔离 —— 子 Agent 只含身份+任务, 不拼接全局历史/记忆/工具列表
           const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
           // 子 Agent 不嵌套协作工具(防递归 dispatch/handoff)

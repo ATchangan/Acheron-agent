@@ -21,7 +21,15 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   // 任一供应商已配置即可对话(原只检查 providers[0], 首个无 key 的供应商会挡住全部)
   const hasProvider = providers.some(p => p.apiKey)
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [session?.messages, stage])
+  // 仅在接近底部时自动滚动(流式输出不打扰用户往上翻看)
+  useEffect(() => {
+    const el = endRef.current
+    if (!el) return
+    const list = el.parentElement
+    if (!list) return
+    const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 160
+    if (nearBottom) el.scrollIntoView({ behavior: 'smooth' })
+  }, [session?.messages, stage])
 
   const switchMode = (m: string) => { if (m !== mode) setMode(m) }
 
@@ -32,7 +40,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const tokSum = React.useMemo(() => sessionTokens(msgs), [msgs])
   const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
   // 单气泡终极过滤 —— 隐藏 tool/tool_calls/空消息，且连续 assistant 合并为单条（UI 层兜底，杜绝多气泡）
-  const displayMsgs = (() => {
+  const displayMsgs = React.useMemo(() => {
     const out: typeof msgs = []
     for (const m of msgs) {
       // 工具过程(调用卡片+结果块)统一显示在「思考气泡」内, 单气泡模式消息流保持干净(只有用户+最终回答)
@@ -60,7 +68,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       }
     }
     return out
-  })()
+  }, [msgs, singleBubble])
 
   const lastMsg = msgs.slice(-1)[0]
   const isGeneratingText = streaming && lastMsg?.role === 'assistant' && lastMsg?.content && lastMsg.content.length > 0

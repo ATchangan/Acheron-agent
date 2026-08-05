@@ -31,6 +31,16 @@ export function onWriteOp() { for (const k of toolCache.keys()) { if (/^(read|ls
 export let taskGen = 0
 export function nextTaskGen(): number { return ++taskGen }
 
+// dispatch 参数解析容错: 兼容 数组 / {tasks:[...]} / JSON 字符串 三种模型传参风格
+export function parseDispatchTasks(raw: unknown): { agent: string; task: string }[] {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (Array.isArray(parsed)) return parsed as { agent: string; task: string }[]
+    if (parsed && Array.isArray((parsed as { tasks?: unknown }).tasks)) return (parsed as { tasks: { agent: string; task: string }[] }).tasks
+  } catch { /* 忽略 */ }
+  return []
+}
+
 function matchWorkflow(txt: string): string | null {
   const t = txt.toLowerCase()
   const matches = Object.entries(WORKFLOWS).map(([id, w]) => ({ id, score: w.triggers.filter(tr => t.includes(tr.toLowerCase())).length })).filter(m => m.score > 0).sort((a, b) => b.score - a.score)
@@ -324,13 +334,7 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       // 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
       case 'dispatch': {
         // 参数容错: 兼容 数组 / {tasks:[...]} / JSON 字符串 三种格式(DeepSeek 等模型传参风格不一)
-        let dTasks: { agent: string; task: string }[] = []
-        try {
-          const raw = A.tasks ?? A.plan ?? '[]'
-          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-          if (Array.isArray(parsed)) dTasks = parsed
-          else if (parsed && Array.isArray((parsed as { tasks?: unknown }).tasks)) dTasks = (parsed as { tasks: { agent: string; task: string }[] }).tasks
-        } catch { dTasks = [] }
+        const dTasks = parseDispatchTasks(A.tasks ?? A.plan ?? '[]')
         // dispatch 总超时护栏(90s): 子任务 LLM 挂起时强制返回, 防止工具循环永久等待
         const dispatchPromise = runDispatch(dTasks, snapCfg, () => taskGen, runTool)
         const dispatchTimeout = new Promise<string>(resolve => setTimeout(() => resolve('E:dispatch 超时(90s)，部分子任务未完成，请重试或检查网络'), 90000))

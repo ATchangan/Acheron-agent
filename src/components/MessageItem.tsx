@@ -38,7 +38,7 @@ const fmtTime = (ms?: number) => {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
 }
 
-export default function MessageItem({ message, streaming }: Props) {
+function MessageItem({ message, streaming }: Props) {
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
@@ -252,3 +252,6 @@ export default function MessageItem({ message, streaming }: Props) {
     </div>
   )
 }
+
+// 流式输出时仅重渲染内容变化的消息(长会话性能关键)
+export default React.memo(MessageItem)

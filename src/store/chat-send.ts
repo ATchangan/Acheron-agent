@@ -23,7 +23,8 @@ import { refreshPluginTools } from './plugins'
 
 // v0.3.1 块 C/D: 会话级任务代号表 + send 幂等指纹(模块级, 串行入口安全)
 export const taskGenBySid: Record<string, number> = {}
-let lastMidSave = 0 // v0.3.1 D3: 长任务中途保存时间戳
+// v0.3.1 D3: 长任务中途保存时间戳 —— 按会话隔离(双会话并发时 A 保存不压掉 B)
+const midSaveBySid: Record<string, number> = {}
 
 // v0.3.0 M5: 工具调用循环中的扁平工具项(组件收集, 非 API delta)
 interface ToolCallItem {
@@ -261,8 +262,8 @@ export async function runSend(
       }
 
       // 3. 工具调用循环(拆至 chat-round.ts, 行为零变化)
-      const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, lastMidSave)
-      res = tr.res; toolLog = tr.toolLog; lastMidSave = tr.lastMidSave
+      const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, midSaveBySid[sid] || 0)
+      res = tr.res; toolLog = tr.toolLog; midSaveBySid[sid] = tr.lastMidSave
       if (tr.switchTo) { curP = tr.switchTo.p; model = tr.switchTo.model; set({ curModel: model }); updateContextLimit(model) }
       // 4. 单气泡合并
       set({ stage: null }) // 任务完成, 思考气泡消失

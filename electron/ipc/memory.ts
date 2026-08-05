@@ -23,6 +23,29 @@ export function registerMemoryIpc(deps: {
   const { memoryPath, settingsPath, userDataPath, safeClone, decKey } = deps
 
   let _vm: MemoryVectorModule | null = null
+  // 记忆内存缓存 + 串行写队列(避免每次 save_memory 全量读盘 + 乱序覆盖)
+  let memCache: Record<string, unknown> | null = null
+  let memWriting = false
+  let memPending: string | null = null
+  const loadMemory = (): Record<string, unknown> => {
+    if (memCache !== null) return memCache
+    try { memCache = fs.existsSync(memoryPath) ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8')) : { facts: [], summaries: [] } } catch { memCache = { facts: [], summaries: [] } }
+    return memCache ?? { facts: [], summaries: [] }
+  }
+  const enqueueMemorySave = (content: string): void => {
+    memPending = content
+    if (memWriting) return
+    memWriting = true
+    const run = async (): Promise<void> => {
+      while (memPending !== null) {
+        const c = memPending
+        memPending = null
+        try { await fs.promises.writeFile(memoryPath, c, 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+      }
+      memWriting = false
+    }
+    void run()
+  }
   const getVM = (): MemoryVectorModule => {
     if (!_vm) {
       const m = require('../memory/vector')
@@ -45,14 +68,12 @@ export function registerMemoryIpc(deps: {
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
   }
 
-  ipcMain.handle('memory:load', () => {
-    try { return fs.existsSync(memoryPath) ? JSON.parse(fs.readFileSync(memoryPath, 'utf-8')) : { facts: [], summaries: [] } }
-    catch { return { facts: [], summaries: [] } }
-  })
+  ipcMain.handle('memory:load', () => loadMemory())
   ipcMain.handle('memory:save', (_e, memory) => {
-    // 安全序列化防止循环引用
-    // 异步写盘不阻塞主进程
-    fs.promises.writeFile(memoryPath, JSON.stringify(safeClone(memory), null, 2), 'utf-8').catch(() => {})
+    // 安全序列化防止循环引用; 更新缓存 + 串行写盘
+    const safe = safeClone(memory) as Record<string, unknown>
+    memCache = safe
+    enqueueMemorySave(JSON.stringify(safe, null, 2))
     return true
   })
   ipcMain.handle('memory:search', async (_e, query: string) => {

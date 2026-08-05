@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
+import { parseDispatchTasks } from './runtime'
 import { scanMemoryText, freezeMemory, getFrozenMemory, clearFrozenMemory } from './memory'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
@@ -257,5 +258,28 @@ describe('记忆冻结快照', () => {
     expect(getFrozenMemory()).not.toBeNull()
     clearFrozenMemory()
     expect(getFrozenMemory()).toBeNull()
+  })
+})
+
+describe('dispatch 参数解析容错', () => {
+  it('接受数组', () => {
+    const r = parseDispatchTasks([{ agent: '螺丝咕姆', task: '写代码' }])
+    expect(r.length).toBe(1)
+    expect(r[0].agent).toBe('螺丝咕姆')
+  })
+  it('接受 {tasks:[...]} 对象', () => {
+    const r = parseDispatchTasks({ tasks: [{ agent: '三月七', task: '读文档' }] })
+    expect(r.length).toBe(1)
+    expect(r[0].agent).toBe('三月七')
+  })
+  it('接受 JSON 字符串', () => {
+    const r = parseDispatchTasks('[{"agent":"姬子","task":"调度"}]')
+    expect(r.length).toBe(1)
+    expect(r[0].task).toBe('调度')
+  })
+  it('非法输入返回空数组', () => {
+    expect(parseDispatchTasks('not-json')).toEqual([])
+    expect(parseDispatchTasks(null)).toEqual([])
+    expect(parseDispatchTasks({})).toEqual([])
   })
 })
