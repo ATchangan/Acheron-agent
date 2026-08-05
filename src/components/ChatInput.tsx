@@ -4,6 +4,7 @@ import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
 import { Camera, Command, Bookmark, Shield, Lock, Eye, Unlock, Lightbulb, Zap, Flame, Sparkles as SparklesIcon, Send, Square, ImagePlus, Gauge, Brain, Crown } from 'lucide-react'
 import { api } from '../services/ipc'
+import { detectCaps } from './settings/consts'
 
 type FilePerm = 'auto' | 'full' | 'ask' | 'readonly'
 type ThinkLevel = 'off' | 'quick' | 'medium' | 'deep' | 'extreme' | 'ultra'
@@ -55,10 +56,10 @@ export default function ChatInput() {
   // 模型下拉 = 全部已配置供应商/媒体平台的模型, 按能力分类(文字/图片/视频/语音)
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const classifyModel = (m: string): 'text' | 'image' | 'video' | 'audio' => {
-    const ml = m.toLowerCase()
-    if (/image|img|flux|dall|sdxl|\bsd-|mj-|seedream|cogview|wanx|kolors|ernie-vilg/i.test(ml)) return 'image'
-    if (/video|vid|seedance|kling|pika|runway|gen3|gen4|t2v/i.test(ml)) return 'video'
-    if (/asr|tts|whisper|voice|audio|iflytek/i.test(ml)) return 'audio'
+    const caps = detectCaps([m])
+    if (caps.includes('图片')) return 'image'
+    if (caps.includes('视频')) return 'video'
+    if (caps.includes('语音')) return 'audio'
     return 'text'
   }
   const cfgProviders = providers.filter(pp => !!pp.apiKey && (pp.models || []).length)

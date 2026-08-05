@@ -48,10 +48,14 @@ export const detectCaps = (models: string[]): string[] => {
   const caps = new Set<string>()
   for (const m of models || []) {
     const ml = String(m).toLowerCase()
-    if (/gpt-4o|claude-3|gemini|vision|vl|vlm|qwen-vl|glm-4v|llava|yi-vision|internvl|识图|多模态/.test(ml)) caps.add('多模态')
-    if (/(dall|flux|sdxl|seedream|cogview|imagen|midjourney|文生图|图片生成|image-gen|text2img)/.test(ml)) caps.add('图片')
-    if (/(sora|kling|runway|pika|veo|video-gen|文生视频)/.test(ml)) caps.add('视频')
-    if (/(whisper|tts|audio|speech|voice|语音|识别)/.test(ml)) caps.add('语音')
+    // 多模态：能理解图像/视频的对话模型
+    if (/(gpt-4o|gpt-4\.1|gpt-4-turbo|claude|gemini|vision|\bvlm?\b|4v|omni|qwen-vl|qwen2-vl|qwen2\.5-vl|qwen3-vl|glm-4v|glm-5v|llava|yi-vision|internvl|minicpm-v|moondream|pixtral|phi-vision|llama-3\.2-vision|deepseek-vl|step-1v|hunyuan-vision|doubao.*vision|kimi-vl|spark.*vision|ocr|识图|多模态|multimodal)/.test(ml)) caps.add('多模态')
+    // 图片生成
+    if (/(image|img|flux|dall|sdxl|stable-diffusion|seedream|cogview|wanx|kolors|ernie-vilg|midjourney|draw|文生图|图生图|text2img|t2i|image-gen|imagegen|photogen|qwen-image|hunyuan-image|recraft|ideogram|fooocus|comfyui|imagen)/.test(ml)) caps.add('图片')
+    // 视频生成
+    if (/(video|vid|sora|kling|runway|pika|veo|seedance|gen-?[345]|keling|lumina|cosmos|hunyuan-video|qwen-video|t2v|i2v|text2video|文生视频|图生视频)/.test(ml)) caps.add('视频')
+    // 语音/音频
+    if (/(asr|tts|whisper|voice|speech|audio|transcribe|chattts|cosyvoice|funasr|sensevoice|spark-tts|doubao-tts|minimax-speech|qwen-audio|语音|音频|朗读)/.test(ml)) caps.add('语音')
   }
   if (!caps.size) caps.add('文字')
   return [...caps]
