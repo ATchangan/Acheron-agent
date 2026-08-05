@@ -63,7 +63,7 @@ export async function buildUserMessage(deps: BuildUserMsgDeps, contentIn: string
   set(s => {
     const session = s.sessions.find(x => x.id === sid)!
     // 会话标题自动取第一条消息（避免一直显示 "New Chat"）
-    const isNewChat = !session.title || session.title === 'New Chat' || session.title === 'Chat'
+  const isNewChat = !session.title || session.title === '新对话' || session.title === 'New Chat' || session.title === 'Chat'
     const title = isNewChat ? content.replace(/\s+/g, ' ').trim().slice(0, 24) + (content.trim().length > 24 ? '…' : '') : session.title
     return { sessions: s.sessions.map(x => x.id === sid ? { ...session, title, messages: [...session.messages, userMsg] } : x), streaming: s.cid === sid ? true : s.streaming, executing: s.cid === sid ? true : s.executing, error: null }
   })

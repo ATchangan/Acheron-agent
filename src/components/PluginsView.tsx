@@ -356,7 +356,7 @@ export default function PluginsView() {
         </p>
       )}
 
-      {/* 空状態 */}
+      {/* 空状态 */}
       {!loading && plugins.length === 0 && !scanError && (
         <div
           style={{
@@ -445,7 +445,7 @@ export default function PluginsView() {
                 </div>
               </div>
 
-              {/* 展開詳細 */}
+      {/* 展开详情 */}
               {isExpanded && (
                 <div style={s.expandBody}>
               {/* 基本信息 */}

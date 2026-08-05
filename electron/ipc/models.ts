@@ -49,14 +49,18 @@ export function registerModelsIpc(deps: {
           return { ok: false, error: 'HTTP ' + res.status + (hint ? '：' + hint : '') }
         }
         const data = JSON.parse(await res.text())
-        // Gemini 返回 { models: [{ name: "models/gemini-..." }] }，需清理前缀
-        const pageIds = isGemini
-          ? (data.models || []).map((m: { name?: string }) => String(m.name || '').replace(/^models\//, '')).filter(Boolean)
-          : (data.data || []).map((m: { id?: string }) => String(m.id || '')).filter(Boolean)
+        // 兼容多种返回结构：OpenAI 用 data[]，Gemini 用 models[]，部分网关用 list/items/result[]
+        const rawArr = isGemini
+          ? (data.models || [])
+          : (data.data || data.models || data.list || data.items || data.result || [])
+        const pageIds = rawArr
+          .map((m: { id?: string; name?: string }) => String(m.id || m.name || '').replace(/^models\//, ''))
+          .filter(Boolean)
         for (const id of pageIds) allIds.add(id)
         // 确定是否还有下一页：优先 OpenAI 风格，其次 Gemini 风格
         let next: string | null = null
-        if (data.has_more && data.last_id) next = String(data.last_id)
+        const hasMore = data.has_more === true || data.has_more === 1 || String(data.has_more).toLowerCase() === 'true'
+        if (hasMore && data.last_id) next = String(data.last_id)
         else if (data.nextPageToken || data.next_page_token) next = String(data.nextPageToken || data.next_page_token)
         if (!next || seenCursors.has(next)) break
         seenCursors.add(next)

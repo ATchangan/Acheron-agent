@@ -70,13 +70,12 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   }
   const [detectModal, setDetectModal] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
   const [detectSel, setDetectSel] = useState<string[]>([])
-  // 填入密钥后自动读取一次模型（仅当该供应商还没有任何模型时；失败可手动点「读取模型」重试）
-  const prevKey = React.useRef('')
+  // 有密钥但还没有任何模型时，自动读取一次（新填密钥或打开已有配置都会触发；失败可手动点「读取模型」重试）
+  const autoFired = React.useRef<Set<string>>(new Set())
   useEffect(() => {
-    const k = p?.apiKey || ''
-    const justEntered = prevKey.current === '' && k !== '' && !!p && !!p.baseUrl && !(p.models && p.models.length > 0)
-    prevKey.current = k
-    if (!justEntered || !p) return
+    if (!p || !p.baseUrl || !p.apiKey || (p.models && p.models.length > 0)) return
+    if (autoFired.current.has(p.id)) return
+    autoFired.current.add(p.id)
     const t = setTimeout(async () => {
       try {
         const base = p.baseUrl || ''
@@ -88,9 +87,9 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
           setDetectSel([])
         }
       } catch { /* 静默失败，用户可手动重试 */ }
-    }, 1200)
+    }, 900)
     return () => clearTimeout(t)
-  }, [p?.apiKey, p?.baseUrl, p?.id])
+  }, [p?.id, p?.apiKey, p?.baseUrl, p?.models?.length])
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ width: 160, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto' }}>

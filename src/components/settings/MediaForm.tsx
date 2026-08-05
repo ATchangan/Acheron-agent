@@ -16,14 +16,13 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
   const [loading2, setLoading2] = useState(false)
   const [detectModal2, setDetectModal2] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
   const [detectSel2, setDetectSel2] = useState<string[]>([])
-  // 填入密钥后自动读取一次模型（仅当该平台还没有任何模型时；失败可手动点「读取模型」重试）
-  const prevKey2 = React.useRef('')
+  // 有密钥但还没有任何模型时，自动读取一次（新填密钥或打开已有配置都会触发；失败可手动点「读取模型」重试）
+  const autoFired2 = React.useRef<Set<string>>(new Set())
   React.useEffect(() => {
-    const k = mp?.apiKey || ''
     const hasModels = !!mp && ((mp.imgModels || []).length > 0 || (mp.videoModels || []).length > 0 || (mp.audioModels || []).length > 0)
-    const justEntered = prevKey2.current === '' && k !== '' && !!mp && !!mp.baseUrl && !hasModels
-    prevKey2.current = k
-    if (!justEntered || !mp) return
+    if (!mp || !mp.baseUrl || !mp.apiKey || hasModels) return
+    if (autoFired2.current.has(mp.id)) return
+    autoFired2.current.add(mp.id)
     const t = setTimeout(async () => {
       try {
         const base = mp.baseUrl || ''
@@ -35,9 +34,9 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
           setDetectSel2([])
         }
       } catch { /* 静默失败，用户可手动重试 */ }
-    }, 1200)
+    }, 900)
     return () => clearTimeout(t)
-  }, [mp?.apiKey, mp?.baseUrl, mp?.id])
+  }, [mp?.id, mp?.apiKey, mp?.baseUrl])
   if (!mp) return null
   const detect2 = async () => {
     if (!mp.baseUrl) { showToast('请先填写接口地址'); return }

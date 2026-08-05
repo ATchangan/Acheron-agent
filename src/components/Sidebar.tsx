@@ -17,7 +17,7 @@ const SearchIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="n
 
 const NAV_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
   { id: 'chat', icon: <ChatIcon />, label: '对话' },
-  { id: 'agents', icon: <AgentIcon />, label: 'Agent 编队' },
+  { id: 'agents', icon: <AgentIcon />, label: '角色编队' },
   { id: 'browser', icon: <BrowserIcon />, label: '浏览器' },
   { id: 'settings', icon: <SettingsIcon />, label: '设置' },
 ]
