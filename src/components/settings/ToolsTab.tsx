@@ -82,21 +82,21 @@ export default function ToolsTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>浏览器</div>
-        <div style={S.hint}>实时浏览面板(可视化查看 agent 浏览)、主窗口内使用提示、网页解析工具(Playwright 无头内核)。三类配置互不影响、真实生效。</div>
+        <div style={S.hint}>实时浏览面板（可视化查看浏览过程）、主窗口内使用提示、网页解析工具（Playwright 无头内核）。三类配置互不影响。</div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: 'var(--accent-purple)', margin: '10px 0 4px' }}>▍实时浏览面板</div>
         <div style={S.row}><div style={S.label}>默认主页</div><input style={S.inp} placeholder="https://example.com" value={g.browserHomeUrl || ''} onChange={e => save({ browserHomeUrl: e.target.value })} /><div style={S.hint}>打开浏览器窗口时自动加载的页面</div></div>
         <div style={S.row}><div style={S.label}>窗口宽度</div><input type="number" style={S.inp} value={g.browserWinW ?? 1280} onChange={e => save({ browserWinW: parseInt(e.target.value) || 1280 })} /><div style={S.hint}>px,不小于 600</div></div>
         <div style={S.row}><div style={S.label}>窗口高度</div><input type="number" style={S.inp} value={g.browserWinH ?? 860} onChange={e => save({ browserWinH: parseInt(e.target.value) || 860 })} /><div style={S.hint}>px,不小于 400</div></div>
         <div style={S.row}><div style={S.label}>画面刷新间隔</div><input type="number" style={S.inp} value={g.browserSnapMs ?? 1200} onChange={e => save({ browserSnapMs: parseInt(e.target.value) || 1200 })} /><div style={S.hint}>ms,实时画面截图刷新频率,越小越流畅但更耗资源</div></div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: 'var(--accent-purple)', margin: '10px 0 4px' }}>▍使用提示(主窗口内横幅)</div>
-        <div style={S.row}><div style={S.label}>使用浏览器时提示</div><Toggle checked={g.browserFloatEnabled !== false} onChange={v => save({ browserFloatEnabled: v })} label="agent 使用浏览器时在主窗口内显示提示横幅" /></div>
+        <div style={S.row}><div style={S.label}>使用浏览器时提示</div><Toggle checked={g.browserFloatEnabled !== false} onChange={v => save({ browserFloatEnabled: v })} label="使用浏览器时在主窗口内显示提示横幅" /></div>
         <div style={S.row}><div style={S.label}>提示位置</div><select style={S.sel} value={g.browserFloatPos || 'top-right'} onChange={e => save({ browserFloatPos: e.target.value })}>
           <option value="top-right">右上角</option><option value="top-center">顶部居中</option><option value="bottom-left">左下角</option><option value="bottom-right">右下角</option>
         </select><div style={S.hint}>横幅在主窗口内的显示位置(非系统屏幕角)</div></div>
         <div style={S.row}><div style={S.label}>提示停留</div><input type="number" style={S.inp} value={g.browserFloatTimeout ?? 30} onChange={e => save({ browserFloatTimeout: parseInt(e.target.value) || 30 })} /><div style={S.hint}>秒</div></div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: 'var(--accent-purple)', margin: '10px 0 4px' }}>▍网页解析工具 (web_read)</div>
-        <div style={S.hint}>基于 Playwright + Chromium 无头内核,Agent 调用 web_read 时临时启动、用完自动销毁,不长期驻留内存。支持 JS 动态渲染页面、提取标题与清洗后的正文、截图、转 PDF。</div>
-        <div style={S.row}><div style={S.label}>启用解析工具</div><Toggle checked={g.webReadEnabled !== false} onChange={v => save({ webReadEnabled: v })} label="总开关,关闭后 Agent 无法调用 web_read" /></div>
+        <div style={S.hint}>基于 Playwright + Chromium 无头内核，调用 web_read 时临时启动、用完自动销毁，不长期驻留内存。支持 JS 动态渲染页面、提取标题与清洗后的正文、截图、转 PDF。</div>
+        <div style={S.row}><div style={S.label}>启用解析工具</div><Toggle checked={g.webReadEnabled !== false} onChange={v => save({ webReadEnabled: v })} label="总开关，关闭后无法调用 web_read" /></div>
         <div style={S.row}><div style={S.label}>强制无头模式</div><Toggle checked={g.webReadHeadless !== false} onChange={v => save({ webReadHeadless: v })} label="取消勾选则可视化弹出浏览器窗口(用于调试页面)" /></div>
         <div style={S.row}><div style={S.label}>页面加载超时</div><input type="number" style={S.inp} value={g.webReadTimeout ?? 15000} onChange={e => save({ webReadTimeout: parseInt(e.target.value) || 15000 })} /><div style={S.hint}>ms</div></div>
         <div style={S.row}><div style={S.label}>自定义 User-Agent</div><input style={S.inp} placeholder="留空使用默认 UA" value={g.webReadUA || ''} onChange={e => save({ webReadUA: e.target.value })} /></div>

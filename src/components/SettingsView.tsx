@@ -6,7 +6,7 @@ import { DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA, extractSkinColors, clearSki
 import type { MediaProvider, ProviderConfig, MemoryData } from '../global'
 import type { GeneralSettings } from '../types'
 import { updateContextLimit, useChatStore } from '../store/chat'
-import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal } from 'lucide-react'
+import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw } from 'lucide-react'
 import { errMsg } from '../utils/safe'
 import AboutTab from './settings/AboutTab'
 import ModelsTab from './settings/ModelsTab'
@@ -65,6 +65,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const [tab, setTab] = useState('models')
   // 模型缓存统计(持久化)
   const [toast, setToast] = useState<string | null>(null)
+  const [searchNoMatch, setSearchNoMatch] = useState(false)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   // 新建工作流改用应用内弹窗(Electron 不支持 prompt, 调用会抛错触发全局错误页)
   const [wfModal, setWfModal] = useState(false)
@@ -92,15 +93,49 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'about', icon: <Info size={15} />, label: '关于' },
   ]
 
+  // 设置搜索关键词映射: 常见设置词 → 对应 tab
+  const SETTING_KEYWORDS: [string, string[]][] = [
+    ['models', ['模型', '供应商', 'api', 'key', '密钥', 'deepseek', 'openai', 'claude', 'gemini', '通义', '智谱', '火山', 'ollama', '本地']],
+    ['strategy', ['视觉', '图片', '视频', '语音', '生图', '生视频', 'tts', '快速', '自动生成']],
+    ['persona', ['角色', '人设', '称呼', '语气', '语言', '回复', '名字']],
+    ['memory', ['记忆', '置顶', '摘要', '压缩', '长期', '精简']],
+    ['collab', ['协作', '交接', '编队', '并行', '交叉', '活跃']],
+    ['tools', ['工具', '权限', '命令', '禁用', '白名单']],
+    ['mcp', ['mcp', '服务器', '连接']],
+    ['skills', ['技能']],
+    ['skin', ['外观', '主题', '皮肤', '背景', '字体', '字号', '透明', '动画']],
+    ['stats', ['缓存', '统计', '用量', '命中']],
+    ['advanced', ['引擎', '性能', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
+    ['about', ['关于', '版本', '更新']],
+  ]
+
   return (
     <div className="settings-root" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: C.bg }}>
       {/* Header with search + import/export */}
       <div style={{ padding: '10px 22px', borderBottom: '1px solid ' + C.border, display: 'flex', alignItems: 'center', gap: 10 }}>
         <button onClick={() => onNavigate('chat')} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) + 3px)', padding: '4px 8px', borderRadius: 6 }}>←</button>
-        <input placeholder="🔍 搜索设置..." style={{ flex: 1, height: 32, background: C.input, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '0 12px', outline: 'none' }} onChange={e => { const v = e.target.value.toLowerCase(); if (!v) { setTab('models'); return }; for (const t of TABS) { const k = t.key + t.label; if (k.includes(v)) { setTab(t.key); break } } }} />
-        <button style={S.btn('ghost')} onClick={async () => { try { const cfg = await window.huangquan.settings.load(); const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' }); const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'huangquan-settings-' + new Date().toISOString().slice(0,10) + '.json' }); a.click() } catch { alert('导出失败') } }} title="导出设置"></button>
-        <button style={S.btn('ghost')} onClick={() => { const f = Object.assign(document.createElement('input'), { type: 'file', accept: '.json' }); f.onchange = async () => { try { const t = await f.files?.[0]?.text(); if (t) { const cfg = JSON.parse(t); await window.huangquan.settings.save(cfg); alert('导入成功，请重启应用'); window.location.reload() } } catch { alert('导入失败，文件格式不正确') } }; f.click() }} title="导入设置"></button>
-        <button style={S.btn('ghost')} onClick={() => { if (confirm('重置所有设置为默认值？此操作不可撤销。')) { window.huangquan.settings.reset?.(); alert('已重置，请重启应用'); window.location.reload() } }} title="恢复默认"></button>
+        <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
+          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.muted, display: 'flex' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
+          <input
+            placeholder="搜索设置项…"
+            style={{ width: '100%', height: 32, background: C.input, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '0 12px 0 30px', outline: 'none', boxSizing: 'border-box' }}
+            onChange={e => {
+              const v = e.target.value.trim().toLowerCase()
+              if (!v) { setSearchNoMatch(false); return }
+              // 先匹配 tab 名/key, 再匹配常见设置词
+              for (const t of TABS) { if ((t.key + t.label).toLowerCase().includes(v)) { setTab(t.key); setSearchNoMatch(false); return } }
+              for (const [key, words] of SETTING_KEYWORDS) { if (words.some(w => w.includes(v))) { setTab(key); setSearchNoMatch(false); return } }
+              setSearchNoMatch(true)
+            }}
+            onKeyDown={e => { if (e.key === 'Escape') { (e.target as HTMLInputElement).value = ''; setSearchNoMatch(false) } }}
+          />
+        </div>
+        <button style={S.btn('ghost')} title="导出设置" onClick={async () => { try { const cfg = await window.huangquan.settings.load(); const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' }); const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'huangquan-settings-' + new Date().toISOString().slice(0,10) + '.json' }); a.click() } catch { alert('导出失败') } }}><Download size={14} /></button>
+        <button style={S.btn('ghost')} title="导入设置" onClick={() => { const f = Object.assign(document.createElement('input'), { type: 'file', accept: '.json' }); f.onchange = async () => { try { const t = await f.files?.[0]?.text(); if (t) { const cfg = JSON.parse(t); await window.huangquan.settings.save(cfg); alert('导入成功，请重启应用'); window.location.reload() } } catch { alert('导入失败，文件格式不正确') } }; f.click() }}><Upload size={14} /></button>
+        <button style={S.btn('ghost')} title="恢复默认" onClick={() => { if (confirm('重置所有设置为默认值？此操作不可撤销。')) { window.huangquan.settings.reset?.(); alert('已重置，请重启应用'); window.location.reload() } }}><RotateCcw size={14} /></button>
+        {searchNoMatch && <span style={{ color: C.danger, fontSize: 'calc(var(--ui-font-size) - 3px)' }}>没有匹配的设置项</span>}
       </div>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -130,7 +165,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
             <div style={S.label}>名称</div>
             <input style={{ ...S.inp, marginBottom: 10 }} value={wfName} placeholder="工作流名称" onChange={e => setWfName(e.target.value)} autoFocus />
             <div style={S.label}>任务描述</div>
-            <textarea style={{ ...S.inp, minHeight: 60, resize: 'vertical', marginBottom: 14 }} value={wfDesc} placeholder="Agent 将按此执行（留空用名称）" onChange={e => setWfDesc(e.target.value)} />
+            <textarea style={{ ...S.inp, minHeight: 60, resize: 'vertical', marginBottom: 14 }} value={wfDesc} placeholder="将按此执行（留空用名称）" onChange={e => setWfDesc(e.target.value)} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button style={S.btn('ghost')} onClick={() => setWfModal(false)}>取消</button>
               <button style={S.btn('primary')} disabled={!wfName.trim()} onClick={() => {

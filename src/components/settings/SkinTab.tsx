@@ -27,14 +27,14 @@ export default function SkinTab() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-      <div style={S.card}><div style={S.section}>Agent 头像</div>
-        <div style={S.hint}>上传图片作为 Agent 头像，或使用 emoji 文字。留空默认"泉"。</div>
+      <div style={S.card}><div style={S.section}>头像</div>
+        <div style={S.hint}>上传图片作为头像，或使用 emoji 文字。留空默认"泉"。</div>
         <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
             {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
           </div>
           <div style={{ flex: 1 }}>
-            <input style={S.inp} value={g.agentAvatar || ''} placeholder="emoji 或文字（如 🤖）" onChange={e => save({ agentAvatar: e.target.value })} maxLength={4} />
+            <input style={S.inp} value={g.agentAvatar || ''} placeholder="emoji 或文字（如 🌂）" onChange={e => save({ agentAvatar: e.target.value })} maxLength={4} />
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
               <input type="file" accept="image/*" style={{ display: 'none' }} id="avatarImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => save({ agentAvatarImage: r.result as string }); r.readAsDataURL(f) }} />
               <button style={S.btn('primary')} onClick={() => document.getElementById('avatarImg')?.click()}>上传图片</button>

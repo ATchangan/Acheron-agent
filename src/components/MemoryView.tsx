@@ -72,7 +72,7 @@ export default function MemoryView() {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FileIcon /> 摘要 <b style={{ color: 'var(--accent)' }}>{stats.summaries}</b>/200</span>
         <span style={{ color: 'var(--text-muted)' }}>在对话里说「记住…」就会自动写入</span>
       </div>
-      <p style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginBottom: 16 }}>唯一持久存储载体 — 系统规则、Agent配置、个人偏好均存于此</p>
+      <p style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginBottom: 16 }}>唯一持久存储载体 — 系统规则、角色配置、个人偏好均存于此</p>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <input style={s.inp} value={newPinned} onChange={e => setNewPinned(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPinned()} placeholder="添加置顶记忆..." />

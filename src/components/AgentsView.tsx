@@ -63,7 +63,7 @@ export default function AgentsView() {
 
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={S.title}>Agent 编队管理</div>
+      <div style={S.title}>编队管理</div>
       <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginBottom: 16 }}>
         在这里设置每位角色的工具范围和记忆范围：全局记忆所有角色共享，私有记忆仅自己可见。模型偏好将在后续版本生效。
       </div>

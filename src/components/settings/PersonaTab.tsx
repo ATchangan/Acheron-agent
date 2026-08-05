@@ -99,7 +99,7 @@ export default function PersonaTab() {
           <div style={{ flex: 1 }}><div style={S.hint}>不早于</div><input type="date" style={S.inp} value={g.knowledgeFrom || ''} onChange={e => save({ knowledgeFrom: e.target.value })} /></div>
           <div style={{ flex: 1 }}><div style={S.hint}>不晚于</div><input type="date" style={S.inp} value={g.knowledgeTo || ''} onChange={e => save({ knowledgeTo: e.target.value })} /></div>
         </div>}
-        <Toggle checked={g.knowledgeWhitelist === true} onChange={v => save({ knowledgeWhitelist: v })} label="仅使用白名单来源" hint="限制 Agent 引用的知识范围" />
+        <Toggle checked={g.knowledgeWhitelist === true} onChange={v => save({ knowledgeWhitelist: v })} label="仅使用白名单来源" hint="限制引用的知识范围" />
         <Toggle checked={g.strictVersionAware === true} onChange={v => save({ strictVersionAware: v })} label="严格版本感知" hint="涉及API/框架时标注版本并验证兼容性" />
       </div>
       <div style={S.card}>

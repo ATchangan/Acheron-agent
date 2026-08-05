@@ -104,7 +104,7 @@ export default function BrowserView() {
       {/* 实时画面 */}
       <div style={{ flex: 1, overflow: 'auto', background: '#141519', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
         {snap
-          ? <img src={snap} alt="agent 浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
+          ? <img src={snap} alt="浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
           : <div style={{ marginTop: 80, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8 }}>
               {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
             </div>}

@@ -232,7 +232,7 @@ export default function MessageItem({ message, streaming }: Props) {
                     // 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
                     const total = message.meta?.taskTokens || message.usage?.total_tokens || ((message.usage?.prompt_tokens || 0) + (message.usage?.completion_tokens || 0))
                     const speed = message.meta?.duration ? Math.round(message.usage?.completion_tokens || 0 / (message.meta.duration / 1000)) : 0
-                    return <span title={message.meta?.taskTokens ? '本任务总消耗(主 Agent + 全部子 Agent)' : '本次回复消耗 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全Agent)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
+                    return <span title={message.meta?.taskTokens ? '本任务总消耗（主角色 + 全部子角色）' : '本次回复消耗的 token 总数'}>{total} tok{message.meta?.taskTokens ? '(全角色)' : ''}{speed > 0 ? ' · ' + speed + ' tok/s' : ''}</span>
                   })()}
                 </span>
               )}
