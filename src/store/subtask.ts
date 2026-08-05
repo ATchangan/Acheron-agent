@@ -28,7 +28,9 @@ export async function runDispatch(
         const out: string[] = []
         // 分发开始：所有子 Agent 一并显示（并发协作）
         const validAgents = tasks.map(t => t.agent).filter(n => agents[n])
-        useChatStore.setState(s => ({ activeAgents: [...new Set([...s.activeAgents, ...validAgents])] }))
+        // 子任务活跃角色写入当前会话字段(全局 activeAgents 会跨会话串扰)
+        const dispatchSid = useChatStore.getState().cid
+        if (dispatchSid) useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === dispatchSid ? { ...x, activeAgents: [...new Set([...(x.activeAgents || []), ...validAgents])] } : x) }))
         // 并行执行子任务（每个子 Agent 独立系统提示词 + 真实工具调用循环 —— 子 Agent 也能调用工具真正干活）
         const dispStartGen = getTaskGen()
         const results = await Promise.all(tasks.map(async (t) => {
@@ -49,9 +51,11 @@ export async function runDispatch(
           let subRounds = 0
           let subRetried = false
           const subRun = () => new Promise<string>((resolve) => {
+            // 子任务总超时兜底(180s): 防 LLM 挂起导致 dispatch 永久等待
+            const subTimeout = setTimeout(() => resolve(subText || '(子任务超时)'), 60000)
             const step = () => {
               subRounds++
-              if (subRounds > SUB_ROUND_LIMIT) { resolve(subText || '(子任务轮次上限)'); return }
+              if (subRounds > SUB_ROUND_LIMIT) { clearTimeout(subTimeout); resolve(subText || '(子任务轮次上限)'); return }
               // 防御性清理 —— 丢弃孤儿 tool 消息(前面不是带 tool_calls 的 assistant), 防止 DeepSeek 400
               const clean: LLMMessage[] = []
               for (const mm of subMsgs) {
@@ -68,6 +72,7 @@ export async function runDispatch(
               let settled = false
               const settle = () => {
                 if (settled) return; settled = true
+                clearTimeout(subTimeout)
                 cbs.forEach(f => f())
                 if (tcs.length) {
                   ;(async () => {
@@ -89,7 +94,7 @@ export async function runDispatch(
               cbs.push(window.huangquan.llm.onChunk((d: ChunkData) => { if (d && d.requestId && d.requestId !== rid) return; if (d.content) text += d.content; if (d.done) setTimeout(settle, 200) }))
               cbs.push(window.huangquan.llm.onToolCall((tc: ToolCallDelta) => { if (tc && tc.requestId && tc.requestId !== rid) return; if (tc?.function?.name) tcs.push({ id: tc.id || 'c' + Date.now(), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) }))
               cbs.push(window.huangquan.llm.onError((e: unknown) => {
-                if (settled) return; settled = true; cbs.forEach(f => f())
+                if (settled) return; settled = true; clearTimeout(subTimeout); cbs.forEach(f => f())
                 // 用户终止任务后不重试(终止由 taskGen 变化标记)
                 if (getTaskGen() !== dispStartGen) { resolve('已终止'); return }
                 const em = e as { error?: string }
@@ -98,7 +103,7 @@ export async function runDispatch(
                 resolve('E:' + msg)
               }))
               window.huangquan.llm.chat({ provider: p.type, model, apiKey: p.apiKey, baseUrl: p.baseUrl, messages: subMsgs, tools: agTools, requestId: rid }).catch((e: unknown) => {
-                if (settled) return; settled = true; cbs.forEach(f => f())
+                if (settled) return; settled = true; clearTimeout(subTimeout); cbs.forEach(f => f())
                 if (getTaskGen() !== dispStartGen) { resolve('已终止'); return }
                 const msg = errMsg(e)
                 if (!subRetried) { subRetried = true; setTimeout(step, 400); return }

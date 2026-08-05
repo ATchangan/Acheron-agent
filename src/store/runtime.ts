@@ -183,7 +183,8 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
   const curAg = useChatStore.getState().cur()?.agent || window.__huangquan_agent
   if (curAg) {
     const agDef = useAgents()[curAg]
-    if (agDef && !agDef.tools.includes('*') && !agDef.tools.includes(name)) return 'E:权限不足，该 Agent 无权调用 ' + name
+    // 协作/基础工具恒放行(与 filterToolsByAgent 注入层一致): 专业 Agent 也能 dispatch/handoff/session_search
+    if (agDef && !agDef.tools.includes('*') && !['handoff', 'dispatch', 'list_agents', 'session_search'].includes(name) && !agDef.tools.includes(name)) return 'E:权限不足，该 Agent 无权调用 ' + name
   }
   // v0.3.0 M4: 插件工具 —— plugin_<plugin>__<tool> → IPC vm 沙箱执行
   if (name.startsWith('plugin_')) {
@@ -321,7 +322,20 @@ export async function runTool(name: string, a: Record<string, unknown>, snapCfg?
       case 'handoff': { const agents = useAgents(); if (!A.agent_name) return 'E:need agent_name'; const ag = agents[A.agent_name]; if (!ag) return 'E:unknown agent: ' + A.agent_name + ' (可用: ' + Object.keys(agents).join(', ') + ')'; const dAgents: string[] = useSettingsStore.getState().general.disabledAgents || []; if (dAgents.includes(A.agent_name)) return 'E:该 Agent 已被禁用: ' + A.agent_name + ' (设置→协作 中可重新启用)'; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: A.agent_name, agentManual: false } : x) })); useChatStore.setState(s => ({ activeAgents: s.activeAgents.includes(A.agent_name) ? s.activeAgents : [...s.activeAgents, A.agent_name] })); return `✅ 已交接给 ${A.agent_name}(${ag.role})。原因: ${A.reason || '能力边界外'}。现在你以 ${A.agent_name} 的身份继续执行。\n\n【${A.agent_name} 身份】${ag.prompt}` }
       case 'list_agents': { return Object.entries(useAgents()).map(([n,ag]) => `${ag.icon} **${n}** (${ag.role}): ${ag.prompt.slice(0,80)}... | 工具: ${ag.tools.join(', ')}`).join('\n\n') }
       // 任务分发 —— 并行分发给多个子 Agent 独立执行（chatOnce 非流式），真正实现多 Agent 协作
-      case 'dispatch': { let dTasks: { agent: string; task: string }[] = []; try { dTasks = JSON.parse(A.tasks || A.plan || '[]') } catch { dTasks = [] }; return await runDispatch(dTasks, snapCfg, () => taskGen, runTool) }
+      case 'dispatch': {
+        // 参数容错: 兼容 数组 / {tasks:[...]} / JSON 字符串 三种格式(DeepSeek 等模型传参风格不一)
+        let dTasks: { agent: string; task: string }[] = []
+        try {
+          const raw = A.tasks ?? A.plan ?? '[]'
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+          if (Array.isArray(parsed)) dTasks = parsed
+          else if (parsed && Array.isArray((parsed as { tasks?: unknown }).tasks)) dTasks = (parsed as { tasks: { agent: string; task: string }[] }).tasks
+        } catch { dTasks = [] }
+        // dispatch 总超时护栏(90s): 子任务 LLM 挂起时强制返回, 防止工具循环永久等待
+        const dispatchPromise = runDispatch(dTasks, snapCfg, () => taskGen, runTool)
+        const dispatchTimeout = new Promise<string>(resolve => setTimeout(() => resolve('E:dispatch 超时(90s)，部分子任务未完成，请重试或检查网络'), 90000))
+        return await Promise.race([dispatchPromise, dispatchTimeout])
+      }
       case 'list_workflows': { return Object.entries(WORKFLOWS).map(([id,w]) => `- **${id}** (${w.name}): 触发词 → ${w.triggers.slice(0,3).join(', ')}; ${w.steps.length} 步骤`).join('\n') }
       case 'run_workflow': { if (!A.workflow_id) return 'E:need workflow_id'; const wf = WORKFLOWS[A.workflow_id]; if (!wf) return 'E:unknown workflow: ' + A.workflow_id; let vars: Record<string, string> = {}; try { vars = JSON.parse(A.variables || '{}') } catch { vars = {} }; const steps = wf.steps.map((s,i) => `${i+1}. ${s.desc} → \`${s.tool}(${s.args_template.replace(/\{(\w+)\}/g,(_:string,k:string)=>vars[k]||`{${k}}`)})\``).join('\n'); return `工作流 **${wf.name}** (${wf.steps.length}步):\n${steps}\n\n请按顺序执行以上步骤，每步完成后验证结果。` }
       case 'read_image': { if (!A.path) return 'E:need path'; return await window.huangquan.computer.readImageBase64(A.path) }
