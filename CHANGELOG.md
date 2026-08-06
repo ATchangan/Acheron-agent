@@ -41,50 +41,158 @@ Token 优化系列：工具白名单注入/结果瘦身/记忆裁剪/工作流�
 
 ## v0.3.1（2026-08-05）
 
-- 会话级并发状态重构（多会话互不串台）；停止/重发/自动续跑只作用于当前会话
-- 主进程拆分（main.ts 108KB → 28KB，107 个 IPC handler 迁入 18 个域文件）；SettingsView 拆分（13 tab）；chat.ts 拆分
-- 安全加固：workflow 工具防挂起（30s 超时兜底）、插件沙箱 fs 路径限制、构建类型门禁、LLM 日志脱敏
-- 全库 any 清零；vitest 测试基座引入
+**会话修复（块 A~F）**
+- 会话级并发状态模块（session-state.ts），取代全局状态，多会话并发互不串台（Agent 状态/插话队列/阶段气泡全部会话级）
+- 停止/重发/自动续跑：终止只作用于当前会话（会话级任务代号 + abort 会话过滤）
+- 发送幂等去重（同一内容 500ms 内重复发送忽略）
+- 清空边界 / 中途保存（长任务每 30 秒自动落盘）
+- 主进程保存队列：防抖合并、meta 写盘绑定、load 失败标记
+
+**重构（块 G~N）**
+- 主进程拆分：main.ts 108KB → 28KB，107 个 IPC handler 全部迁入 electron/ipc/ 18 个域文件（行为零变化、通道名零变化）
+- SettingsView 拆分：165KB → 11.9KB 壳，13 个 tab 迁入 src/components/settings/
+- chat.ts 拆分：51KB → 10.4KB，发送主逻辑迁入 chat-send.ts
+- 94 处补丁注释清零；组件全部 ≤25KB；全库 any 清零（0 处）
+- vitest 测试基座（8 个测试文件 29 个用例，`npm test` 全绿）
+
+**补丁（安全加固 + 构建门禁）**
+- workflow 工具防挂起：脚本未调用 `ctx.done` 或返回 Promise 后不 resolve 时，30 秒超时兜底 + 普通返回值自动收尾（原实现会永久卡住工具循环，stop 也救不回）
+- 插件沙箱 fs 路径限制：`require('fs')` 白名单全部包一层工作目录校验，插件不能读取工作目录外的任意文件
+- 构建类型门禁：`npm run build` 增加渲染层 `tsc --noEmit`（原来只查 electron 端，渲染层类型错误不会让 CI 失败）
+- LLM 日志脱敏：失败日志不再输出用户消息内容（只保留 role/工具结构）；`[LLM]` 调试日志收敛到 `HQ_LLM_DEBUG` 环境变量
+- 记忆安全扫描：保存记忆时检测 API Key / 授权头 / JWT 等 7 类敏感模式与 4 类 prompt 注入特征，命中即拒绝落盘
+- 插话队列补丁 M1~M4（有界合并/改向熔断/发送锁/序列断言）此前已并入本版
 
 ## v0.3.0（2026-08-04）
 
-- 类型基础重构（types.ts 统一类型来源，tsc strict 构建门禁）
-- Agent 实体化：7 位 Agent 真实工具白名单与能力路由、上下文隔离、白名单可编辑持久化
-- 插件执行层（vm 沙箱、require 白名单、10s 超时、4KB 截断）
-- 工作目录自定义、供应商面板预填、图片需求自动切换视觉模型、视觉任务强制队列
+- 类型基础重构：types.ts 成为全库统一类型来源，tsc --noEmit（strict + noImplicitAny）纳入构建门禁，历史约 90 条类型错误清零
+- chat.ts 模块化拆分：主模块 + context / memory / router / subtask / runtime 六个模块
+- Agent 实体化：7 位 Agent 有真实工具白名单与能力路由，子 Agent 上下文隔离，编队管理页白名单可编辑、可持久化
+- 插件执行层：index.js 协议 + vm 沙箱（require 白名单、10s 超时、4KB 输出截断）+ 权限 ask 确认，插件工具注入 LLM
+- 全局 any 清零：显式 any 全库移除，错误信息统一提取
+- 工作目录自定义：exec_command 执行目录跟随设置，新路径自动创建；设置页改完文件树立即刷新（不再靠 5s 轮询）；「◎」气泡一键切换工作目录
+- 供应商面板：点击供应商自动预填默认 BaseURL / API 类型（只填空字段），切换供应商前自动保存当前配置
+- 图片需求自动切换：发图时模型不支持视觉则自动切到可用视觉模型（同供应商优先），无可用模型则提示
+- 媒体自动生成：对话中遇到生图/生视频需求自动调用 media_img / media_video 工具，策略页可关闭自动生成
+- 视觉任务强制队列：识图任务强制走「视觉理解」模型，失败自动顺位切换，任务完成自动切回主力模型
+- 图片调度修复（FIX-A~G）：9 种图片格式直读视觉链路、拖入图统一压缩（≤1568px / ≤1.5MB）、HEIC 转换提示、模型还原 finally 全覆盖、视觉误判兜底
 
 ## v0.2.4（2026-08-03）
 
-- RAG embedding 可配置、中文 bigram 向量分词；情景记忆写盘防抖
-- 自动更新（启动检查 GitHub Releases）；设置页「关于」章节；CI 构建工作流
+- RAG embedding 升级：嵌入引擎可配置，TF-IDF 退役
+- 中文 bigram 向量分词，语义检索更准
+- 情景记忆写盘防抖，memory 异步写入
+- 自动更新：启动时检查 GitHub Releases 新版本并提示
+- 设置页新增「关于」章节（版本信息、软件更新独立 tab）
+- 新增 CI 构建工作流（.github/workflows/build.yml，推 tag 自动打包发布）
 - 危险命令拦截增强、skills 路径白名单
+- 历史截断保留摘要、插话队列会话归属、Promise 错误不再刷屏
 
 ## v0.2.3（2026-08-02）
 
-- 安全加固：API Key/customHeaders/webReadCookies DPAPI 加密落盘；命令注入修复；XSS 转义；路径穿越修复；abort 精确中止
-- 新功能：独立浏览器窗口+悬浮窗、TTS 语音朗读（Windows SAPI）、常驻无头浏览器+实时快照、单实例锁、思考气泡模式
-- 性能：read 分段读（>5MB 续读）、grep/find 异步化、会话元数据缓存、MCP SSE 跟随系统代理
-- 安装包修复：skillsDir 移至 userData（解决安装版启动崩溃）、多尺寸 icon.ico
+**安全加固**
+- API Key / customHeaders / webReadCookies 经 **DPAPI（safeStorage）加密落盘**，不再明文保存
+- 修复命令注入：skills/plugins 安装改用 spawn + 白名单校验
+- 修复技能预览 XSS：renderMarkdown 全量转义 + 协议白名单
+- 修复会话路径穿越：会话 id 白名单校验；sandbox 权限路径规范化（防 .. 穿越）
+- workflow 工具加固（限长 8KB + 严格模式）；mkdir 走 IPC（工作目录校验），不再拼 shell
+- abort 按 requestId 精确中止（多会话并发互不误杀）
+- 每工具权限表（ToolsView）接入 runTool，deny/ask 生效
+
+**新功能**
+- 独立浏览器窗口 + 使用中悬浮窗（hash 路由 #browser / #float）
+- **TTS 语音朗读**（Windows SAPI，离线可用）
+- 常驻无头浏览器 + 实时快照（agent 浏览时页面保持打开，前端可实时截图查看）
+- 单实例锁（防止多实例并行干扰悬浮窗/窗口）
+- 思考气泡模式：工具过程统一显示在「思考气泡」内，消息流保持干净
+- 大图压缩（≤1280px JPEG 0.8），避免本地视觉模型超时 + 会话文件膨胀
+
+**修复与性能**
+- read 工具 offset/limit 透传主进程分段读（>5MB 续读）
+- grep/find 异步化（fs.promises）+ glob 转义修复 + 扩展名正则修复
+- recall_memory 接入向量语义检索 + 关键词合并
+- 会话元数据缓存（避免 list 全量解析大会话）
+- MCP SSE 改用 net.fetch（跟随系统代理）
+- 时间戳置于 prompt 绝对末尾，缓存前缀稳定
+- 崩溃日志异步追加；清理主进程双 Agent 体系与 planner/workflow 死代码（6 文件）
+
+**安装包修复（0.2.3）**
+- 修复安装版启动崩溃：skillsDir 移至 userData（原指向 app.asar 内目录，mkdir 抛 ENOTDIR 导致主窗口不创建）
+- 修复 exe/快捷方式图标：移除 signAndEditExecutable:false（会跳过 exe 资源编辑）+ 多尺寸 icon.ico
 
 ## v0.2.2（2026-08-01）
 
-- web_read 网页解析工具（playwright-core + 系统 Edge）；GPU 渲染加速选项（auto/gpu/cpu）；流式渲染 40ms 节流
-- 右侧 FileTree 文件浏览器；修复 Claude 鉴权（x-api-key）；settings.json 大字段剥离
-- 打包改为 NSIS 安装包（可选目录、桌面快捷方式），内置人设与技能
+**浏览器与网页解析**
+- 新增 **web_read 网页解析工具**（playwright-core + 系统 Edge 内核，无需额外安装浏览器）
+- 浏览器设置合并为单一「🌐 浏览器」卡片（3 个子分组）
+
+**渲染与性能**
+- **GPU 渲染加速选项**：自动识别（auto / gpu / cpu 三档），RTX 系列实测硬件加速生效
+- 流式渲染 40ms 节流，长回复更流畅
+- 会话保存异步写盘，不再卡界面
+
+**文件浏览器**
+- 右侧工作目录升级为 **FileTree 文件浏览器**：展开/折叠、双击打开、悬停重命名/删除、📂+/📄+ 新建
+- 原生右键菜单（复制路径带引号），写操作限工作目录内
+
+**稳定性与配置**
+- 修复 Anthropic（Claude）鉴权：自动识别 x-api-key 而非 Bearer
+- settings.json 大字段剥离至 bgimage.dat（背景图与配置分离，避免每次保存全量写大文件）
+- Token 优化：工具结果截断（8000/3000/6000）、历史 40 条上限、记忆限量
+
+**打包**
+- 打包方式由 Portable 改为 **NSIS 安装包**（可选安装目录、桌面快捷方式）
+- 安装包内置 resources（人设 ishiki.md + 4 组技能），安装后功能完整
+- 全新安装为空白配置，API Key 等均需重新填写
 
 ## v0.2.1（2026-08-01）
 
-- 全局崩溃捕获 + 渲染进程崩溃自动恢复；IPC 安全序列化
-- Agent 编队改为星穹铁道角色；AbortController 并发请求；llm:chatOnce/llm:vision 接口
-- 对话历史导出、清空/恢复出厂、托盘设置、文件权限四档、工具开关、真实存储统计
+**稳定性**
+- 全局崩溃捕获：主进程异常记录 crash.log 不再直接崩溃
+- 禁用 GPU 硬件加速，防止 GPU 进程崩溃导致窗口渲染异常
+- 渲染进程崩溃自动恢复（render-process-gone 监听 + 自动重载）
+- IPC 安全序列化：消除循环引用 / Proxy / 不可序列化对象导致的报错
+- 文件读取 UTF-8 多字节边界修正，不再截断中文
+- 图片读取限制 20MB、目录扫描限制深度 8 / 5000 文件，防大目录阻塞
+
+**Agent 与 LLM**
+- Agent 编队改为**星穹铁道角色**（姬子/三月七/银狼/艾丝妲/知更鸟/黑天鹅/螺丝咕姆）
+- AbortController 替代全局标志位，支持并发请求与多工具调用累积
+- 新增 `llm:chatOnce` 非流式调用：多 Agent 分发时子 Agent 独立执行
+- 新增 `llm:vision` 视觉辅助接口：主模型不支持多模态时自动切视觉模型
+- 新增 `media:describe` 多媒体能力探测（LM Studio 本地视觉 / 即梦 / Agnes / 可灵）
+- 修复非 DeepSeek Provider 全部报「不支持的 Provider」（支持 OpenAI Compatible 类型）
+- 支持自定义请求 Headers（JSON 或 key=value）
+- 修复 baseUrl 已含 /v1 或 /v4 时路径重复问题
+
+**功能**
+- 对话历史导出（md / json / txt 到工作目录）
+- 清空全部对话历史、恢复出厂设置
+- 最小化 / 关闭缩至托盘设置
+- 文件权限四档（full / sandbox / readonly / ask）
+- 工具开关（禁用列表过滤）
+- 真实存储统计（会话/记忆/插件/缓存/工作区/设置）
+- 定时任务基于计划时间计算下次触发，防止漂移累积
+- 写操作时同步失效缓存
 
 ## v0.2.0（2026-07-30）
 
-- 多 Agent 协作系统（7 角色编队 + handoff + dispatch）；Plan-Execute-Verify 执行循环
-- 语义记忆系统 v2（TF-IDF + 余弦相似度 + 衰减遗忘）；上下文窗口智能管理；工具结果缓存
-- MCP 客户端（stdio + SSE）；工作流模板（6 个）；L0-L4 风险分级权限；皮肤系统；Skills 4 组 + 式神录插件
+- 🚂 多 Agent 协作系统：7 角色编队 + handoff 交接 + dispatch 并行分发
+- 📋 Plan-Execute-Verify 执行循环
+- 🧠 语义记忆系统 v2（TF-IDF + 余弦相似度 + 衰减遗忘 + Token 预算）
+- 🧠 上下文窗口智能管理（分层压缩 + Token 估算）
+- 💾 工具结果缓存（LRU+TTL，写操作自动失效）
+- 🔌 MCP 客户端（stdio + SSE 双传输）
+- 🔄 工作流模板系统（6 个内置模板）
+- 🛡️ L0-L4 风险分级权限 + 危险命令黑名单
+- 🎨 8 个新 UI 组件 + 皮肤系统（背景图自动提色）
+- 📚 Skills 扩充至 4 组 + 式神录插件系统
+- 🐛 修复 portable 模式 mkdirSync 启动崩溃
 
 ## v0.1.0（2026-07-29）
 
-- 初始发布：Electron + React + TypeScript；多 Provider LLM 支持 + 流式对话
-- 20 个内置工具 + 浏览器自动化 + 代码沙箱；会话管理 + 系统托盘 + 三套主题
+- 🎉 初始发布：Electron + React + TypeScript
+- 多 Provider LLM 支持 + 流式对话
+- 20 个内置工具 + 浏览器自动化 + 代码沙箱
+- 会话管理 + 系统托盘 + 三套主题
+- 聊天/工作双模式切换
