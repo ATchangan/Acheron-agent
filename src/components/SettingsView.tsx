@@ -6,7 +6,7 @@ import { DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA, extractSkinColors, clearSki
 import type { MediaProvider, ProviderConfig, MemoryData } from '../global'
 import type { GeneralSettings } from '../types'
 import { updateContextLimit, useChatStore } from '../store/chat'
-import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw } from 'lucide-react'
+import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw, Activity } from 'lucide-react'
 import { HourglassMark, ScrollMark, MaskMark } from './themed-icons'
 import { errMsg } from '../utils/safe'
 import AboutTab from './settings/AboutTab'
@@ -21,6 +21,7 @@ import ToolsTab from './settings/ToolsTab'
 import AdvancedTab from './settings/AdvancedTab'
 import CollabTab from './settings/CollabTab'
 import SkillsTab from './settings/SkillsTab'
+import DiagnosticsTab from './settings/DiagnosticsTab'
 import CronView from './CronView'
 import KnowledgeView from './KnowledgeView'
 import PluginsView from './PluginsView'
@@ -93,6 +94,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'mcp', icon: <Puzzle size={15} />, label: 'MCP' }, { key: 'skills', icon: <BookOpen size={15} />, label: '技能' },
     { key: 'skin', icon: <Palette size={15} />, label: '外观' },
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
+    { key: 'diagnostics', icon: <Activity size={15} />, label: '诊断' },
     { key: 'advanced', icon: <SettingsIcon size={15} />, label: '引擎' },
     { key: 'cron', icon: <HourglassMark size={15} />, label: '定时任务' },
     // 藏书阁（原知识库）：私人文档的录入/检索/问答
@@ -113,6 +115,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     ['skills', ['技能']],
     ['skin', ['外观', '主题', '皮肤', '背景', '字体', '字号', '透明', '动画']],
     ['stats', ['缓存', '统计', '用量', '命中']],
+    ['diagnostics', ['诊断', '轨迹', '日志', 'trace', '调试', '恢复']],
     ['advanced', ['引擎', '性能', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
     ['about', ['关于', '版本', '更新']],
     ['cron', ['定时', '任务', 'cron']],
@@ -165,7 +168,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
 
         {/* Content */}
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'about' ? <AboutTab /> : null}
+          {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'diagnostics' ? <DiagnosticsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'about' ? <AboutTab /> : null}
         </div>
       </div>
       {/* 新建工作流弹窗(Electron prompt 不支持) */}

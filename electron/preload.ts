@@ -33,9 +33,19 @@ contextBridge.exposeInMainWorld('huangquan', {
   getPathForFile: (f: File) => webUtils.getPathForFile(f),
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
+    show: () => ipcRenderer.invoke('window:show'),
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
     setOpacity: (o: number) => ipcRenderer.invoke('window:setOpacity', o),
+  },
+  risk: {
+    respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string) =>
+      ipcRenderer.invoke('risk:respond', requestId, decision, approveTask, taskKey),
+    onConfirm: (cb: (d: unknown) => void) => {
+      const h = (_: unknown, d: unknown) => cb(d)
+      ipcRenderer.on('risk:confirm', h)
+      return () => ipcRenderer.removeListener('risk:confirm', h)
+    },
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
@@ -90,6 +100,32 @@ contextBridge.exposeInMainWorld('huangquan', {
   mcpSSEConnect: (name: string, url: string, headers?: Record<string,string>) => ipcRenderer.invoke('mcp:sse:connect', name, url, headers),
   mcpSSECall: (server: string, tool: string, args: Record<string, unknown>) => ipcRenderer.invoke('mcp:sse:call', server, tool, args),
   mcpSSEList: () => ipcRenderer.invoke('mcp:sse:list'),
+  mcpConfirm: (info: { server: string; tool: string; args: Record<string, unknown> }) => ipcRenderer.invoke('mcp:confirm', info),
+  tasks: {
+    list: () => ipcRenderer.invoke('task:list'),
+    start: (t: unknown) => ipcRenderer.invoke('task:start', t),
+    update: (id: string, patch: unknown) => ipcRenderer.invoke('task:update', id, patch),
+    finish: (id: string, status: string, error?: string) => ipcRenderer.invoke('task:finish', id, status, error),
+    clear: (id?: string) => ipcRenderer.invoke('task:clear', id),
+  },
+  trace: {
+    log: (entry: unknown) => ipcRenderer.invoke('trace:log', entry),
+    list: (limit?: number) => ipcRenderer.invoke('trace:list', limit),
+    clear: () => ipcRenderer.invoke('trace:clear'),
+  },
+  engine: {
+    start: (p: unknown) => ipcRenderer.invoke('engine:start', p),
+    stop: (sid: string) => ipcRenderer.invoke('engine:stop', sid),
+    interject: (sid: string, content: string, images?: string[], attachments?: unknown, kind?: string, prefix?: string) => ipcRenderer.invoke('engine:interject', sid, content, images, attachments, kind, prefix),
+    approve: (sid: string) => ipcRenderer.invoke('engine:approve', sid),
+    reject: (sid: string) => ipcRenderer.invoke('engine:reject', sid),
+    resume: (taskId: string) => ipcRenderer.invoke('engine:resume', taskId),
+    onEvent: (cb: (ev: unknown) => void) => {
+      const h = (_: unknown, ev: unknown) => cb(ev)
+      ipcRenderer.on('engine:event', h)
+      return () => ipcRenderer.removeListener('engine:event', h)
+    },
+  },
   mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => ipcRenderer.invoke('media:describe', opts),
     mediaGen: (opts: { kind: 'img' | 'video'; prompt: string; providerId?: string; model?: string; ratio?: string; duration?: number }) => ipcRenderer.invoke('media:gen', opts),
   tts: { speak: (text: string, rate?: number) => ipcRenderer.invoke('tts:speak', text, rate) },
@@ -138,6 +174,14 @@ contextBridge.exposeInMainWorld('huangquan', {
     read: (url: string, mode?: string) => ipcRenderer.invoke('web:read', url, mode),
     browse: (url: string) => ipcRenderer.invoke('browser:open', url),
     browseScreenshot: (url: string) => ipcRenderer.invoke('browser:screenshot', url),
+    // v0.3.3: 浏览器交互工具
+    browseSnapshot: (url?: string) => ipcRenderer.invoke('browser:snapshotA11y', url),
+    browserClick: (ref: string) => ipcRenderer.invoke('browser:click', ref),
+    browserType: (ref: string, text: string) => ipcRenderer.invoke('browser:type', ref, text),
+    browserPress: (key: string) => ipcRenderer.invoke('browser:press', key),
+    browserScroll: (direction: string) => ipcRenderer.invoke('browser:scroll', direction),
+    closeBrowserSession: (sid: string, taskId: string) => ipcRenderer.invoke('browser:closeSession', sid + '::' + taskId),
+    openExternal: (url: string) => ipcRenderer.invoke('browser:openExternal', url),
     // 实时浏览器面板
     navigate: (url: string) => ipcRenderer.invoke('browser:navigate', url),
     back: () => ipcRenderer.invoke('browser:back'),
@@ -174,6 +218,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     resetOne: (model: string) => ipcRenderer.invoke('modelStats:resetOne', model),
   },
   cacheClear: () => ipcRenderer.invoke('cache:clear'),
+  cacheCleanChromium: () => ipcRenderer.invoke('cache:cleanChromium'),
   storageStats: () => ipcRenderer.invoke('storage:stats'),
   llm: {
     chat: (params: unknown) => ipcRenderer.invoke('llm:chat', params),

@@ -23,7 +23,7 @@ export default function CollabTab(props: {
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
           {['自动', '手动', '关闭'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 6, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: (g.collabMode || '自动') === s ? '#fff' : C.muted, background: (g.collabMode || '自动') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.collabMode || '自动') === s} onChange={() => save({ collabMode: s })} />{s}</label>)}
         </div>
-        <NumSetting label="最多同时活跃角色" hint="" value={g.maxAgents || 5} min={1} max={10} unit="个" onChange={v => save({ maxAgents: v })} />
+        <NumSetting label="最多同时活跃角色" hint="dispatch 子任务同时执行的最大数量，超出部分自动排队" value={g.maxAgents || 5} min={1} max={10} unit="个" onChange={v => save({ maxAgents: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>编队成员</div>
@@ -47,9 +47,9 @@ export default function CollabTab(props: {
       </div>
       <div style={S.card}>
         <div style={S.section}>任务交接规则</div>
-        <Toggle checked={g.handoffContext !== false} onChange={v => save({ handoffContext: v })} label="传递完整上下文" hint="交接时带上需求背景、已有代码、约束条件" />
-        <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接的角色完成任务后自动交回" />
-        <div style={S.row}><div style={S.label}>最大连续交接次数</div><input type="number" style={S.inp} value={g.maxHandoffChain || 3} onChange={e => save({ maxHandoffChain: parseInt(e.target.value) || 3 })} /></div>
+        <Toggle checked={g.handoffContext !== false} onChange={v => save({ handoffContext: v })} label="传递完整上下文" hint="关闭后，被交接角色只看到交接点之后的说明与结果，不带完整历史" />
+        <Toggle checked={g.handoffAutoReturn !== false} onChange={v => save({ handoffAutoReturn: v })} label="完成后自动交回" hint="被交接的角色输出最终结果后，身份自动回到上一角色" />
+        <NumSetting label="最大交接链长度" hint="达到上限后自动顺延，不中断任务；同一角色被反复交接时自动熔断" value={g.maxHandoffChain || 3} min={1} max={100} unit="次" onChange={v => save({ maxHandoffChain: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>交叉验证</div>

@@ -180,7 +180,7 @@ export default function ToolsTab() {
       <div style={S.card}>
         <div style={S.section}>会话管理</div>
         <Toggle checked={g.autoSave !== false} onChange={v => save({ autoSave: v })} label="自动保存会话" hint="每次对话结束后自动保存到本地文件" />
-        <NumSetting label="最大会话数" hint="超出后自动清理最早的会话" value={g.maxSessions || 50} min={5} max={200} unit="个" onChange={v => save({ maxSessions: v })} />
+        <NumSetting label="最大会话数" hint="0=不限；超出后自动隐藏最早的会话（文件仍在，搜索可找回；置顶会话永久保留）" value={g.maxSessions ?? 0} min={0} max={500} unit="个" onChange={v => save({ maxSessions: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>插件管理</div>

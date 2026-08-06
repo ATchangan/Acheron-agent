@@ -63,8 +63,6 @@ export interface GeneralSettings {
   bgImage?: string
   bgOpacity?: number
   skinColors?: { r: number; g: number; b: number }
-  agentAvatar?: string
-  agentAvatarImage?: string
   notifyEnabled?: boolean
   episodicMemory?: boolean
   meltdownLimit?: number
@@ -73,11 +71,20 @@ export interface GeneralSettings {
   retryCount?: number
   parallelTools?: boolean
   toolTimeout?: number
+  autoCleanCache?: boolean        // 自动清理 Chromium 缓存(默认开启)
+  autoCleanCacheSize?: number     // 触发阈值 MB(默认 200)
   cardMaxHeight?: number
   singleBubble?: boolean
   disabledTools?: string[]
   // 工具级权限表(deny/ask/full): 并入设置存储, 取代 localStorage 明文
   toolPerms?: Record<string, string>
+  // v0.3.3 内核加固: 风险操作确认/任务 token 预算/诊断轨迹/MCP 自动注入
+  riskConfirm?: boolean       // 默认开: L2/L3 终端与删除操作弹原生确认
+  maxTaskTokens?: number      // 单任务 token 预算, 0=不限
+  traceEnabled?: boolean      // 默认开: 本地诊断轨迹
+  mcpAutoInject?: boolean     // 默认开: MCP 工具 schema 自动并入 LLM
+  planGate?: boolean          // 实验: 首次工具调用前展示计划等用户批准(独立内核)
+  llmSummary?: boolean        // 实验: 上下文压缩用 LLM 摘要(独立内核)
   autoSave?: boolean
   maxSessions?: number
   temperature?: number

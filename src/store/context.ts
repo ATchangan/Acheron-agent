@@ -196,7 +196,7 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const workPrompt = base +
     multiAgent + 
     // v0.3.2 T10: 静态区块瘦身 —— 删重复表述与冗余示例, 约束字段/禁止项逐字保留
-    (wp ? '## 自定义工作人设\n' + wp + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n工具执行期间严禁输出任何文字，中间日志仅写入右侧终端面板\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框')
+    (wp ? '## 自定义工作人设\n' + wp + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n每次调用工具前，先用一句简短自然语言说明这一步在做什么（例如：先读取项目说明、查找关键词、执行命令）。这句话会显示为你的工作步骤卡片，除步骤说明外不要输出其他文字。\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框')
   
   // 自定义系统提示词 + 语言指令接入运行时
   const g2 = useSettingsStore.getState().general
@@ -277,7 +277,8 @@ export function buildContextualMessages(
       d.push({ role: 'tool', content: body, tool_call_id: m.tool_call_id || 'c_' + uuidv4().slice(0, 8) })
     }
     // v0.3.3 T2: 历史 tool_calls 参数截断(定位字段全量, 超长内容截断+标记; 已执行结果不受影响); v0.3.5 T2: argSlim 开关
-    else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: null, reasoning_content: m.reasoning_content || '', tool_calls: opts.gSnap.perf?.argSlim === false ? m.tool_calls : m.tool_calls.map(slimToolCallArgs) })
+    // 步骤卡片消息: 把模型生成的步骤说明一并回传给 API(历史保真), 无步骤说明时为 null
+    else if (m.role === 'assistant' && m.tool_calls) d.push({ role: 'assistant', content: (m.content || null), reasoning_content: m.reasoning_content || '', tool_calls: opts.gSnap.perf?.argSlim === false ? m.tool_calls : m.tool_calls.map(slimToolCallArgs) })
     // 主模型支持视觉才传 image_url；否则只传文字（图片内容已由视觉辅助模型分析成文字）
     // v0.3.3 T1: 同图历史轮次降级为文字(最新用户消息带图永远保留原图)
     else if (m.role === 'user' && m.images?.length && withImages) {

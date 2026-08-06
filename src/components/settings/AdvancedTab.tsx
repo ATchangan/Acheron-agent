@@ -24,17 +24,40 @@ export default function AdvancedTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>执行控制</div>
-        <NumSetting label="工具调用上限" hint="单次任务最多执行多少轮操作" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
+        <NumSetting label="工具调用上限" hint="初始上限，任务仍在推进时自动顺延，直到任务完成" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
         <NumSetting label="失败重试次数" hint="单个工具失败后重试次数（0=不重试）" value={g.retryCount ?? 3} min={0} max={10} unit="次" onChange={v => save({ retryCount: v })} />
-        <NumSetting label="工具超时" hint="单工具调用超时阈值" value={g.toolTimeout || 120} min={10} max={600} unit="秒" onChange={v => save({ toolTimeout: v })} />
+        <NumSetting label="工具超时" hint="单工具/子任务无进展判定阈值，不设总时长上限" value={g.toolTimeout || 120} min={10} max={600} unit="秒" onChange={v => save({ toolTimeout: v })} />
         <NumSetting label="熔断阈值" hint="同一操作反复触发到上限时自动停止" value={g.meltdownLimit || 3} min={1} max={10} unit="次" onChange={v => save({ meltdownLimit: v })} />
         <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读取类工具（读取/列出/搜索等）并发执行，减少等待时间" />
+      </div>
+      <div style={S.card}>
+        <div style={S.section}>任务可靠性 (v0.3.3)</div>
+        <Toggle checked={g.riskConfirm !== false} onChange={v => save({ riskConfirm: v })} label="风险操作确认" hint="执行命令/删除文件等 L2-L3 操作前弹原生确认框；关闭后静默放行" />
+        <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
+        <Toggle checked={g.traceEnabled !== false} onChange={v => save({ traceEnabled: v })} label="本地诊断轨迹" hint="记录任务/LLM/工具调用链，可在 设置→诊断 查看；仅存本地" />
+        <Toggle checked={g.mcpAutoInject !== false} onChange={v => save({ mcpAutoInject: v })} label="MCP 工具自动注入" hint="连接过的 MCP 服务器工具 schema 自动并入模型工具列表，无需手动 mcp_call" />
+        <Toggle checked={g.planGate === true} onChange={v => save({ planGate: v })} label="计划确认门（实验）" hint="首次调用工具前先展示执行计划，等你批准后再动手（Claude/Cursor 风格）" />
+        <Toggle checked={g.llmSummary === true} onChange={v => save({ llmSummary: v })} label="LLM 摘要压缩（实验）" hint="长会话早期消息交给模型压缩成要点，替代规则截断（消耗少量 token）" />
       </div>
       <div style={S.card}>
         <div style={S.section}>上下文管理</div>
         {/* v0.3.4 T2: 缓存友好度提示 —— system 头部保持稳定即可最大化供应商前缀缓存命中 */}
         <div style={S.hint}>保持系统提示词稳定可降低每次请求费用；切换角色后首次请求费用略高属正常。</div>
         <NumSetting label="压缩触发阈值" hint="对话变长时自动精简较早的内容" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
+      </div>
+      <div style={S.card}>
+        <div style={S.section}>缓存管理 (v0.3.3)</div>
+        <Toggle checked={g.autoCleanCache !== false} onChange={v => save({ autoCleanCache: v })} label="自动清理 Chromium 缓存" hint="启动时若 Cache/Code Cache/GPU 缓存超过阈值则自动清空（默认开启）" />
+        <NumSetting label="清理阈值" hint="缓存总大小超过该值(MB)时自动清理" value={g.autoCleanCacheSize || 200} min={50} max={5000} unit=" MB" onChange={v => save({ autoCleanCacheSize: v })} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <button style={S.btn('ghost')} onClick={async () => {
+            try {
+              const r = await window.huangquan.cacheCleanChromium()
+              showToast('已清理 ' + r.freedMb + 'MB（缓存共 ' + r.totalMb + 'MB）')
+            } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+          }}>立即清理</button>
+          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>清理后可释放磁盘空间，应用会自动重建缓存</span>
+        </div>
       </div>
       <div style={S.card}>
         <div style={S.section}>流量与性能</div>
@@ -145,7 +168,7 @@ export default function AdvancedTab() {
           <button style={S.btn('primary')} onClick={async () => { try { const workDir = g.workDir || ''; const path = await window.huangquan.sessions.export(g.exportFormat || 'md', workDir); showToast(path.startsWith('E:') ? path : ('已导出：' + path)) } catch { showToast('导出失败') } }}>导出对话历史</button>
         </div>
         <div style={S.row}><div style={S.label}>导出格式</div><select style={S.sel} value={g.exportFormat || 'md'} onChange={e => save({ exportFormat: e.target.value })}><option value="md">Markdown</option><option value="json">JSON</option><option value="txt">纯文本</option></select></div>
-        <Toggle checked={g.trayEnabled === true} onChange={v => save({ trayEnabled: v })} label="最小化/关闭时缩至系统托盘" hint="开启后点击最小化或关闭按钮，窗口隐藏到托盘继续运行；从托盘菜单「退出」才真正退出" />
+        <Toggle checked={g.trayEnabled !== false} onChange={v => save({ trayEnabled: v })} label="最小化/关闭时缩至系统托盘" hint="默认开启：点击最小化或关闭按钮，窗口隐藏到托盘继续运行；从托盘菜单「退出」才真正退出" />
       </div>
       {toast && <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: C.accent, color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 'calc(var(--ui-font-size) - 1px)', zIndex: 9999 }}>{toast}</div>}
     </div>

@@ -31,7 +31,7 @@ $alive = -not $proc.HasExited
 Write-Output ("ALIVE={0}" -f $alive)
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$outDir = 'C:\Users\ROG\.codex\visualizations\2026\08\04\019fcd60-e9a7-72e3-8aec-46c31810326e'
+$outDir = Join-Path $env:TEMP 'hq-verify-artifacts'
 $extra = ''
 if ($About) { $extra = 'about' }
 if ($Strategy) { $extra = 'strategy' }

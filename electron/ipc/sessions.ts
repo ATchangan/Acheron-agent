@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
+import { writeFileAtomic, writeFileAtomicAsync } from '../fs-atomic'
 
 // 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
 const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
@@ -9,14 +10,19 @@ const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
 export function registerSessionIpc(deps: {
   sessionsDir: string
   userDataPath: string
-  sessionMeta: Map<string, { title?: string; messageCount?: number; updatedAt?: string }>
+  sessionMeta: Map<string, { title?: string; messageCount?: number; updatedAt?: string; mode?: string; pinned?: boolean }>
   buildSessionMeta: () => void
   safeClone: (obj: unknown, seen?: WeakSet<object>) => unknown
 }): void {
   const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone } = deps
+  const searchIndexPath = join(userDataPath, 'search-index.json')
 
-  // ─── 会话全文关键词搜索(轻量版; 0.4.0 升级 FTS5 后端) ───
-  ipcMain.handle('sessions:search', (_e, query: string, limit?: number) => searchSessionsInDir(sessionsDir, query, limit))
+  // ─── 会话全文关键词搜索(v0.3.3: FTS5-lite 倒排索引, 替代全量扫描) ───
+  ipcMain.handle('sessions:search', async (_e, query: string, limit?: number) => {
+    if (indexCache === null) loadIndex(searchIndexPath, sessionsDir)
+    if ((indexCache?.length || 0) === 0 && fs.existsSync(sessionsDir)) rebuildIndexFromDir(sessionsDir)
+    return searchSessionsIndex(query, limit)
+  })
 
   // v0.3.1 E: 每会话串行保存队列 + meta 与写盘绑定(FIX-4/5/7)
   const saveQueues = new Map<string, Promise<void>>()
@@ -28,21 +34,28 @@ export function registerSessionIpc(deps: {
       while (pendingSaves.has(id)) {
         const latest = pendingSaves.get(id)!; pendingSaves.delete(id)
         try {
-          await fs.promises.writeFile(join(sessionsDir, id + '.json'), latest, 'utf-8')
-          let mt: { title?: string; messageCount?: number } = {}
+          await writeFileAtomicAsync(join(sessionsDir, id + '.json'), latest)
+          let mt: { title?: string; messageCount?: number; mode?: string; pinned?: boolean } = {}
           try { mt = JSON.parse(latest) } catch { /* 忽略 */ }
+          try {
+            const full = JSON.parse(latest)
+            if (full && full.id === id) updateIndexForSession(full, searchIndexPath)
+          } catch { /* 忽略 */ }
           sessionMeta.set(id, {
             title: String(mt.title || '新对话').slice(0, 60), messageCount: (mt.messageCount || 0) as number,
-            updatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(), mode: String(mt.mode || 'work'), pinned: mt.pinned === true,
           })                                       // FIX-5: meta 仅在写盘成功后更新
         } catch (e) {
           console.error('[SESSIONS] save error:', e instanceof Error ? e.message : String(e))
           // 写盘失败: meta 不更新(防幽灵会话)
         }
+        // 关键修复: 让出事件循环 —— 让同 id 的后续 save 能并入 pendingSaves,
+        // 否则 run() 同步跑完后 saveQueues 里残留"已完成"的 promise, 后续保存全部被吞
+        await new Promise<void>(r => setImmediate(r))
       }
-      saveQueues.delete(id)
     }
-    saveQueues.set(id, run())
+    const p = run().finally(() => saveQueues.delete(id))
+    saveQueues.set(id, p)
   }
 
   ipcMain.handle('sessions:audit', () => {
@@ -54,7 +67,7 @@ export function registerSessionIpc(deps: {
   ipcMain.handle('sessions:list', () => {
     try {
       if (sessionMeta.size === 0 && fs.existsSync(sessionsDir)) buildSessionMeta()
-      return [...sessionMeta.entries()].map(([id, m]) => ({ id, title: m.title, messageCount: m.messageCount, updatedAt: m.updatedAt }))
+      return [...sessionMeta.entries()].map(([id, m]) => ({ id, title: m.title, messageCount: m.messageCount, updatedAt: m.updatedAt, mode: m.mode, pinned: m.pinned }))
         .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
     } catch { return [] }
   })
@@ -79,13 +92,28 @@ export function registerSessionIpc(deps: {
     enqueueSave(id, content)
     return true
   })
-  ipcMain.handle('sessions:delete', (_e, id: string) => { try { if (!SAFE_ID.test(String(id || ''))) return false; fs.unlinkSync(join(sessionsDir, id + '.json')); sessionMeta.delete(id) } catch (e) { /* ok */ console.debug('[swallow]', e) }; return true })
+  ipcMain.handle('sessions:delete', (_e, id: string) => {
+    try {
+      if (!SAFE_ID.test(String(id || ''))) return false
+      fs.unlinkSync(join(sessionsDir, id + '.json'))
+      sessionMeta.delete(id)
+      if (indexCache) {
+        indexCache = indexCache.filter(d => d.sid !== id)
+        indexDirty = true
+        saveIndexNow()
+      }
+    } catch (e) { /* ok */ console.debug('[swallow]', e) }
+    return true
+  })
   // 清空全部对话历史
   ipcMain.handle('sessions:clearAll', () => {
     try {
       if (!fs.existsSync(sessionsDir)) return true
       for (const f of fs.readdirSync(sessionsDir)) { if (f.endsWith('.json')) fs.unlinkSync(join(sessionsDir, f)) }
       sessionMeta.clear()
+      indexCache = []
+      indexDirty = true
+      saveIndexNow()
       return true
     } catch { return false }
   })
@@ -119,6 +147,119 @@ export function registerSessionIpc(deps: {
 }
 
 export interface SessionHit { sid: string; title: string; role: string; snippet: string; ts: number }
+
+// ─── FTS5-lite 全文索引(v0.3.3 存储加固) ─────────────────
+// 无原生依赖的轻量倒排索引: 英文单词 + 中文 bigram, 会话保存时增量更新, 搜索不再全量扫 JSON。
+interface IndexDoc {
+  key: string
+  sid: string
+  title: string
+  role: string
+  text: string
+  ts: number
+  terms: string[]
+}
+let indexCache: IndexDoc[] | null = null
+let indexDirty = false
+let indexTimer: NodeJS.Timeout | null = null
+let idxPath = ''
+
+function tokenizeSearch(text: string): string[] {
+  const t = String(text || '').toLowerCase()
+  const latin = (t.match(/[a-z0-9_]+/g) || []).filter(w => w.length > 1)
+  const cn = t.match(/[\u4e00-\u9fff]/g) || []
+  const bigrams: string[] = []
+  for (let i = 0; i + 1 < cn.length; i++) bigrams.push(cn[i] + cn[i + 1])
+  return [...latin, ...bigrams]
+}
+
+function indexTerms(text: string): string[] {
+  return [...new Set(tokenizeSearch(text))].slice(0, 60)
+}
+
+function docsForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }): IndexDoc[] {
+  const out: IndexDoc[] = []
+  const msgs = s.messages || []
+  for (let i = 0; i < msgs.length && out.length < 300; i++) {
+    const m = msgs[i]
+    if (m.role !== 'user' && m.role !== 'assistant') continue
+    if (typeof m.content !== 'string' || m.content.trim().length < 2) continue
+    const text = m.content.trim().slice(0, 300)
+    const terms = indexTerms(text)
+    if (!terms.length) continue
+    out.push({ key: String(s.id) + ':' + (m.timestamp || i) + ':' + i, sid: String(s.id), title: String(s.title || '对话'), role: m.role, text, ts: Number(m.timestamp) || 0, terms })
+  }
+  return out
+}
+
+function saveIndexNow(): void {
+  if (!indexDirty || !idxPath) return
+  try { writeFileAtomic(idxPath, JSON.stringify({ version: 1, docs: indexCache || [] })) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+  indexDirty = false
+}
+
+function scheduleIndexSave(): void {
+  indexDirty = true
+  if (indexTimer) return
+  indexTimer = setTimeout(() => { indexTimer = null; try { saveIndexNow() } catch { /* 忽略 */ } }, 1500)
+}
+
+function loadIndex(indexPath: string, sessionsDir?: string): void {
+  idxPath = indexPath
+  try {
+    if (fs.existsSync(indexPath)) {
+      const d = JSON.parse(fs.readFileSync(indexPath, 'utf-8'))
+      indexCache = Array.isArray(d?.docs) ? d.docs : []
+      return
+    }
+  } catch { /* 损坏则重建 */ }
+  indexCache = []
+  if (sessionsDir && fs.existsSync(sessionsDir)) rebuildIndexFromDir(sessionsDir)
+}
+
+function rebuildIndexFromDir(sessionsDir: string): void {
+  try {
+    const docs: IndexDoc[] = []
+    for (const f of fs.readdirSync(sessionsDir)) {
+      if (!f.endsWith('.json')) continue
+      try {
+        const s = JSON.parse(fs.readFileSync(join(sessionsDir, f), 'utf-8'))
+        docs.push(...docsForSession(s))
+      } catch { /* 跳过损坏会话 */ }
+    }
+    indexCache = docs
+    indexDirty = true
+    saveIndexNow()
+  } catch { /* 忽略 */ }
+}
+
+function updateIndexForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, indexPath: string): void {
+  idxPath = indexPath
+  if (!indexCache) loadIndex(indexPath)
+  const rest = (indexCache || []).filter(d => d.sid !== s.id)
+  indexCache = [...rest, ...docsForSession(s)]
+  scheduleIndexSave()
+}
+
+function searchSessionsIndex(query: string, limit = 5): SessionHit[] {
+  const qterms = tokenizeSearch(query)
+  if (!qterms.length) return []
+  const docs = indexCache || []
+  const scored: { doc: IndexDoc; score: number }[] = []
+  for (const d of docs) {
+    let score = 0
+    for (const t of qterms) if (d.terms.includes(t)) score += /^[a-z0-9]/.test(t) ? 1 : 2
+    if (score > 0) scored.push({ doc: d, score })
+  }
+  scored.sort((a, b) => b.score - a.score || b.doc.ts - a.doc.ts)
+  return scored.slice(0, Math.max(1, Math.min(20, Number(limit) || 5))).map(x => {
+    const lower = x.doc.text.toLowerCase()
+    const idx = qterms.map(t => lower.indexOf(t)).filter(i => i >= 0).sort((a, b) => a - b)[0]
+    const from = idx >= 0 ? Math.max(0, idx - 30) : 0
+    return { sid: x.doc.sid, title: x.doc.title, role: x.doc.role, snippet: x.doc.text.slice(from, from + 120), ts: x.doc.ts }
+  })
+}
+
 export function searchSessionsInDir(dir: string, query: string, limit = 5): SessionHit[] {
   const q = String(query || '').toLowerCase().trim()
   if (!q || q.length < 2) return []

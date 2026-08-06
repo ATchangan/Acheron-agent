@@ -141,7 +141,7 @@
 .chat-textarea::placeholder{color:var(--text-muted)}
 .input-wrapper{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:5px 10px;margin-top:4px}
 .input-left-icons{display:flex;align-items:center;gap:4px}
-.input-left-icons>.dropdown-wrap{position:relative;display:flex;align-items:center}
+.dropdown-wrap{position:relative;display:flex;align-items:center}
 /* 移除旧的 button 全局样式，改用更精准的选择器 */
 .input-left-icons .dropdown-wrap > button{background:transparent;border:none;cursor:pointer;color:var(--text-secondary);border-radius:6px;transition:all .12s}
 .dropdown-menu{position:absolute;bottom:36px;left:0;z-index:100;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:4px;min-width:140px;box-shadow:var(--shadow-2)}
@@ -239,3 +239,87 @@
 .content-placeholder .tag{font-size: var(--ui-font-size);color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:8px 24px}
 
 @keyframes floatSpin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+
+/* ── 工作步骤卡片(替代右侧终端) ─────────────────────── */
+.work-step-card{background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.work-step-head{display:flex;align-items:flex-start;gap:10px}
+.work-step-text{font-size: calc(var(--ui-font-size) - 1px);color:var(--text-primary);line-height:1.55;word-break:break-word;flex:1}
+.work-step-text.work-step-placeholder{color:var(--text-muted);font-style:italic}
+.work-step-think{font-size: calc(var(--ui-font-size) - 3px);color:var(--text-muted);white-space:nowrap;flex-shrink:0;padding-top:2px}
+.tool-rows{display:flex;flex-direction:column;gap:4px}
+.tool-chip{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;background:var(--bg-surface);font-size: calc(var(--ui-font-size) - 2px);overflow:hidden;min-width:0}
+.tool-chip-head{display:flex;align-items:center;gap:6px;padding:4px 9px;cursor:pointer;user-select:none;width:100%;box-sizing:border-box}
+.tool-chip-head:hover{background:var(--bg-hover)}
+.tool-chip-status{width:14px;text-align:center;flex-shrink:0;font-weight:700}
+.tool-chip-name{color:var(--accent-green);font-weight:600;white-space:nowrap}
+.tool-chip-args{color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.tool-chip-dur{color:var(--text-muted);font-size: calc(var(--ui-font-size) - 3px);white-space:nowrap;flex-shrink:0}
+.tool-chip-error .tool-chip-name,.tool-chip-error .tool-chip-status{color:var(--danger)}
+.tool-chip-done .tool-chip-status{color:var(--accent-green)}
+.tool-chip-running .tool-chip-status{color:var(--accent)}
+.tool-chip-pending .tool-chip-status{color:var(--text-muted)}
+.tool-chip-result{max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;padding:6px 9px;border-top:1px solid var(--border);font-size: calc(var(--ui-font-size) - 3px);margin:0;background:var(--bg-card)}
+.work-step-footer{font-size: calc(var(--ui-font-size) - 3px);color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px}
+.chip-spinner{display:inline-block;width:10px;height:10px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:chipSpin .8s linear infinite;vertical-align:-1px}
+@keyframes chipSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+
+/* ===== 任务进程卡 —— 同一任务的连续步骤卡片合并为一张紧凑卡片 ===== */
+.task-progress-card{background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);overflow:hidden}
+.task-progress-head{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;user-select:none;transition:background .15s}
+.task-progress-head:hover{background:var(--bg-hover)}
+.task-progress-status{width:16px;text-align:center;flex-shrink:0;font-weight:700}
+.task-progress-status-working{color:var(--accent)}
+.task-progress-status-done{color:var(--accent-green)}
+.task-progress-status-error{color:var(--danger)}
+.task-progress-title{flex:1;min-width:0;font-size:calc(var(--ui-font-size) - 1px);color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.5}
+.task-progress-meta{font-size:calc(var(--ui-font-size) - 3px);color:var(--text-muted);white-space:nowrap;flex-shrink:0}
+.task-progress-arrow{font-size:calc(var(--ui-font-size) - 3px);color:var(--text-muted);flex-shrink:0}
+.task-progress-steps{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--border);padding:10px 12px;background:var(--bg-surface)}
+.task-step{display:flex;flex-direction:column;gap:6px}
+.task-step-text{font-size:calc(var(--ui-font-size) - 1px);color:var(--text-primary);line-height:1.55;word-break:break-word}
+.task-step-tools{display:flex;flex-wrap:wrap;gap:6px}
+.task-step-note{font-size:calc(var(--ui-font-size) - 1px);color:var(--text-secondary);line-height:1.55;word-break:break-word;border-left:2px solid var(--border);padding-left:8px}
+
+/* v0.3.4 对话聊天升级: 消息区悬浮操作按钮 + 流式 Markdown 光标 */
+.chat-messages-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+.chat-fab{position:absolute;right:18px;z-index:5;width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:.92;transition:all .12s;line-height:1;padding:0}
+.chat-fab:hover{color:var(--accent);border-color:rgba(var(--skin-accent),.45);background:var(--bg-hover)}
+.chat-copy-last-btn{bottom:18px}
+.chat-scroll-btn{bottom:60px}
+.chat-copy-last-btn.copied{color:var(--accent-green)}
+.stream-markdown .markdown-body{min-width:0}
+.stream-markdown .stream-cursor{display:inline-block;margin-left:2px;color:var(--accent);font-weight:700;animation:cursor-blink 1s steps(2,start) infinite}
+@keyframes cursor-blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* v0.3.3 聊天改极简终端式: 去头像/去发送者/去气泡, 消息如终端逐行排版 */
+.message-list{padding:16px 32px}
+.message-item + .message-item{margin-top:0} /* 只用 gap 控制间距, 去掉旧 margin 双倍间隔 */
+.message-item{display:block;max-width:var(--chat-max-width, 860px)}
+.message-user{align-self:flex-end;max-width:none;text-align:right}
+.message-user{margin-bottom:10px;border-right:2px solid var(--accent);padding-right:12px}
+.message-assistant{align-self:flex-start}
+.message-body{width:100%}
+.message-user .message-text{color:var(--accent);font-weight:600;line-height:1.65}
+.user-prompt{color:var(--accent);margin-right:8px;opacity:.95;font-weight:800;user-select:none}
+.message-tool{margin-left:24px}
+.thinking-bubble{background:none;border:none;padding:0;color:var(--text-muted);font-size:calc(var(--ui-font-size) - 1px)}
+.thinking-bubble::before{content:'┊';margin-right:7px;color:var(--accent);opacity:.8}
+.task-progress-card{background:transparent;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);overflow:hidden}
+.task-progress-steps{background:transparent}
+.tool-chip{background:transparent}
+.tool-chip-result{background:var(--bg-root)}
+.task-progress-meta{font-family:'JetBrains Mono',Consolas,monospace}
+.task-step-text{color:var(--text-secondary)}
+.message-footer{opacity:.4;transition:opacity .15s}
+.message-item:hover .message-footer{opacity:1}
+
+/* v0.3.6 风险操作确认卡片 —— 软件内右下角, 替代原生 Windows 弹窗 */
+.risk-confirm-card{position:fixed;right:16px;bottom:96px;z-index:2000;width:min(360px,calc(100vw - 32px));background:var(--bg-card);border:1px solid var(--warning);border-radius:var(--radius);box-shadow:0 8px 30px rgba(0,0,0,.35);padding:12px 14px;font-size:calc(var(--ui-font-size) - 1px);color:var(--text-primary)}
+.risk-confirm-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.risk-confirm-icon{color:var(--warning);flex-shrink:0}
+.risk-confirm-title{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-confirm-count{font-size:calc(var(--ui-font-size) - 3px);color:var(--text-muted);flex-shrink:0}
+.risk-confirm-detail{max-height:88px;overflow-y:auto;word-break:break-all;color:var(--text-secondary);background:var(--bg-root);border-radius:6px;padding:6px 8px;margin-bottom:8px;font-family:'JetBrains Mono',Consolas,monospace;font-size:calc(var(--ui-font-size) - 2px);white-space:pre-wrap}
+.risk-confirm-approve{display:flex;align-items:center;gap:6px;margin-bottom:10px;cursor:pointer;color:var(--text-secondary);user-select:none}
+.risk-confirm-approve input{accent-color:var(--accent);cursor:pointer}
+.risk-confirm-actions{display:flex;justify-content:flex-end;gap:8px}

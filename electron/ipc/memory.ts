@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
+import { writeFileAtomic } from '../fs-atomic'
 
 // ─── 语义记忆 ───────────────────────────────────
 interface MemoryVectorModule {
@@ -40,7 +41,7 @@ export function registerMemoryIpc(deps: {
       while (memPending !== null) {
         const c = memPending
         memPending = null
-        try { await fs.promises.writeFile(memoryPath, c, 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+        try { writeFileAtomic(memoryPath, c) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       }
       memWriting = false
     }

@@ -1,5 +1,5 @@
 # 同步开发版吸收改动到发布版快照（v0.3.2 当前版）
-# 用法: powershell -ExecutionPolicy Bypass -File scripts/sync-hermes.ps1
+# 用法: powershell -ExecutionPolicy Bypass -File scripts/sync-release.ps1
 $dev = 'D:\桌面\黄泉agent\黄泉agent开发版'
 $rel = 'D:\桌面\黄泉agent\版本发布'
 

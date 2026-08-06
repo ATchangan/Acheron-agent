@@ -67,7 +67,7 @@ export async function connectSSE(config: MCPServerConfig): Promise<MCPTool[]> {
         params: {
           protocolVersion: '2024-11-05',
           capabilities: { tools: {} },
-    clientInfo: { name: 'huangquan-agent', version: '0.3.2' },
+    clientInfo: { name: 'huangquan-agent', version: '0.3.3' },
         },
       }),
       signal: AbortSignal.timeout(15000),

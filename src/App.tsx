@@ -1,37 +1,18 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
 import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
-import RightPanel from './components/RightPanel'
+import FilesView from './components/FilesView'
 import SettingsView from './components/SettingsView'
 import AgentsView from './components/AgentsView'
 import MemoryView from './components/MemoryView'
 import BrowserView from './components/BrowserView'
 import FloatBadge from './components/FloatBadge'
+import RiskConfirmCard from './components/RiskConfirmCard'
 
-export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser'
-
-// 窗口控制按钮
-const WinBtn: React.FC<{ onClick: () => void; danger?: boolean; children: React.ReactNode }> = ({ onClick, danger, children }) => (
-  <button onClick={onClick} title={danger ? '关闭' : undefined}
-    style={{
-      width: 34, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: 'calc(var(--ui-font-size) + 3px)',
-      cursor: 'pointer', borderRadius: 0, padding: 0, lineHeight: 1, transition: 'all .12s',
-    }}
-    onMouseEnter={e => {
-      e.currentTarget.style.background = danger ? '#E81123' : 'var(--bg-hover)'
-      e.currentTarget.style.color = danger ? '#fff' : 'var(--text-primary)'
-    }}
-    onMouseLeave={e => {
-      e.currentTarget.style.background = 'transparent'
-      e.currentTarget.style.color = 'var(--text-secondary)'
-    }}>
-    {children}
-  </button>
-)
+export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser' | 'files'
 
 // 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
 const THEME_WHITELIST = ['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn']
@@ -167,6 +148,7 @@ export default function App() {
       case 'settings': return <SettingsView onNavigate={(v) => setView(v as View)} />
       case 'agents':   return <AgentsView />
       case 'memory':   return <MemoryView />
+      case 'files':    return <FilesView />
       case 'browser':  return <div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 'var(--ui-font-size)' }}>无头浏览器已在独立窗口打开 ↗</div>
       default:         return <ChatView onNavigate={(v) => setView(v as View)} />
     }
@@ -176,28 +158,19 @@ export default function App() {
     <div className="app-shell">
       {/* 拖拽条 — 窗口拖动区域 */}
       <div style={{
-        position: 'fixed' as const, top: 0, left: 0, right: 0, height: 32, zIndex: 999,
+        // v0.3.3: 右侧让出窗口按钮区(150px), 避免 OS 拖拽区域干扰最小化/最大化/关闭点击
+        position: 'fixed' as const, top: 0, left: 0, right: 150, height: 32, zIndex: 999,
         WebkitAppRegion: 'drag', pointerEvents: 'none',
       } as React.CSSProperties} />
-
-      {/* 全局标题栏 — 窗口控件 */}
-      <div style={{
-        position: 'fixed' as const, top: 0, right: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', height: 32,
-        WebkitAppRegion: 'no-drag',
-      } as React.CSSProperties}>
-        <WinBtn onClick={() => window.huangquan.window.minimize()}>─</WinBtn>
-        <WinBtn onClick={() => window.huangquan.window.maximize()}>□</WinBtn>
-        <WinBtn onClick={() => window.huangquan.window.close()} danger>×</WinBtn>
-      </div>
 
       <Sidebar currentView={view} onNavigate={setView} />
       <div className="chat-main" style={{ paddingTop: 0 }}>
         {renderView()}
       </div>
-      {view === 'chat' && <RightPanel />}
       {/* agent 使用浏览器时的主窗口内横幅提示 */}
       <FloatBadge />
+      {/* v0.3.3: 风险操作确认卡片(右下角, 替代系统弹窗) */}
+      <RiskConfirmCard />
     </div>
   )
 }

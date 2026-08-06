@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
@@ -49,6 +49,19 @@ export default function ChatInput() {
   const curBusy = allSessions.find(x => x.id === cid)?.busy || false
   const contextUsed = useChatStore(s => s.cu)
   const contextLimit = useChatStore(s => s.cl)
+  // v0.3.3: 本会话累计输入/输出 token(引擎按 requestId 去重后推送的 usage 镜像), 显示在输入框右侧工具栏
+  const sessTokMap = useChatStore(s => s.sessTok)
+  const tokSum = React.useMemo(() => {
+    const m = (cid && sessTokMap[cid]) || {}
+    let input = 0
+    let output = 0
+    for (const c of Object.values(m)) {
+      input += c.inputTokens || 0
+      output += c.outputTokens || 0
+    }
+    return { input, output }
+  }, [sessTokMap, cid])
+  const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
   const providers = useSettingsStore(s => s.providers)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -180,6 +193,11 @@ export default function ChatInput() {
   const handleStop = () => { useChatStore.getState().stop() }
 
   const canSend = !!text.trim() || !!images.length || !!attachments.length || !!quote
+  // v0.3.3: 执行中输入框提示插话语义(行为不变: busy 时 send() 走引擎 interject)
+  const basePlaceholder = images.length
+    ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...')
+    : attachments.length ? '描述或说明这些文件...' : '输入消息，Enter 发送，Shift+Enter 换行（可拖入图片/视频/文件）'
+  const placeholder = curBusy ? '执行中：回车发送=补充指令插话 · ' + basePlaceholder : basePlaceholder
 
   return (
     <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
@@ -219,7 +237,7 @@ export default function ChatInput() {
       )}
 
       <textarea ref={taRef} className="chat-textarea" rows={1}
-        placeholder={images.length ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...') : attachments.length ? '描述或说明这些文件...' : '输入消息，Enter 发送，Shift+Enter 换行（可拖入图片/视频/文件）'}
+        placeholder={placeholder}
         value={text} onChange={e => setText(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} />
 
@@ -257,20 +275,6 @@ export default function ChatInput() {
                 {(Object.keys(PERM_ICONS) as FilePerm[]).map(k => (
                   <div key={k} className={`dropdown-item ${perm === k ? 'active' : ''}`} onClick={() => { setPerm(k); setPermOpen(false); useSettingsStore.getState().updateGeneral({ filePermission: k }) }}>
                     {PERM_ICONS[k]} {PERM_LABELS[k]}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 推理强度 */}
-          <div className="dropdown-wrap">
-            <IconBtn title={`推理强度: ${think}`} onClick={() => { closeAll(); setThinkOpen(!thinkOpen) }}>{THINK_ICONS[think as ThinkLevel] || '🧠'}</IconBtn>
-            {thinkOpen && (
-              <div className="dropdown-menu">
-                {(Object.keys(THINK_ICONS) as ThinkLevel[]).map(k => (
-                  <div key={k} className={`dropdown-item ${think === k ? 'active' : ''}`} onClick={() => { setThink(k); setThinkOpen(false); useSettingsStore.getState().updateGeneral({ thinkLevel: k }) }}>
-                    {THINK_ICONS[k]} {k}
                   </div>
                 ))}
               </div>
@@ -329,9 +333,24 @@ export default function ChatInput() {
             ))}</select>
           ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>}
 
+          {/* 推理强度 —— 放在模型选择器旁边(与所用模型直接相关) */}
+          <div className="dropdown-wrap">
+            <IconBtn title={`推理强度: ${think}`} onClick={() => { closeAll(); setThinkOpen(!thinkOpen) }}>{THINK_ICONS[think as ThinkLevel] || '🧠'}</IconBtn>
+            {thinkOpen && (
+              <div className="dropdown-menu" style={{ left: 'auto', right: 0 }}>
+                {(Object.keys(THINK_ICONS) as ThinkLevel[]).map(k => (
+                  <div key={k} className={`dropdown-item ${think === k ? 'active' : ''}`} onClick={() => { setThink(k); setThinkOpen(false); useSettingsStore.getState().updateGeneral({ thinkLevel: k }) }}>
+                    {THINK_ICONS[k]} {k}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Token 用量环 */}
+          <span title="本会话累计输入/输出 token = 每次请求的 prompt/completion 之和（含工具轮次与子任务），并非当前上下文大小" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>累计 入 {fmtK(tokSum.input)} / 出 {fmtK(tokSum.output)}</span>
           <svg width="28" height="28" style={{ flexShrink: 0 }}>
-            <title>上下文用量：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
+            <title>上下文用量（最近一次请求实际输入）：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
             <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
             <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
               strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
@@ -353,9 +372,15 @@ export default function ChatInput() {
                 <Square size={16} fill="currentColor" />
               </button>
               <button className="send-btn" onClick={handleSend}
-                title="发送（回车）· 工作中发送即补充指令"
-                style={{ width: 36, height: 36, minWidth: 36, borderRadius: 8, fontSize: 18 }}>
+                title="发送（回车）· 执行中发送=补充指令插话"
+                style={{ width: 36, height: 36, minWidth: 36, borderRadius: 8, fontSize: 18, position: 'relative' }}>
                 <Send size={17} />
+                {/* v0.3.3: 执行中发送角标 —— 明确这是插话而非新任务 */}
+                <span style={{
+                  position: 'absolute', top: -6, right: -6, width: 15, height: 15, borderRadius: '50%',
+                  background: 'var(--warning)', color: '#fff', fontSize: 9, lineHeight: '15px', fontWeight: 700,
+                  textAlign: 'center', pointerEvents: 'none',
+                }}>插</span>
               </button>
             </>
           ) : (

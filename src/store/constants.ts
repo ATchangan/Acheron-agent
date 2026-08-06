@@ -2,7 +2,6 @@
 // 从 chat.ts 拆分, 降低单文件复杂度
 // v0.3.0 M2: 魔法数字统一(取值=现有代码实际值, 禁止顺手优化)
 export const MAX_HISTORY_MSGS = 40        // 历史消息硬上限
-export const SUB_ROUND_LIMIT = 8           // dispatch 子任务轮次上限
 export const STREAM_THROTTLE_MS = 40       // 流式渲染节流
 export const TOOL_ROUND_DEFAULT = 50       // 工具轮次上限默认值(设置项 maxToolRounds 兜底)
 export const COMPACT_MSG_DEFAULT = 20      // 压缩阈值默认消息数

@@ -12,6 +12,14 @@ export function registerWindowIpc(deps: {
     if (mainWindow) mainWindow.setOpacity(Math.max(0.3, Math.min(1, opacity)))
   })
   ipcMain.handle('window:minimize', () => getMainWindow()?.minimize())
+  ipcMain.handle('window:show', () => {
+    const w = getMainWindow()
+    if (!w) return false
+    if (w.isMinimized()) w.restore()
+    w.show()
+    w.focus()
+    return true
+  })
   ipcMain.handle('window:maximize', () => {
     const mainWindow = getMainWindow()
     if (mainWindow?.isMaximized()) mainWindow.unmaximize()

@@ -1,6 +1,6 @@
 ﻿export {}
 import type { GeneralSettings } from './types'
-import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, VisionContent, LLMChatParams, LLMMessage, ToolDef, ToolCallDelta, SearchResult, CronJob, MediaProvider, ProviderConfig, Message } from './types/domain'
+import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, VisionContent, LLMChatParams, LLMMessage, ToolDef, ToolCallDelta, SearchResult, CronJob, MediaProvider, ProviderConfig, Message, McpServerInfo, TaskRecord, TraceEntry } from './types/domain'
 
 declare global {
   interface Window {
@@ -13,9 +13,14 @@ declare global {
       getPathForFile: (f: File) => string
       window: {
         minimize: () => Promise<void>
+        show: () => Promise<boolean>
         maximize: () => Promise<void>
         close: () => Promise<void>
         setOpacity: (opacity: number) => Promise<void>
+      }
+      risk: {
+        respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string) => Promise<boolean>
+        onConfirm: (cb: (d: RiskConfirmPayload) => void) => () => void
       }
       settings: {
         load: () => Promise<SettingsData>
@@ -65,10 +70,32 @@ declare global {
       }
       mcpConnect: (name: string, cmd: string, args: string[]) => Promise<{ ok: boolean; error?: string }>
       mcpCall: (server: string, tool: string, a: Record<string, unknown>) => Promise<unknown>
-      mcpList: () => Promise<{ name: string; cmd?: string; args?: string[]; tools?: string[] }[]>
+      mcpList: () => Promise<McpServerInfo[]>
       mcpSSEConnect: (name: string, url: string, headers?: Record<string, string>) => Promise<{ ok: boolean; error?: string }>
       mcpSSECall: (server: string, tool: string, args: Record<string, unknown>) => Promise<unknown>
-      mcpSSEList: () => Promise<{ name: string; tools?: string[] }[]>
+      mcpSSEList: () => Promise<McpServerInfo[]>
+      mcpConfirm: (info: { server: string; tool: string; args: Record<string, unknown> }) => Promise<boolean>
+      tasks: {
+        list: () => Promise<TaskRecord[]>
+        start: (t: Partial<TaskRecord> & { id: string; sid: string; content: string }) => Promise<boolean>
+        update: (id: string, patch: Partial<TaskRecord>) => Promise<boolean>
+        finish: (id: string, status: TaskRecord['status'], error?: string) => Promise<boolean>
+        clear: (id?: string) => Promise<boolean>
+      }
+      trace: {
+        log: (entry: TraceEntry) => Promise<boolean>
+        list: (limit?: number) => Promise<TraceEntry[]>
+        clear: () => Promise<boolean>
+      }
+      engine: {
+        start: (p: { sid: string; taskId: string; content: string; images?: string[]; attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]; history?: unknown[]; userMsgId: string; userMsgTimestamp: number; resumeTaskId?: string; agent?: string; agentManual?: boolean }) => Promise<boolean>
+        stop: (sid: string) => Promise<boolean>
+        interject: (sid: string, content: string, images?: string[], attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[], kind?: string, prefix?: string) => Promise<boolean>
+        approve: (sid: string) => Promise<boolean>
+        reject: (sid: string) => Promise<boolean>
+        resume: (taskId: string) => Promise<boolean>
+        onEvent: (cb: (ev: unknown) => void) => () => void
+      }
       mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => Promise<string>
       mediaGen: (opts: { kind: 'img' | 'video'; prompt: string; providerId?: string; model?: string; ratio?: string; duration?: number }) => Promise<{ ok: boolean; path?: string; error?: string }>
       tts: {
@@ -117,6 +144,13 @@ declare global {
         read: (url: string, mode?: string) => Promise<string>
         browse: (url: string) => Promise<string>
         browseScreenshot: (url: string) => Promise<string>
+        browseSnapshot: (url?: string) => Promise<string>
+        browserClick: (ref: string) => Promise<string>
+        browserType: (ref: string, text: string) => Promise<string>
+        browserPress: (key: string) => Promise<string>
+        browserScroll: (direction: string) => Promise<string>
+        closeBrowserSession: (sid: string, taskId: string) => Promise<boolean>
+        openExternal: (url: string) => Promise<string>
         navigate: (url: string) => Promise<unknown>
         back: () => Promise<unknown>
         forward: () => Promise<unknown>
@@ -145,6 +179,7 @@ declare global {
         resetOne: (model: string) => Promise<unknown>
       }
       cacheClear: () => Promise<boolean>
+      cacheCleanChromium: () => Promise<{ freedMb: number; totalMb: number }>
       storageStats: () => Promise<Record<string, unknown>>
       llm: {
         chat: (params: LLMChatParams) => Promise<void>
@@ -158,6 +193,17 @@ declare global {
         onUsage: (callback: (usage: UsageData) => void) => () => void
       }
     }
+  }
+
+  interface RiskConfirmPayload {
+    requestId: string
+    kind: string
+    detail: string
+    level: string
+    sid?: string
+    taskId?: string
+    taskKey?: string
+    expiresAt: number
   }
 }
 

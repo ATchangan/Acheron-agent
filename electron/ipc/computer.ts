@@ -1,13 +1,15 @@
-﻿// electron/ipc/computer.ts —— 电脑控制域 IPC(0.3.1 块 G 迁移, 行为零变化)
+// electron/ipc/computer.ts —— 电脑控制域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain, shell, dialog, BrowserWindow, clipboard } from 'electron'
 import * as fs from 'fs'
 import { join, dirname, extname } from 'path'
 import * as os from 'os'
-import { exec } from 'child_process'
+import { exec, type ChildProcess } from 'child_process'
+import { writeFileAtomic } from '../fs-atomic'
+import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 
 export function registerComputerIpc(deps: {
   assertInsideWorkDir: (p: string) => boolean
-  assessRisk: (e: { type: string; command: string }) => string
+  assessRisk: (e: { type: string; command?: string; operation?: string; path?: string }) => string
   getEffectiveWorkDir: () => string | undefined
   getWorkDirOverride: () => string | null
   setWorkDirOverride: (d: string | null) => void
@@ -16,32 +18,106 @@ export function registerComputerIpc(deps: {
   userDataPath: string
 }): void {
   const { assertInsideWorkDir, assessRisk, getEffectiveWorkDir, getWorkDirOverride, setWorkDirOverride, netFetch, workspaceDir, userDataPath } = deps
+  // 运行中的命令注册表(sid → 子进程), 供引擎停止时立即打断超长命令
+  const runningExecs = new Map<string, { proc: ChildProcess; timer: ReturnType<typeof setTimeout> }>()
+  // Windows 上 exec 只拿到外层 cmd.exe, kill 不会终止 powershell 子进程树 → 用 taskkill /T /F
+  const killTree = (pid: number | undefined) => {
+    if (!pid) return
+    try { exec('taskkill /pid ' + pid + ' /T /F', { windowsHide: true, timeout: 5000 }, () => {}) } catch { /* 忽略 */ }
+    try { process.kill(pid) } catch { /* 忽略 */ }
+  }
+  // 按 sid 标记杀整棵树(外层 pid 可能已脱管, 用命令行标记兜底)
+  const killBySid = (sid: string) => {
+    const ps = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*HQ_SID=*" + sid + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    try { exec('powershell.exe -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
+  }
+  // 按根 PID 递归杀全部后代(cmd 外层可能提前退出, 孙进程仍挂在已死 PID 下)
+  const killTreeByRoot = (rootPid: number | undefined) => {
+    if (!rootPid) return
+    const ps = "$root=" + rootPid + "; $all=Get-CimInstance Win32_Process; $kids=@{}; foreach($p in $all){ if($p.ParentProcessId){ if(-not $kids.ContainsKey([int]$p.ParentProcessId)){ $kids[[int]$p.ParentProcessId]=@() }; $kids[[int]$p.ParentProcessId]+=[int]$p.ProcessId } }; $st=New-Object System.Collections.Generic.Stack[int]; $st.Push($root); while($st.Count -gt 0){ $cur=$st.Pop(); if($kids.ContainsKey($cur)){ foreach($k in $kids[$cur]){ Stop-Process -Id $k -Force -ErrorAction SilentlyContinue; $st.Push($k) } }; Stop-Process -Id $cur -Force -ErrorAction SilentlyContinue }"
+    try { exec('powershell.exe -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
+  }
 
-ipcMain.handle('computer:exec', async (_e, cmd: string) => {
+  // 风险操作确认 —— L2(终端写/非只读命令)与 L3(系统路径写入/删除)默认弹原生确认框;
+  // 设置 riskConfirm=false 时静默放行(保持旧行为)。
+  // v0.3.3 修复: L2 只对"会改变系统状态"的命令确认(node -v/npm ls/git status 等只读查询不再打扰)。
+  const isMutating = (cmd: string): boolean => {
+    const c = String(cmd || '')
+    return /(\bdel\b|\brm\b|\bremove\b|delete|erase|move|ren\b|copy|mkdir|mci\b|install|uninstall|publish|\bpush\b|\bcommit\b|\bmerge\b|\breset\b|drop\b|truncate|update|insert|\bkill\b|taskkill|stop-|restart-|set-|new-|remove-|clear-|format|mount|unmount|shutdown|reboot|chmod|chown|attrib|takeown|icacls|reg\s+(add|delete)|npm\s+(install|uninstall)|pip\s+(install|uninstall)|git\s+(push|commit|merge|reset|clean|checkout\s+-)|docker\s+(rm|stop|kill|build|push)|Start-Process|Invoke-WebRequest|>|>>)/i.test(c)
+  }
+  // v0.3.3: 确认不再弹原生 Windows 窗口 —— 推送到软件内角落卡片,
+  // 60 秒无人操作自动拒绝; 可勾选「本次任务都批准」
+  const confirmRisk = async (
+    level: string | undefined,
+    kind: string,
+    detail: string,
+    sid?: string,
+    taskId?: string,
+  ): Promise<RiskDecision> => {
+    if (level !== 'L2' && level !== 'L3') return 'allow'
+    if (level === 'L2' && !isMutating(detail)) return 'allow'
+    try {
+      const s = JSON.parse(fs.readFileSync(join(userDataPath, 'settings.json'), 'utf-8'))
+      if (s?.general?.riskConfirm === false) return 'allow'
+    } catch { /* 设置缺失时默认确认 */ }
+    return requestRiskConfirm({ kind, detail, level, sid, taskId })
+  }
+
+ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: string) => {
   const cmdS = String(cmd || '')
-  if (assessRisk({ type: 'terminal', command: cmdS }) === 'L4') {
+  const riskLevel = assessRisk({ type: 'terminal', command: cmdS })
+  if (riskLevel === 'L4') {
     const hit = ['rm -rf', 'rm -fr', 'format ', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'del /f /s /q c:\\', 'rd /s /q c:\\'].find(d => cmdS.toLowerCase().includes(d.toLowerCase()))
     return 'E:permission denied: 危险命令已被拦截 (' + (hit || '').trim() + ')。如需执行请手动在终端操作。'
   }
+  const cr = await confirmRisk(riskLevel, '执行命令', cmdS, sid, taskId)
+  if (cr !== 'allow') {
+    return 'E:permission denied: ' + (cr === 'timeout' ? '确认超时（60 秒未操作，已自动拒绝）' : '用户拒绝了风险操作确认')
+  }
   return new Promise<string>((resolve) => {
+    const key = sid || ('m' + Date.now() + '_' + Math.random().toString(36).slice(2, 6))
+    let settled = false
+    const finish = (out: string) => { if (settled) return; settled = true; runningExecs.delete(key); resolve(out) }
     // 更可靠的 PowerShell 检测——检查 powershell 关键字和常见 cmdlet 模式
     const trimmed = cmd.trim()
     const isPS = /^(powershell|pwsh)\b/i.test(trimmed) ||
       /\b(Get-|Set-|New-|Invoke-|Write-|Select-|Where-|ForEach-|Start-Process)\b/i.test(trimmed) ||
       /\$(?:env:|[a-zA-Z_]\w*)/.test(trimmed)
+    // v0.3.3: sid 标记写入环境变量赋值(命令行为可见), 中止时按标记杀整个进程树
+    const marker = sid ? (isPS ? "$env:HQ_SID='" + sid + "'; " : 'set HQ_SID=' + sid + '&& ') : ''
     let finalCmd
     if (isPS) {
-      finalCmd = `powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${cmd.replace(/"/g, '\\"')}"`
+      finalCmd = `powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${marker}${cmd.replace(/"/g, '\\"')}"`
     } else {
-      finalCmd = `cmd /c "${cmd.replace(/"/g, '\\"')}"`
+      finalCmd = `cmd /c "${marker}${cmd.replace(/"/g, '\\"')}"`
     }
     // maxBuffer 从 10MB → 50MB; v0.3.0: cwd 跟随自定义工作目录(设置→引擎→工作目录)
-    exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf-8', cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
+    const child = exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf-8', cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
+      clearTimeout(timer)
       const out = err ? (stderr || err.message) : (stdout || '')
       const truncated = out.length > 8000 ? out.slice(0, 8000) + '\n...(已截断，共' + out.length + '字符)' : out
-      resolve(truncated)
+      finish(truncated)
     })
+    const timer = setTimeout(() => { killTree(child.pid); killTreeByRoot(child.pid); if (sid) killBySid(sid) }, 300000)
+    runningExecs.set(key, { proc: child, timer })
   })
+})
+// v0.3.3: 中止运行中的命令 —— 引擎 stop 时调用, 超长 exec 立即打断
+ipcMain.handle('computer:abort', (_e, sid?: string) => {
+  if (!sid) {
+    for (const [, r] of runningExecs) { clearTimeout(r.timer); killTree(r.proc.pid) }
+    runningExecs.clear()
+    return true
+  }
+  const rec = runningExecs.get(sid)
+  if (rec) {
+    clearTimeout(rec.timer)
+    killTree(rec.proc.pid)
+    killTreeByRoot(rec.proc.pid)
+    runningExecs.delete(sid)
+  }
+  killBySid(sid)
+  return true
 })
 
 // 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
@@ -100,7 +176,25 @@ ipcMain.handle('computer:stat', async (_e, filePath: string) => {
   return { mtimeMs: st.mtimeMs, size: st.size, isFile: st.isFile(), isDirectory: st.isDirectory() }
 })
 // readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
-const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string }>()
+  // v0.3.3 性能优化: 文件读取缓存 —— 总字节上限 + TTL + 按体积淘汰(原只按条数, 大文件可吃几百 MB)
+  const READ_CACHE_MAX_BYTES = 32 * 1024 * 1024
+  const READ_CACHE_MAX_ENTRIES = 500
+  const READ_CACHE_TTL_MS = 10 * 60 * 1000
+  const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string; at: number }>()
+  let readCacheBytes = 0
+  const dropReadCacheEntry = (k: string): void => {
+    const e = readFileCache.get(k)
+    if (e) { readCacheBytes -= e.content.length; readFileCache.delete(k) }
+  }
+  const sweepReadCache = (): void => {
+    const now = Date.now()
+    for (const [k, e] of readFileCache) if (now - e.at > READ_CACHE_TTL_MS) dropReadCacheEntry(k)
+    while (readCacheBytes > READ_CACHE_MAX_BYTES || readFileCache.size > READ_CACHE_MAX_ENTRIES) {
+      const k = readFileCache.keys().next().value
+      if (!k) break
+      dropReadCacheEntry(k)
+    }
+  }
 ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number, limit?: number) => {
   if (!fs.existsSync(filePath)) throw new Error('文件不存在')
   const stat = fs.statSync(filePath)
@@ -145,16 +239,24 @@ ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number
   if (stat.size > 5 * 1024 * 1024) throw new Error('文件过大 (>5MB)，请使用 offset/limit 分段读取')
   // 命中缓存且文件未变 → 零磁盘读
   const hit = readFileCache.get(filePath)
-  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.content
+  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size && Date.now() - hit.at <= READ_CACHE_TTL_MS) return hit.content
+  if (hit) dropReadCacheEntry(filePath)
   const content = fs.readFileSync(filePath, 'utf-8')
-  readFileCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, content })
-  if (readFileCache.size > 500) { const k = readFileCache.keys().next().value; if (k !== undefined) readFileCache.delete(k) }
+  const bytes = Buffer.byteLength(content, 'utf-8')
+  if (bytes <= READ_CACHE_MAX_BYTES) {
+    if (readCacheBytes + bytes > READ_CACHE_MAX_BYTES || readFileCache.size >= READ_CACHE_MAX_ENTRIES) sweepReadCache()
+    readFileCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, content, at: Date.now() })
+    readCacheBytes += bytes
+  }
   return content
 })
-ipcMain.handle('computer:writeFile', async (_e, filePath: string, content: string) => {
-  fs.mkdirSync(dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, content, 'utf-8')
-  return true
+ipcMain.handle('computer:writeFile', async (_e, filePath: string, content: string, sid?: string, taskId?: string) => {
+  try {
+  if ((await confirmRisk(assessRisk({ type: 'filesystem', operation: 'write', path: filePath }), '写入文件', filePath, sid, taskId)) !== 'allow') return false
+    fs.mkdirSync(dirname(filePath), { recursive: true })
+    writeFileAtomic(filePath, content)
+    return true
+  } catch { return false }
 })
 ipcMain.handle('computer:readDir', async (_e, dirPath: string) => {
   const items = fs.readdirSync(dirPath, { withFileTypes: true })
@@ -170,9 +272,11 @@ ipcMain.handle('computer:mkdir', async (_e, dirPath: string) => {
     return { ok: true }
   } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
 })
-ipcMain.handle('computer:remove', async (_e, targetPath: string) => {
+ipcMain.handle('computer:remove', async (_e, targetPath: string, sid?: string, taskId?: string) => {
   try {
     if (!assertInsideWorkDir(targetPath)) return { ok: false, error: '仅允许删除工作目录内的文件' }
+  const delCr = await confirmRisk('L3', '删除文件/目录', targetPath, sid, taskId)
+  if (delCr !== 'allow') return { ok: false, error: delCr === 'timeout' ? '确认超时（60 秒未操作，已自动拒绝）' : '已取消' }
     const st = fs.statSync(targetPath)
     if (st.isDirectory()) fs.rmSync(targetPath, { recursive: true, force: true })
     else fs.unlinkSync(targetPath)

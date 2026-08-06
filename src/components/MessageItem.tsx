@@ -6,8 +6,15 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import type { Message } from '../global'
 import { api } from '../services/ipc'
+import { ToolChip, fmtDur } from './work-steps'
 
-interface Props { message: Message; streaming?: boolean }
+interface Props {
+  message: Message
+  streaming?: boolean
+  // 工作步骤卡片: 工具结果映射(call_id -> 结果), 用于 chips 的完成/失败状态与展开详情
+  toolResults?: Map<string, { content: string; timestamp: number }>
+  executing?: boolean
+}
 
 // 统一 SVG 图标组件
 const SvgIcon: React.FC<{ children: React.ReactNode; size?: number }> = ({ children, size = 16 }) => (
@@ -38,7 +45,7 @@ const fmtTime = (ms?: number) => {
   return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : ms + 'ms'
 }
 
-function MessageItem({ message, streaming }: Props) {
+function MessageItem({ message, streaming, toolResults, executing }: Props) {
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
@@ -46,8 +53,6 @@ function MessageItem({ message, streaming }: Props) {
   const resendFrom = useChatStore(s => s.resendFrom)
   const startEdit = () => { setEditText(message.content || ''); setEditing(true) }
   const saveEdit = () => { const v = editText.trim(); if (v && v !== message.content) resendFrom(message.id, v); setEditing(false) }
-  const agentAvatar = useSettingsStore(s => s.general.agentAvatar)
-  const agentAvatarImg = useSettingsStore(s => s.general.agentAvatarImage)
   const cardMaxHeight = useSettingsStore(s => (s.general).cardMaxHeight || 500)
   // TTS 语音朗读(Windows SAPI)
   const ttsEnabled = useSettingsStore(s => (s.general).ttsEnabled !== false)
@@ -107,40 +112,12 @@ function MessageItem({ message, streaming }: Props) {
     // 显示关联工具名(如 ✓ write), 不再只显示 call id 缩写
     const toolName = message.toolName || shortId
     return (
-      <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
+      <div className="message-item message-tool">
         <div className="message-body">
           <div className="tool-call-block" style={{ borderColor: isError ? 'var(--danger)' : 'var(--accent-green)', background: isError ? 'var(--danger-soft)' : 'var(--success-soft)' }}>
             <div className="tool-call-header" style={{ color: isError ? 'var(--danger)' : 'var(--accent-green)' }}>{isError ? '✗ 出错（' + toolName + '）' : '✓ ' + toolName}</div>
             <pre className="tool-call-output">{truncated}</pre>
           </div>
-        </div>
-      </div>
-    )
-  }
-
-  // 工具调用卡片 —— 内嵌紧凑风格(与工具结果块一致: 无头像无sender)
-  // header 只显示工具名, 参数为灰色单行摘要, 完整参数可展开
-  const toolCalls = message.tool_calls
-  if (toolCalls?.length) {
-    return (
-      <div className="message-item" style={{ paddingLeft: 40, opacity: .85 }}>
-        <div className="message-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {toolCalls.map((tc: { id?: string; type?: string; function?: { name?: string; arguments?: string } }, i: number) => {
-            const fn = tc.function || { name: '', arguments: '' }
-            let args = ''
-            try { args = JSON.stringify(JSON.parse(fn.arguments || '{}'), null, 2) } catch { args = fn.arguments || '' }
-            const inline = args.replace(/\n/g, ' ').trim()
-            return (
-              <details key={i} className="tool-call-block" style={{ borderColor: 'var(--accent-green)', background: 'var(--success-soft)' }} open={args.length <= 60}>
-                <summary className="tool-call-header" style={{ color: 'var(--accent-green)', cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ whiteSpace: 'nowrap' }}>🔧 {fn.name}</span>
-                  {inline && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 'calc(var(--ui-font-size) - 2px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{inline.length > 50 ? inline.slice(0, 50) + '…' : inline}</span>}
-                  <span style={{ color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 3px)' }}>{args.length > 60 ? '展开' : ''}</span>
-                </summary>
-                {args.length > 60 && <pre className="tool-call-output">{args}</pre>}
-              </details>
-            )
-          })}
         </div>
       </div>
     )
@@ -189,13 +166,7 @@ function MessageItem({ message, streaming }: Props) {
 
   return (
     <div className={`message-item ${isUser ? 'message-user' : 'message-assistant'} ${selected ? 'message-selected' : ''}`}>
-      <div className="message-avatar">
-        {isUser ? '你' : agentAvatarImg
-          ? <img src={agentAvatarImg} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} alt="" />
-          : (agentAvatar || '泉')}
-      </div>
       <div className="message-body" onContextMenu={handleContextMenu}>
-        <div className="message-sender">{isUser ? '你' : (agentAvatar || '黄泉')}</div>
         {message.images?.length ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>{message.images.map((img, i) => <img key={i} src={img} className="image-preview" alt="" />)}</div> : null}
         {/* 附件（视频/音频/文档）展示，点击用系统默认程序打开 */}
         {message.attachments?.length ? (
@@ -213,7 +184,7 @@ function MessageItem({ message, streaming }: Props) {
             <button className="send-btn" onClick={saveEdit} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="保存修改">✓</button>
             <button className="send-btn stop-btn" onClick={() => setEditing(false)} style={{ width: 32, height: 32, borderRadius: 6, fontSize: 'var(--ui-font-size)' }} title="取消">✕</button>
           </div>
-        ) : <div className="message-text">{message.content}</div>) : String(message.role) === 'tool' ? (
+        ) : <div className="message-text"><span className="user-prompt">❯</span>{message.content}</div>) : String(message.role) === 'tool' ? (
           // 工具结果: 纯文本渲染, 不经过 markdown 解析(长结果可安全折叠)
           <pre className="tool-call-output" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', maxHeight: 320, overflowY: 'auto' }}>{String(message.content || '').slice(0, 8000)}{(message.content || '').length > 8000 ? '\n…[内容过长已截断]' : ''}</pre>
         ) : renderAssistantContent(message.content)}
@@ -237,12 +208,12 @@ function MessageItem({ message, streaming }: Props) {
                     ? <span title="任务总时长（含工具执行）">⏱{fmtTime(message.meta.taskMs)}</span>
                     : message.meta?.duration !== undefined && <span title="本次回复时长">⏱{fmtTime(message.meta.duration)}</span>}
                   {(message.usage || message.meta?.taskTokens) && (() => {
-                    // 任务结束消息优先显示「本任务总消耗」(主角色 + 全部子角色)
+                    // 任务结束消息优先显示「本任务总消耗」(主 Agent + 全部子 Agent)
                     const total = message.meta?.taskTokens || message.usage?.total_tokens || ((message.usage?.prompt_tokens || 0) + (message.usage?.completion_tokens || 0))
                     const speed = message.meta?.duration && (message.usage?.completion_tokens || 0) > 0
                       ? Math.round((message.usage?.completion_tokens || 0) / (message.meta.duration / 1000))
                       : 0
-                    return <span title={message.meta?.taskTokens ? '本任务总消耗（主角色 + 全部子角色）' : '本次回复消耗的词元总数'}>{total} 词元{message.meta?.taskTokens ? '（全角色）' : ''}{speed > 0 ? ' · ' + speed + ' 词元/秒' : ''}</span>
+                    return <span title={message.meta?.taskTokens ? '本任务总消耗（主 Agent + 全部子 Agent）' : '本次回复消耗的 token 总数'}>{total} token{message.meta?.taskTokens ? '（全 agent）' : ''}{speed > 0 ? ' · ' + speed + ' token/秒' : ''}</span>
                   })()}
                 </span>
               )}
@@ -265,3 +236,68 @@ function MessageItem({ message, streaming }: Props) {
 
 // 流式输出时仅重渲染内容变化的消息(长会话性能关键)
 export default React.memo(MessageItem)
+
+// ============================================================
+// 任务进程卡 —— 同一任务(用户消息之间)的连续步骤卡片合并为一张紧凑卡片
+// 执行中自动展开显示实时过程; 出错自动展开; 正常完成自动收起; 点击头部手动切换
+// 仅渲染层合并: 不改动消息存储与上下文注入
+// ============================================================
+export const TaskGroupCard: React.FC<{
+  steps: Message[] // 任务内的步骤卡片(assistant+tool_calls)与中间说明(assistant 无 tool_calls)
+  toolResults?: Map<string, { content: string; timestamp: number }>
+  executing?: boolean
+  active?: boolean // 该组是当前正在执行的任务(消息流最后一个 task 组且 executing) —— 执行期间保持展开不闪烁
+}> = ({ steps, toolResults, executing, active }) => {
+  const [override, setOverride] = useState<boolean | null>(null)
+
+  const cards = steps.filter(m => !!m.tool_calls?.length)
+  const notes = steps.filter(m => !m.tool_calls?.length && !!m.content)
+  if (cards.length === 0) return null
+
+  const allTools = cards.flatMap(c => c.tool_calls || [])
+  const toolLog = cards.flatMap(c => c._toolLog || [])
+  const totalMs = toolLog.reduce((s, x) => s + (x.ms || 0), 0)
+  const errors = toolLog.filter(x => x.error).length
+  // 执行中: 该组是当前活动任务(active) 或 存在尚未产生结果的工具调用
+  const busy = !!active || (!!executing && allTools.some(tc => tc.id && !toolResults?.has(tc.id)))
+  const status = busy ? 'working' : errors > 0 ? 'error' : 'done'
+  // 默认: 执行中展开 / 出错展开 / 正常完成收起; 用户手动点击后尊重选择
+  const collapsed = override ?? !(busy || errors > 0)
+
+  const firstText = cards.map(c => (c.content || '').trim()).find(t => t) || ''
+  const runByCall = new Map<string, { ms: number; error: boolean; result: string }>()
+  for (const x of toolLog) if (x.toolCallId) runByCall.set(x.toolCallId, { ms: x.ms, error: x.error, result: x.result })
+
+  return (
+    <div className="message-item message-assistant">
+      <div className="message-body">
+        <div className="task-progress-card" title={collapsed ? '点击展开过程' : '点击收起'}>
+          <div className="task-progress-head" onClick={() => setOverride(collapsed)}>
+            <span className={`task-progress-status task-progress-status-${status}`}>
+              {status === 'working' ? <span className="chip-spinner" /> : status === 'error' ? '✗' : '✓'}
+            </span>
+            <span className="task-progress-title">{firstText || (busy ? '正在处理…' : '调用工具…')}</span>
+            <span className="task-progress-meta">{cards.length} 步 · {allTools.length} 工具{totalMs > 0 ? ` · ${fmtDur(totalMs)}` : ''}{errors > 0 ? ` · ${errors} 出错` : ''}</span>
+            <span className="task-progress-arrow">{collapsed ? '▸' : '▾'}</span>
+          </div>
+          {!collapsed && (
+            <div className="task-progress-steps">
+              {cards.map((c, i) => (
+                <div className="task-step" key={c.id}>
+                  {c.content && <div className="task-step-text">{c.content}</div>}
+                  <div className="task-step-tools">
+                    {(c.tool_calls || []).map(tc => (
+                      <ToolChip key={tc.id || `${c.id}-${i}`} tc={tc} result={toolResults?.get(tc.id || '')} executing={executing} run={runByCall.get(tc.id || '')} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {notes.map(n => <div className="task-step-note" key={n.id}>{n.content}</div>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+

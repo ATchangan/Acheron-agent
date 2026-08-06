@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net, safeStorage } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMemoryIpc } from './ipc/memory'
@@ -10,18 +10,33 @@ import { registerCronIpc } from './ipc/cron'
 import { registerWindowIpc } from './ipc/window'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
-import { registerMiscIpc } from './ipc/misc'
+import { registerMiscIpc, cleanChromiumCaches } from './ipc/misc'
 import { registerModelsIpc } from './ipc/models'
 import { registerUpdateIpc } from './ipc/update'
 import { registerMediaIpc } from './ipc/media'
 import { registerBrowserIpc } from './ipc/browser'
 import { registerComputerIpc } from './ipc/computer'
 import { registerLlmIpc } from './ipc/llm'
+import { registerTaskIpc } from './ipc/tasks'
+import { registerTraceIpc, flushTrace } from './ipc/trace'
+import { registerEngineIpc } from './ipc/engine'
+import { registerRiskConfirm } from './ipc/risk-confirm'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
 import { exec } from 'child_process'
 import * as os from 'os'
+
+// 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
+// 不显式指回原目录会丢失全部配置/会话
+app.setPath('userData', join(app.getPath('appData'), 'huangquan-agent'))
+// 任务栏/系统托盘显示应用名与 AppUserModelID —— 不设置时 Windows 任务栏右键显示 "Electron"
+app.setName('黄泉Agent')
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.huangquan.agent')
+}
+// 退出前把缓冲中的诊断轨迹写盘(否则最后 ~500ms 的轨迹可能丢失)
+app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
 
 // 使用 Electron net.fetch（Chromium 网络栈，自动跟随 Windows 系统代理）——
 // Node 全局 fetch(undici) 不读系统代理，导致浏览器能访问的 API 在应用内超时
@@ -164,7 +179,11 @@ const distDir = join(ROOT, 'dist')
 const userDataPath = app.getPath('userData')
 const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
+const tasksPath = join(userDataPath, 'tasks.json')
+const tracePath = join(userDataPath, 'agent-trace.jsonl')
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
+registerTaskIpc({ tasksPath })
+registerTraceIpc({ tracePath })
 const memoryPath = join(userDataPath, 'memory.json')
 registerMemoryIpc({ memoryPath, settingsPath, userDataPath, safeClone, decKey })
 const workspaceDir = join(userDataPath, 'workspace')
@@ -248,7 +267,8 @@ function trayEnabled(): boolean {
   try {
     if (fs.existsSync(settingsPath)) {
       const d = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-      return d?.general?.trayEnabled === true
+      // 最小化/关闭缩至托盘默认开启(undefined 视为开启)
+      return d?.general?.trayEnabled !== false
     }
   } catch (e) { /* ignore */ console.debug('[swallow]', e) }
   return false
@@ -286,7 +306,7 @@ function showBrowserPanel() {
   browserPanelWin = new BrowserWindow({
     width: winW, height: winH, minWidth: 800, minHeight: 500,
     title: '黄泉Agent · 无头浏览器',
-    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
+    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     backgroundColor: '#08080f', show: false,
   })
   browserPanelWin.loadURL('http://127.0.0.1:' + serverPort + '/index.html#browser')
@@ -314,8 +334,16 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 900, minHeight: 600,
     title: '黄泉Agent', icon: join(resourcesDir, 'icon.png'),
-    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false },
+    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
     backgroundColor: '#08080f', show: false, frame: false,
+    // v0.3.3: 原生标题栏控制按钮(最小化/最大化/关闭)由 OS 绘制与命中,
+    // 彻底避免自定义 HTML 按钮被拖拽区/命中层吞掉点击
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#101014',
+      symbolColor: '#c8c8cc',
+      height: 32,
+    },
   })
   mainWindow = win
   win.webContents.on('render-process-gone', (_e, details) => { console.error('[FATAL] renderer crashed:', details.reason, details.exitCode); try { fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), new Date().toISOString() + ' renderer crashed: ' + details.reason + ' ' + details.exitCode + '\n') } catch (e) { console.debug('[swallow]', e) }; if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.loadURL('http://127.0.0.1:' + serverPort + '/index.html') } })
@@ -360,7 +388,7 @@ function fmtSize(b: number): string {
 }
 
 // 会话元数据缓存 —— 避免 list 时全量解析大会话文件(大会话含图片可达数 MB)
-const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string }>()
+const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean }>()
 registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone })
 function buildSessionMeta() {
   sessionMeta.clear()
@@ -369,7 +397,7 @@ function buildSessionMeta() {
     if (!f.endsWith('.json')) continue
     try {
       const d = JSON.parse(fs.readFileSync(join(sessionsDir, f), 'utf-8'))
-      sessionMeta.set(f.replace('.json', ''), { title: d.title || f, messageCount: d.messages?.length || 0, updatedAt: d.updatedAt || '' })
+      sessionMeta.set(f.replace('.json', ''), { title: d.title || f, messageCount: d.messages?.length || 0, updatedAt: d.updatedAt || '', mode: d.mode || 'work', pinned: d.pinned === true })
     } catch (e) { /* 损坏文件跳过 */ console.debug('[swallow]', e) }
   }
 }
@@ -381,6 +409,16 @@ function buildSessionMeta() {
 const { assessRisk } = require('./security/permission')
 registerComputerIpc({ assertInsideWorkDir, assessRisk, getEffectiveWorkDir, getWorkDirOverride: () => workDirOverride, setWorkDirOverride: (d) => { workDirOverride = d }, netFetch, workspaceDir, userDataPath })
 registerLlmIpc({ netFetch })
+registerEngineIpc({
+  settingsPath,
+  userDataPath,
+  memoryPath,
+  tracePath,
+  resourcesDir,
+  netFetch,
+  decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>,
+  getSender: () => mainWindow?.webContents || null,
+})
 registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir })
 registerModelStatsIpc()
 registerMcpIpc()
@@ -391,6 +429,7 @@ registerUpdateIpc({ netFetch })
 registerMediaIpc({ settingsPath, userDataPath, netFetch, getEffectiveWorkDir })
 registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
+registerRiskConfirm({ getMainWindow: () => mainWindow })
 registerCronIpc()
 
 // 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
@@ -448,9 +487,22 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'dist-electro
 
 // ─── 浏览器自动化 ───────────────────────────────
 // 常驻无头浏览器 —— agent 浏览时页面保持打开，前端可实时截图查看
+// v0.3.3: 每任务独立浏览器会话 —— 任务结束自动关闭, 互不串页面
 let browserWin: BrowserWindow | null = null
+const browserSessions = new Map<string, BrowserWindow>()
 let browserCurUrl = 'about:blank'
-function getBrowserWin(): BrowserWindow {
+function getBrowserWin(key?: string): BrowserWindow {
+  if (key) {
+    const existing = browserSessions.get(key)
+    if (existing && !existing.isDestroyed()) return existing
+    const w = new BrowserWindow({
+      width: 1280, height: 800, show: false,
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    })
+    w.on('closed', () => { browserSessions.delete(key) })
+    browserSessions.set(key, w)
+    return w
+  }
   if (browserWin && !browserWin.isDestroyed()) return browserWin
   browserWin = new BrowserWindow({
     width: 1280, height: 800, show: false,
@@ -458,6 +510,18 @@ function getBrowserWin(): BrowserWindow {
   })
   browserWin.on('closed', () => { browserWin = null })
   return browserWin
+}
+function getBrowserWinIfExists(key?: string): BrowserWindow | null {
+  if (key) {
+    const w = browserSessions.get(key)
+    return w && !w.isDestroyed() ? w : null
+  }
+  return browserWin && !browserWin.isDestroyed() ? browserWin : null
+}
+function closeBrowserSession(key: string): void {
+  const w = browserSessions.get(key)
+  if (w && !w.isDestroyed()) w.destroy()
+  browserSessions.delete(key)
 }
 const waitLoad = (wc: Electron.WebContents, ms = 15000): Promise<void> =>
   new Promise(resolve => {
@@ -468,7 +532,7 @@ const waitLoad = (wc: Electron.WebContents, ms = 15000): Promise<void> =>
     wc.once('did-finish-load', onLoad)
     wc.once('did-fail-load', onFail)
   })
-registerBrowserIpc({ getBrowserWin, waitLoad, getCurUrl: () => browserCurUrl, setCurUrl: (u) => { browserCurUrl = u }, showBrowserPanel, showBrowserFloat, hideBrowserFloat })
+registerBrowserIpc({ getBrowserWin, getBrowserWinIfExists, closeBrowserSession, waitLoad, getCurUrl: () => browserCurUrl, setCurUrl: (u) => { browserCurUrl = u }, showBrowserPanel, showBrowserFloat, hideBrowserFloat })
 
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
@@ -488,6 +552,15 @@ app.whenReady().then(async () => {
   } catch (e: unknown) { console.error('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
   serverPort = await startServer()
   createAppMenu()
+  // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
+  try {
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    const g = s?.general || {}
+    if (g.autoCleanCache !== false) {
+      const r = cleanChromiumCaches(userDataPath, Number(g.autoCleanCacheSize) || 200)
+      if (r.freedMb > 0) console.log('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
+    }
+  } catch (e: unknown) { /* 设置缺失/损坏时跳过清理 */ console.debug('[swallow]', e) }
   createWindow()
   createTray()
   app.on('activate', () => mainWindow?.show())

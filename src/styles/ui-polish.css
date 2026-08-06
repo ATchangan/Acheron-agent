@@ -1,5 +1,5 @@
 /* ─── 黄泉Agent · 产品级 UI 优化 v2 ───────────────────── */
-/* 对标 Codex / HanaAgent 品质 · 黄泉主题强化 */
+/* 黄泉主题强化 */
 
 /* === 全局过渡与动效 === */
 :root { --anim-duration: 0.2s; }
@@ -185,22 +185,14 @@ html[data-bg] .app-shell::before { background: none; }
   box-shadow: -1px 0 8px rgba(0,0,0,.15); 
 }
 
-/* === 消息气泡增强 === */
-.message-item { padding: 8px 0; }
-.message-assistant .message-body { 
-  border-left: 2px solid var(--accent-dim); 
-  padding-left: 12px; 
-  background-image: linear-gradient(90deg, var(--skin-accent-soft), transparent 60%);
-}
+/* === 消息极简（替代旧气泡增强，避免盖住 global.css 的极简样式）=== */
+.message-item { padding: 0; }
+.message-assistant .message-body,
 .message-user .message-body {
-  background: var(--skin-accent-soft);
-  border-radius: var(--radius-lg);
-  padding: 8px 14px;
-}
-.message-assistant .message-body {
-  background: var(--bg-elevated);
-  border-radius: var(--radius-lg);
-  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 /* === 标签栏精致化 === */

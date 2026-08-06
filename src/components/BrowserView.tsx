@@ -92,6 +92,7 @@ export default function BrowserView() {
           style={{ flex: 1, height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.input, color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)', outline: 'none' }} />
         <button onClick={() => go()} style={{ height: 32, padding: '0 16px', borderRadius: 6, border: 'none', background: C.accent, color: 'var(--on-accent)', fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>访问</button>
         <button onClick={copyUrl} title="复制当前网址" style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.input, color: copied ? 'var(--success)' : C.text, fontSize: 'calc(var(--ui-font-size) - 2px)', cursor: 'pointer', whiteSpace: 'nowrap' }}>{copied ? '已复制 ✓' : '复制'}</button>
+        <button onClick={async () => { if (url) { try { await window.huangquan?.web.openExternal(url) } catch {} } }} title="在系统默认浏览器打开当前页面" style={{ height: 32, padding: '0 10px', borderRadius: 6, border: '1px solid ' + C.border, background: C.input, color: C.text, fontSize: 'calc(var(--ui-font-size) - 2px)', cursor: 'pointer', whiteSpace: 'nowrap' }}>↗ 系统浏览器</button>
       </div>
       {/* 页面标题栏 */}
       {(url || title) && (

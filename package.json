@@ -1,6 +1,7 @@
 {
   "name": "huangquan-agent",
-  "version": "0.3.2",
+  "productName": "黄泉Agent",
+  "version": "0.3.3",
   "description": "黄泉Agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
