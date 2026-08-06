@@ -120,7 +120,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
               value={searchQ}
               onChange={e => onSearch(e.target.value)}
               placeholder="搜索会话…"
-              style={{ width: '100%', padding: '5px 8px 5px 24px', background: 'rgba(20,20,40,0.8)', border: '1px solid #3a3c46', color: 'var(--text-primary)', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 2px)', outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '5px 8px 5px 24px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 2px)', outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
           <div className="session-list">

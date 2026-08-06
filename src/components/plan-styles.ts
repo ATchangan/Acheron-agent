@@ -7,7 +7,7 @@ export const S = {
     display: 'flex',
     flexDirection: 'column' as const,
     height: '100%',
-    backgroundColor: '#17181c',
+    backgroundColor: 'var(--bg-root)',
     color: 'var(--text-primary)',
     overflow: 'hidden',
   },
@@ -22,7 +22,7 @@ export const S = {
     display: 'flex',
     gap: '4px',
     marginTop: '14px',
-    borderBottom: '1px solid #3a3c46',
+    borderBottom: '1px solid var(--border)',
     paddingBottom: '8px',
   },
   navBtn: (active: boolean) => ({
@@ -30,7 +30,7 @@ export const S = {
     borderRadius: '6px',
     border: 'none',
     background: active ? 'rgba(var(--skin-accent),.15)' : 'transparent',
-    color: active ? '#7c6fa8' : '#9999AA',
+    color: active ? 'var(--accent)' : 'var(--text-secondary)',
     cursor: 'pointer',
     fontSize: 'calc(var(--ui-font-size) - 1px)',
     fontWeight: active ? (600 as const) : (400 as const),
@@ -40,15 +40,15 @@ export const S = {
   body: { flex: 1, overflowY: 'auto' as const, padding: '0 24px 24px' },
   // cards
   card: {
-    background: '#23252b',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
     borderRadius: '10px',
     padding: '16px',
     marginBottom: '10px',
   },
   cardSm: {
-    background: '#23252b',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
     borderRadius: '8px',
     padding: '10px 14px',
     marginBottom: '6px',
@@ -59,8 +59,8 @@ export const S = {
   input: {
     width: '100%',
     boxSizing: 'border-box' as const,
-    background: '#1d1e24',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     color: 'var(--text-primary)',
     padding: '8px 12px',
@@ -71,8 +71,8 @@ export const S = {
   textarea: {
     width: '100%',
     boxSizing: 'border-box' as const,
-    background: '#1d1e24',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     color: 'var(--text-primary)',
     padding: '8px 12px',
@@ -91,18 +91,18 @@ export const S = {
     fontWeight: 600 as const,
     transition: 'all .12s',
     background:
-      variant === 'primary' ? '#7c6fa8'
+      variant === 'primary' ? 'var(--accent)'
       : variant === 'danger' ? 'var(--danger)'
       : variant === 'green' ? 'var(--success)'
       : 'transparent',
     color:
-      variant === 'ghost' ? '#9999AA' : '#E8E8F0',
-    border: variant === 'ghost' ? '1px solid #3a3c46' : 'none',
+      variant === 'ghost' ? 'var(--text-secondary)' : 'var(--on-accent)',
+    border: variant === 'ghost' ? '1px solid var(--border)' : 'none',
   }),
   // progress bar
   progressBarOuter: {
     height: '6px',
-    background: '#3a3c46',
+    background: 'var(--border)',
     borderRadius: '3px',
     margin: '8px 0',
     overflow: 'hidden',
@@ -110,18 +110,18 @@ export const S = {
   progressBarInner: (pct: number) => ({
     height: '100%',
     width: `${pct}%`,
-    background: pct < 100 ? '#7c6fa8' : 'var(--success)',
+    background: pct < 100 ? 'var(--accent)' : 'var(--success)',
     borderRadius: '3px',
     transition: 'width .3s ease',
   }),
   // step card
   stepCard: (status: StepStatus) => ({
-    background: '#23252b',
+    background: 'var(--bg-card)',
     border: `1px solid ${
       status === 'completed' ? 'var(--success)'
-      : status === 'in_progress' ? '#7c6fa8'
+      : status === 'in_progress' ? 'var(--accent)'
       : status === 'blocked' ? 'var(--danger)'
-      : '#3a3c46'
+      : 'var(--border)'
     }`,
     borderRadius: '8px',
     padding: '12px 14px',
@@ -147,15 +147,15 @@ export const S = {
       : 'rgba(153,153,170,.12)',
     color:
       status === 'completed' ? 'var(--success)'
-      : status === 'in_progress' ? '#9488bc'
-      : status === 'blocked' ? '#e05540'
-      : '#9999AA',
+      : status === 'in_progress' ? 'var(--accent)'
+      : status === 'blocked' ? 'var(--danger)'
+      : 'var(--text-secondary)',
     flexShrink: 0,
   }),
   stepTitle: (status: StepStatus) => ({
     fontSize: 'var(--ui-font-size)',
     fontWeight: 600 as const,
-    color: status === 'completed' ? '#9999AA' : '#E8E8F0',
+    color: status === 'completed' ? 'var(--text-secondary)' : 'var(--text-primary)',
     textDecoration: status === 'completed' ? 'line-through' : 'none',
   }),
   stepDesc: { fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: 1.5 },
@@ -173,18 +173,18 @@ export const S = {
     flexShrink: 0,
     background:
       status === 'completed' ? 'var(--success)'
-      : status === 'in_progress' ? '#7c6fa8'
+      : status === 'in_progress' ? 'var(--accent)'
       : status === 'blocked' ? 'var(--danger)'
-      : '#3a3c46',
+      : 'var(--border)',
     border: `2px solid ${
       status === 'completed' ? 'var(--success)'
-      : status === 'in_progress' ? '#9488bc'
-      : status === 'blocked' ? '#e05540'
-      : '#555'
+      : status === 'in_progress' ? 'var(--accent)'
+      : status === 'blocked' ? 'var(--danger)'
+      : 'var(--text-muted)'
     }`,
     transition: 'all .25s',
   }),
-  timelineLine: { width: '2px', height: '24px', background: '#3a3c46', marginLeft: '4px' },
+  timelineLine: { width: '2px', height: '24px', background: 'var(--border)', marginLeft: '4px' },
   // labels
   label: { fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' } as React.CSSProperties,
   sectionTitle: {
@@ -195,8 +195,8 @@ export const S = {
   },
   // notes
   notesArea: {
-    background: '#1d1e24',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     borderRadius: '4px',
     padding: '6px 8px',
     fontSize: 'calc(var(--ui-font-size) - 2px)',
@@ -223,8 +223,8 @@ export const S = {
     gap: '10px',
   },
   templateCard: {
-    background: '#23252b',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
     borderRadius: '8px',
     padding: '14px',
     cursor: 'pointer',
@@ -245,23 +245,23 @@ export const S = {
       : status === 'completed' ? 'rgba(45,106,79,.20)'
       : 'rgba(153,153,170,.10)',
     color:
-      status === 'active' ? '#9488bc'
-      : status === 'paused' ? '#9999AA'
+      status === 'active' ? 'var(--accent)'
+      : status === 'paused' ? 'var(--text-secondary)'
       : status === 'completed' ? 'var(--success)'
-      : '#666',
+      : 'var(--text-muted)',
     flexShrink: 0,
   }),
   // reorder indicators
   dragHandle: {
     cursor: 'grab',
-    color: '#555',
+    color: 'var(--text-muted)',
     fontSize: 'calc(var(--ui-font-size) + 1px)',
     padding: '0 4px',
     userSelect: 'none' as const,
   },
   confirmOverlay: {
-    background: '#23252b',
-    border: '1px solid #C23B22',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--danger)',
     borderRadius: '8px',
     padding: '12px',
     marginBottom: '8px',

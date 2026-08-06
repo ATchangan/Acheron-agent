@@ -18,7 +18,7 @@ import { invokeHandler } from './registry'
 
 interface TokenStat { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }
 interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }
-interface CallResult { text: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage }
+interface CallResult { text: string; reasoning?: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage; msgId?: string }
 interface PlanGate { promise: Promise<void>; resolve: (v: boolean) => void }
 
 interface TaskState {
@@ -53,6 +53,7 @@ interface TaskState {
   planApproved: boolean
   stopped: boolean
   running: boolean
+  lastMsgId?: string
   roundNum: number
   interjects: { text: string; kind: 'supplement' | 'retarget' }[]
   withImages: boolean
@@ -306,6 +307,13 @@ export class AgentEngine {
     return null
   }
 
+  // 推理强度：每模型覆盖 > 全局档位；缺省回落到 medium
+  private resolveThinkLevel(task: TaskState, model?: string): string {
+    const m = model || task.model
+    const ov = (task.g.thinkOverrides || {}) as Record<string, string>
+    return ov[m] || String(task.g.thinkLevel || 'medium')
+  }
+
   private visionCandidates(g: EngineSettings, providers: EngineProvider[], curP: EngineProvider): { p: EngineProvider; model: string }[] {
     const out: { p: EngineProvider; model: string }[] = []
     const list: string[] = (g.visionModels && g.visionModels.length) ? g.visionModels : (g.visionModel ? [g.visionModel] : [])
@@ -376,6 +384,9 @@ export class AgentEngine {
       const doParallel = g.parallelTools !== false
       const meltLimit = g.meltdownLimit || 3
       const callLLM = this.withEmptyRetry(task)
+      // v0.3.4: 微压缩 —— 每轮把最旧一组纯问答折进运行摘要, 分摊压缩成本
+      // v0.3.4: 微压缩默认开启(可在 设置→引擎 关闭)
+      if (g.microCompact !== false) await this.microCompact(task)
 
       while (true) {
         task.roundNum++
@@ -391,7 +402,7 @@ export class AgentEngine {
           res = { text: res.text, tcs: [] }
         }
 
-        // 计划确认门(Claude/Cursor 风格): 首次工具调用前先给方案等用户批准
+        // 计划确认门: 首次工具调用前先给方案等用户批准
         if (res.tcs.length && g.planGate === true && !task.planApproved && task.roundNum === 1) {
           let gateResolve: (v: boolean) => void = () => {}
           const gate = new Promise<boolean>(r => { gateResolve = r })
@@ -430,9 +441,9 @@ export class AgentEngine {
           }
           const logStart = task.toolLog.length
           const stepText = (res.text || '').trim()
-          const stepId = uuidv4()
-          task.messages.push({ id: stepId, role: 'assistant', content: stepText || null, timestamp: Date.now(), tool_calls: res.tcs.map(tc2 => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) })
-          this.emit({ type: 'step', sid, id: stepId, content: stepText || null, toolCalls: res.tcs })
+          const stepId = res.msgId || task.lastMsgId || uuidv4()
+          task.messages.push({ id: stepId, role: 'assistant', content: stepText || null, reasoning_content: res.reasoning || undefined, timestamp: Date.now(), tool_calls: res.tcs.map(tc2 => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) })
+          this.emit({ type: 'step', sid, id: stepId, content: stepText || null, reasoning: res.reasoning || undefined, toolCalls: res.tcs })
 
           const runOne = async (tc: EngineToolCall) => {
             if (task.interjects.length && task.interjects[0].kind === 'retarget') {
@@ -525,17 +536,18 @@ export class AgentEngine {
     if (budgetExceeded(this.taskTokensUsed(task), maxTaskTokens)) {
       finalText += (finalText ? '\n\n' : '') + '[已达任务 token 预算上限，本轮提前结束。可在 设置→引擎→任务可靠性 中调整预算。]'
     }
-    const finalId = uuidv4()
+    const finalId = res.msgId || task.lastMsgId || uuidv4()
     task.messages.push({
       id: finalId,
       role: 'assistant',
       content: finalText || null,
+      reasoning_content: res.reasoning || undefined,
       timestamp: Date.now(),
       _toolLog: task.toolLog.length ? task.toolLog : undefined,
     })
     const taskTokens = this.taskTokensUsed(task)
     const taskMs = Date.now() - (task.userMsg.timestamp || Date.now())
-    this.emit({ type: 'final', sid, id: finalId, content: finalText, toolLog: task.toolLog, taskTokens, taskMs })
+    this.emit({ type: 'final', sid, id: finalId, content: finalText, reasoning: res.reasoning || undefined, toolLog: task.toolLog, taskTokens, taskMs })
     if (res.usage) this.emit({ type: 'assistant-usage', sid, id: finalId, usage: res.usage })
     this.emit({ type: 'stage-clear', sid })
   }
@@ -590,9 +602,13 @@ export class AgentEngine {
   private withEmptyRetry(task: TaskState): (t: TaskState) => Promise<CallResult> {
     return async (t: TaskState): Promise<CallResult> => {
       let capBoost = 1
+      const rid = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+      // 必须带完整随机后缀: slice(0,8) 只留时间戳前缀, 同一任务 100 秒内所有轮次会共用同一 id,
+      // 导致 step/final 互相覆盖(最终回复盖掉最后一步)
+      t.lastMsgId = 'm-' + t.taskId + '-' + rid
       for (let i = 0; ; i++) {
         try {
-          return await this.callLLM(t, capBoost)
+          return await this.callLLM(t, capBoost, t.lastMsgId)
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e)
           if (this.curGen(t.sid) !== t.myGen || t.stopped) throw e
@@ -622,13 +638,13 @@ export class AgentEngine {
     return Math.min(base * Math.max(1, Math.min(capBoost, 32)), 65536)
   }
 
-  private async callLLM(task: TaskState, capBoost = 1): Promise<CallResult> {
+  private async callLLM(task: TaskState, capBoost = 1, msgId?: string): Promise<CallResult> {
     const { sid } = task
-    const rid = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    const rid = msgId || ('m-' + task.taskId + '-' + 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8))
     // 流式文字走临时通道: 不落消息, 最终由 step/final 事件承载
-    const streamId = 'stream-' + task.taskId + '-' + rid.slice(0, 8)
     return new Promise<CallResult>((resolve, reject) => {
       let text = ''
+      let reasoning = ''
       const tcs: EngineToolCall[] = []
       const t0 = Date.now()
       let firstChunkAt = 0
@@ -639,13 +655,13 @@ export class AgentEngine {
       let flushTimer: NodeJS.Timeout | null = null
       const flush = () => {
         flushTimer = null
-        this.emit({ type: 'assistant-chunk', sid, id: streamId, content: text, streaming: true })
+        this.emit({ type: 'assistant-chunk', sid, id: rid, content: text, reasoning: reasoning || undefined, streaming: true })
       }
       const settle = () => {
         if (settled) return
         settled = true
         if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
-        this.emit({ type: 'assistant-chunk', sid, id: streamId, content: text, streaming: false })
+        this.emit({ type: 'assistant-chunk', sid, id: rid, content: text, reasoning: reasoning || undefined, streaming: false })
         const ttft = firstChunkAt ? firstChunkAt - t0 : Date.now() - t0
         const duration = Date.now() - t0
         this.trace('info', 'llm.round', 'text=' + text.length + ' tools=' + tcs.length, sid, rid)
@@ -654,12 +670,12 @@ export class AgentEngine {
           reject(new Error('模型返回空响应，请检查 API 配置或切换模型')); return
         }
         // 用户停止/任务中止: 不当作异常, 直接返回让主循环退出(禁止停止后继续重试)
-        if (aborted) { resolve({ text, tcs, usage: lastUsage || undefined }); return }
+        if (aborted) { resolve({ text, reasoning: reasoning || undefined, tcs, usage: lastUsage || undefined }); return }
         // v0.3.3: 工具调用丢失 / 参数不完整 / 输出被截断 —— 绝不把半截响应当最终回复, 交给重试
         if (argsBroken && tcs.length) { reject(new Error('模型工具调用参数不完整（参数解析失败），重试中')); return }
         if (finishReason === 'tool_calls' && tcs.length === 0) { reject(new Error('模型工具调用流不完整（工具调用丢失），重试中')); return }
         if (finishReason === 'length' && tcs.length === 0 && text) { reject(new Error('模型输出被截断（输出上限），重试中')); return }
-        resolve({ text, tcs, ttft, duration, usage: lastUsage || undefined })
+        resolve({ text, reasoning: reasoning || undefined, tcs, ttft, duration, usage: lastUsage || undefined, msgId: rid })
       }
       const msgs = this.buildMsgs(task, isVisionModel(task.model), task.withImages)
       const tools = getActiveTools(this.buildToolCtx(task))
@@ -673,6 +689,7 @@ export class AgentEngine {
         temperature: Number(task.g.temperature) || 0.7,
         max_tokens: maxTokens,
         tools,
+        thinkLevel: this.resolveThinkLevel(task),
         headers: task.curP.headers,
         requestId: rid,
         sid,
@@ -682,6 +699,14 @@ export class AgentEngine {
           if (d.content) {
             if (!firstChunkAt) firstChunkAt = Date.now()
             text += d.content
+            if (!flushTimer) flushTimer = setTimeout(flush, 40)
+          }
+          if (d.reasoning) {
+            // 兼容累积型/增量型网关: 整段覆盖优先, 否则只追加新片段, 避免重复
+            if (!reasoning) reasoning = d.reasoning
+            else if (d.reasoning.startsWith(reasoning)) reasoning = d.reasoning
+            else if (!reasoning.endsWith(d.reasoning)) reasoning += d.reasoning
+            if (!firstChunkAt) firstChunkAt = Date.now()
             if (!flushTimer) flushTimer = setTimeout(flush, 40)
           }
         },
@@ -884,8 +909,56 @@ export class AgentEngine {
     } catch { return '' }
   }
 
-  // dispatch: 子任务在主进程并行执行(上下文隔离 + 工具白名单)
+  // v0.3.4: 微压缩 —— 每轮把最旧的一组纯问答折进运行摘要, 分摊压缩成本
+  private async microCompact(task: TaskState): Promise<void> {
+    const msgs = task.messages
+    if (!msgs || msgs.length < 12) return
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') { lastUserIdx = i; break }
+    }
+    // 找最旧一组“用户→助手(无工具调用)”的完整问答
+    let foldStart = -1
+    let foldEnd = -1
+    for (let i = 0; i < msgs.length - 1 && (lastUserIdx < 0 || i < lastUserIdx); i++) {
+      if (msgs[i].role !== 'user') continue
+      const a = msgs[i + 1]
+      if (!a || a.role !== 'assistant' || a.tool_calls?.length || !a.content) continue
+      // 确保这段问答后不是挂在工具轮里
+      if (msgs[i + 2] && msgs[i + 2].role === 'tool') continue
+      foldStart = i
+      foldEnd = i + 2
+      break
+    }
+    if (foldStart < 0) return
+    const uText = String(msgs[foldStart].content || '').slice(0, 1200)
+    const aText = String(msgs[foldEnd - 1].content || '').slice(0, 1600)
+    try {
+      const rid = 'micro_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+      const summary = await chatOnce(this.deps.netFetch, {
+        provider: task.curP.type,
+        model: task.model,
+        apiKey: task.curP.apiKey,
+        baseUrl: task.curP.baseUrl,
+        messages: [
+          { role: 'system', content: '把下面的问答压缩成 200 字以内的要点，保留事实、路径、结论，不编造。只输出摘要。' },
+          { role: 'user', content: '问：' + uText + '\n答：' + aText },
+        ],
+      }, u => this.recordUsage(task, rid, u as EngineUsage))
+      if (!summary || summary.startsWith('E:')) return
+      const folded = String(summary).slice(0, 500)
+      const foldedMsg: EngineMessage = { id: uuidv4(), role: 'user', content: '[早期对话摘要]\n' + folded, timestamp: Date.now() }
+      task.messages = [...msgs.slice(0, foldStart), foldedMsg, ...msgs.slice(foldEnd)]
+      task.earlySummary = (task.earlySummary ? task.earlySummary + '\n' : '') + folded
+      this.emit({ type: 'compact', sid: task.sid, messages: task.messages })
+      this.trace('info', 'task.micro-compact', 'folded ' + (foldEnd - foldStart) + ' msgs', task.sid, task.taskId)
+    } catch { /* 压缩失败不影响主流程 */ }
+  }
+
+  // dispatch: 子任务在主进程并行执行(上下文隔离 + 工具白名单 + 并发上限)
   private async runDispatch(task: TaskState, tasks: { agent: string; task: string }[]): Promise<string> {
+    // 停止后不再启动新的分发执行
+    if (this.curGen(task.sid) !== task.myGen) return '已终止'
     const agents = getAgents(task.g.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
     if (!tasks.length) return 'E:dispatch 需要 tasks 数组 [{agent, task}]'
     const disabledAgents = task.g.disabledAgents || []
@@ -905,7 +978,7 @@ export class AgentEngine {
         const ag = agents[t.agent]
         if (!ag) return { agent: t.agent, task: t.task, result: 'E:未知角色' }
         if (disabledAgents.includes(t.agent)) return { agent: t.agent, task: t.task, result: 'E:该角色已被禁用: ' + t.agent }
-        const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
+      const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
         const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
         // 子任务用子角色构建工具上下文, 避免父角色白名单误伤子角色工具
         const subCtx = { ...this.buildToolCtx(task), agent: t.agent, isSubtask: true, activeAgents: [...task.activeAgents, t.agent] }
@@ -971,6 +1044,7 @@ export class AgentEngine {
               baseUrl: subP.baseUrl,
               messages: subMsgs as unknown as LlmMsg[],
               tools: agTools as unknown[],
+              thinkLevel: this.resolveThinkLevel(task, subModel),
               requestId: rid,
             }, {
               onChunk: d => { touch(); if (d.content) text += d.content; if (d.done) { done = true; resolveOnce() } },

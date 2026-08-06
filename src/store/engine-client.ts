@@ -18,6 +18,7 @@ interface EngineEventMsg {
   _toolLog?: Message['_toolLog']
   meta?: Message['meta']
   _inject?: boolean
+  _streaming?: boolean
 }
 
 interface EngineEvent {
@@ -27,6 +28,7 @@ interface EngineEvent {
   taskId?: string
   msg?: EngineEventMsg
   content?: string | null
+  reasoning?: string
   streaming?: boolean
   executing?: boolean
   busy?: boolean
@@ -78,6 +80,19 @@ function patchSession(sid: string, fn: (s: SessionData) => SessionData): void {
   useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === sid ? fn(x) : x) }))
 }
 
+// v0.3.4: 流式占位清理 —— 任务结束/出错/恢复时移除半截占位消息, 防止落盘与重复渲染
+function stripStreaming(msgs: Message[]): Message[] {
+  return (msgs || []).filter(m => !(m as { _streaming?: boolean })._streaming)
+}
+
+// v0.3.4: 流式文本直接写入正式消息 id —— 消息不存在时先创建占位(身份稳定),
+// 流式内容仍由 streamText 通道独立渲染(隔离重渲染), step/final 事件用同一 id 一次性落地
+function ensureStreamingMessage(s: SessionData, ev: EngineEvent): SessionData {
+  const list = s.messages || []
+  if (list.some(m => m.id === ev.id)) return s
+  return { ...s, messages: [...list, { id: ev.id as string, role: 'assistant' as const, content: '', timestamp: Date.now(), _streaming: true }] }
+}
+
 export function applyEngineEvent(raw: unknown): void {
   try {
     applyEngineEventInner(raw)
@@ -94,13 +109,14 @@ function applyEngineEventInner(raw: unknown): void {
     case 'assistant-chunk': {
       if (!ev.id) return
       // 临时流式通道(stream- 前缀): 只更新 streamText, 不落消息; 最终内容由 step/final 事件承载
-      if (String(ev.id).startsWith('stream-')) {
-        useChatStore.setState({ streamText: ev.content ?? '' })
-        if (ev.streaming !== undefined) setGlobal(ev)
-      } else {
-        patchSession(ev.sid, s => ({ ...s, messages: (s.messages || []).map(m => m.id === ev.id ? { ...m, content: ev.content ?? '' } : m) }))
-        if (ev.streaming !== undefined) setGlobal(ev)
+      useChatStore.setState({ streamText: ev.content ?? '' })
+      if (!String(ev.id).startsWith('stream-')) {
+        patchSession(ev.sid, s => ensureStreamingMessage(s, ev))
       }
+      if (ev.reasoning !== undefined) {
+        patchSession(ev.sid, s => ({ ...s, messages: (s.messages || []).map(m => m.id === ev.id ? { ...m, reasoning_content: ev.reasoning } : m) }))
+      }
+      if (ev.streaming !== undefined) setGlobal(ev)
       break
     }
     case 'assistant-usage': {
@@ -111,13 +127,15 @@ function applyEngineEventInner(raw: unknown): void {
     case 'step': {
       if (!ev.id) return
       useChatStore.setState({ streamText: '' })
-      patchSession(ev.sid, s => ({ ...s, messages: [...(s.messages || []), {
-        id: ev.id as string,
-        role: 'assistant' as const,
-        content: ev.content ?? null,
-        timestamp: Date.now(),
-        tool_calls: (ev.toolCalls || []).map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args) } })),
-      }] }))
+      const toolCalls = (ev.toolCalls || []).map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args) } }))
+      patchSession(ev.sid, s => {
+        const list = s.messages || []
+        const idx = list.findIndex(m => m.id === ev.id)
+        if (idx >= 0) {
+          return { ...s, messages: list.map(m => m.id === ev.id ? { ...m, content: ev.content ?? null, reasoning_content: ev.reasoning ?? m.reasoning_content, tool_calls: toolCalls, _streaming: false } : m) }
+        }
+        return { ...s, messages: [...list, { id: ev.id as string, role: 'assistant' as const, content: ev.content ?? null, reasoning_content: ev.reasoning, timestamp: Date.now(), tool_calls: toolCalls, _streaming: false }] }
+      })
       break
     }
     case 'tool-msg': {
@@ -149,14 +167,15 @@ function applyEngineEventInner(raw: unknown): void {
     case 'final': {
       if (!ev.id) break
       useChatStore.setState({ streamText: '' })
-      patchSession(ev.sid, s => ({ ...s, messages: [...(s.messages || []), {
-        id: ev.id as string,
-        role: 'assistant' as const,
-        content: ev.content ?? '',
-        timestamp: Date.now(),
-        _toolLog: ev.toolLog,
-        meta: { taskTokens: ev.taskTokens, taskMs: ev.taskMs },
-      }] }))
+      const finalMeta = { taskTokens: ev.taskTokens, taskMs: ev.taskMs }
+      patchSession(ev.sid, s => {
+        const list = s.messages || []
+        const idx = list.findIndex(m => m.id === ev.id)
+        if (idx >= 0) {
+          return { ...s, messages: list.map(m => m.id === ev.id ? { ...m, content: ev.content ?? '', reasoning_content: ev.reasoning ?? m.reasoning_content, _toolLog: ev.toolLog, meta: finalMeta, _streaming: false } : m) }
+        }
+        return { ...s, messages: [...list, { id: ev.id as string, role: 'assistant' as const, content: ev.content ?? '', reasoning_content: ev.reasoning, timestamp: Date.now(), _toolLog: ev.toolLog, meta: finalMeta, _streaming: false }] }
+      })
       throttledSessionSave(ev.sid, 300)
       break
     }
@@ -215,7 +234,7 @@ function applyEngineEventInner(raw: unknown): void {
     case 'restore': {
       const msgs = (ev as unknown as { messages?: EngineEventMsg[] }).messages
       if (!Array.isArray(msgs)) break
-      patchSession(ev.sid, s => ({ ...s, messages: msgs.map(m => ({
+      patchSession(ev.sid, s => ({ ...s, messages: stripStreaming(msgs as Message[]).map(m => ({
         id: m.id,
         role: (m.role === 'tool' ? 'tool' : m.role === 'assistant' ? 'assistant' : 'user') as Message['role'],
         content: m.content ?? null,
@@ -246,9 +265,29 @@ function applyEngineEventInner(raw: unknown): void {
       useChatStore.setState(s => ({ planPending: { ...s.planPending, [ev.sid]: { summary: ev.summary || '', steps: ev.steps || [] } } }))
       break
     }
+    case 'compact': {
+      // v0.3.4: 微压缩 —— 引擎把最旧一轮问答折成摘要并重写会话消息
+      const list = (ev as unknown as { messages?: EngineEventMsg[] }).messages
+      if (!Array.isArray(list)) break
+      patchSession(ev.sid, s => ({ ...s, messages: stripStreaming(list as Message[]).map(m => ({
+        id: m.id,
+        role: (m.role === 'tool' ? 'tool' : m.role === 'assistant' ? 'assistant' : 'user') as Message['role'],
+        content: m.content ?? null,
+        timestamp: m.timestamp || Date.now(),
+        tool_call_id: m.tool_call_id,
+        images: m.images,
+        attachments: m.attachments,
+        tool_calls: m.tool_calls,
+        _toolLog: m._toolLog,
+        meta: m.meta,
+        _inject: m._inject,
+      })) }))
+      throttledSessionSave(ev.sid, 300)
+      break
+    }
     case 'task-done': {
       useChatStore.setState({ streamText: '' })
-      patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false }))
+      patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false, messages: stripStreaming(s.messages || []) }))
       useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[ev.sid]; return { planPending: pp } })
       if (st.cid === ev.sid) useChatStore.setState({ streaming: false, executing: false, stage: null, error: ev.status === 'failed' ? (ev.error || '任务失败') : null })
       throttledSessionSave(ev.sid, 200)
@@ -259,6 +298,7 @@ function applyEngineEventInner(raw: unknown): void {
     }
     case 'error': {
       useChatStore.setState({ streamText: '' })
+      patchSession(ev.sid, s => ({ ...s, messages: stripStreaming(s.messages || []) }))
       if (st.cid === ev.sid) useChatStore.setState({ error: ev.message || '任务执行出错' })
       break
     }

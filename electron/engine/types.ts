@@ -27,6 +27,7 @@ export interface EngineSettings {
   riskConfirm?: boolean
   planGate?: boolean
   llmSummary?: boolean
+  microCompact?: boolean
   traceEnabled?: boolean
   mcpAutoInject?: boolean
   filePermission?: string
@@ -48,6 +49,7 @@ export interface EngineSettings {
   maxHandoffChain?: number
   singleBubble?: boolean
   thinkLevel?: string
+  thinkOverrides?: Record<string, string>
   chatPersona?: string
   workPersona?: string
   customSystemPrompt?: string
@@ -79,6 +81,7 @@ export interface EngineMessage {
   timestamp: number
   tool_call_id?: string
   reasoning_content?: string
+  _streaming?: boolean
   images?: string[]
   attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]
   tool_calls?: { id?: string; type: string; function: { name: string; arguments: string } }[]
@@ -117,14 +120,14 @@ export interface EngineUsage {
 
 export type EngineEvent =
   | { type: 'user-msg'; sid: string; msg: EngineMessage }
-  | { type: 'assistant-chunk'; sid: string; id: string; content: string; streaming: boolean }
+  | { type: 'assistant-chunk'; sid: string; id: string; content: string; reasoning?: string; streaming: boolean }
   | { type: 'assistant-usage'; sid: string; id: string; usage: EngineUsage }
-  | { type: 'step'; sid: string; id: string; content: string | null; toolCalls: EngineToolCall[]; meta?: { ttft?: number; duration?: number } }
+  | { type: 'step'; sid: string; id: string; content: string | null; reasoning?: string; toolCalls: EngineToolCall[]; meta?: { ttft?: number; duration?: number } }
   | { type: 'tool-msg'; sid: string; msg: EngineMessage }
   | { type: 'tool-log'; sid: string; stepId: string; log: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }[] }
   | { type: 'stage'; sid: string; phase: 'thinking' | 'tool'; label: string; detail: string }
   | { type: 'stage-clear'; sid: string }
-  | { type: 'final'; sid: string; id: string; content: string; toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }[]; taskTokens: number; taskMs: number }
+  | { type: 'final'; sid: string; id: string; content: string; reasoning?: string; toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }[]; taskTokens: number; taskMs: number }
   | { type: 'stream'; sid: string; streaming: boolean; executing: boolean }
   | { type: 'busy'; sid: string; busy: boolean }
   | { type: 'agent'; sid: string; agent: string; activeAgents: string[] }
@@ -134,6 +137,7 @@ export type EngineEvent =
   | { type: 'restore'; sid: string; messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string }
   | { type: 'ui'; sid: string; workDir?: string; theme?: string }
   | { type: 'plan'; sid: string; summary: string; steps: { tool: string; args: Record<string, unknown> }[] }
+  | { type: 'compact'; sid: string; messages: EngineMessage[] }
   | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string }
   | { type: 'error'; sid: string; message: string }
 

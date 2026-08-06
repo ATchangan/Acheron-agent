@@ -80,8 +80,8 @@ export default function FilesView() {
           <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
             <input autoFocus value={createName} placeholder={creating === 'dir' ? '文件夹名称' : '文件名.txt'} onChange={e => setCreateName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') doCreate(); if (e.key === 'Escape') setCreating(null) }}
-              style={{ flex: 1, fontSize: 'calc(var(--ui-font-size) - 3px)', background: '#1b1c22', border: '1px solid #3a3c46', color: 'var(--text-primary)', borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
-            <button onClick={doCreate} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: '#3a3c46', border: 'none', borderRadius: 4, color: 'var(--text-primary)' }}>✓</button>
+              style={{ flex: 1, fontSize: 'calc(var(--ui-font-size) - 3px)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
+            <button onClick={doCreate} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: 'var(--border)', border: 'none', borderRadius: 4, color: 'var(--text-primary)' }}>✓</button>
           </div>
         )}
         <div style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', borderTop: '1px solid #1A1A30', paddingTop: 4 }}

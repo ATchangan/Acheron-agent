@@ -178,7 +178,7 @@ export const useChatStore = create<S>((set, get) => ({
         const full = await window.huangquan.sessions.load(id)
         loadedSessionIds.add(id)
         if (full && Array.isArray(full.messages)) {
-          set(s => ({ sessions: s.sessions.map(x => x.id === id ? { ...x, messages: full.messages, title: full.title || x.title, mode: full.mode || x.mode } : x) }))
+          set(s => ({ sessions: s.sessions.map(x => x.id === id ? { ...x, messages: full.messages.filter(m => !(m as { _streaming?: boolean })._streaming), title: full.title || x.title, mode: full.mode || x.mode } : x) }))
         }
       } catch { loadedSessionIds.add(id) }
     }

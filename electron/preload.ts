@@ -37,10 +37,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
     setOpacity: (o: number) => ipcRenderer.invoke('window:setOpacity', o),
+    setTitleBarOverlay: (o: { color?: string; symbolColor?: string; height?: number }) => ipcRenderer.invoke('window:setTitleBarOverlay', o),
   },
   risk: {
-    respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string) =>
-      ipcRenderer.invoke('risk:respond', requestId, decision, approveTask, taskKey),
+    respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string, always?: boolean) =>
+      ipcRenderer.invoke('risk:respond', requestId, decision, approveTask, taskKey, always),
     onConfirm: (cb: (d: unknown) => void) => {
       const h = (_: unknown, d: unknown) => cb(d)
       ipcRenderer.on('risk:confirm', h)
@@ -189,7 +190,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     reload: () => ipcRenderer.invoke('browser:reload'),
     current: () => ipcRenderer.invoke('browser:current'),
     snapshot: () => ipcRenderer.invoke('browser:snapshot'),
-    // 独立浏览器窗口 + 悬浮窗
+    // v0.3.4: 内嵌实时画面(WebContentsView)布局/显示/隐藏
+    viewLayout: (b: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('browser:viewLayout', b),
+    viewShow: (key?: string) => ipcRenderer.invoke('browser:viewShow', key),
+    viewHide: () => ipcRenderer.invoke('browser:viewHide'),
+    // 浏览器面板 + 悬浮窗
     showPanel: () => ipcRenderer.invoke('browser:showPanel'),
     showFloat: () => ipcRenderer.invoke('browser:showFloat'),
     hideFloat: () => ipcRenderer.invoke('browser:hideFloat'),
@@ -200,6 +205,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     onFloat: (cb: (d: { show: boolean }) => void) => {
       const h = (_: unknown, d: { show: boolean }) => cb(d)
       ipcRenderer.on('browser:float', h); return () => ipcRenderer.removeListener('browser:float', h)
+    },
+    // v0.3.4: 主进程请求切换到内嵌浏览器面板
+    onEmbed: (cb: (d: { show: boolean }) => void) => {
+      const h = (_: unknown, d: { show: boolean }) => cb(d)
+      ipcRenderer.on('browser:embed', h); return () => ipcRenderer.removeListener('browser:embed', h)
     },
   },
   models: {

@@ -1,9 +1,10 @@
 ﻿// electron/ipc/browser.ts —— 浏览器域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain, BrowserWindow, shell } from 'electron'
+import type { BrowserSessionHandle } from '../browser-session'
 
 export function registerBrowserIpc(deps: {
-  getBrowserWin: (key?: string) => BrowserWindow
-  getBrowserWinIfExists: (key?: string) => BrowserWindow | null
+  getBrowserWin: (key?: string) => BrowserSessionHandle
+  getBrowserWinIfExists: (key?: string) => BrowserSessionHandle | null
   closeBrowserSession: (key: string) => void
   waitLoad: (wc: Electron.WebContents) => Promise<void>
   getCurUrl: () => string
@@ -11,26 +12,42 @@ export function registerBrowserIpc(deps: {
   showBrowserPanel: () => void
   showBrowserFloat: () => void
   hideBrowserFloat: () => void
+  layoutLiveView: (b: { x: number; y: number; width: number; height: number }) => void
+  showLiveView: (key?: string) => void
+  hideLiveView: () => void
+  isEmbeddedOpen: () => boolean
 }): void {
-  const { getBrowserWin, getBrowserWinIfExists, closeBrowserSession, waitLoad, getCurUrl, setCurUrl, showBrowserPanel, showBrowserFloat, hideBrowserFloat } = deps
+  const { getBrowserWin, getBrowserWinIfExists, closeBrowserSession, waitLoad, getCurUrl, setCurUrl, showBrowserPanel, showBrowserFloat, hideBrowserFloat, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen } = deps
 
   // 最近被 agent 使用的任务会话 —— 浏览器面板实时画面跟随它
   let activeBrowserKey = ''
-  const winFor = (key?: string): BrowserWindow => {
+  const winFor = (key?: string): BrowserSessionHandle => {
     if (key) {
       activeBrowserKey = key
+      if (isEmbeddedOpen()) showLiveView(key)
       return getBrowserWin(key)
     }
     return getBrowserWin()
   }
-  const activeOrSharedWin = (): BrowserWindow => {
+  const activeOrSharedWin = (): BrowserSessionHandle => {
     if (activeBrowserKey) {
       const w = getBrowserWinIfExists(activeBrowserKey)
-      if (w) return w
+      if (w) {
+        if (isEmbeddedOpen()) showLiveView(activeBrowserKey)
+        return w
+      }
       activeBrowserKey = ''
     }
     return getBrowserWin()
   }
+
+  // v0.3.4: 内嵌实时画面布局/显示/隐藏(渲染层浏览器面板挂载时调用)
+  ipcMain.handle('browser:viewLayout', (_e, b: { x?: number; y?: number; width?: number; height?: number }) => {
+    layoutLiveView({ x: Number(b?.x) || 0, y: Number(b?.y) || 0, width: Number(b?.width) || 0, height: Number(b?.height) || 0 })
+    return true
+  })
+  ipcMain.handle('browser:viewShow', (_e, key?: string) => { showLiveView(key || activeBrowserKey || undefined); return true })
+  ipcMain.handle('browser:viewHide', () => { hideLiveView(); return true })
 
   // 仅允许 http/https, 阻止 file:// / javascript: 等危险协议
   const isSafeBrowserUrl = (u: string): boolean => {
@@ -104,19 +121,15 @@ export function registerBrowserIpc(deps: {
     return getCurUrl()
   })
   // 实时快照 —— 前端轮询此接口显示 agent 正在看的页面
-  // Windows 上隐藏窗口 capturePage 返回空 —— 截图时临时显示窗口再隐藏
   ipcMain.handle('browser:snapshot', async () => {
-    let bw: BrowserWindow | null = null
+    let bw: BrowserSessionHandle | null = null
     try {
       bw = activeOrSharedWin(); const wc = bw.webContents
       if (!wc || wc.isDestroyed()) return { url: getCurUrl(), img: '', loading: false }
       const curUrl = wc.getURL() || getCurUrl()
       if (wc.isLoading() && Date.now() - (wc as unknown as { __loadStart: number }).__loadStart < 15000) return { url: curUrl, img: '', loading: true }
       if (wc.isLoading()) return { url: curUrl, img: '', loading: false }
-      const wasVisible = bw.isVisible()
-      if (!wasVisible) { bw.showInactive(); await new Promise(r => setTimeout(r, 120)) }
-      const img = await wc.capturePage()
-      if (!wasVisible) bw.hide()
+      const img = await bw.capturePage()
       let title = ''
       try { title = await wc.executeJavaScript('document.title') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       return { url: curUrl, img: img.toDataURL(), loading: false, title: title || '' }
@@ -263,7 +276,7 @@ export function registerBrowserIpc(deps: {
     if (url && url !== 'about:blank') { try { await wc.loadURL(url) } catch (e) { /* 继续 */ console.debug('[swallow]', e) } await waitLoad(wc) }
     setCurUrl(wc.getURL() || url || getCurUrl())
     try {
-      const img = await wc.capturePage()
+      const img = await bw.capturePage()
       return img.toDataURL()
     } catch { return '' }
   })

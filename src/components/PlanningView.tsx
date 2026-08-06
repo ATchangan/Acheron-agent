@@ -283,8 +283,8 @@ const PlanningView: React.FC = () => {
                       key={tpl.id}
                       style={S.templateCard}
                       onClick={() => applyTemplate(tpl)}
-                      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#7c6fa8' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = '#3a3c46' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)' }}
                     >
                       <div style={S.templateIcon}>{tpl.icon}</div>
                       <div style={S.templateTitle}>{tpl.title}</div>
@@ -333,7 +333,7 @@ const PlanningView: React.FC = () => {
                 ))}
 
                 {/* add step inline */}
-                <div style={{ marginTop: '10px', borderTop: '1px solid #3a3c46', paddingTop: '10px' }}>
+                <div style={{ marginTop: '10px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
                   <label style={S.label}>添加步骤</label>
                   <input
                     style={S.input}
@@ -516,7 +516,7 @@ const PlanningView: React.FC = () => {
                 <div key={plan.id} style={{
                   ...S.cardSm,
                   cursor: 'pointer',
-                  borderColor: plan.id === activePlanId ? '#7c6fa8' : '#3a3c46',
+                  borderColor: plan.id === activePlanId ? 'var(--accent)' : 'var(--border)',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ flex: 1, minWidth: 0 }} onClick={() => viewPlan(plan.id)}>

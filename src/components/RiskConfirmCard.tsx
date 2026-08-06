@@ -16,6 +16,7 @@ interface Pending {
 export default function RiskConfirmCard() {
   const [queue, setQueue] = useState<Pending[]>([])
   const [approveTask, setApproveTask] = useState(false)
+  const [approveAlways, setApproveAlways] = useState(false)
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
   useEffect(() => {
@@ -40,12 +41,13 @@ export default function RiskConfirmCard() {
   const respond = useCallback((decision: 'allow' | 'deny') => {
     const cur = queue[0]
     if (!cur) return
-    window.huangquan.risk.respond(cur.requestId, decision, approveTask, cur.taskKey).catch(() => {})
+    window.huangquan.risk.respond(cur.requestId, decision, approveTask, cur.taskKey, approveAlways).catch(() => {})
     const t = timers.current.get(cur.requestId)
     if (t) clearTimeout(t)
     timers.current.delete(cur.requestId)
     setQueue(q => q.filter(x => x.requestId !== cur.requestId))
     setApproveTask(false)
+    setApproveAlways(false)
   }, [queue, approveTask])
 
   const cur = queue[0]
@@ -59,10 +61,16 @@ export default function RiskConfirmCard() {
         {queue.length > 1 && <span className="risk-confirm-count">{queue.length} 个待确认</span>}
       </div>
       <div className="risk-confirm-detail" title={cur.detail}>{cur.detail}</div>
-      <label className="risk-confirm-approve">
-        <input type="checkbox" checked={approveTask} onChange={e => setApproveTask(e.target.checked)} />
-        <span>本次任务都批准（后续操作不再询问）</span>
-      </label>
+      <div className="risk-confirm-approves">
+        <label className="risk-confirm-approve">
+          <input type="checkbox" checked={approveTask} onChange={e => setApproveTask(e.target.checked)} />
+          <span>本次任务都批准</span>
+        </label>
+        <label className="risk-confirm-approve">
+          <input type="checkbox" checked={approveAlways} onChange={e => setApproveAlways(e.target.checked)} />
+          <span>以后都批准（该操作不再询问）</span>
+        </label>
+      </div>
       <div className="risk-confirm-actions">
         <button className="tab-btn" onClick={() => respond('deny')}>拒绝</button>
         <button className="tab-btn active" onClick={() => respond('allow')}>允许</button>

@@ -105,7 +105,7 @@ const S = {
     display: 'flex',
     flexDirection: 'column' as const,
     height: '100%',
-    backgroundColor: '#17181c',
+    backgroundColor: 'var(--bg-root)',
     color: 'var(--text-primary)',
     overflow: 'hidden',
   },
@@ -130,8 +130,8 @@ const S = {
   },
   // create section
   createCard: {
-    background: '#23252b',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
     borderRadius: '12px',
     padding: '16px',
     marginBottom: '16px',
@@ -152,8 +152,8 @@ const S = {
     flexWrap: 'wrap' as const,
   },
   input: {
-    background: '#1d1e24',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     color: 'var(--text-primary)',
     padding: '8px 12px',
     borderRadius: '6px',
@@ -163,8 +163,8 @@ const S = {
     minWidth: '120px',
   },
   inputSmall: {
-    background: '#1d1e24',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     color: 'var(--text-primary)',
     padding: '8px 12px',
     borderRadius: '6px',
@@ -174,8 +174,8 @@ const S = {
     minWidth: '150px',
   },
   select: {
-    background: '#1d1e24',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     color: 'var(--text-primary)',
     padding: '8px 10px',
     borderRadius: '6px',
@@ -188,8 +188,8 @@ const S = {
     padding: '8px 20px',
     borderRadius: '6px',
     border: 'none',
-    background: '#7c6fa8',
-    color: 'var(--text-primary)',
+    background: 'var(--accent)',
+    color: 'var(--on-accent)',
     fontSize: '13px',
     fontWeight: 600 as const,
     cursor: 'pointer',
@@ -198,7 +198,7 @@ const S = {
   btnGhost: {
     padding: '6px 12px',
     borderRadius: '6px',
-    border: '1px solid #3a3c46',
+    border: '1px solid var(--border)',
     background: 'transparent',
     color: 'var(--text-secondary)',
     fontSize: '11px',
@@ -215,9 +215,9 @@ const S = {
   presetChip: (active: boolean) => ({
     padding: '4px 10px',
     borderRadius: '14px',
-    border: active ? '1px solid #7c6fa8' : '1px solid #3a3c46',
-    background: active ? 'rgba(124,111,168,0.2)' : 'transparent',
-    color: active ? '#E8E8F0' : '#9999AA',
+    border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
+    background: active ? 'var(--skin-accent-soft)' : 'transparent',
+    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
     fontSize: '11px',
     cursor: 'pointer',
     whiteSpace: 'nowrap' as const,
@@ -240,7 +240,7 @@ const S = {
   templateChip: {
     padding: '5px 12px',
     borderRadius: '14px',
-    border: '1px solid #4a4c58',
+    border: '1px solid var(--border-glow)',
     background: 'rgba(212, 175, 55, 0.08)',
     color: 'var(--warning)',
     fontSize: '11px',
@@ -252,7 +252,7 @@ const S = {
     display: 'flex',
     gap: '4px',
     marginBottom: '12px',
-    borderBottom: '1px solid #3a3c46',
+    borderBottom: '1px solid var(--border)',
     paddingBottom: '8px',
   },
   filterTab: (active: boolean) => ({
@@ -260,7 +260,7 @@ const S = {
     borderRadius: '6px',
     border: 'none',
     background: active ? 'rgba(var(--skin-accent),.15)' : 'transparent',
-    color: active ? '#7c6fa8' : '#9999AA',
+    color: active ? 'var(--accent)' : 'var(--text-secondary)',
     cursor: 'pointer',
     fontSize: '12px',
     fontWeight: active ? (600 as const) : (400 as const),
@@ -276,16 +276,16 @@ const S = {
   statChip: {
     fontSize: '11px',
     color: 'var(--text-secondary)',
-    background: '#262830',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     borderRadius: '6px',
     padding: '5px 12px',
   },
   statNum: { fontWeight: 700 as const, color: 'var(--accent)', marginRight: '4px' },
   // task card
   card: (enabled: boolean) => ({
-    background: '#23252b',
-    border: enabled ? '2px solid #2D6A4F' : '1px solid #3a3c46',
+    background: 'var(--bg-card)',
+    border: enabled ? '2px solid var(--success)' : '1px solid var(--border)',
     borderRadius: '10px',
     padding: '12px 16px',
     marginBottom: '8px',
@@ -322,7 +322,7 @@ const S = {
     width: '30px',
     height: '30px',
     borderRadius: '6px',
-    border: '1px solid #3a3c46',
+    border: '1px solid var(--border)',
     background: 'transparent',
     color: 'var(--text-secondary)',
     fontSize: '14px',
@@ -350,7 +350,7 @@ const S = {
     width: '42px',
     height: '24px',
     borderRadius: '12px',
-    background: on ? 'var(--success)' : '#4a4c58',
+    background: on ? 'var(--success)' : 'var(--border-glow)',
     cursor: 'pointer',
     transition: 'background .15s',
     border: 'none',
@@ -363,7 +363,7 @@ const S = {
     width: '20px',
     height: '20px',
     borderRadius: '50%',
-    background: '#E8E8F0',
+    background: 'var(--text-primary)',
     transition: 'left .15s',
   }),
   // meta row
@@ -411,8 +411,8 @@ const S = {
   },
   // confirm
   confirmOverlay: {
-    background: '#23252b',
-    border: '1px solid #3a3c46',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
     borderRadius: '10px',
     padding: '16px',
     marginBottom: '12px',
@@ -433,7 +433,7 @@ const S = {
   btnCancel: {
     padding: '6px 18px',
     borderRadius: '6px',
-    border: '1px solid #3a3c46',
+    border: '1px solid var(--border)',
     background: 'transparent',
     color: 'var(--text-secondary)',
     fontSize: '12px',
@@ -789,7 +789,7 @@ export default function CronView() {
                 </div>
                 <div style={S.metaItem}>
                   <span style={S.metaLabel}>状态</span>
-                  <span style={{ color: isEnabled ? 'var(--success)' : '#9999AA', fontWeight: 600 }}>
+                  <span style={{ color: isEnabled ? 'var(--success)' : 'var(--text-secondary)', fontWeight: 600 }}>
                     {isEnabled ? '● 运行中' : '○ 已停用'}
                   </span>
                 </div>

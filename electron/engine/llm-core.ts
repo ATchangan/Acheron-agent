@@ -23,16 +23,60 @@ export interface LlmChatParams {
   customHeaders?: string
   sid?: string
   max_tokens?: number
+  thinkLevel?: string
 }
 
 export interface LlmStreamHandlers {
-  onChunk: (d: { content: string; done: boolean; requestId?: string; finishReason?: string }) => void
+  onChunk: (d: { content: string; reasoning?: string; done: boolean; requestId?: string; finishReason?: string }) => void
   onToolCall: (tc: { index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string }; requestId?: string }) => void
   onUsage: (u: Record<string, unknown> & { requestId?: string }) => void
   onError: (e: unknown) => void
 }
 
 const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>()
+
+// ─── 推理强度 → API 原生参数（对照主流实现的 wire 形态）──────────
+// off = 关闭思考；quick/medium/deep/extreme/ultra 分别映射 low/medium/high/xhigh/max。
+// DeepSeek 用 thinking 开关；OpenRouter/Nous 用 reasoning{enabled,effort}（透传扩展档位）；
+// OpenAI 官方用 reasoning_effort（xhigh/max 收敛为 high）；其余 OpenAI 兼容服务不硬塞原生参数，
+// 由提示词中的思考要求兜底，避免不认识的字段导致 400。
+const EFFORT_BY_LEVEL: Record<string, string> = {
+  quick: 'low', medium: 'medium', deep: 'high', extreme: 'xhigh', ultra: 'max',
+}
+
+export function buildReasoningParams(provider: string, baseUrl: string | undefined, model: string, thinkLevel: string | undefined): Record<string, unknown> {
+  const level = String(thinkLevel || 'medium')
+  const base = (baseUrl || '').toLowerCase()
+  const p = String(provider || '').toLowerCase()
+  const isDeepseek = p === 'deepseek' || base.includes('deepseek')
+  const isOpenRouter = base.includes('openrouter') || base.includes('nousresearch')
+  const isOpenAI = p === 'openai' || base.includes('api.openai.com')
+  const isXai = base.includes('x.ai') || base.includes('grok')
+  const isLmStudio = base.includes('lmstudio') || base.includes('127.0.0.1:1234')
+  // 原生 thinking 开关兼容的网关（OpenAI 兼容协议）
+  const isThinkingGateway = isDeepseek
+    || base.includes('moonshot')           // Kimi / Moonshot
+    || base.includes('bigmodel')           // 智谱
+    || base.includes('volces')             // 火山方舟 / 豆包
+    || base.includes('siliconflow')        // SiliconFlow
+  if (level === 'off') {
+    if (isThinkingGateway) return { thinking: { type: 'disabled' } }
+    if (isOpenRouter) return { reasoning: { enabled: false } }
+    return {}
+  }
+  const effort = EFFORT_BY_LEVEL[level] || 'medium'
+  if (isThinkingGateway) return { thinking: { type: 'enabled' } }
+  if (isOpenRouter) return { reasoning: { enabled: true, effort } }
+  if (isOpenAI && /(gpt-5|o[1-9]|o[0-9]|reasoning)/i.test(model)) {
+    const safe = ['low', 'medium', 'high'].includes(effort) ? effort : 'high'
+    return { reasoning_effort: safe }
+  }
+  if (isXai || isLmStudio) {
+    const safe = ['low', 'medium', 'high'].includes(effort) ? effort : 'high'
+    return { reasoning_effort: safe }
+  }
+  return {}
+}
 
 // v0.3.3: 流式超时 —— 供应商连接挂起不发数据时任务会永远“执行中”
 export const LLM_STALL_MS = 45000
@@ -85,7 +129,7 @@ function buildHeaders(apiKey?: string, customHeaders?: string): Record<string, s
 }
 
 export async function streamChat(netFetch: typeof fetch, params: LlmChatParams, handlers: LlmStreamHandlers): Promise<void> {
-  const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders, sid } = params
+  const { provider, model, apiKey, baseUrl, messages, temperature = 0.7, tools, headers: customHeaders, sid, thinkLevel } = params
   const requestId = params.requestId || ('r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
   const abortCtrl = new AbortController()
   activeRequests.set(requestId, { ctrl: abortCtrl, sid })
@@ -108,6 +152,7 @@ export async function streamChat(netFetch: typeof fetch, params: LlmChatParams, 
   body.stream_options = { include_usage: true }
   if (tools?.length) body.tools = tools
   if (params.max_tokens) body.max_tokens = params.max_tokens
+  Object.assign(body, buildReasoningParams(provider, baseUrl, model, thinkLevel))
 
   try {
     const url = buildUrl(provider, baseUrl)
@@ -204,7 +249,20 @@ export async function streamChat(netFetch: typeof fetch, params: LlmChatParams, 
             continue
           }
           const c = choice?.delta?.content || (typeof choice?.message?.content === 'string' ? choice.message.content : '') || ''
-          if (c) handlers.onChunk({ requestId, content: c, done: false })
+          // 兼容多种网关的思考字段形态: reasoning_content / reasoning, 字符串或 {text}/{content} 数组
+          const rawR = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning ?? choice?.message?.reasoning_content ?? choice?.message?.reasoning ?? ''
+          let r = ''
+          if (typeof rawR === 'string') r = rawR
+          else if (Array.isArray(rawR)) r = rawR.map((x: unknown) => {
+            if (typeof x === 'string') return x
+            const o = x as { text?: unknown; content?: unknown }
+            return typeof o?.text === 'string' ? o.text : (typeof o?.content === 'string' ? o.content : '')
+          }).join('')
+          else if (rawR && typeof rawR === 'object') {
+            const o = rawR as { text?: unknown; content?: unknown }
+            r = typeof o?.text === 'string' ? o.text : (typeof o?.content === 'string' ? o.content : '')
+          }
+          if (c || r) handlers.onChunk({ requestId, content: c, reasoning: r || undefined, done: false })
         } catch { /* 忽略坏行 */ }
       }
     }
@@ -220,7 +278,7 @@ export async function streamChat(netFetch: typeof fetch, params: LlmChatParams, 
   }
 }
 
-export async function chatOnce(netFetch: typeof fetch, params: LlmChatParams): Promise<string> {
+export async function chatOnce(netFetch: typeof fetch, params: LlmChatParams, onUsage?: (u: Record<string, unknown>) => void): Promise<string> {
   const { provider, model, apiKey, baseUrl, messages } = params
   try {
     const url = buildUrl(provider, baseUrl)
@@ -232,6 +290,7 @@ export async function chatOnce(netFetch: typeof fetch, params: LlmChatParams): P
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return 'E:' + (data.error?.message || ('HTTP ' + res.status))
+    if (onUsage && data.usage) onUsage(data.usage as Record<string, unknown>)
     return data.choices?.[0]?.message?.content || '(empty)'
   } catch (e: unknown) { return 'E:' + (e instanceof Error ? e.message : String(e)) }
 }

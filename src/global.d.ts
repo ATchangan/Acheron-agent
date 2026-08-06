@@ -17,9 +17,10 @@ declare global {
         maximize: () => Promise<void>
         close: () => Promise<void>
         setOpacity: (opacity: number) => Promise<void>
+        setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) => Promise<boolean>
       }
       risk: {
-        respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string) => Promise<boolean>
+        respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string, always?: boolean) => Promise<boolean>
         onConfirm: (cb: (d: RiskConfirmPayload) => void) => () => void
       }
       settings: {
@@ -157,12 +158,16 @@ declare global {
         reload: () => Promise<unknown>
         current: () => Promise<unknown>
         snapshot: () => Promise<{ url?: string; img?: string; title?: string; loading?: boolean } | null>
+        viewLayout: (b: { x: number; y: number; width: number; height: number }) => Promise<unknown>
+        viewShow: (key?: string) => Promise<unknown>
+        viewHide: () => Promise<unknown>
         showPanel: () => Promise<unknown>
         showFloat: () => Promise<unknown>
         hideFloat: () => Promise<unknown>
         debug: () => Promise<unknown>
         rendererStatus: () => Promise<{ mode: string; gpuAcceleration: string; webgl: string; canvas2d: string }>
         onFloat: (cb: (d: { show: boolean }) => void) => () => void
+        onEmbed: (cb: (d: { show: boolean }) => void) => () => void
       }
       models: {
         detect: (baseUrl: string, apiKey?: string, opts?: { anthropic?: boolean; type?: string }) => Promise<{ ok: boolean; models?: string[]; error?: string }>

@@ -4,7 +4,8 @@ import { errMsg } from '../utils/safe'
 
 // 实时浏览器面板 —— 轮询主进程无头浏览器截图,实时显示 agent 正在看的页面
 // 增强: 页面标题栏 / 复制URL / 主页按钮 / 刷新间隔设置即时生效 / 空状态与错误提示
-export default function BrowserView() {
+export default function BrowserView({ embedded }: { embedded?: boolean }) {
+  const embeddedMode = !!embedded
   const [url, setUrl] = useState('')
   const [snap, setSnap] = useState('')
   const [title, setTitle] = useState('')
@@ -13,9 +14,12 @@ export default function BrowserView() {
   const [copied, setCopied] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const liveRef = useRef<HTMLDivElement>(null)
   const g = useSettingsStore(s => s.general)
   const snapMs = (g?.browserSnapMs as number) || 1200
   const homeUrl = (g?.browserHomeUrl as string) || ''
+  // CPU 兼容渲染模式下 WebContentsView 无法合成(白屏), 自动回退截图轮询
+  const cpuFallback = (g?.rendererMode || 'auto') === 'cpu'
 
   const go = async (u?: string) => {
     const target = (u ?? inputRef.current?.value ?? '').trim()
@@ -47,9 +51,9 @@ export default function BrowserView() {
     setCopied(true); setTimeout(() => setCopied(false), 1500)
   }
 
-  // 轮询快照(间隔由设置 browserSnapMs 控制, 改动即时生效)
+  // v0.3.4: 内嵌模式 → 原生 WebContentsView 实时画面, 只轮询地址; 独立窗口 → 轮询截图
   useEffect(() => {
-    const tick = async () => {
+    const tickSnap = async () => {
       try {
         const s = await window.huangquan?.web.snapshot()
         if (s) {
@@ -63,10 +67,46 @@ export default function BrowserView() {
         }
       } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
     }
-    tick()
-    pollRef.current = setInterval(tick, snapMs)
+    const tickUrl = async () => {
+      try {
+        const u = await window.huangquan?.web.current()
+        if (u && u !== 'about:blank') {
+          setUrl(String(u))
+          if (inputRef.current && document.activeElement !== inputRef.current) inputRef.current.value = String(u)
+        }
+      } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
+    }
+    if (embeddedMode && !cpuFallback) {
+      tickUrl()
+      pollRef.current = setInterval(tickUrl, 1500)
+    } else {
+      tickSnap()
+      pollRef.current = setInterval(tickSnap, snapMs)
+    }
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [snapMs])
+  }, [snapMs, embeddedMode, cpuFallback])
+
+  // 内嵌实时画面: 把 WebContentsView 对齐到内容区, 挂载/尺寸变化时同步布局
+  useEffect(() => {
+    if (!embeddedMode || cpuFallback) return
+    const apply = () => {
+      const el = liveRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      window.huangquan?.web?.viewLayout?.({ x: r.x, y: r.y, width: r.width, height: r.height }).catch(() => {})
+      window.huangquan?.web?.viewShow?.().catch(() => {})
+    }
+    const t = setTimeout(apply, 60)
+    const ro = new ResizeObserver(() => apply())
+    if (liveRef.current) ro.observe(liveRef.current)
+    window.addEventListener('resize', apply)
+    return () => {
+      clearTimeout(t)
+      ro.disconnect()
+      window.removeEventListener('resize', apply)
+      window.huangquan?.web?.viewHide?.().catch(() => {})
+    }
+  }, [embeddedMode, cpuFallback])
 
   const C = {
     bg: 'var(--bg-root)', card: 'var(--bg-card)', input: 'var(--bg-elevated)', border: 'var(--border)',
@@ -102,15 +142,36 @@ export default function BrowserView() {
           {loading && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, whiteSpace: 'nowrap' }}>⏳ 加载中…</span>}
         </div>
       )}
-      {/* 实时画面 */}
-      <div style={{ flex: 1, overflow: 'auto', background: '#141519', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
-        {snap
-          ? <img src={snap} alt="浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
-          : <div style={{ marginTop: 80, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8 }}>
-              {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
-            </div>}
+      {/* 实时画面: 内嵌模式由主进程 WebContentsView 原生渲染覆盖此区域 */}
+      <div ref={liveRef} style={{ flex: 1, overflow: 'hidden', background: '#141519', position: 'relative' }}>
+        {embeddedMode && cpuFallback ? (
+          <div style={{ height: '100%', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
+            {snap
+              ? <img src={snap} alt="浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
+              : <div style={{ marginTop: 80, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8 }}>
+                  {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
+                </div>}
+          </div>
+        ) : embeddedMode ? (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8, pointerEvents: 'none', padding: 12 }}>
+            {loading ? '⏳ 页面加载中…' : (url ? '' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
+          </div>
+        ) : (
+          <div style={{ height: '100%', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
+            {snap
+              ? <img src={snap} alt="浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
+              : <div style={{ marginTop: 80, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8 }}>
+                  {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
+                </div>}
+          </div>
+        )}
       </div>
       {err && <div style={{ padding: '6px 14px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--danger)', borderTop: '1px solid ' + C.border }}>⚠️ {err}</div>}
+      {embeddedMode && cpuFallback && (
+        <div style={{ padding: '4px 14px', fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', borderTop: '1px solid ' + C.border, background: C.card }}>
+          当前为 CPU 兼容渲染模式，实时画面不可用，已自动使用截图显示；在 设置→引擎→渲染加速 切到「自动」或「GPU」后即可获得实时网页画面。
+        </div>
+      )}
     </div>
   )
 }

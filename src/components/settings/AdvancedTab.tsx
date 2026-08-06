@@ -36,8 +36,9 @@ export default function AdvancedTab() {
         <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
         <Toggle checked={g.traceEnabled !== false} onChange={v => save({ traceEnabled: v })} label="本地诊断轨迹" hint="记录任务/LLM/工具调用链，可在 设置→诊断 查看；仅存本地" />
         <Toggle checked={g.mcpAutoInject !== false} onChange={v => save({ mcpAutoInject: v })} label="MCP 工具自动注入" hint="连接过的 MCP 服务器工具 schema 自动并入模型工具列表，无需手动 mcp_call" />
-        <Toggle checked={g.planGate === true} onChange={v => save({ planGate: v })} label="计划确认门（实验）" hint="首次调用工具前先展示执行计划，等你批准后再动手（Claude/Cursor 风格）" />
+        <Toggle checked={g.planGate === true} onChange={v => save({ planGate: v })} label="计划确认门（实验）" hint="首次调用工具前先展示执行计划，等你批准后再动手" />
         <Toggle checked={g.llmSummary === true} onChange={v => save({ llmSummary: v })} label="LLM 摘要压缩（实验）" hint="长会话早期消息交给模型压缩成要点，替代规则截断（消耗少量 token）" />
+        <Toggle checked={g.microCompact !== false} onChange={v => save({ microCompact: v })} label="微压缩（每轮小步）" hint="默认开启：每轮结束后把最旧一组问答折进运行摘要，分摊压缩成本，避免一次性大压缩停顿；关闭后回到一次性压缩" />
       </div>
       <div style={S.card}>
         <div style={S.section}>上下文管理</div>

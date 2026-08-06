@@ -55,9 +55,9 @@ export default function MemoryView() {
     card: { background: 'rgba(30,30,56,0.6)', border: '1px solid var(--warning-soft)', borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
     factText: { fontSize: 'var(--ui-font-size)', color: 'var(--text-primary)', flex: 1, whiteSpace: 'pre-wrap' as const },
     btn: (color: string) => ({ background: 'transparent', border: `1px solid ${color}`, color, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', marginLeft: 8 } as React.CSSProperties),
-    inp: { background: 'rgba(20,20,40,0.8)', border: '1px solid #3a3c46', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 4, fontSize: 'calc(var(--ui-font-size) - 1px)', flex: 1, outline: 'none' } as React.CSSProperties,
+    inp: { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 4, fontSize: 'calc(var(--ui-font-size) - 1px)', flex: 1, outline: 'none' } as React.CSSProperties,
     empty: { textAlign: 'center' as const, color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 20 },
-    toast: { position: 'fixed' as const, bottom: 24, right: 24, background: '#262830', border: '1px solid #7c6fa8', color: 'var(--text-primary)', padding: '8px 16px', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 1px)', zIndex: 1000 },
+    toast: { position: 'fixed' as const, bottom: 24, right: 24, background: 'var(--bg-card)', border: '1px solid var(--accent)', color: 'var(--text-primary)', padding: '8px 16px', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 1px)', zIndex: 1000 },
   }
 
   const totalChars = pinnedFacts.reduce((s, f) => s + f.length, 0)

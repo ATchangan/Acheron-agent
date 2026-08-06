@@ -59,6 +59,8 @@ export function registerComputerIpc(deps: {
     try {
       const s = JSON.parse(fs.readFileSync(join(userDataPath, 'settings.json'), 'utf-8'))
       if (s?.general?.riskConfirm === false) return 'allow'
+      // v0.3.4: 「以后都批准」—— 该操作类型已持久化放行, 直接跳过确认
+      if (Array.isArray(s?.general?.riskAlwaysAllow) && s.general.riskAlwaysAllow.includes(kind)) return 'allow'
     } catch { /* 设置缺失时默认确认 */ }
     return requestRiskConfirm({ kind, detail, level, sid, taskId })
   }

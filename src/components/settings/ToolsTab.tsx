@@ -92,6 +92,20 @@ export default function ToolsTab() {
         </div>
       </div>
       <div style={S.card}>
+        <div style={S.section}>风险操作永久放行</div>
+        <div style={S.hint}>来自风险确认卡片的「以后都批准」；此处可查看并撤销，撤销后同类操作会重新弹确认。</div>
+        {(() => {
+          const list: string[] = Array.isArray(g.riskAlwaysAllow) ? g.riskAlwaysAllow : []
+          if (!list.length) return <div style={S.hint}>暂无永久放行项</div>
+          return list.map(k => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderRadius: 6, border: '1px solid ' + C.border, marginTop: 6 }}>
+              <span style={{ color: C.text, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>{k}</span>
+              <button style={S.btn('danger')} onClick={() => save({ riskAlwaysAllow: list.filter(x => x !== k) })}>撤销放行</button>
+            </div>
+          ))
+        })()}
+      </div>
+      <div style={S.card}>
         <div style={S.section}>插件工具 ({pluginList.length})</div>
       <div style={S.hint}>插件工具运行在虚拟机沙箱中（文件仅限工作目录，命令会拦截危险操作）。默认首次调用弹出确认，此处可提前放行/禁用。点击行切换。</div>
         {pluginList.length === 0 ? (
