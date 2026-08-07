@@ -77,17 +77,23 @@ export function memoryBlockText(mem: EngineMemory, userMsg?: string, trim = true
   const facts = mem.facts || []
   const summaries = mem.summaries || []
   const parts: string[] = []
-  const usageLine = '（置顶 ' + pinned.length + '/10 · 长期 ' + facts.length + '/500 · 摘要 ' + summaries.length + '/200，写满后旧内容会自动清理）'
-  if (pinned.length) parts.push('## 置顶记忆（用户手动固定,跨会话长期生效）\n' + pinned.slice(-10).map((f, i) => `${i + 1}. ${String(f).slice(0, 300)}`).join('\n'))
+  const usageLine = '??? ' + pinned.length + '/10 ? ?? ' + facts.length + '/500 ? ?? ' + summaries.length + '/200?????????????'
+  if (pinned.length) parts.push('## ???????????,????????\n' + pinned.slice(-10).map((f, i) => `${i + 1}. ${String(f).slice(0, 300)}`).join('\n'))
   if (facts.length) {
     const scored = trim && userMsg
       ? [...facts].map(f => ({ f: String(f), s: scoreOverlap(String(f), userMsg) })).sort((a, b) => b.s - a.s).map(x => x.f)
       : facts.map(String).slice(-10)
-    parts.push('## 长期记忆\n' + (trim ? scored.slice(-5) : scored).map((f, i) => `${i + 1}. ${f.slice(0, 200)}`).join('\n'))
+    parts.push('## ????\n' + (trim ? scored.slice(-5) : scored).map((f, i) => `${i + 1}. ${f.slice(0, 200)}`).join('\n'))
   }
-  if (summaries.length) parts.push('## 近期情景摘要\n' + (trim ? summaries.slice(-2) : summaries.slice(-3)).map((s, i) => `${i + 1}. ${(s.content || '').slice(0, 200)}`).join('\n'))
-  if (trim) while (parts.join('\n\n').length > 2500 && parts.length > 1) parts.pop()
-  const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
+  if (summaries.length) parts.push('## ??????\n' + (trim ? summaries.slice(-2) : summaries.slice(-3)).map((s, i) => `${i + 1}. ${(s.content || '').slice(0, 200)}`).join('\n'))
+  const tail = '\n(??????????? recall_memory ????, ???????)\n'
+  if (trim) {
+    const joined = parts.join('\n\n')
+    // ???? 6000 ????????? 4000 + ? 1500 + ?????????????
+    if (joined.length > 6000) {
+      return '\n' + usageLine + '\n\n' + joined.slice(0, 4000) + '\n...[记忆内容过长已截断]...\n' + joined.slice(-1500) + tail
+    }
+  }
   return parts.length ? '\n' + usageLine + '\n\n' + parts.join('\n\n') + tail : ''
 }
 

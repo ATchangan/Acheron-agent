@@ -6,11 +6,12 @@ import * as fs from 'fs'
 import { join } from 'path'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage } from './types'
 import { getAgents, type AgentDef } from './agents'
-import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent } from './context'
+import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, type EngineMemory } from './memory'
 import { streamChat, chatOnce, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
+import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
@@ -18,7 +19,7 @@ import { invokeHandler } from './registry'
 
 interface TokenStat { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }
 interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }
-interface CallResult { text: string; reasoning?: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage; msgId?: string }
+interface CallResult { text: string; reasoning?: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage; msgId?: string; truncated?: boolean }
 interface PlanGate { promise: Promise<void>; resolve: (v: boolean) => void }
 
 interface TaskState {
@@ -60,6 +61,10 @@ interface TaskState {
   switchedVision: boolean
   earlySummary?: string
   earlySummaryDone?: boolean
+  lastCompactAt?: number
+  lastPromptTokens?: number
+  compactCount?: number
+  pendingText?: string
 }
 
 export interface EngineDeps {
@@ -393,8 +398,22 @@ export class AgentEngine {
         if (this.curGen(sid) !== task.myGen) break
         task.interjects = []
         this.emit({ type: 'stage', sid, phase: 'thinking', label: '思考中', detail: '' })
+        // 窗口阈值压缩：每轮请求前按真实输入用量判断是否批量压缩旧历史
+        await this.maybeCompact(task)
 
         let res: CallResult = await callLLM(task)
+        // 截断续写：保留已生成文本，追加续写请求（最多 4 次），避免整段重生成
+        let continueCount = 0
+        while (res.truncated && continueCount < 4) {
+          continueCount++
+          task.pendingText = (task.pendingText || '') + res.text
+          this.trace('warn', 'llm.continue', continueCount + '/4', sid, task.taskId)
+          res = await this.callLLM(task, Math.min(2 ** continueCount, 32))
+        }
+        if (res.truncated) {
+          task.pendingText = (task.pendingText || '') + res.text
+          res = { text: '', tcs: [], truncated: false }
+        }
         if (this.curGen(sid) !== task.myGen) break
         const used = this.taskTokensUsed(task)
         if (budgetExceeded(used, maxTaskTokens)) {
@@ -474,6 +493,16 @@ export class AgentEngine {
           } else {
             for (const tc of res.tcs) results.push(await runOne(tc))
           }
+          // v0.3.5 T1: 并行结果总量护栏 —— 结果数 >4 且总字符 >6000 时, 保留前 4 大结果全量, 其余瘦身
+          // (完整版仍进 toolLog / terminal 面板, 信息不丢; 仅控制下一轮上下文注入量)
+          if (task.g.perf?.parallelCap !== false && results.length > 4) {
+            const totalLen = results.reduce((s, x) => s + x.r.length, 0)
+            if (totalLen > 6000) {
+              const ranked = [...results].sort((a, b) => b.r.length - a.r.length)
+              const keepFull = new Set(ranked.slice(0, 4))
+              for (const x of results) if (!keepFull.has(x)) x.r = slimToolResult(x.r)
+            }
+          }
           for (const { tc, r } of results) {
             const toolMsg: EngineMessage = { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }
             task.messages.push(toolMsg)
@@ -532,7 +561,8 @@ export class AgentEngine {
   // 不创建占位消息 → 不存在“卡片前重复”的架构性可能。
   private finalizeTask(task: TaskState, res: CallResult, maxTaskTokens: number): void {
     const { sid } = task
-    let finalText = (res.text || '').trim()
+    let finalText = ((task.pendingText || '') + (res.text || '')).trim()
+    task.pendingText = ''
     if (budgetExceeded(this.taskTokensUsed(task), maxTaskTokens)) {
       finalText += (finalText ? '\n\n' : '') + '[已达任务 token 预算上限，本轮提前结束。可在 设置→引擎→任务可靠性 中调整预算。]'
     }
@@ -674,10 +704,20 @@ export class AgentEngine {
         // v0.3.3: 工具调用丢失 / 参数不完整 / 输出被截断 —— 绝不把半截响应当最终回复, 交给重试
         if (argsBroken && tcs.length) { reject(new Error('模型工具调用参数不完整（参数解析失败），重试中')); return }
         if (finishReason === 'tool_calls' && tcs.length === 0) { reject(new Error('模型工具调用流不完整（工具调用丢失），重试中')); return }
-        if (finishReason === 'length' && tcs.length === 0 && text) { reject(new Error('模型输出被截断（输出上限），重试中')); return }
+        if (finishReason === 'length' && tcs.length === 0 && text) {
+          // 截断续写：保留已生成文本，由上层追加续写请求（避免整段重生成）
+          this.trace('warn', 'llm.truncated', 'partial ' + text.length + ' chars', sid, rid)
+          resolve({ text, reasoning: reasoning || undefined, tcs: [], truncated: true, usage: lastUsage || undefined, msgId: rid })
+          return
+        }
         resolve({ text, reasoning: reasoning || undefined, tcs, ttft, duration, usage: lastUsage || undefined, msgId: rid })
       }
       const msgs = this.buildMsgs(task, isVisionModel(task.model), task.withImages)
+      // 截断续写：把已生成部分作为 assistant 消息注入，要求模型从断点继续
+      if (task.pendingText) {
+        msgs.push({ role: 'assistant', content: task.pendingText })
+        msgs.push({ role: 'user', content: '[输出被截断，请从断点继续，不要重复已经写过的内容]' })
+      }
       const tools = getActiveTools(this.buildToolCtx(task))
       const maxTokens = this.roundMaxTokens(task, tools, capBoost)
       void streamChat(this.deps.netFetch, {
@@ -862,6 +902,7 @@ export class AgentEngine {
     // v0.3.3: 上下文环数据源 —— 每次请求的真实 prompt 输入 + 模型上下文上限
     const used = Number(u.prompt_tokens || u.input_tokens || 0)
     const limit = getModelContextLimit(mk)
+    if (used > 0) task.lastPromptTokens = used
     if (used > 0) this.emit({ type: 'context', sid: task.sid, used, limit })
     try {
       void invokeHandler('modelStats:recordRequest', [task.sid, mk, readT > 0], null)
@@ -952,6 +993,59 @@ export class AgentEngine {
       task.earlySummary = (task.earlySummary ? task.earlySummary + '\n' : '') + folded
       this.emit({ type: 'compact', sid: task.sid, messages: task.messages })
       this.trace('info', 'task.micro-compact', 'folded ' + (foldEnd - foldStart) + ' msgs', task.sid, task.taskId)
+    } catch { /* 压缩失败不影响主流程 */ }
+  }
+
+  // 窗口阈值压缩：用最近一次请求的真实输入 token 判断，接近模型窗口上限时
+  // 把最旧的完整轮次交给摘要请求压成一条摘要，保留最近 N 轮完整上下文。
+  // 与微压缩互补：微压缩持续小额折并，这里兜底防止窗口溢出。
+  private async maybeCompact(task: TaskState): Promise<void> {
+    try {
+      if (task.g.perf?.compactSummary === false || task.g.compactSummary === false) return
+      const limit = getModelContextLimit(task.model)
+      if (!limit) return
+      // 阈值解析：按模型覆盖 > 全局百分比；小窗口模型地板 0.75（仅无显式配置时生效）
+      const explicit = task.g.compactOverrides?.[task.model] || task.g.compactThreshold
+      let ratio = resolveCompactRatio(task.model, task.g.compactOverrides, task.g.compactThreshold)
+      if (!explicit && limit < COMPACT_SMALL_WINDOW) ratio = Math.max(ratio, COMPACT_SMALL_FLOOR)
+      const percentThreshold = Math.floor(limit * ratio)
+      // 绝对 token 上限（可选）：必压线，绝不晚于该值触发
+      const absCap = Number(task.g.compactTokenCap) || 0
+      const threshold = absCap > 0 ? Math.min(percentThreshold, absCap) : percentThreshold
+      // preflight：按当前消息估算预判（上一轮真实用量可能略滞后）
+      let est = 0
+      for (const m of task.messages) est += estimateTokens(typeof m.content === 'string' ? m.content : '', task.model)
+      est += 2000 // system/提示词/工具 schema 粗估
+      const promptTokens = task.lastPromptTokens || 0
+      const preflightHit = est > threshold * COMPACT_PREFLIGHT_MARGIN
+      if (!preflightHit && (promptTokens <= 0 || promptTokens < threshold)) return
+      const now = Date.now()
+      if (task.lastCompactAt && now - task.lastCompactAt < COMPACT_COOLDOWN_MS) return
+      const keepRounds = Math.max(2, Math.min(20, Number(task.g.compactKeepRounds) || COMPACT_DEFAULT_KEEP_ROUNDS))
+      const cands = pickCompactCandidates(task.messages, keepRounds)
+      if (cands.length < 3) return
+      this.emit({ type: 'stage', sid: task.sid, phase: 'thinking', label: '正在压缩历史', detail: cands.length + ' 条旧消息 → 摘要' })
+      const { system, user } = buildCompactPrompt(cands)
+      const summary = await chatOnce(this.deps.netFetch, {
+        provider: task.curP.type,
+        model: task.model,
+        apiKey: task.curP.apiKey,
+        baseUrl: task.curP.baseUrl,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      })
+      if (!summary || summary.startsWith('E:')) return
+      task.compactCount = (task.compactCount || 0) + 1
+      const notice = buildCompactNotice(task.compactCount)
+      const next = applyCompact(task.messages, summary + notice, keepRounds)
+      if (next.length >= task.messages.length) return
+      task.messages = next
+      task.lastCompactAt = now
+      this.emit({ type: 'compact', sid: task.sid, messages: task.messages })
+      this.checkpoint(task, task.roundNum)
+      this.trace('info', 'context.window-compact', '压缩 ' + cands.length + ' 条历史 · 触发 ' + (preflightHit ? 'preflight ' + Math.round(est) : 'usage ' + promptTokens) + '/' + threshold, task.sid, task.taskId)
     } catch { /* 压缩失败不影响主流程 */ }
   }
 

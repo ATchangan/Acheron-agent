@@ -134,7 +134,8 @@ export function getActiveTools(ctx: ToolRunCtx): EngineToolSpec[] {
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   const autoMcp = ctx.g.mcpAutoInject !== false
   const merged = autoMcp ? [...TOOLS, ...getMcpToolSpecs()] : [...TOOLS]
-  const filtered = ctx.agent ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
+  // v0.3.5 T2: 工具白名单开关 —— 关闭时不过 agent 白名单, 返回全量工具
+  const filtered = (ctx.agent && ctx.g.perf?.toolWhitelist !== false) ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
   if (ctx.g.collabMode === '关闭') {
     return filtered.filter(t => !disabled.includes(t.function.name) && !['handoff', 'dispatch', 'list_agents'].includes(t.function.name))
   }

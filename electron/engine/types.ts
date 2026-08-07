@@ -58,10 +58,10 @@ export interface EngineSettings {
   userAlias?: string
   toneStyle?: string
   verbosity?: number
-  compactStrategy?: string
-  compactMsgCount?: number
-  compactTokenLimit?: number
   compactThreshold?: number
+  compactKeepRounds?: number
+  compactTokenCap?: number
+  compactOverrides?: Record<string, number>
   taskArchive?: boolean
   perf?: Record<string, boolean | undefined>
   episodicMemory?: boolean
