@@ -47,7 +47,7 @@ function saveJobs() { fs.writeFileSync(dataPath, JSON.stringify(jobs), 'utf-8') 
 
 export function initCron(path: string, sendFn: (prompt: string) => void) {
   dataPath = path
-  try { if (fs.existsSync(path)) jobs.push(...JSON.parse(fs.readFileSync(path, 'utf-8'))) } catch {}
+  try { if (fs.existsSync(path)) jobs.push(...JSON.parse(fs.readFileSync(path, 'utf-8'))) } catch (e) { console.warn('[cron] 读取任务文件失败:', e) }
   if (timer) clearInterval(timer)
   timer = setInterval(() => checkJobs(sendFn), 30000) // 每 30 秒检查
 }
