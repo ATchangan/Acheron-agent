@@ -1,11 +1,13 @@
-﻿import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
 import { CATEGORIES, CATEGORY_HINT, CAT_COLORS, YELLOW_RIVER } from './plugin-types'
 import type { PluginManifest, PluginInfo, PluginState } from './plugin-types'
 import { s } from './plugin-styles'
-import { MaskMark, FolderMark, LinkMark, EmptyMark, InfoMark, LockMark, ToolMark, BoltMark, TagMark } from './themed-icons'
+import { MaskMark, EmptyMark } from './themed-icons'
+import { PluginInstallPanel } from './PluginInstallPanel'
+import { PluginScanBar } from './PluginScanBar'
+import { PluginList } from './PluginList'
 
-// v0.3.1 块 K: 插件视图主组件(类型/样式已拆分, 行为零变化)
 export default function PluginsView() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -230,7 +232,6 @@ export default function PluginsView() {
   const enabled = plugins.filter((p) => p.enabled).length
   const disabled = total - enabled
 
-  // ── 主渲染 ──────────────────────────────────────────
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto', height: '100%' }}>
       {/* 顶部 */}
@@ -242,10 +243,7 @@ export default function PluginsView() {
           </span>
           <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginTop: 2 }}>安装第三方能力（插件）扩展黄泉的本领</div>
         </div>
-        <button
-          className="btn-primary"
-          onClick={() => setShowInstall(!showInstall)}
-        >
+        <button className="btn-primary" onClick={() => setShowInstall(!showInstall)}>
           {showInstall ? '收起' : '+ 安装'}
         </button>
       </div>
@@ -263,115 +261,35 @@ export default function PluginsView() {
         </span>
       </div>
 
-      {/* 安装表单 */}
       {showInstall && (
-        <div style={s.installForm}>
-          <div style={s.installTabs}>
-            <button
-              style={s.installTab(installType === 'local')}
-              onClick={() => { setInstallType('local'); setInstallMsg('') }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><FolderMark size={13} />本地目录</span>
-            </button>
-            <button
-              style={s.installTab(installType === 'git')}
-              onClick={() => { setInstallType('git'); setInstallMsg('') }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><LinkMark size={13} />仓库地址</span>
-            </button>
-          </div>
-
-          {installType === 'local' && (
-            <div className="provider-form">
-              <div className="form-row">
-                <label>插件目录</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input
-                    className="dropdown-input"
-                    style={{ flex: 1, marginBottom: 0 }}
-                    placeholder="插件文件夹路径…"
-                    value={localPath}
-                    onChange={(e) => setLocalPath(e.target.value)}
-                  />
-                  <button className="btn-small" onClick={browseLocal}>
-                    选择
-                  </button>
-                </div>
-              </div>
-              <button
-                className="btn-primary"
-                onClick={installLocal}
-                disabled={installing || !localPath.trim()}
-              >
-                {installing ? '安装中…' : '安装'}
-              </button>
-            </div>
-          )}
-
-          {installType === 'git' && (
-            <div className="provider-form">
-              <div className="form-row">
-                <label>仓库地址</label>
-                <input
-                  className="dropdown-input"
-                  placeholder="https://github.com/user/plugin.git"
-                  value={gitUrl}
-                  onChange={(e) => setGitUrl(e.target.value)}
-                />
-              </div>
-              <button
-                className="btn-primary"
-                onClick={installGit}
-                disabled={installing || !gitUrl.trim()}
-              >
-                {installing ? '克隆中…' : '克隆'}
-              </button>
-            </div>
-          )}
-
-          {installMsg && (
-            <p
-              style={
-                installMsg.startsWith('✅') ? s.msgSuccess : s.msgError
-              }
-            >
-              {installMsg}
-            </p>
-          )}
-        </div>
+        <PluginInstallPanel
+          installType={installType}
+          localPath={localPath}
+          gitUrl={gitUrl}
+          installMsg={installMsg}
+          installing={installing}
+          onType={(t) => { setInstallType(t); setInstallMsg('') }}
+          onLocalPath={setLocalPath}
+          onGitUrl={setGitUrl}
+          onInstallLocal={installLocal}
+          onInstallGit={installGit}
+          onBrowseLocal={browseLocal}
+        />
       )}
 
-      {/* 错误提示 */}
-      {scanError && (
-        <div className="provider-form">
-          <p style={s.msgError}>⚠️ {scanError}</p>
-          <button className="btn-small" onClick={scanPlugins} style={{ marginTop: 8 }}>
-            重试
-          </button>
-        </div>
-      )}
+      {scanError && <PluginScanBar error={scanError} onRetry={scanPlugins} />}
 
-      {/* 加载中 */}
       {loading && (
         <p className="empty-tip" style={{ padding: 40 }}>
           正在加载…
         </p>
       )}
 
-      {/* 空状态 */}
       {!loading && plugins.length === 0 && !scanError && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '40px 20px',
-          }}
-        >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
           <div style={s.emptyIcon}><EmptyMark size={40} /></div>
           <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--ui-font-size)', marginBottom: 6 }}>
-          还没有安装任何插件
+            还没有安装任何插件
           </p>
           <p className="empty-hint">
             点击「+ 安装」即可安装插件
@@ -379,191 +297,15 @@ export default function PluginsView() {
         </div>
       )}
 
-      {/* 插件列表 */}
-      {!loading &&
-        plugins.map((p) => {
-          const cat = CATEGORIES[p.category] || CATEGORIES['oni']
-          const isExpanded = expanded === p.manifest.name
-          const catColor = CAT_COLORS[p.category] || CAT_COLORS['oni']
-
-          return (
-            <div
-              key={p.manifest.name}
-              style={s.card}
-              onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLDivElement).style.borderColor =
-                  YELLOW_RIVER
-              }}
-              onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLDivElement).style.borderColor =
-                  'var(--border)'
-              }}
-            >
-      {/* 卡片头部 */}
-              <div
-                style={s.cardHeader}
-                onClick={() =>
-                  setExpanded(isExpanded ? null : p.manifest.name)
-                }
-              >
-                <div style={s.cardLeft}>
-                  <div style={s.pluginIcon}>{cat.emoji}</div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={s.pluginName}>{p.manifest.name}</div>
-                    <div style={s.pluginMeta}>
-                      <span>v{p.manifest.version || '0.0.0'}</span>
-                      <span style={s.categoryBadge}>
-                        {cat.label}({CATEGORY_HINT[p.category]})
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 'calc(var(--ui-font-size) - 2px)',
-                        color: 'var(--text-muted)',
-                        marginTop: 3,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {p.manifest.description || '暂无说明'}
-                    </div>
-                  </div>
-                </div>
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}
-                >
-                  <span
-                    className={`toggle ${p.enabled ? 'on' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      togglePlugin(p.manifest.name)
-                    }}
-                    title={p.enabled ? '禁用' : '启用'}
-                  />
-                  <span style={s.expandHint}>
-                    {isExpanded ? '▲' : '▼'}
-                  </span>
-                </div>
-              </div>
-
-      {/* 展开详情 */}
-              {isExpanded && (
-                <div style={s.expandBody}>
-              {/* 基本信息 */}
-                  <div>
-                    <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><InfoMark size={12} />基本信息</div>
-                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      {p.manifest.author && (
-                        <span>作者：{p.manifest.author}</span>
-                      )}
-                      {p.manifest.homepage && (
-                        <span>
-                          {' '}
-                          <a
-                            href={p.manifest.homepage}
-                            style={{ color: 'var(--accent)' }}
-                            onClick={(e) => e.stopPropagation()}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {p.manifest.homepage}
-                          </a>
-                        </span>
-                      )}
-                      {p.manifest.license && (
-                        <span>许可协议：{p.manifest.license}</span>
-                      )}
-                      <span>目录：{p.dirName}</span>
-                    </div>
-                  </div>
-
-                  {/* 权限 */}
-                  {p.manifest.permissions && p.manifest.permissions.length > 0 && (
-                    <div>
-                      <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><LockMark size={12} />权限</div>
-                      <div>
-                        {p.manifest.permissions.map((perm) => (
-                          <span key={perm} style={s.permChip}>
-                            {perm}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 工具列表 */}
-                  {p.manifest.tools && p.manifest.tools.length > 0 && (
-                    <div>
-                      <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><ToolMark size={12} />提供工具</div>
-                      {p.manifest.tools.map((t, i) => (
-                        <div key={i} style={s.toolRow}>
-                          <span style={s.toolName}>{t.name}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>
-                            — {t.description || '暂无说明'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 命令列表 */}
-                  {p.manifest.commands && p.manifest.commands.length > 0 && (
-                    <div>
-                      <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><BoltMark size={12} />命令</div>
-                      {p.manifest.commands.map((c, i) => (
-                        <div key={i} style={s.toolRow}>
-                          <span style={s.toolName}>{c.name}</span>
-                          <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono',monospace", fontSize: 'calc(var(--ui-font-size) - 3px)' }}>
-                            {c.action}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 类别切换 */}
-                  <div>
-                    <div style={{ ...s.sectionTitle, display: 'flex', alignItems: 'center', gap: 5 }}><TagMark size={12} />类别</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {Object.entries(CATEGORIES).map(([key, val]) => (
-                        <button
-                          key={key}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setCategory(p.manifest.name, key)
-                          }}
-                          style={{
-                            fontSize: 'calc(var(--ui-font-size) - 2px)',
-                            padding: '3px 10px',
-                            borderRadius: 14,
-                            border: `1px solid ${
-                              p.category === key
-                                ? CAT_COLORS[key]
-                                : 'var(--border)'
-                            }`,
-                            background:
-                              p.category === key
-                                ? `${CAT_COLORS[key]}20`
-                                : 'transparent',
-                            color:
-                              p.category === key
-                                ? CAT_COLORS[key]
-                                : 'var(--text-muted)',
-                            cursor: 'pointer',
-                            fontWeight: p.category === key ? 600 : 400,
-                          }}
-                        >
-                          {val.emoji} {val.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
+      {!loading && (
+        <PluginList
+          plugins={plugins}
+          expanded={expanded}
+          onToggle={togglePlugin}
+          onExpand={setExpanded}
+          onSetCategory={setCategory}
+        />
+      )}
     </div>
   )
 }
