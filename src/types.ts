@@ -1,8 +1,8 @@
 ﻿// src/types.ts —— 全库类型唯一来源(v0.3.0 M1)
 // 职责: 核心数据结构定义。禁止在别处重复定义同名 interface。
-// 迁移自 global.d.ts 的 GeneralSettings + 方案新增 ToolSpec/AgentDef/SubTaskCtx
+// 迁移自 global.d.ts 的 GeneralSettings + 方案新增 ToolSpec/AgentDef
 
-export interface ToolParam {
+interface ToolParam {
   type: string
   description?: string
   enum?: string[]
@@ -20,13 +20,6 @@ export interface ToolSpec {
   }
 }
 
-export interface ToolResult {
-  ok: boolean
-  data?: string
-  error?: string
-  truncated?: boolean
-}
-
 export interface AgentDef {
   role: string
   prompt: string
@@ -36,13 +29,6 @@ export interface AgentDef {
   model?: string // 模型偏好(v0.4 网关接入, 先落字段)
   memoryScope: string
   capabilities: string[] // ['dispatch','doc','security','automation','chat','vision','code']
-}
-
-export interface SubTaskCtx {
-  task: string
-  agent: string
-  parentSid: string
-  context: string // 只含任务必要上下文, 不复制全局会话
 }
 
 // v0.3.0 M1: GeneralSettings 从 global.d.ts 迁移, 字段全量类型化

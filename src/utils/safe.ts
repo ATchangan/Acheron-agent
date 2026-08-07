@@ -30,4 +30,3 @@ export function errMsg(e: unknown): string {
 // 调试日志门禁: logLevel=debug 时才输出(生产默认 info 不打印调度/切换噪音)
 let debugEnabled = false
 export function setDebugLogging(v: boolean): void { debugEnabled = v }
-export const debugLog = (...args: unknown[]): void => { if (debugEnabled) console.log(...args) }

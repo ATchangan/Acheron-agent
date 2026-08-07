@@ -4,7 +4,7 @@ import { TEMPLATES, EXPR_PRESETS } from './cron-utils'
 import { S } from './cron-styles'
 import { PlusMark, TemplateMark } from './themed-icons'
 
-export interface CronFormState {
+interface CronFormState {
   name: string
   prompt: string
   expr: string

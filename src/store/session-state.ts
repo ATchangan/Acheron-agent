@@ -16,7 +16,6 @@ export function setSessionAgent(s: SessionData, name: string | undefined, manual
 
 // ── FIX-8: 会话级任务代号 ─────────────────────────────────
 // 取代 runtime.ts 全局 taskGen: 每个会话独立代号; stop 只递增当前会话代号
-export interface TaskGenState { bySid: Record<string, number>; next: number }
 export function nextTaskGenFor(bySid: Record<string, number>, sid: string): number {
   const cur = bySid[sid] || 0
   bySid[sid] = cur + 1
@@ -29,15 +28,4 @@ export function invalidateSid(bySid: Record<string, number>, sid: string): numbe
 }
 export function getTaskGenFor(bySid: Record<string, number>, sid: string): number {
   return bySid[sid] || 0
-}
-
-// ── FIX-9: 自动续跑句柄（会话级, 可取消）──────────────────
-// SessionData.resumeTimer?: number —— setTimeout 句柄
-export function scheduleResume(s: SessionData, fn: () => void, delay = 300): SessionData {
-  if (s.resumeTimer !== undefined) clearTimeout(s.resumeTimer)
-  return { ...s, resumeTimer: window.setTimeout(fn, delay) as unknown as number }
-}
-export function cancelResume(s: SessionData): SessionData {
-  if (s.resumeTimer !== undefined) { clearTimeout(s.resumeTimer); return { ...s, resumeTimer: undefined } }
-  return s
 }

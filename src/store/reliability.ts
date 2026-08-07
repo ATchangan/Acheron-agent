@@ -3,7 +3,7 @@ export { backoffDelay }
 // src/store/reliability.ts — 任务可靠性纯函数(v0.3.3 内核加固)
 // 职责: 指数退避(带抖动)/任务 token 预算计算/超限判定。全部纯函数, 可单测。
 
-export interface TokenCounter {
+interface TokenCounter {
   inputTokens?: number
   outputTokens?: number
   writeTokens?: number

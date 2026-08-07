@@ -71,8 +71,6 @@ export const AGENTS: Record<string, AgentDef> = {
   },
 }
 
-export type AgentName = keyof typeof AGENTS
-
 // v0.3.0 M3: 运行时读取(含设置页覆盖)的角色表
 // 注意: settings.ts 不 import agents.ts(无循环)
 export function useAgents(): Record<string, AgentDef> {
@@ -81,7 +79,7 @@ export function useAgents(): Record<string, AgentDef> {
 }
 
 // v0.3.0 M3: 合并用户覆盖(agentOverrides 设置)后的角色表 —— 白名单/模型偏好/记忆范围可被设置页覆盖
-export function getAgentsWithOverrides(overrides?: Record<string, Partial<AgentDef>>): Record<string, AgentDef> {
+function getAgentsWithOverrides(overrides?: Record<string, Partial<AgentDef>>): Record<string, AgentDef> {
   if (!overrides) return AGENTS
   const out: Record<string, AgentDef> = { ...AGENTS }
   for (const name of Object.keys(out)) {

@@ -53,7 +53,7 @@ const StreamingText: React.FC = React.memo(() => {
 // ------------------------------------------------------------
 // 用户气泡 (玻璃圆角卡, sticky 跟随滚动, 长文自动收成两行)
 // ------------------------------------------------------------
-export const UserBubble: React.FC<{
+const UserBubble: React.FC<{
   message: Message
 }> = ({ message }) => {
   const [copied, setCopied] = useState(false)
@@ -206,7 +206,7 @@ const ToolRow: React.FC<{
 // ------------------------------------------------------------
 // 助手内容块 (无卡片平铺, 悬停浮现操作栏)
 // ------------------------------------------------------------
-export const AssistantBlock: React.FC<{
+const AssistantBlock: React.FC<{
   message: Message
   toolResults?: Map<string, { content: string; timestamp: number }>
   executing?: boolean

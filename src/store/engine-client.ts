@@ -93,7 +93,7 @@ function ensureStreamingMessage(s: SessionData, ev: EngineEvent): SessionData {
   return { ...s, messages: [...list, { id: ev.id as string, role: 'assistant' as const, content: '', timestamp: Date.now(), _streaming: true }] }
 }
 
-export function applyEngineEvent(raw: unknown): void {
+function applyEngineEvent(raw: unknown): void {
   try {
     applyEngineEventInner(raw)
   } catch (e) {

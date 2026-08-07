@@ -3,7 +3,7 @@
 // 工具名统一 mcp__<server>__<tool>, 由 runTool 路由回 mcpCall/mcpSSECall。
 import type { ToolSpec } from '../types'
 
-export interface McpToolMeta {
+interface McpToolMeta {
   name: string
   description?: string
   inputSchema?: Record<string, unknown>
@@ -17,17 +17,17 @@ export interface McpServerInfo {
   tools?: McpToolMeta[] | string[]
 }
 
-export let MCP_TOOLS: ToolSpec[] = []
-export const MCP_TOOL_NAMES = new Set<string>()
+let MCP_TOOLS: ToolSpec[] = []
+const MCP_TOOL_NAMES = new Set<string>()
 // 服务器 → 传输类型(stdio/sse), runTool 按此路由
-export const MCP_SERVER_KIND: Record<string, 'stdio' | 'sse'> = {}
+const MCP_SERVER_KIND: Record<string, 'stdio' | 'sse'> = {}
 
 function sanitize(n: string): string {
   const s = String(n || 'tool').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '')
   return s || 'tool'
 }
 
-export function mcpToolName(server: string, tool: string): string {
+function mcpToolName(server: string, tool: string): string {
   return 'mcp__' + sanitize(server) + '__' + sanitize(tool)
 }
 

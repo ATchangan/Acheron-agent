@@ -1,12 +1,9 @@
 ﻿// src/store/memory.ts —— 记忆读写/自动提取/缓存刷新(v0.3.0 M2)
-// 职责: recordEpisodic/autoExtractMemory/refreshMemoryCache/memoryBlock
+// 职责: autoExtractMemory/refreshMemoryCache/memoryBlock
 // 迁移自 chat.ts() —— 行为未改
 import { safeIPC } from '../utils/safe'
 import { useSettingsStore } from './settings'
 import type { SessionData, MemoryData } from '../global'
-
-let episodicTimer: ReturnType<typeof setTimeout> | null = null
-let episodicPending: { op: string; path: string; status: string; ts: number }[] = []
 
 // ─── 记忆安全扫描 ─────────────────────────────────
 // 写入前检测 凭证/API Key/提示注入 模式, 命中则拒绝保存(防敏感信息落盘 + 防记忆投毒)
@@ -58,26 +55,6 @@ export function clearFrozenMemory(): void { frozenSnapshot = null; frozenAt = 0 
 function memoryUsageLine(): string {
   const { pinned, facts, summaries } = globalMemoryCache
   return `（置顶 ${pinned.length}/10 · 长期 ${facts.length}/500 · 摘要 ${summaries.length}/200，写满后旧内容会自动清理）`
-}
-export async function recordEpisodic(name: string, args: Record<string, unknown>, result: string) {
-  if (['write', 'edit', 'mkdir', 'exec_command', 'read', 'codebox', 'import_doc', 'save_memory'].includes(name)) {
-    episodicPending.push({ op: name, path: String(args.path || args.dirPath || '').slice(0, 120) || String(args.cmd || '').slice(0, 60), status: result.startsWith('E:') ? 'FAIL' : 'OK', ts: Date.now() })
-    if (episodicPending.length > 50) episodicPending = episodicPending.slice(-50)
-    if (episodicTimer) return
-    episodicTimer = setTimeout(async () => {
-      episodicTimer = null
-      const batch = episodicPending; episodicPending = []
-      if (!batch.length) return
-      try {
-        const mem = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [] }))
-        const episodic = mem.episodic || []
-        episodic.push(...batch)
-        if (episodic.length > 200) episodic.splice(0, episodic.length - 200)
-        mem.episodic = episodic
-        await window.huangquan.memory.save(mem).catch(() => {})
-      } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    }, 500)
-  }
 }
 
 export async function autoExtractMemory(sid: string, sessions: SessionData[]) {

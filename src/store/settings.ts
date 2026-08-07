@@ -84,27 +84,6 @@ export function extractSkinColors(dataUrl: string): Promise<{ primary: { r: numb
   })
 }
 
-// WCAG 相对亮度对比度校正 —— 目标 C ≥ 3:1(与背景比), 不达标沿亮度轴步进 ±12%(≤8 次)
-export function fixContrast(rgb: { r: number; g: number; b: number }, bgRgb: { r: number; g: number; b: number }): { r: number; g: number; b: number } {
-  const lin = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4) }
-  const lum = (c: { r: number; g: number; b: number }) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
-  const contrast = (a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }) => {
-    const la = lum(a), lb = lum(b)
-    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
-  }
-  if (contrast(rgb, bgRgb) >= 3) return rgb
-  let cur = { ...rgb }
-  const bgL = lum(bgRgb)
-  const dir = lum(cur) > bgL ? 1 : -1 // 向更亮/更暗方向提
-  for (let i = 0; i < 8; i++) {
-    const step = 12 / 100
-    const f = 1 + dir * step * (i + 1)
-    cur = { r: Math.min(255, Math.max(0, Math.round(cur.r * f))), g: Math.min(255, Math.max(0, Math.round(cur.g * f))), b: Math.min(255, Math.max(0, Math.round(cur.b * f))) }
-    if (contrast(cur, bgRgb) >= 3) return cur
-  }
-  // 仍不达标 → 取对比度更高的黑/白
-  return lum(cur) > 0.5 ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 }
-}
 
 // 兼容旧调用: 单主色(簇0)
 function extractDominantColor(dataUrl: string): Promise<{ r: number; g: number; b: number }> {
