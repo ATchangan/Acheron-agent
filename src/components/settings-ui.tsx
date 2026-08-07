@@ -2,6 +2,8 @@
 // 从 SettingsView 拆分, 降低单文件复杂度
 import React from 'react'
 import { Minus, Plus } from 'lucide-react'
+import { U } from './ui-styles'
+
 
 export const C = { bg: 'var(--bg-root)', card: 'var(--bg-card)', input: 'var(--bg-elevated)', border: 'var(--border)', text: 'var(--text-primary)', label: 'var(--text-secondary)', muted: 'var(--text-muted)', accent: 'var(--accent)', accentBg: 'rgba(var(--skin-accent),0.08)', danger: 'var(--danger)', green: 'var(--success)', blue: 'var(--accent)' }
 
@@ -36,11 +38,11 @@ export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void
 // Number input with label
 export const NumSetting: React.FC<{ label: string; hint: string; value: number; min: number; max: number; unit: string; onChange: (v: number) => void }> = ({ label, hint, value, min, max, unit, onChange }) => (
   <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-    <div style={{ flex: 1 }}>
+    <div style={U.flex1}>
       <div style={S.label}>{label}</div>
       <div style={S.hint}>{hint}</div>
     </div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+    <div style={U.flexGap8shrink}>
       <input type="number" style={S.num} min={min} max={max} value={value} onChange={e => onChange(Math.max(min, Math.min(max, parseInt(e.target.value) || value)))} />
       <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, whiteSpace: 'nowrap' }}>{unit}</span>
     </div>
@@ -51,11 +53,11 @@ export const NumSetting: React.FC<{ label: string; hint: string; value: number; 
 export const stepBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 7, border: '1px solid ' + C.border, background: C.bg, color: C.text, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 15, lineHeight: 1, transition: 'background .15s' }
 export const StepSetting: React.FC<{ label: string; hint?: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void }> = ({ label, hint, value, min, max, step = 1, unit = '', onChange }) => (
   <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-    <div style={{ flex: 1 }}>
+    <div style={U.flex1}>
       <div style={S.label}>{label}</div>
       {hint ? <div style={S.hint}>{hint}</div> : null}
     </div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+    <div style={U.flexGap8shrink}>
       <button style={stepBtn} title="减小" onClick={() => onChange(Math.max(min, value - step))}><Minus size={14} /></button>
       <span style={{ minWidth: 52, textAlign: 'center', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, whiteSpace: 'nowrap' }}>{value}{unit}</span>
       <button style={stepBtn} title="增大" onClick={() => onChange(Math.min(max, value + step))}><Plus size={14} /></button>
@@ -66,7 +68,7 @@ export const StepSetting: React.FC<{ label: string; hint?: string; value: number
 // 档位按钮组 —— 替代生硬的滑动条
 export const SegSetting: React.FC<{ label: string; hint?: string; value: number; options: { v: number; label: string }[]; onChange: (v: number) => void }> = ({ label, hint, value, options, onChange }) => (
   <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-    <div style={{ flex: 1 }}>
+    <div style={U.flex1}>
       <div style={S.label}>{label}</div>
       {hint ? <div style={S.hint}>{hint}</div> : null}
     </div>

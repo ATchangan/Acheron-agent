@@ -2,6 +2,8 @@
 import type { PlanStep, StepStatus } from './plan-utils'
 import { STATUS_ICONS, STATUS_LABELS } from './plan-utils'
 import { S } from './plan-styles'
+import { U } from './ui-styles'
+
 
 // v0.3.1 块 K: 步骤卡片(从 PlanningView 拆出, 行为零变化)
 const StepCard: React.FC<{
@@ -54,7 +56,7 @@ const StepCard: React.FC<{
 
         {/* dependencies */}
         {step.dependencies.length > 0 && (
-          <div style={{ marginTop: '6px' }}>
+          <div style={U.mt6px}>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)' }}>
               依赖: {step.dependencies.map((d, i) => <span key={d}>{i > 0 ? ', ' : ''}{d.replace('step_', '#')}</span>)}
             </span>
@@ -79,7 +81,7 @@ const StepCard: React.FC<{
           </div>
         )}
         {editingNotes && (
-          <div style={{ marginTop: '6px' }}>
+          <div style={U.mt6px}>
             <textarea
               style={S.textarea}
               value={draftNotes}

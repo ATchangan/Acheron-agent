@@ -41,6 +41,8 @@ export function estimateTokens(text: string): number {
 // v0.3.2 T7: 输出上限分级(纯函数, 只降明确闲聊场景; 代码/文件/任务类保持全局上限, 杜绝截断风险)
 export function outputLimit(userMsg: string, cfg: GeneralSettings): number | undefined {
   const base = cfg.maxTokens || 4096
+  // v0.3.5 T2: 输出上限分级开关 —— 关闭时恒用全局上限
+  if (cfg.perf?.outputCap === false) return base
   if (userMsg.length < 40 && !/(代码|文件|报告|项目|脚本|写|改|建|查|找|分析)/.test(userMsg)) {
     return Math.min(base, 800)
   }

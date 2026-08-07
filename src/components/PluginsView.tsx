@@ -7,6 +7,8 @@ import { MaskMark, EmptyMark } from './themed-icons'
 import { PluginInstallPanel } from './PluginInstallPanel'
 import { PluginScanBar } from './PluginScanBar'
 import { PluginList } from './PluginList'
+import { U } from './ui-styles'
+
 
 export default function PluginsView() {
   const [plugins, setPlugins] = useState<PluginInfo[]>([])
@@ -257,7 +259,7 @@ export default function PluginsView() {
           启用 <strong style={{ color: 'var(--success)' }}>{enabled}</strong>
         </span>
         <span style={s.statChip}>
-          停用 <strong style={{ color: 'var(--danger)' }}>{disabled}</strong>
+          停用 <strong style={U.danger}>{disabled}</strong>
         </span>
       </div>
 

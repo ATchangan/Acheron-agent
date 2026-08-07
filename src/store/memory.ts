@@ -142,9 +142,14 @@ export function memoryBlock(userMsg?: string): string {
     parts.push('## 长期记忆\n' + (trim ? scored.slice(-5) : scored).map((f, i) => `${i + 1}. ${f.slice(0, 200)}`).join('\n'))
   }
   if (summaries.length) parts.push('## 近期情景摘要\n' + (trim ? summaries.slice(-2) : summaries.slice(-3)).map((s: { content: string }, i: number) => `${i + 1}. ${(s.content || '').slice(0, 200)}`).join('\n'))
-  // 总量护栏 2500 字符: 置顶全量保留, 按 长期→情景 从尾部裁剪
-  if (trim) while (parts.join('\n\n').length > 2500 && parts.length > 1) parts.pop()
-  const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
+    const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
+// 记忆护栏 6000 字符: 超限时保留头 4000 + 尾 1500 + 截断标记，保证关键信息不丢
+  if (trim) {
+    const joined = parts.join('\n\n')
+    if (joined.length > 6000) {
+      return '\n' + memoryUsageLine() + '\n\n' + joined.slice(0, 4000) + '\n...[\u8bb0忆内容过长已截断]...\n' + joined.slice(-1500) + tail
+    }
+  }
   // 头部显示记忆使用率
   return parts.length ? '\n' + memoryUsageLine() + '\n\n' + parts.join('\n\n') + tail : ''
 }

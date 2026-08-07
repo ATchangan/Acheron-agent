@@ -4,6 +4,8 @@ import type { DocMeta } from './knowledge-utils'
 import { fmtSize } from './knowledge-utils'
 import { S } from './knowledge-styles'
 import { ScrollMark, DocMark, TrashMark } from './themed-icons'
+import { U } from './ui-styles'
+
 
 export const KnowledgeDocList: React.FC<{
   docs: DocMeta[]
@@ -33,7 +35,7 @@ export const KnowledgeDocList: React.FC<{
           >
             <div style={S.docInfo}>
               <span style={S.docName} title={d.path}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><DocMark size={12} />{d.name}</span>
+                <span style={U.inlineFlex5}><DocMark size={12} />{d.name}</span>
               </span>
               <span style={S.docMeta}>
                 <span>{new Date(d.importedAt).toLocaleString('zh-CN')}</span>

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // 最小 stub: window 环境 + store 依赖(buildPrompt 内部读取)
 vi.mock('./settings', () => ({
   useSettingsStore: { getState: () => ({
-    general: { thinkLevel: 'medium', mode: 'work', customSystemPrompt: null, promptInjectPos: 'end', language: 'zh', autoFastModel: true, collabMode: '开启', compactStrategy: 'auto', compactMsgCount: 40, compactTokenLimit: 0, compactThreshold: 0.4, maxTokens: 4000, temperature: 0.7 }
+    general: { thinkLevel: 'medium', mode: 'work', customSystemPrompt: null, promptInjectPos: 'end', language: 'zh', autoFastModel: true, collabMode: '开启', compactThreshold: 0.4, maxTokens: 4000, temperature: 0.7 }
   }) },
 }))
 vi.mock('./agents', () => ({ useAgents: () => ({}) }))

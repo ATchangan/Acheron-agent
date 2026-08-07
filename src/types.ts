@@ -67,6 +67,9 @@ export interface GeneralSettings {
   episodicMemory?: boolean
   meltdownLimit?: number
   compactThreshold?: number
+  compactKeepRounds?: number
+  compactTokenCap?: number
+  compactOverrides?: Record<string, number>
   maxToolRounds?: number
   retryCount?: number
   parallelTools?: boolean
@@ -179,13 +182,13 @@ export interface GeneralSettings {
     resultSlim?: boolean     // 0.3.2 T3 结果瘦身 1500
     memoryTrim?: boolean     // 0.3.2 T4 记忆裁剪
     workflowLazy?: boolean   // 0.3.2 T5 workflows 按需
-    roundFold?: boolean      // 0.3.2 T6 轮次折叠
     outputCap?: boolean      // 0.3.2 T7 输出上限分级
     imgDowngrade?: boolean   // 0.3.3 T1 图片降级
     argSlim?: boolean        // 0.3.3 T2 参数截断
     taskArchive?: boolean    // 0.3.3 T3 跨任务归档(迁移: perf.taskArchive ?? 旧 taskArchive 字段)
     parallelCap?: boolean    // 0.3.5 T1 并行护栏
     interjectMerge?: boolean // 0.3.4 T3 插话合并
+    compactSummary?: boolean // 窗口阈值压缩（真实用量触发 + LLM 批量摘要）
   }
   mediaImgProvider?: string
   mediaImgModel?: string

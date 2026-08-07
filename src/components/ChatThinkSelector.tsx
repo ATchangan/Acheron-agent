@@ -1,6 +1,8 @@
 // ChatThinkSelector.tsx —— 推理强度选择器（从 ChatInput 拆出，行为不变）
 import React from 'react'
 import { THINK_LEVELS, THINK_LABELS } from './chat-input-constants'
+import { U } from './ui-styles'
+
 
 export const ChatThinkSelector: React.FC<{
   thinkLabel: string
@@ -32,7 +34,7 @@ export const ChatThinkSelector: React.FC<{
     </button>
     {thinkOpen && (
       <div className="dropdown-menu" style={{ left: 'auto', right: 0 }}>
-        <div className={`dropdown-item ${effThink === 'off' ? 'active' : ''}`} onClick={() => onToggleThinkMode(effThink === 'off')} style={{ fontWeight: 600 }}>
+        <div className={`dropdown-item ${effThink === 'off' ? 'active' : ''}`} onClick={() => onToggleThinkMode(effThink === 'off')} style={U.b600}>
           思考：{effThink === 'off' ? '关' : '开'}
         </div>
         <div className={`dropdown-item ${thinkOnly ? 'active' : ''}`} onClick={onToggleThinkOnly} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)' }}>

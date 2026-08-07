@@ -5,6 +5,8 @@ import { tsLabel, PLAN_STATUS_LABELS } from './plan-utils'
 import { S } from './plan-styles'
 import StepCard from './PlanStepCard'
 import ProgressHeader from './PlanProgressHeader'
+import { U } from './ui-styles'
+
 
 export const PlanRunView: React.FC<{
   activePlan: Plan | null
@@ -42,7 +44,7 @@ export const PlanRunView: React.FC<{
       {/* plan header */}
       <div style={S.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
+          <div style={U.flex1}>
             <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
               🏯 {activePlan.title}
             </div>

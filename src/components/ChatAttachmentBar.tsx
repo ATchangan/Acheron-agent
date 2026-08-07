@@ -1,5 +1,7 @@
 // ChatAttachmentBar.tsx —— 聊天输入框附件预览（从 ChatInput 拆出，行为不变）
 import React from 'react'
+import { U } from './ui-styles'
+
 
 export const ChatAttachmentBar: React.FC<{
   quote: string | null
@@ -32,8 +34,8 @@ export const ChatAttachmentBar: React.FC<{
         {attachments.map((a, i) => (
           <div key={i} className="attach-item" title={a.path} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', maxWidth: 240 }}>
             <span>{a.kind === 'video' ? '🎬' : a.kind === 'audio' ? '🎵' : '📎'}</span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-            <span style={{ color: 'var(--text-muted)' }}>{(a.size / 1024).toFixed(0)}KB</span>
+            <span style={U.ellipsis}>{a.name}</span>
+            <span style={U.textMuted}>{(a.size / 1024).toFixed(0)}KB</span>
             <button className="image-attach-remove" onClick={() => onRemoveAttachment(i)}>×</button>
           </div>
         ))}

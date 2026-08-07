@@ -3,6 +3,8 @@ import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
 import { TOOLS } from '../../store/tools'
 import { useAgents } from '../../store/agents'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 工具 tab(从 SettingsView 拆分, 行为零变化)
 
@@ -33,10 +35,10 @@ export default function ToolsTab() {
   const [showPluginInput, setShowPluginInput] = useState(false)
   const [pluginUrl, setPluginUrl] = useState('')
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>工具总览仪表盘</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <div style={U.grid3}>
           {([
             ['文件', 'filesystem', ['read', 'write', 'edit', 'mkdir', 'ls', 'grep', 'find']],
             ['Shell', 'shell', ['exec_command', 'codebox']],
@@ -129,18 +131,18 @@ export default function ToolsTab() {
       <div style={S.card}>
         <div style={S.section}>浏览器</div>
         <div style={S.hint}>实时浏览面板（可视化查看浏览过程）、主窗口内使用提示、网页解析工具（Playwright 无头内核）。三类配置互不影响。</div>
-        <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: 'var(--accent-purple)', margin: '10px 0 4px' }}>▍实时浏览面板</div>
+        <div style={U.sectionPurple}>▍实时浏览面板</div>
       <div style={S.row}><div style={S.label}>默认主页</div><input style={S.inp} placeholder="网页地址，例如 https://example.com" value={g.browserHomeUrl || ''} onChange={e => save({ browserHomeUrl: e.target.value })} /><div style={S.hint}>打开浏览器窗口时自动加载的页面</div></div>
       <div style={S.row}><div style={S.label}>窗口宽度</div><input type="number" style={S.inp} value={g.browserWinW ?? 1280} onChange={e => save({ browserWinW: parseInt(e.target.value) || 1280 })} /><div style={S.hint}>像素，不小于 600</div></div>
       <div style={S.row}><div style={S.label}>窗口高度</div><input type="number" style={S.inp} value={g.browserWinH ?? 860} onChange={e => save({ browserWinH: parseInt(e.target.value) || 860 })} /><div style={S.hint}>像素，不小于 400</div></div>
       <div style={S.row}><div style={S.label}>画面刷新间隔</div><input type="number" style={S.inp} value={g.browserSnapMs ?? 1200} onChange={e => save({ browserSnapMs: parseInt(e.target.value) || 1200 })} /><div style={S.hint}>毫秒，实时画面截图刷新频率，越小越流畅但更耗资源</div></div>
-        <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: 'var(--accent-purple)', margin: '10px 0 4px' }}>▍使用提示(主窗口内横幅)</div>
+        <div style={U.sectionPurple}>▍使用提示(主窗口内横幅)</div>
         <div style={S.row}><div style={S.label}>使用浏览器时提示</div><Toggle checked={g.browserFloatEnabled !== false} onChange={v => save({ browserFloatEnabled: v })} label="使用浏览器时在主窗口内显示提示横幅" /></div>
         <div style={S.row}><div style={S.label}>提示位置</div><select style={S.sel} value={g.browserFloatPos || 'top-right'} onChange={e => save({ browserFloatPos: e.target.value })}>
           <option value="top-right">右上角</option><option value="top-center">顶部居中</option><option value="bottom-left">左下角</option><option value="bottom-right">右下角</option>
         </select><div style={S.hint}>横幅在主窗口内的显示位置(非系统屏幕角)</div></div>
         <div style={S.row}><div style={S.label}>提示停留</div><input type="number" style={S.inp} value={g.browserFloatTimeout ?? 30} onChange={e => save({ browserFloatTimeout: parseInt(e.target.value) || 30 })} /><div style={S.hint}>秒</div></div>
-        <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: 'var(--accent-purple)', margin: '10px 0 4px' }}>▍网页解析工具</div>
+        <div style={U.sectionPurple}>▍网页解析工具</div>
         <div style={S.hint}>基于 Playwright + Chromium 无头内核，调用网页读取时临时启动、用完自动销毁，不长期驻留内存。支持动态渲染页面、提取标题与清洗后的正文、截图、转 PDF。</div>
         <div style={S.row}><div style={S.label}>启用解析工具</div><Toggle checked={g.webReadEnabled !== false} onChange={v => save({ webReadEnabled: v })} label="总开关，关闭后无法调用网页读取" /></div>
         <div style={S.row}><div style={S.label}>强制无头模式</div><Toggle checked={g.webReadHeadless !== false} onChange={v => save({ webReadHeadless: v })} label="取消勾选则可视化弹出浏览器窗口(用于调试页面)" /></div>
@@ -215,7 +217,7 @@ export default function ToolsTab() {
         <div style={S.section}>系统信息</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
-            ['版本', sys?.version ? 'v' + sys.version : '…'], ['平台', '黄泉Agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
+            ['平台', '黄泉Agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
             ['Node', sys?.node || '…'], ['工具数', String(TOOLS.length)], ['角色数', String(Object.keys(agentsMap).length)],
             ['技能数', skillCount ? String(skillCount) : '…']
           ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}

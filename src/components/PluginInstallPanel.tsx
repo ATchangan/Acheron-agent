@@ -2,6 +2,8 @@
 import React from 'react'
 import { s } from './plugin-styles'
 import { FolderMark, LinkMark } from './themed-icons'
+import { U } from './ui-styles'
+
 
 export const PluginInstallPanel: React.FC<{
   installType: 'local' | 'git'
@@ -22,13 +24,13 @@ export const PluginInstallPanel: React.FC<{
         style={s.installTab(installType === 'local')}
         onClick={() => onType('local')}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><FolderMark size={13} />本地目录</span>
+        <span style={U.inlineFlex5}><FolderMark size={13} />本地目录</span>
       </button>
       <button
         style={s.installTab(installType === 'git')}
         onClick={() => onType('git')}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><LinkMark size={13} />仓库地址</span>
+        <span style={U.inlineFlex5}><LinkMark size={13} />仓库地址</span>
       </button>
     </div>
 

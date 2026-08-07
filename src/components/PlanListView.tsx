@@ -3,6 +3,8 @@ import React from 'react'
 import type { Plan } from './plan-utils'
 import { tsLabel, progressPct, PLAN_STATUS_LABELS } from './plan-utils'
 import { S } from './plan-styles'
+import { U } from './ui-styles'
+
 
 export const PlanListView: React.FC<{
   plans: Plan[]
@@ -43,7 +45,7 @@ export const PlanListView: React.FC<{
           borderColor: plan.id === activePlanId ? 'var(--accent)' : 'var(--border)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ flex: 1, minWidth: 0 }} onClick={() => onViewPlan(plan.id)}>
+            <div style={U.flex1min0} onClick={() => onViewPlan(plan.id)}>
               <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: 'var(--text-primary)' }}>
                 🏯 {plan.title}
               </div>

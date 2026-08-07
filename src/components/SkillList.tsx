@@ -2,6 +2,8 @@
 import React from 'react'
 import { CAT_ICON, CAT_COLOR, type SkillWithCategory, type Category } from './skills-utils'
 import { S } from './skills-styles'
+import { U } from './ui-styles'
+
 
 export const SkillList: React.FC<{
   skills: SkillWithCategory[]
@@ -35,7 +37,7 @@ export const SkillList: React.FC<{
 
     {/* Skills grid */}
     {loading ? (
-      <div className="empty-hint" style={{ textAlign: 'center' }}>🕯️ 加载法术中...</div>
+      <div className="empty-hint" style={U.center}>🕯️ 加载法术中...</div>
     ) : skills.length === 0 ? (
       <div style={S.empty}>
         <span style={S.emptyIcon}>📜</span>

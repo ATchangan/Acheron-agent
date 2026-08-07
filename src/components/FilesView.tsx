@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useSettingsStore } from '../store/settings'
 import FileTree from './FileTree'
 import { Folder, FolderPlus, FilePlus, RefreshCw, MoreHorizontal, FileText } from 'lucide-react'
+import { U } from './ui-styles'
+
 
 // 文件视图 —— 原右侧面板的工作目录/文件树/系统信息迁入左侧导航
 export default function FilesView() {
@@ -64,7 +66,7 @@ export default function FilesView() {
       {/* 工作目录 + 文件树 */}
       {workDir && <div className="sys-bar" style={{ display: 'block', position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-          <span className="sys-label" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workDir}><Folder size={12} style={{ marginRight: 2, flexShrink: 0 }} />工作目录</span>
+          <span className="sys-label" style={U.ellipsis1} title={workDir}><Folder size={12} style={{ marginRight: 2, flexShrink: 0 }} />工作目录</span>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', cursor: 'pointer' }} title="选择工作目录" onClick={async () => { const path = await window.huangquan.computer.selectDir(); if (path) useSettingsStore.getState().setWorkDir(path) }}><MoreHorizontal size={13} /></span>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent)', cursor: 'pointer' }} title="新建文件夹" onClick={() => { setCreating('dir'); setCreateName('') }}><FolderPlus size={12} /></span>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--success)', cursor: 'pointer' }} title="新建文件" onClick={() => { setCreating('file'); setCreateName('') }}><FilePlus size={12} /></span>

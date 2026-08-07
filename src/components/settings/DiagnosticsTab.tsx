@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { C, S } from '../settings-ui'
 import type { TraceEntry } from '../../global'
+import { U } from '../ui-styles'
+
 
 // v0.3.3: 诊断轨迹 —— 本地 JSONL 可观测性, 按级别过滤/刷新/清空
 const LEVEL_COLOR: Record<string, string> = { debug: 'var(--text-muted)', info: 'var(--accent)', warn: '#fbbf24', error: 'var(--danger)' }
@@ -21,7 +23,7 @@ export default function DiagnosticsTab() {
   const shown = filter ? items.filter(x => x.level === filter || x.event.includes(filter) || (x.detail || '').includes(filter)) : items
 
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>运行轨迹</div>
         <div style={S.hint}>记录任务开始/LLM 轮次/工具调用/错误/预算等事件，按 requestId 与会话串起完整调用链，全部保存在本地 agent-trace.jsonl，不上传。</div>
@@ -40,8 +42,8 @@ export default function DiagnosticsTab() {
             {shown.slice().reverse().map((x, i) => (
               <div key={i} style={{ padding: '8px 14px', borderBottom: '1px solid ' + C.border, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <span style={{ color: LEVEL_COLOR[x.level] || C.muted, fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, width: 38, flexShrink: 0, textTransform: 'uppercase' }}>{x.level}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: C.text }}>{x.event}</div>
+                <div style={U.flex1min0}>
+                  <div style={U.fs2b600}>{x.event}</div>
                   {x.detail ? <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{x.detail}</div> : null}
                   <div style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted, marginTop: 2 }}>
                     {new Date(x.ts).toLocaleTimeString('zh-CN')} {x.sid ? '· ' + x.sid.slice(0, 8) : ''} {x.requestId ? '· ' + String(x.requestId).slice(0, 12) : ''}

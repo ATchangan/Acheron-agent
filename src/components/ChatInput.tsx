@@ -11,6 +11,8 @@ import { ChatAttachmentBar } from './ChatAttachmentBar'
 import { ChatToolbar } from './ChatToolbar'
 import { ChatThinkSelector } from './ChatThinkSelector'
 import { THINK_LEVELS, THINK_LABELS, type ThinkLevel } from './chat-input-constants'
+import { U } from './ui-styles'
+
 
 export default function ChatInput() {
   const [text, setText] = useState('')
@@ -349,7 +351,7 @@ export default function ChatInput() {
 
             {/* Token 用量环 */}
             <span title="本会话累计输入/输出 token = 每次请求的 prompt/completion 之和（含工具轮次与子任务），并非当前上下文大小" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>累计 入 {fmtK(tokSum.input)} / 出 {fmtK(tokSum.output)}</span>
-            <svg width="28" height="28" style={{ flexShrink: 0 }}>
+            <svg width="28" height="28" style={U.shrink0}>
               <title>上下文用量（最近一次请求实际输入）：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
               <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
               <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
@@ -361,14 +363,14 @@ export default function ChatInput() {
             {curBusy && !text.trim() ? (
               <button className="send-btn stop-btn" onClick={handleStop}
                 title="终止任务"
-                style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', fontSize: 18, background: '#cc3333' }}>
+                style={U.stopBtn}>
                 <Square size={16} fill="currentColor" />
               </button>
             ) : curBusy ? (
               <>
                 <button className="send-btn stop-btn" onClick={handleStop}
                   title="终止任务"
-                  style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', fontSize: 18, background: '#cc3333' }}>
+                  style={U.stopBtn}>
                   <Square size={16} fill="currentColor" />
                 </button>
                 <button className="send-btn" onClick={handleSend}

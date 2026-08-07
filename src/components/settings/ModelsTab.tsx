@@ -4,6 +4,8 @@ import { C, S } from '../settings-ui'
 import MediaForm from './MediaForm'
 import { AI_TYPES, PRESETS, GROUPS, MEDIA_PRESETS, CAP_COLORS, detectCaps } from './consts'
 import type { MediaProvider, ProviderConfig } from '../../global'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 供应商 tab(从 SettingsView 拆分, 行为零变化)
 
@@ -120,7 +122,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
                 else { const pre = MEDIA_PRESETS[name]; if (pre) { const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: [] as string[], videoModels: [] as string[], audioModels: [] as string[] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) } }
               }
             }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+              <span style={U.ellipsis}>{name}</span>
               <span style={{ display: 'flex', gap: 3, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{cfg ? caps.slice(0, 3).map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: CAP_COLORS[c] || C.text, background: 'rgba(150,150,160,0.13)', padding: '1px 5px', borderRadius: 8 }}>{c}</span>) : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted, background: 'rgba(150,150,160,0.13)', padding: '1px 6px', borderRadius: 8 }}>未设置</span>}</span>
             </div>
           }
@@ -161,10 +163,10 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
           )
         })()}
       </div>
-      <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+      <div style={U.pageBody}>
         {mediaSelIdx >= 0 ? <MediaForm mediaSelIdx={mediaSelIdx} showToast={showToast} /> : !p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>从左侧选择一个供应商开始配置</div> : <>
           <div style={S.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <div style={U.betweenMb18}>
               <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
               <button style={S.btn('danger')} onClick={() => removeProvider(p.id)}>删除</button>
             </div>
@@ -178,15 +180,15 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
             <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
             {p.models.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '12px 0' }}>暂无，点击"读取模型"从接口获取</div> : p.models.map((m: string, i: number) => {
               const caps = detectCaps([m])
-              return <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+              return <div key={i} style={U.betweenGap10Mb7}>
                 <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
-                <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                <span style={U.flexGap3}>
                   {caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}
                 </span>
                 <button style={{ ...S.btn('ghost'), height: 28, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => updateProvider(p.id, { models: p.models.filter((_, j) => j !== i) })}>×</button>
               </div>
             })}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
+            <div style={U.endMt12}>
               {modelInput !== null ? <>
                 <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput} onChange={e => setModelInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }} autoFocus />
                 <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput.trim()) { updateProvider(p.id, { models: [...p.models, modelInput.trim()] }); setModelInput(null) } }}>确认</button>
@@ -212,7 +214,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
           <input style={{ ...S.inp, marginBottom: 10 }} placeholder="密钥（API Key）" value={newKey} onChange={e => setNewKey(e.target.value)} />
           <input style={{ ...S.inp, marginBottom: 10 }} placeholder="接口地址（Base URL）" value={newUrl} onChange={e => setNewUrl(e.target.value)} />
           <select style={{ ...S.sel, marginBottom: 14, width: '100%' }} value={newType} onChange={e => setNewType(e.target.value)}>{AI_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}><button style={S.btn('ghost')} onClick={() => setShowNew(false)}>取消</button><button style={S.btn('primary')} onClick={() => { if (!newName) return; addProvider({ id: 'custom_' + Date.now(), name: newName, type: newType, apiKey: newKey, baseUrl: newUrl, models: [], selectedModel: '' }); setShowNew(false) }}>保存</button></div>
+          <div style={U.flexEnd}><button style={S.btn('ghost')} onClick={() => setShowNew(false)}>取消</button><button style={S.btn('primary')} onClick={() => { if (!newName) return; addProvider({ id: 'custom_' + Date.now(), name: newName, type: newType, apiKey: newKey, baseUrl: newUrl, models: [], selectedModel: '' }); setShowNew(false) }}>保存</button></div>
         </div>
       </div> : null}
       {visionPrompt ? <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setVisionPrompt(false)}>
@@ -227,7 +229,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
               </optgroup>
             ))}
           </select>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={U.flexEnd}>
             <button style={S.btn('ghost')} onClick={() => setVisionPrompt(false)}>暂不配置</button>
             <button style={S.btn('primary')} onClick={() => { if (visionPick) { save({ visionModel: visionPick }); showToast('视觉辅助模型已设置：' + visionPick) } setVisionPrompt(false) }}>确认配置</button>
           </div>
@@ -237,26 +239,26 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal(null)}>
           <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div style={U.centerGap8Mb12}>
               <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, flex: 1 }}>已从接口读取 {detectModal.items.length} 个模型，勾选后点击「添加所选」才能使用</span>
               <button style={S.btn('ghost')} onClick={() => setDetectSel(detectModal.items.map(x => x.model))}>全选</button>
               <button style={S.btn('ghost')} onClick={() => setDetectSel([])}>清空</button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
+            <div style={U.scrollMb14}>
               {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>
                   <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: CAP_COLORS[g] || C.text, margin: '8px 0 4px' }}>{g}</div>
                   {detectModal.items.filter(x => x.caps[0] === g).map(x => (
                     <label key={x.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>
                       <input type="checkbox" checked={detectSel.includes(x.model)} onChange={e => { setDetectSel(prev => e.target.checked ? [...prev, x.model] : prev.filter(m => m !== x.model)) }} />
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.model}</span>
-                      <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>{x.caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}</span>
+                      <span style={U.ellipsis1}>{x.model}</span>
+                      <span style={U.flexGap3}>{x.caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}</span>
                     </label>
                   ))}
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={U.flexEnd}>
               <button style={S.btn('ghost')} onClick={() => setDetectModal(null)}>取消</button>
               <button style={S.btn('primary')} disabled={!detectSel.length} onClick={() => {
                 const cur = providers.find(pp => pp.id === detectModal.providerId)

@@ -3,6 +3,8 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import type { View } from '../App'
 import ResizeBar from './ResizeBar'
+import { U } from './ui-styles'
+
 
 interface Props { currentView: View; onNavigate: (v: View) => void }
 
@@ -111,7 +113,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
       {/* 会话列表 */}
       {currentView === 'chat' && (
         <>
-          <div className="sidebar-section-label" style={{ marginTop: 6 }}>
+          <div className="sidebar-section-label" style={U.mt6}>
             {(mode === 'chat' ? '聊天会话' : '工作会话') + ' · ' + filtered.length}
           </div>
           <div style={{ position: 'relative', margin: '4px 6px 6px' }}>
@@ -124,7 +126,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             />
           </div>
           <div className="session-list">
-            {searchResults !== null && <div className="sidebar-section-label" style={{ marginTop: 6 }}>搜索结果</div>}
+            {searchResults !== null && <div className="sidebar-section-label" style={U.mt6}>搜索结果</div>}
             {searchResults !== null ? searchResults.map(r => ({ id: r.sid, title: r.title, snippet: r.snippet, ts: r.ts, mode: undefined, busy: undefined, isSearch: true as const })).map(s => (
               <div key={s.id} className={`session-item ${s.id === currentId ? 'active' : ''}`}
                 onClick={() => (searchResults !== null ? pickSearch(s.id) : handleSwitch(s.id))}
@@ -132,7 +134,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
                 tabIndex={0}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (searchResults !== null ? pickSearch(s.id) : handleSwitch(s.id))}
               >
-                <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <span style={U.column1}>
                   <span className="session-title" title={s.title}>{s.title}</span>
                   {s.isSearch && s.snippet
                     ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.snippet}>{s.snippet}</span>
@@ -153,7 +155,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
                 tabIndex={0}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleSwitch(s.id)}
               >
-                <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <span style={U.column1}>
                   <span className="session-title" title={s.title}>{s.title}</span>
                 </span>
                 {s.busy && <span className="session-busy" title="该会话正在工作中，可切换到其他会话独立使用">● 工作中</span>}

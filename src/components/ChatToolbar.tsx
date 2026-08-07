@@ -3,6 +3,8 @@ import React from 'react'
 import { Camera, Command, Bookmark, Paperclip } from 'lucide-react'
 import { useSettingsStore } from '../store/settings'
 import { PERM_ICONS, PERM_LABELS, type FilePerm } from './chat-input-constants'
+import { U } from './ui-styles'
+
 
 const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.ReactNode; style?: React.CSSProperties; disabled?: boolean }> =
   ({ title, onClick, children, style, disabled }) => (
@@ -92,7 +94,7 @@ export const ChatToolbar: React.FC<{
     }} onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,image/avif,image/heic" multiple hidden onChange={onImagePick} />
-      <Camera size={16} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
+      <Camera size={16} color="var(--text-secondary)" style={U.shrink0} />
     </label>
 
     {/* 上传文件 */}
@@ -103,7 +105,7 @@ export const ChatToolbar: React.FC<{
     }} onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
       <input ref={attFileRef} type="file" multiple hidden onChange={onFilePick} />
-      <Paperclip size={16} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
+      <Paperclip size={16} color="var(--text-secondary)" style={U.shrink0} />
     </label>
   </div>
 )

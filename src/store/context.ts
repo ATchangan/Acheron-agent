@@ -25,78 +25,34 @@ function buildWorkflowsBlock(userMsg: string, forceFull = false): string {
 
 // v0.3.2 T6: 历史工具轮次折叠 —— 超过 maxRounds 对完整轮次时, 将最旧 foldCount 对折叠为一条归档摘要
 // 安全规则: 只折叠头部连续完整轮次对(assistant(tool_calls) 与 tool 消息一一配对), 否则跳过折叠
-export function foldToolRounds(msgs: Message[], maxRounds = 8, foldCount = 4): Message[] {
-  const rounds: { asst: Message; tools: Message[] }[] = []
-  let i = 0
-  while (i < msgs.length) {
-    const m = msgs[i]
-    if (m.role === 'assistant' && m.tool_calls?.length) {
-      const ids = new Set(m.tool_calls.map(tc => tc.id))
-      const tools: Message[] = []
-      let j = i + 1
-      while (j < msgs.length && msgs[j].role === 'tool' && ids.has(msgs[j].tool_call_id || '')) { tools.push(msgs[j]); j++ }
-      if (tools.length === m.tool_calls.length) rounds.push({ asst: m, tools })
-      i = j
-    } else i++
-  }
-  if (rounds.length <= maxRounds) return msgs
-  const fold = rounds.slice(0, foldCount)
-  const foldStart = msgs.indexOf(fold[0].asst)
-  if (foldStart > 0 && msgs.slice(0, foldStart).some(x => x.role === 'tool')) return msgs // 有悬空 tool 消息, 跳过折叠
-  const lastTools = fold[fold.length - 1].tools
-  const foldEnd = msgs.indexOf(lastTools[lastTools.length - 1]) + 1
-  const agg = new Map<string, number>()
-  const lastResult = new Map<string, string>()
-  for (const r of fold) for (const tc of r.asst.tool_calls || []) {
-    const tname = tc.function?.name || '?'
-    agg.set(tname, (agg.get(tname) || 0) + 1)
-    lastResult.set(tname, r.tools[r.tools.length - 1]?.content?.slice(0, 60) || '')
-  }
-  const summary = '[工具调用归档] 已执行: ' + [...agg].map(([n, c]) => n + '(' + c + ')').join(' ') +
-    [...lastResult].map(([n, t]) => ' | ' + n + ': ' + t).join('') +
-    '。如需早期细节请用工具重新读取或 recall_memory'
-  return [
-    ...msgs.slice(0, foldStart),
-    { id: uuidv4(), role: 'user' as const, content: summary, timestamp: Date.now() },
-    ...msgs.slice(foldEnd),
-  ]
-}
-
-// v0.3.5 T1: 工具结果瘦身共享函数(0.3.2 T3 阈值 1500, 头尾 800/500; 并行护栏复用)
+// 纯函数: 工具结果瘦身 / 参数截断
 export function slimToolResult(c: string, head = 800, tail = 500): string {
   if (c.length <= 1500) return c
   const mid = c.slice(head, -tail)
   const keyLines = mid.split('\n').filter((l: string) => /error|exception|failed|warning|fatal|E:/.test(l)).slice(0, 15).join('\n')
-  return c.slice(0, head) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-tail)
+  return c.slice(0, head) + '\n...[\u5df2截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-tail)
 }
 
-// v0.3.3 T2: 历史 tool_calls 参数截断 —— 定位类字段全量保留, 超长内容字段截断 + 省略标记
-const ARG_KEEP = new Set([
-  'path', 'name', 'dirPath', 'glob', 'pattern', 'query', 'url', 'pid',
-  'id', 'agent', 'agent_name', 'expression', 'tool', 'key', 'fileId',
-  'workflow_id', 'server', 'offset', 'limit', 'lang', 'mode',
-])
+const ARG_KEEP = new Set(['path', 'name', 'dirPath', 'glob', 'pattern', 'query', 'url', 'pid', 'id', 'agent', 'agent_name', 'expression', 'tool', 'key', 'fileId', 'workflow_id', 'server', 'offset', 'limit', 'lang', 'mode'])
 const ARG_SLIM_LEN = 200
 function slimArgs(args: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(args || {})) {
     if (typeof v === 'string' && v.length > ARG_SLIM_LEN && !ARG_KEEP.has(k)) {
-      out[k] = v.slice(0, ARG_SLIM_LEN) + '…[省略' + (v.length - ARG_SLIM_LEN) + '字]'
-    } else if (Array.isArray(v) && v.length > 20 && v.every(x => typeof x === 'string')) {
-      out[k] = v.slice(0, 20) + '…[省略' + (v.length - 20) + '项]'
+      out[k] = v.slice(0, ARG_SLIM_LEN) + '\u2026[省略' + (v.length - ARG_SLIM_LEN) + '字'
+    } else if (Array.isArray(v) && v.length > 20 && v.every((x: unknown) => typeof x === 'string')) {
+      out[k] = v.slice(0, 20) + '\u2026[省略' + (v.length - 20) + '项'
     } else out[k] = v
   }
   return out
 }
-// 消息中 tool_calls.arguments 为 JSON 字符串, 解析后截断再序列化; 解析失败原样保留
-function slimToolCallArgs(tc: { id?: string; type: string; function: { name: string; arguments: string } }): { id?: string; type: string; function: { name: string; arguments: string } } {
+export function slimToolCallArgs(tc: { id?: string; type: string; function: { name: string; arguments: string } }): { id?: string; type: string; function: { name: string; arguments: string } } {
   try {
     const parsed = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>
     return { ...tc, function: { ...tc.function, arguments: JSON.stringify(slimArgs(parsed)) } }
   } catch { return tc }
 }
 
-// v0.3.3 T3: 跨任务归档 —— 任务块(以 user 消息为界)满足条件时, 最早块整体折叠为归档记录
 export interface TaskArchive {
   goal: string
   conclusion: string
@@ -231,21 +187,20 @@ export function buildContextualMessages(
   // 历史消息硬上限 40 条(超长会话只保留最近 40 条, 大幅降低 token 消耗)
   // 截断时保留前文摘要段(用户话题 + 工具调用量), 避免早期事实完全丢失
   let earlySummary = ''
+  let list = msgs
   // v0.3.2 T6: 先折叠旧工具轮次再限长(折叠只作用于最旧完整轮次对)
-  // v0.3.5 T2: roundFold 开关关闭时跳过折叠(0.3.1 行为)
-  let list = opts.gSnap.perf?.roundFold === false ? msgs : foldToolRounds(msgs)
+  // 历史精简由窗口阈值压缩/微压缩负责
   // v0.3.3 T3: 跨任务归档(先折叠后归档; 归档开关默认开)
   // v0.3.5 T2: 开关迁移到 perf.taskArchive, 兼容旧 taskArchive 字段
   const archiveEnabled = (opts.gSnap.perf?.taskArchive ?? opts.gSnap.taskArchive) !== false
   const archiveRes = archiveEnabled ? buildTaskArchives(list) : { keep: list, archives: [] as TaskArchive[] }
   list = archiveRes.keep
   const archives = archiveRes.archives
-  if (list.length > MAX_HISTORY_MSGS) {
+  // 硬上限兜底：LLM 摘要压缩（窗口阈值压缩/微压缩）负责常规历史精简，
+  // 这里只在消息量极端膨胀时直接截断，防止请求超过 API 上限；不在此做规则摘要。
+  if (list.length > MAX_HISTORY_MSGS * 5) {
     const early = list.slice(0, -MAX_HISTORY_MSGS)
-    const uN = early.filter(m => m.role === 'user').length
-    const tN = early.filter(m => m.role === 'tool').length
-    const uLast = [...early].reverse().find(m => m.role === 'user' && m.content)
-    earlySummary = `\n[前文摘要] 早期 ${early.length} 条消息已归档(约 ${uN} 轮用户交互, ${tN} 次工具调用)${uLast ? ', 最近话题: ' + String(uLast.content).replace(/\s+/g, ' ').slice(0, 60) : ''}。如需早期细节请用 recall_memory 或让用户补充。`
+    earlySummary = '\n[上下文保护] 早期 ' + early.length + ' 条消息已省略（超出硬上限），如需早期细节请用 recall_memory。'
     list = list.slice(-MAX_HISTORY_MSGS)
   }
   // v0.3.1 插话序列修复: _inject 插话消息分离 —— 重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
@@ -369,30 +324,6 @@ export function buildContextualMessages(
   }
   // 时间戳放绝对最末尾 —— 保持前缀稳定, 最大化缓存命中(动态内容永不打断前缀)
   sp += '\n## 当前时间\n' + new Date().toLocaleString('zh-CN')
-  // v0.2: 上下文压缩（接入 compactStrategy/compactMsgCount/compactTokenLimit/compactStrength 设置）
-  const gComp = gSnap
-  const compStrategy = gComp.compactStrategy || 'auto'
-  const msgLimit = gComp.compactMsgCount || COMPACT_MSG_DEFAULT
-  const tokenLimit = gComp.compactTokenLimit || COMPACT_TOKEN_DEFAULT
-  if (compStrategy === 'off' && d.length > msgLimit + 20) {
-    // 关闭压缩：溢出则截断（保留最近 msgLimit 条）
-    return sp ? [{ role: 'system', content: sp }, ...d.slice(-msgLimit)] : d.slice(-msgLimit)
-  }
-  if (compStrategy !== 'manual' && d.length > msgLimit) {
-    const estTokens = d.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : ''), 0)
-    const threshold = gSnap.compactThreshold ?? COMPACT_RATIO_DEFAULT
-    if (estTokens > (gComp.compactTokenLimit ? tokenLimit : opts.cl * threshold)) {
-      const keepCount = Math.min(16, Math.floor(d.length * 0.4))
-      const keep = d.slice(-keepCount)
-      const early = d.slice(0, d.length - keepCount)
-      const userMsgs = early.filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content.slice(0, 80) : '')
-      const toolCount = early.filter(m => m.role === 'tool').length
-      const assistantMsgs = early.filter(m => m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 50)
-      const keyOutputs = assistantMsgs.slice(-3).map(m => (m.content as string).replace(/\n/g, ' ').slice(0, 100))
-      const summary = [`[上下文压缩] 早期 ${early.length} 条消息已摘要：`, `${userMsgs.length} 轮用户交互`, toolCount > 0 ? `${toolCount} 次工具调用` : '', keyOutputs.length > 0 ? `最近产出：${keyOutputs.join(' | ')}` : ''].filter(Boolean).join(' · ')
-      return [{ role: 'system', content: sp + '\n\n' + summary }, ...keep]
-    }
-  }
   // 暴露最近一次 system prompt(验证思考模式/人设等接线)
   // v0.3.1 M4: 序列断言 —— 返回前校验 assistant(tool_calls) 后必须紧跟 tool 消息(插话重排正确性兜底)
   assertAlternates(d)

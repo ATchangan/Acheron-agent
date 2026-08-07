@@ -2,6 +2,8 @@
 import React from 'react'
 import { CAT_COLOR, renderMarkdown, type SkillWithCategory } from './skills-utils'
 import { S } from './skills-styles'
+import { U } from './ui-styles'
+
 
 export const SkillDetail: React.FC<{
   skill: SkillWithCategory
@@ -21,7 +23,7 @@ export const SkillDetail: React.FC<{
       <div style={S.modalBody}>
         <div style={S.viewerPath}>📁 {skill.path}</div>
         {loading ? (
-          <div className="empty-hint" style={{ textAlign: 'center' }}>加载法术内容…</div>
+          <div className="empty-hint" style={U.center}>加载法术内容…</div>
         ) : (
           <div
             style={S.viewerContent}

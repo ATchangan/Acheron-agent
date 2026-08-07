@@ -3,6 +3,8 @@ import React from 'react'
 import type { SearchResult } from './knowledge-utils'
 import { S } from './knowledge-styles'
 import { SearchMark } from './themed-icons'
+import { U } from './ui-styles'
+
 
 export const KnowledgeSearchBar: React.FC<{
   q: string
@@ -36,7 +38,7 @@ export const KnowledgeSearchBar: React.FC<{
         {results.map((r, i) => (
           <div key={i} style={S.resultItem}>
             <div style={S.resultHeader}>
-              <span style={{ color: 'var(--text-muted)' }}>结果 {i + 1}</span>
+              <span style={U.textMuted}>结果 {i + 1}</span>
               <span style={S.resultScore}>契合度 {(r.score * 100).toFixed(0)}%</span>
             </div>
             <div style={S.resultContent}>
@@ -47,6 +49,6 @@ export const KnowledgeSearchBar: React.FC<{
         ))}
       </div>
     )}
-    {searching && <div className="empty-hint" style={{ textAlign: 'center' }}>寻章中…</div>}
+    {searching && <div className="empty-hint" style={U.center}>寻章中…</div>}
   </div>
 )

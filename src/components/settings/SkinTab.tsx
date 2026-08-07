@@ -3,6 +3,8 @@ import { useSettingsStore } from '../../store/settings'
 import { extractSkinColors, clearSkinInlineVars } from '../../store/settings'
 import { C, S, Toggle, StepSetting, stepBtn } from '../settings-ui'
 import { Minus, Plus } from 'lucide-react'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 外观 tab(从 SettingsView 拆分, 行为零变化)
 const THEME_META = [
@@ -26,14 +28,14 @@ export default function SkinTab() {
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}><div style={S.section}>主题（配色体系）</div>
         <div style={S.hint}>6 套预设主题 + 自定义配色；主题只管配色，和背景皮肤互不影响</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <div style={U.grid3}>
           {THEME_META.map(t => {
             const active = currentTheme(g) === t.id
             return <div key={t.id} onClick={() => { save({ theme: t.id, themePreset: undefined }); useSettingsStore.getState().setTheme(t.id) }} style={{ padding: 10, borderRadius: 8, border: '1px solid ' + (active ? C.accent : C.border), cursor: 'pointer', background: active ? C.accentBg : 'transparent', textAlign: 'center' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 6 }}>
+              <div style={U.centerGap5Mb6}>
                 {t.dots.map(d => <span key={d} style={{ width: 13, height: 13, borderRadius: '50%', background: d, border: '1px solid rgba(150,150,160,.35)' }} />)}
               </div>
               <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text }}>{t.label}</div>
@@ -44,7 +46,7 @@ export default function SkinTab() {
             const cc = g.customColors || g.customTheme || {}
             const cdots = [cc.bg || '#17181c', cc.accent || '#7c6fa8', cc.text || '#e2e2e8']
             return <div onClick={() => { save({ theme: 'custom', themePreset: undefined }); useSettingsStore.getState().setTheme('custom') }} style={{ padding: 10, borderRadius: 8, border: '1px solid ' + (active ? C.accent : C.border), cursor: 'pointer', background: active ? C.accentBg : 'transparent', textAlign: 'center' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginBottom: 6 }}>
+              <div style={U.centerGap5Mb6}>
                 {cdots.map(d => <span key={d} style={{ width: 13, height: 13, borderRadius: '50%', background: d, border: '1px solid rgba(150,150,160,.35)' }} />)}
               </div>
               <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text }}>自定义</div>
@@ -55,7 +57,7 @@ export default function SkinTab() {
           <div style={S.hint}>实时预览（不落盘），点「应用」保存；「恢复默认」清除自定义回到暗夜</div>
           {([['背景', 'bg'], ['卡片', 'surface'], ['强调', 'accent'], ['文字', 'text']] as const).map(([cn, ck]) => {
             const cc = (g.customColors || g.customTheme || {})[ck]
-            return <div key={ck} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            return <div key={ck} style={U.centerGap8mt6}>
               <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label, width: 40, flexShrink: 0 }}>{cn}</span>
               <input type="color" value={toHex(cc || '')} onChange={e => {
                 const next = { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value }
@@ -69,7 +71,7 @@ export default function SkinTab() {
   <input style={{ ...S.inp, flex: 1 }} value={cc || ''} placeholder="颜色代码（例如 #RRGGBB）" onChange={e => save({ customColors: { ...(g.customColors || g.customTheme || {}), [ck]: e.target.value } })} />
             </div>
           })}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <div style={U.gap8mt10}>
             <button style={S.btn('primary')} onClick={() => { save({ theme: 'custom', themePreset: undefined }); useSettingsStore.getState().setTheme('custom') }}>应用</button>
             <button style={S.btn('ghost')} onClick={() => { save({ theme: 'dark', themePreset: undefined, customColors: undefined }); useSettingsStore.getState().setTheme('dark'); clearSkinInlineVars() }}>恢复默认</button>
           </div>
@@ -77,21 +79,21 @@ export default function SkinTab() {
       </div>
       <div style={{ borderTop: '1px dashed ' + C.border, margin: '18px 0' }} />
       <div style={S.card}><div style={S.section}>皮肤（背景叠加）</div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          <input type="file" accept="image/*" style={{ display: 'none' }} id="bgImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { useSettingsStore.getState().setBgImage(r.result as string) }; r.readAsDataURL(f) }} />
+        <div style={U.gap8mt6}>
+          <input type="file" accept="image/*" style={U.none} id="bgImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => { useSettingsStore.getState().setBgImage(r.result as string) }; r.readAsDataURL(f) }} />
           <button style={S.btn('primary')} onClick={() => document.getElementById('bgImg')?.click()}>选择图片</button>
           {hasBg && <button style={S.btn('danger')} onClick={() => { useSettingsStore.getState().setBgImage(null) }}>清除</button>}
         </div>
         {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
-          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>透明度</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={U.fs2label}>透明度</span>
+          <div style={U.centerGap8}>
             <button style={stepBtn} title="减小" onClick={() => { const v = Math.max(0.05, Math.round((bgOp - 0.05) * 100) / 100); setBgOp(v); useSettingsStore.getState().setBgOpacity(v) }}><Minus size={14} /></button>
             <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, minWidth: 44, textAlign: 'center' }}>{Math.round(bgOp * 100)}%</span>
             <button style={stepBtn} title="增大" onClick={() => { const v = Math.min(1, Math.round((bgOp + 0.05) * 100) / 100); setBgOp(v); useSettingsStore.getState().setBgOpacity(v) }}><Plus size={14} /></button>
           </div>
         </div>}
         {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>遮罩</span>
+          <span style={U.fs2label}>遮罩</span>
           {[['light', '亮', 'rgba(0,0,0,.15)'], ['medium', '中', 'rgba(0,0,0,.35)'], ['dark', '暗', 'rgba(0,0,0,.55)']].map(([k, label, v]) => {
             const on = (g.skinMask || 'medium') === k
             return <button key={k} onClick={() => { save({ skinMask: k }); document.documentElement.style.setProperty('--bg-mask', v) }} style={{ ...stepBtn, display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid ' + (on ? C.accent : C.border), color: on ? C.accent : C.text }}>
@@ -100,7 +102,7 @@ export default function SkinTab() {
           })}
         </div>}
         {hasBg && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.label }}>辅色</span>
+          <span style={U.fs2label}>辅色</span>
           <span style={{ width: 18, height: 18, borderRadius: 4, background: g.skinSecondary ? 'rgb(' + g.skinSecondary + ')' : 'transparent', border: '1px solid ' + C.border }} />
           <button style={S.btn('ghost')} onClick={async () => {
             if (!g.bgImage) return

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useSettingsStore, DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA } from '../../store/settings'
 import { C, S, Toggle, SegSetting } from '../settings-ui'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 角色 tab(从 SettingsView 拆分, 行为零变化)
 export default function PersonaTab() {
@@ -15,7 +17,7 @@ export default function PersonaTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g?.chatPersona, g?.workPersona])
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>基础身份</div>
         <div style={S.label}>名称</div><input style={S.inp} value={g.agentName || '黄泉'} onChange={e => save({ agentName: e.target.value })} />
@@ -37,44 +39,44 @@ export default function PersonaTab() {
         </div>
       </div>
       <div style={S.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={U.betweenMb8}>
           <div style={{ ...S.section, marginBottom: 0 }}>聊天人设</div>
-          {g.rolePreset && g.rolePreset !== 'custom' ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.accent, background: C.accentBg, padding: '2px 8px', borderRadius: 8 }}>来自预设：{g.rolePreset}</span> : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}>自定义</span>}
+          {g.rolePreset && g.rolePreset !== 'custom' ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.accent, background: C.accentBg, padding: '2px 8px', borderRadius: 8 }}>来自预设：{g.rolePreset}</span> : <span style={U.tinyMuted}>自定义</span>}
         </div>
-        <textarea readOnly={!!(g.rolePreset && g.rolePreset !== 'custom')} style={{ ...S.inp, height: 100, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 2px)', lineHeight: 1.6, ...(g.rolePreset && g.rolePreset !== 'custom' ? { opacity: 0.75, cursor: 'not-allowed' } : {}) }} value={chatPersona} onChange={e => { setChatPersona(e.target.value); save({ chatPersona: e.target.value }); if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} placeholder="聊天模式下的行为风格；编写后自动切换为「自定义」" />
+        <textarea style={{ ...S.inp, height: 100, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 2px)', lineHeight: 1.6, ...(g.rolePreset && g.rolePreset !== 'custom' ? { opacity: 0.8 } : {}) }} value={chatPersona} onFocus={() => { if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} onChange={e => { setChatPersona(e.target.value); save({ chatPersona: e.target.value }); if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} placeholder="聊天模式下的行为风格；编写后自动切换为「自定义」" />
       </div>
       <div style={S.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={U.betweenMb8}>
           <div style={{ ...S.section, marginBottom: 0 }}>工作人设</div>
-          {g.rolePreset && g.rolePreset !== 'custom' ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.accent, background: C.accentBg, padding: '2px 8px', borderRadius: 8 }}>来自预设：{g.rolePreset}</span> : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}>自定义</span>}
+          {g.rolePreset && g.rolePreset !== 'custom' ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.accent, background: C.accentBg, padding: '2px 8px', borderRadius: 8 }}>来自预设：{g.rolePreset}</span> : <span style={U.tinyMuted}>自定义</span>}
         </div>
-        <textarea readOnly={!!(g.rolePreset && g.rolePreset !== 'custom')} style={{ ...S.inp, height: 100, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 2px)', lineHeight: 1.6, fontFamily: 'monospace', ...(g.rolePreset && g.rolePreset !== 'custom' ? { opacity: 0.75, cursor: 'not-allowed' } : {}) }} value={workPersona} onChange={e => { setWorkPersona(e.target.value); save({ workPersona: e.target.value }); if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} placeholder="工作模式下的执行规范；编写后自动切换为「自定义」" />
+        <textarea style={{ ...S.inp, height: 100, resize: 'vertical', padding: '10px', fontSize: 'calc(var(--ui-font-size) - 2px)', lineHeight: 1.6, fontFamily: 'monospace', ...(g.rolePreset && g.rolePreset !== 'custom' ? { opacity: 0.8 } : {}) }} value={workPersona} onFocus={() => { if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} onChange={e => { setWorkPersona(e.target.value); save({ workPersona: e.target.value }); if (g.rolePreset && g.rolePreset !== 'custom') save({ rolePreset: 'custom' }) }} placeholder="工作模式下的执行规范；编写后自动切换为「自定义」" />
       </div>
       <div style={S.card}>
         <div style={S.section}>语气与表达</div>
         <div style={S.label}>风格基调</div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-          {['专业正式', '实用直接', '轻松友好', '极简克制'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 5, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 3px)', color: (g.toneStyle || '实用直接') === s ? '#fff' : C.muted, background: (g.toneStyle || '实用直接') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.toneStyle || '实用直接') === s} onChange={() => save({ toneStyle: s })} />{s}</label>)}
+          {['专业正式', '实用直接', '轻松友好', '极简克制'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 5, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 3px)', color: (g.toneStyle || '实用直接') === s ? '#fff' : C.muted, background: (g.toneStyle || '实用直接') === s ? C.accent : 'transparent' }}><input type="radio" style={U.none} checked={(g.toneStyle || '实用直接') === s} onChange={() => save({ toneStyle: s })} />{s}</label>)}
         </div>
         <div style={{ marginTop: 12 }}>
           <div style={S.label}>详细程度</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={U.centerGap8}>
             <SegSetting label="详细程度" hint="回答的详细档位" value={g.verbosity ?? 2} onChange={v => save({ verbosity: v })} options={[{ v: 0, label: '极简' }, { v: 1, label: '简洁' }, { v: 2, label: '标准' }, { v: 3, label: '详细' }, { v: 4, label: '详尽' }]} />
           </div>
         </div>
-        <div style={{ marginTop: 10 }}>
+        <div style={U.mt10}>
           <div style={S.label}>结构化偏好</div>
   {([['useTables', '优先使用表格'], ['useLists', '优先使用列表'], ['useEmoji', '使用表情点缀'], ['autoCopy', '代码块一键复制']] as const).map(([k, l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
         </div>
-        <div style={{ marginTop: 10 }}><div style={S.label}>称呼风格</div></div>
+        <div style={U.mt10}><div style={S.label}>称呼风格</div></div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {['不称呼用户', '"你"', '"您"', (g.userAlias || '老板')].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 4, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 4px)', color: (g.addressStyle || '你') === s ? '#fff' : C.muted, background: (g.addressStyle || '你') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.addressStyle || '你') === s} onChange={() => save({ addressStyle: s })} />{s}</label>)}
+          {['不称呼用户', '"你"', '"您"', (g.userAlias || '老板')].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 4, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 4px)', color: (g.addressStyle || '你') === s ? '#fff' : C.muted, background: (g.addressStyle || '你') === s ? C.accent : 'transparent' }}><input type="radio" style={U.none} checked={(g.addressStyle || '你') === s} onChange={() => save({ addressStyle: s })} />{s}</label>)}
         </div>
-        <div style={{ marginTop: 10 }}><div style={S.label}>不确定表达</div></div>
+        <div style={U.mt10}><div style={S.label}>不确定表达</div></div>
         {([['expressUncertainty', '不确定时明确说"不确定"'], ['askWhenMissing', '信息不足时主动追问，不脑补'], ['showConfidence', '对关键事实标注置信度(高/中/低)']] as const).map(([k, l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
-        <div style={{ marginTop: 4 }}><div style={S.label}>敏感话题处理</div></div>
+        <div style={U.mt4}><div style={S.label}>敏感话题处理</div></div>
         {([['explainRefusal', '拒绝回答时解释原因'], ['neutralOnControversial', '对争议话题保持中立']] as const).map(([k, l]) => <Toggle key={k} checked={g[k] === true} onChange={v => save({ [k]: v })} label={l} />)}
-        <div style={{ marginTop: 4 }}><div style={S.label}>收尾习惯</div></div>
+        <div style={U.mt4}><div style={S.label}>收尾习惯</div></div>
         {([['noClosingPhrase', '不添加固定收尾语'], ['briefClosing', '完成时简洁提示"完成"']] as const).map(([k, l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
       </div>
       <div style={S.card}>
@@ -88,9 +90,9 @@ export default function PersonaTab() {
         <div style={S.section}>知识域限制</div>
         <div style={S.row}><div style={S.label}>地域偏重</div><select style={S.sel} value={g.region || 'none'} onChange={e => save({ region: e.target.value })}><option value="none">无偏好</option><option value="cn">中国大陆</option><option value="na">北美</option><option value="eu">欧洲</option><option value="jp">日本</option></select></div>
         <Toggle checked={g.knowledgeTimeLimit === true} onChange={v => save({ knowledgeTimeLimit: v })} label="限制知识截止日期" hint="模拟特定时期的知识范围，如仅用2022年前技术" />
-        {g.knowledgeTimeLimit === true && <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-          <div style={{ flex: 1 }}><div style={S.hint}>不早于</div><input type="date" style={S.inp} value={g.knowledgeFrom || ''} onChange={e => save({ knowledgeFrom: e.target.value })} /></div>
-          <div style={{ flex: 1 }}><div style={S.hint}>不晚于</div><input type="date" style={S.inp} value={g.knowledgeTo || ''} onChange={e => save({ knowledgeTo: e.target.value })} /></div>
+        {g.knowledgeTimeLimit === true && <div style={U.gap8mt6}>
+          <div style={U.flex1}><div style={S.hint}>不早于</div><input type="date" style={S.inp} value={g.knowledgeFrom || ''} onChange={e => save({ knowledgeFrom: e.target.value })} /></div>
+          <div style={U.flex1}><div style={S.hint}>不晚于</div><input type="date" style={S.inp} value={g.knowledgeTo || ''} onChange={e => save({ knowledgeTo: e.target.value })} /></div>
         </div>}
         <Toggle checked={g.knowledgeWhitelist === true} onChange={v => save({ knowledgeWhitelist: v })} label="仅使用白名单来源" hint="限制引用的知识范围" />
   <Toggle checked={g.strictVersionAware === true} onChange={v => save({ strictVersionAware: v })} label="严格版本感知" hint="涉及接口/框架时标注版本并验证兼容性" />

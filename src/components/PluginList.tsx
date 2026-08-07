@@ -4,6 +4,8 @@ import type { PluginInfo } from './plugin-types'
 import { CATEGORIES, CATEGORY_HINT, CAT_COLORS, YELLOW_RIVER } from './plugin-types'
 import { s } from './plugin-styles'
 import { InfoMark, LockMark, ToolMark, BoltMark, TagMark } from './themed-icons'
+import { U } from './ui-styles'
+
 
 export const PluginList: React.FC<{
   plugins: PluginInfo[]
@@ -58,7 +60,7 @@ export const PluginList: React.FC<{
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <div style={U.flexGap8shrink}>
               <span
                 className={`toggle ${p.enabled ? 'on' : ''}`}
                 onClick={(e) => {
@@ -84,7 +86,7 @@ export const PluginList: React.FC<{
                   {p.manifest.homepage && (
                     <span>
                       {' '}
-                      <a href={p.manifest.homepage} style={{ color: 'var(--accent)' }} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer">
+                      <a href={p.manifest.homepage} style={U.accent} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer">
                         {p.manifest.homepage}
                       </a>
                     </span>
@@ -113,7 +115,7 @@ export const PluginList: React.FC<{
                   {p.manifest.tools.map((t, i) => (
                     <div key={i} style={s.toolRow}>
                       <span style={s.toolName}>{t.name}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>— {t.description || '暂无说明'}</span>
+                      <span style={U.textMuted}>— {t.description || '暂无说明'}</span>
                     </div>
                   ))}
                 </div>
