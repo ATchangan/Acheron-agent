@@ -3,6 +3,42 @@ import { ipcMain, app } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { exec } from 'child_process'
+import { writeFileAtomic } from '../fs-atomic'
+
+// v0.3.3: Chromium 缓存自动清理 —— 超过阈值时清空 Cache/Code Cache/GPU 缓存目录
+const CHROMIUM_CACHE_DIRS = ['Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache']
+export function cleanChromiumCaches(base: string, sizeMb: number): { freedMb: number; totalMb: number } {
+  let total = 0
+  const paths = CHROMIUM_CACHE_DIRS.map(d => join(base, d)).filter(p => fs.existsSync(p))
+  for (const p of paths) { try { total += dirSizeSafe(p) } catch { /* 忽略 */ } }
+  let freed = 0
+  const threshold = Math.max(1, Number(sizeMb) || 200) * 1024 * 1024
+  if (total > threshold) {
+    for (const p of paths) {
+      try {
+        freed += dirSizeSafe(p)
+        fs.rmSync(p, { recursive: true, force: true })
+        fs.mkdirSync(p, { recursive: true })
+      } catch { /* 忽略 */ }
+    }
+  }
+  return { freedMb: Math.round((freed / 1048576) * 10) / 10, totalMb: Math.round((total / 1048576) * 10) / 10 }
+}
+function dirSizeSafe(dir: string): number {
+  if (!fs.existsSync(dir)) return 0
+  let total = 0
+  const walk = (d: string): void => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name)
+      try {
+        if (e.isDirectory()) walk(p)
+        else if (e.isFile()) total += fs.statSync(p).size
+      } catch { /* 忽略 */ }
+    }
+  }
+  try { walk(dir) } catch { /* 忽略 */ }
+  return total
+}
 
 export function registerMiscIpc(deps: {
   settingsPath: string
@@ -33,10 +69,17 @@ export function registerMiscIpc(deps: {
       }
     } catch { return {} }
   })
+  ipcMain.handle('cache:cleanChromium', () => {
+    try {
+      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+      const sizeMb = Number(s?.general?.autoCleanCacheSize) || 200
+      return cleanChromiumCaches(userDataPath, sizeMb)
+    } catch { return { freedMb: 0, totalMb: 0 } }
+  })
   ipcMain.handle('settings:reset', () => {
     try {
       const defaults = { providers: [], mediaProviders: [], general: { mode: 'work', theme: 'dark', agentName: '黄泉' } }
-      fs.writeFileSync(settingsPath, JSON.stringify(defaults, null, 2), 'utf-8')
+      writeFileAtomic(settingsPath, JSON.stringify(defaults, null, 2))
       return true
     } catch { return false }
   })

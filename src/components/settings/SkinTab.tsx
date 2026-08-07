@@ -27,22 +27,6 @@ export default function SkinTab() {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   return (
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
-      <div style={S.card}><div style={S.section}>头像</div>
-  <div style={S.hint}>上传图片作为头像，或使用表情/文字。留空默认「泉」。</div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 10, alignItems: 'center' }}>
-          <div style={{ width: 56, height: 56, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
-            {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
-          </div>
-          <div style={{ flex: 1 }}>
-  <input style={S.inp} value={g.agentAvatar || ''} placeholder="表情或文字（例如 🌂）" onChange={e => save({ agentAvatar: e.target.value })} maxLength={4} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <input type="file" accept="image/*" style={{ display: 'none' }} id="avatarImg" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => save({ agentAvatarImage: r.result as string }); r.readAsDataURL(f) }} />
-              <button style={S.btn('primary')} onClick={() => document.getElementById('avatarImg')?.click()}>上传图片</button>
-              {g.agentAvatarImage && <button style={S.btn('ghost')} onClick={() => save({ agentAvatarImage: '' })}>使用默认</button>}
-            </div>
-          </div>
-        </div>
-      </div>
       <div style={S.card}><div style={S.section}>主题（配色体系）</div>
         <div style={S.hint}>6 套预设主题 + 自定义配色；主题只管配色，和背景皮肤互不影响</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
@@ -129,11 +113,12 @@ export default function SkinTab() {
       </div>
       <div style={S.card}><div style={S.section}>排版</div>
         <div style={S.row}><div style={S.label}>界面字号</div><select style={S.sel} value={g.uiFontSize || 13} onChange={e => save({ uiFontSize: parseInt(e.target.value) })}>{[12, 13, 14, 15, 16, 18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
-        <div style={S.row}><div style={S.label}>代码字号</div><select style={S.sel} value={g.codeFontSize || 12} onChange={e => save({ codeFontSize: parseInt(e.target.value) })}>{[11, 12, 13, 14, 15, 16].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
+        <div style={S.row}><div style={S.label}>会话字号</div><select style={S.sel} value={g.codeFontSize || 0} onChange={e => { const v = e.target.value; save({ codeFontSize: v ? parseInt(v) : undefined }) }}><option value={0}>跟随界面</option>{[12, 13, 14, 15, 16, 18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
+        <div style={S.hint}>控制交互会话（聊天正文、输入框、消息内代码与工具输出）的字号，默认跟随界面字号</div>
         <div style={S.row}><div style={S.label}>消息间距</div><select style={S.sel} value={g.messageSpacing || 'comfortable'} onChange={e => save({ messageSpacing: e.target.value })}><option value="compact">紧凑</option><option value="comfortable">舒适</option><option value="loose">宽松</option></select></div>
       </div>
       <div style={S.card}><div style={S.section}>布局</div>
-        <StepSetting label="对话区最大宽度" hint="消息区最大宽度" value={g.chatMaxWidth || 800} min={400} max={1200} step={50} unit=" px" onChange={v => save({ chatMaxWidth: v })} />
+        <StepSetting label="会话区宽度" hint="消息区与输入框宽度（默认 780px）" value={g.chatMaxWidth || 780} min={480} max={1400} step={20} unit=" px" onChange={v => save({ chatMaxWidth: v })} />
         <Toggle checked={g.showTimestamps !== 'hover'} onChange={v => save({ showTimestamps: v ? 'always' : 'hover' })} label="始终显示时间戳" hint="关闭后仅悬停显示" />
       </div>
     </div>

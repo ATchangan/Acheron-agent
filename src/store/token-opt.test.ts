@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
-import { parseDispatchTasks } from './runtime'
+import { parseDispatchTasks } from './parse-utils'
 import { scanMemoryText, freezeMemory, getFrozenMemory, clearFrozenMemory } from './memory'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'

@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
+import { writeFileAtomic } from '../fs-atomic'
 
 export function registerSettingsIpc(deps: {
   settingsPath: string
@@ -20,7 +21,7 @@ export function registerSettingsIpc(deps: {
           Object.assign(data, decProviders(data))
           // 从独立文件读回大字段
           const g = data?.general || {}
-          for (const [key, file] of [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']] as [string, string][]) {
+          for (const [key, file] of [['bgImage', 'bgimage.dat']] as [string, string][]) {
             const v = g[key]
             if (typeof v === 'string' && v.startsWith('__FILE__')) {
               try { const fv = fs.readFileSync(join(userDataPath, file), 'utf-8'); g[key] = fv } catch { delete g[key] }
@@ -36,14 +37,14 @@ export function registerSettingsIpc(deps: {
   ipcMain.handle('settings:save', (_e, s) => {
     try {
       fs.mkdirSync(userDataPath, { recursive: true })
-      // 大字段(头像/背景图 base64)剥离到独立文件, 避免每次保存全量写 2.8MB 阻塞
+      // 大字段(背景图 base64)剥离到独立文件, 避免每次保存全量写阻塞
       const g = s?.general || {}
-      const bigKeys: [string, string][] = [['agentAvatarImage', 'avatar.dat'], ['bgImage', 'bgimage.dat']]
+      const bigKeys: [string, string][] = [['bgImage', 'bgimage.dat']]
       const g2 = { ...g }
       for (const [key, file] of bigKeys) {
         const v = g2[key]
         if (typeof v === 'string' && v.length > 1024) {
-          try { fs.writeFileSync(join(userDataPath, file), v, 'utf-8') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+          try { writeFileAtomic(join(userDataPath, file), v) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
           g2[key] = '__FILE__' + file
         } else if (v === undefined || v === null) {
           // 数据安全 —— 删除大字段文件前先备份 .bak(壁纸曾因异常被删且无法找回)
@@ -61,7 +62,7 @@ export function registerSettingsIpc(deps: {
         if (typeof wd === 'string' && wd.trim()) fs.mkdirSync(wd.trim(), { recursive: true })
       } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       // API Key 加密落盘(DPAPI)
-      fs.writeFileSync(settingsPath, JSON.stringify(encProviders(slim)), 'utf-8')
+      writeFileAtomic(settingsPath, JSON.stringify(encProviders(slim)))
       return true
     } catch (e) { console.error('[SETTINGS] save error:', e); return false }
   })

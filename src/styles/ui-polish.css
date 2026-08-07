@@ -1,5 +1,5 @@
 /* ─── 黄泉Agent · 产品级 UI 优化 v2 ───────────────────── */
-/* 对标 Codex / HanaAgent 品质 · 黄泉主题强化 */
+/* 黄泉主题强化 */
 
 /* === 全局过渡与动效 === */
 :root { --anim-duration: 0.2s; }
@@ -185,22 +185,14 @@ html[data-bg] .app-shell::before { background: none; }
   box-shadow: -1px 0 8px rgba(0,0,0,.15); 
 }
 
-/* === 消息气泡增强 === */
-.message-item { padding: 8px 0; }
-.message-assistant .message-body { 
-  border-left: 2px solid var(--accent-dim); 
-  padding-left: 12px; 
-  background-image: linear-gradient(90deg, var(--skin-accent-soft), transparent 60%);
-}
+/* === 消息极简（替代旧气泡增强，避免盖住 global.css 的极简样式）=== */
+.message-item { padding: 0; }
+.message-assistant .message-body,
 .message-user .message-body {
-  background: var(--skin-accent-soft);
-  border-radius: var(--radius-lg);
-  padding: 8px 14px;
-}
-.message-assistant .message-body {
-  background: var(--bg-elevated);
-  border-radius: var(--radius-lg);
-  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 /* === 标签栏精致化 === */
@@ -249,7 +241,7 @@ html[data-bg] .app-shell::before { background: none; }
 
 /* === 输入框聚焦增强 === */
 .chat-textarea:focus { box-shadow: none; }
-.input-wrapper:focus-within { 
+.input-card:focus-within { 
   border-color: var(--accent-dim); 
   box-shadow: 0 0 0 1px var(--accent-dim); 
 }
@@ -578,3 +570,11 @@ html[data-bg] .app-shell::before { background: none; }
   z-index: 1000;
   font-size: var(--ui-font-size);
 }
+
+/* 思考过程（写进会话消息，可折叠） */
+.hq-reasoning-block{margin-bottom:8px;border-left:2px solid var(--border-glow);padding-left:8px}
+.hq-reasoning-toggle{display:inline-flex;align-items:center;gap:5px;background:transparent;border:none;color:var(--text-muted);font-size:calc(var(--chat-font-size) - 2px);cursor:pointer;padding:2px 0;font-weight:500;transition:color .12s}
+.hq-reasoning-toggle:hover{color:var(--accent)}
+.hq-reasoning-arrow{font-size:10px;line-height:1}
+.hq-reasoning-meta{color:var(--text-muted);font-weight:400}
+.hq-reasoning-text{margin:6px 0 0;padding:8px 10px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text-secondary);font-family:'JetBrains Mono','Consolas',monospace;font-size:calc(var(--chat-font-size) - 3px);line-height:1.55;white-space:pre-wrap;word-break:break-word;max-height:280px;overflow-y:auto}

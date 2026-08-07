@@ -46,11 +46,26 @@ export function registerWebIpc(deps: {
     }
   })
 
+  // v0.3.3 性能优化: web_read 缓存加条数上限 + 过期清扫(原 TTL 过期条目从不清理, 无上限)
+  const WEB_READ_CACHE_MAX = 200
+  const WEB_READ_CACHE_TTL_MS = 10000
   const webReadCache = new Map<string, { ts: number; result: string }>()
+  const sweepWebReadCache = (): void => {
+    const now = Date.now()
+    for (const [k, v] of webReadCache) {
+      if (now - v.ts > WEB_READ_CACHE_TTL_MS) webReadCache.delete(k)
+    }
+    while (webReadCache.size >= WEB_READ_CACHE_MAX) {
+      const k = webReadCache.keys().next().value
+      if (!k) break
+      webReadCache.delete(k)
+    }
+  }
   ipcMain.handle('web:read', async (_e, url: string, mode?: string) => {
     const cacheKey = url + '|' + (mode || 'text')
     const cachedHit = webReadCache.get(cacheKey)
-    if (cachedHit && Date.now() - cachedHit.ts < 10000) return cachedHit.result
+    if (cachedHit && Date.now() - cachedHit.ts < WEB_READ_CACHE_TTL_MS) return cachedHit.result
+    if (cachedHit) webReadCache.delete(cacheKey)
     try {
       const { webRead } = require('../webtools')
       // 读取设置中的浏览器解析配置(双向绑定全局配置文件)
@@ -75,6 +90,7 @@ export function registerWebIpc(deps: {
         autoClose: cfg.webReadAutoClose !== false,
         cookies: cfg.webReadCookies || '',
       })
+      sweepWebReadCache()
       webReadCache.set(cacheKey, { ts: Date.now(), result: JSON.stringify(result) })
       return JSON.stringify(result)
     } catch (e: unknown) {

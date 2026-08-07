@@ -552,7 +552,7 @@ export const useChatStore = create<S>((set, get) => ({
           if (myGen !== taskGen) break // 终止后丢弃本轮结果
         }
 
-        // 4. 单气泡 + Hermes 风格日志
+        // 4. 单气泡 + 风格日志
         set({ stage: null }) // v0.2.3: 任务完成, 思考气泡消失
         const finalSession = get().sessions.find(x => x.id === sid)
         if (finalSession) {

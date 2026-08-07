@@ -32,6 +32,8 @@ export interface SessionMeta {
   title: string
   messageCount: number
   updatedAt: string
+  mode?: string
+  pinned?: boolean
 }
 export interface SessionData {
   id: string
@@ -39,6 +41,7 @@ export interface SessionData {
   messages: Message[]
   updatedAt?: string
   mode?: string
+  pinned?: boolean // 置顶: 不受最大会话数裁剪, 不被空会话清理删除
   busy?: boolean // 该会话是否正在工作中（独立于其他会话）
   // v0.3.1 会话修复: 会话级并发状态（FIX-1/2/8/16, 取代全局 window.__huangquan_agent / 全局 streaming / 全局 taskGen）
   agent?: string          // 当前 Agent（路由/handoff 写入, 会话隔离）
@@ -63,9 +66,12 @@ export interface Message {
   usage?: UsageData
   // 回复性能指标 —— ttft 首字延迟(ms)、duration 总时长(ms)
   meta?: { ttft?: number; duration?: number; taskTokens?: number; taskMs?: number }
-  _toolLog?: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number }[]
+  _toolLog?: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }[]
+  // v0.3.4: 流式占位标记 —— 引擎流式文本直接写入正式消息 id, 任务结束前该消息为占位态
+  _streaming?: boolean
   // v0.3.1 插话序列修复: 插话消息标记 —— 构建上下文时重排到末尾, 保证 assistant(tool_calls)→tool 配对连续性
   _inject?: boolean
+  _injectPrefix?: string
 }
 // v0.3.0 M1: 用量数据结构(含 DeepSeek 缓存口径字段)
 export interface UsageData {
@@ -131,3 +137,38 @@ export interface ToolCallDelta {
 }
 export interface SearchResult { content: string; score: number }
 export interface CronJob { id: string; expression: string; prompt: string; enabled: boolean; lastRun?: string; nextRun?: string }
+
+// v0.3.3: MCP 工具自动注入 —— 服务器信息与工具 schema
+export interface McpToolInfo { name: string; description?: string; inputSchema?: Record<string, unknown> }
+export interface McpServerInfo {
+  name: string
+  cmd?: string
+  args?: string[]
+  url?: string
+  tools?: McpToolInfo[] | string[]
+}
+
+// v0.3.3: 持久化任务队列记录
+export interface TaskRecord {
+  id: string
+  sid: string
+  content: string
+  images?: string[]
+  attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]
+  model?: string
+  status: 'running' | 'done' | 'failed' | 'aborted'
+  startedAt: number
+  updatedAt: number
+  error?: string
+  checkpoint?: unknown
+}
+
+// v0.3.3: 本地可观测性轨迹
+export interface TraceEntry {
+  ts: number
+  level: 'debug' | 'info' | 'warn' | 'error'
+  event: string
+  detail?: string
+  sid?: string
+  requestId?: string
+}

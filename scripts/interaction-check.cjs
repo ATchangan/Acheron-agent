@@ -1,4 +1,4 @@
-// 关键交互实测: 供应商未配置点击/定时任务添加/代码运行/推理强度切换
+// 关键交互实测: 供应商未配置点击/定时任务添加/藏书阁渲染/推理强度切换
 const http = require('node:http')
 const fs = require('node:fs')
 const port = process.argv[2] || '9256'
@@ -54,11 +54,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
   const cron = await evalJs(`(() => ({ hasAdd: document.body.innerText.includes('添加') || document.body.innerText.includes('新建'), bodyLen: document.body.innerText.length, selects: document.querySelectorAll('select').length, inputs: document.querySelectorAll('input').length }))()`)
   console.log('定时任务页:', JSON.stringify(cron))
 
-  // 3. 代码工坊: 渲染
-  await clickText('代码工坊')
+  // 3. 藏书阁: 渲染(代码工坊已移除)
+  await clickText('藏书阁')
   await sleep(600)
-  const code = await evalJs(`(() => ({ hasRun: /运行|执行|Run/i.test(document.body.innerText), bodyLen: document.body.innerText.length, textareas: document.querySelectorAll('textarea').length }))()`)
-  console.log('代码工坊:', JSON.stringify(code))
+  const knowledge = await evalJs(`(() => ({ hasEntry: /录入|检索|问答/i.test(document.body.innerText), bodyLen: document.body.innerText.length, textareas: document.querySelectorAll('textarea').length }))()`)
+  console.log('藏书阁:', JSON.stringify(knowledge))
 
   // 4. 推理强度切换(输入区)
   await clickText('供应商')

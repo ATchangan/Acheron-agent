@@ -18,14 +18,7 @@ export default function PersonaTab() {
     <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
       <div style={S.card}>
         <div style={S.section}>基础身份</div>
-        <div style={{ display: 'flex', gap: 16, marginBottom: 14, alignItems: 'center' }}>
-          <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--on-accent)', flexShrink: 0, overflow: 'hidden' }}>
-            {g.agentAvatarImage ? <img src={g.agentAvatarImage} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : (g.agentAvatar || '泉')}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={S.label}>名称</div><input style={S.inp} value={g.agentName || '黄泉'} onChange={e => save({ agentName: e.target.value })} />
-          </div>
-        </div>
+        <div style={S.label}>名称</div><input style={S.inp} value={g.agentName || '黄泉'} onChange={e => save({ agentName: e.target.value })} />
         <div style={S.row}><div style={S.label}>称呼用户为</div><input style={S.inp} value={g.userAlias || '老板'} onChange={e => save({ userAlias: e.target.value })} /></div>
         <div style={S.row}><div style={S.label}>语言</div><select style={S.sel} value={g.language || 'zh'} onChange={e => save({ language: e.target.value })}><option value="zh">中文（简体）</option><option value="zh-tw">中文（繁体）</option><option value="en">英文</option><option value="ja">日文</option><option value="auto">自动检测</option><option value="match">始终用提问语言回复</option></select></div>
         <div style={S.row}>

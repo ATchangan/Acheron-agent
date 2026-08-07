@@ -1,37 +1,18 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
 import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
-import RightPanel from './components/RightPanel'
+import FilesView from './components/FilesView'
 import SettingsView from './components/SettingsView'
 import AgentsView from './components/AgentsView'
 import MemoryView from './components/MemoryView'
 import BrowserView from './components/BrowserView'
 import FloatBadge from './components/FloatBadge'
+import RiskConfirmCard from './components/RiskConfirmCard'
 
-export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser'
-
-// 窗口控制按钮
-const WinBtn: React.FC<{ onClick: () => void; danger?: boolean; children: React.ReactNode }> = ({ onClick, danger, children }) => (
-  <button onClick={onClick} title={danger ? '关闭' : undefined}
-    style={{
-      width: 34, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: 'calc(var(--ui-font-size) + 3px)',
-      cursor: 'pointer', borderRadius: 0, padding: 0, lineHeight: 1, transition: 'all .12s',
-    }}
-    onMouseEnter={e => {
-      e.currentTarget.style.background = danger ? '#E81123' : 'var(--bg-hover)'
-      e.currentTarget.style.color = danger ? '#fff' : 'var(--text-primary)'
-    }}
-    onMouseLeave={e => {
-      e.currentTarget.style.background = 'transparent'
-      e.currentTarget.style.color = 'var(--text-secondary)'
-    }}>
-    {children}
-  </button>
-)
+export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser' | 'files'
 
 // 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
 const THEME_WHITELIST = ['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn']
@@ -48,7 +29,8 @@ function applyAppearance(g: GeneralSettings) {
   const r = document.documentElement.style
   // 先清掉可能残留的内联变量(自定义配色/皮肤写入), 否则会盖住预设主题, 导致切主题"没反应"
   const staleVars = ['--text-primary', '--text-secondary', '--text-muted', '--border', '--bg-elevated',
-    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary', '--accent']
+    '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary', '--accent',
+    '--chat-font-size', '--code-font-size']
   for (const v of staleVars) r.removeProperty(v)
   // 主题 = data-theme 6 套 CSS token 块(不再内联变量)
   document.documentElement.setAttribute('data-theme', resolveTheme(g))
@@ -94,14 +76,53 @@ function applyAppearance(g: GeneralSettings) {
   }
   // Typography: override CSS variables
   if (g.uiFontSize) r.setProperty('--ui-font-size', g.uiFontSize + 'px')
-  if (g.codeFontSize) r.setProperty('--code-font-size', g.codeFontSize + 'px')
+  // 会话字号: 控制交互会话(聊天区正文/输入框/消息内代码/工具输出), 默认跟随界面字号
+  const chatFs = g.codeFontSize ? Number(g.codeFontSize) : 0
+  r.setProperty('--chat-font-size', chatFs > 0 ? chatFs + 'px' : 'var(--ui-font-size)')
+  r.setProperty('--code-font-size', chatFs > 0 ? Math.max(11, chatFs - 1) + 'px' : 'calc(var(--ui-font-size) - 1px)')
   // Message spacing
   if (g.messageSpacing) {
     const gap: Record<string,string> = { compact:'4px', comfortable:'12px', loose:'24px' }
     r.setProperty('--msg-gap', gap[g.messageSpacing] || '12px')
   }
-  // Chat max width
-  if (g.chatMaxWidth) r.setProperty('--chat-max-width', g.chatMaxWidth + 'px')
+  // 会话区宽度: 默认 780px, 可在 设置→外观 自定义; 消息区与输入框共用同一 CSS 变量
+  const chatWidth = g.chatMaxWidth || 780
+  r.setProperty('--chat-max-width', chatWidth + 'px')
+  r.setProperty('--hq-composer-width', chatWidth + 'px')
+  // 系统窗口按钮(最小化/最大化/关闭)配色跟随主题: 预置主题直接映射根背景色, 自定义配色按亮度选图标色
+  const OVERLAY_BY_THEME: Record<string, { color: string; symbolColor: string }> = {
+    dark: { color: '#15171c', symbolColor: '#c8c8cc' },
+    light: { color: '#f4f2ec', symbolColor: '#1a1a1f' },
+    black: { color: '#0e0e0e', symbolColor: '#d0d0d8' },
+    huangquan: { color: '#121014', symbolColor: '#e9d5ff' },
+    bloodmoon: { color: '#171013', symbolColor: '#fecaca' },
+    dawn: { color: '#f6f1e8', symbolColor: '#2b2b2b' },
+  }
+  const applyOverlay = () => {
+    try {
+      const theme = resolveTheme(g)
+      const custom = g.customColors || g.customTheme
+      let color: string | undefined
+      let symbolColor = '#c8c8cc'
+      if (!custom) {
+        color = OVERLAY_BY_THEME[theme]?.color
+        symbolColor = OVERLAY_BY_THEME[theme]?.symbolColor || symbolColor
+      }
+      if (!color) {
+        const bg = getComputedStyle(document.body).backgroundColor
+        const m = bg.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
+        if (m) {
+          const [rr, gg, bb] = [Number(m[1]), Number(m[2]), Number(m[3])]
+          color = `rgb(${rr}, ${gg}, ${bb})`
+          symbolColor = (0.299 * rr + 0.587 * gg + 0.114 * bb) / 255 > 0.55 ? '#1a1a1f' : '#c8c8cc'
+        }
+      }
+      if (color) window.huangquan.window.setTitleBarOverlay?.({ color, symbolColor, height: 32 })
+    } catch { /* 忽略: 非 Electron/早期调用 */ }
+  }
+  applyOverlay()
+  // 首次进入时主题 CSS 可能尚未完全落地, 延迟再同步一次
+  setTimeout(applyOverlay, 150)
 }
 
 export default function App() {
@@ -113,6 +134,11 @@ export default function App() {
     const onHash = () => setRouteHash(window.location.hash || '')
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  // v0.3.4: 主进程请求切换到内嵌浏览器面板(点击悬浮横幅/工具调用时)
+  useEffect(() => {
+    const off = window.huangquan?.web?.onEmbed?.((d) => { if (d?.show) setView('browser') })
+    return () => { try { off?.() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
   }, [])
   if (routeHash === '#browser') return <BrowserView />
 
@@ -167,37 +193,30 @@ export default function App() {
       case 'settings': return <SettingsView onNavigate={(v) => setView(v as View)} />
       case 'agents':   return <AgentsView />
       case 'memory':   return <MemoryView />
-      case 'browser':  return <div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 'var(--ui-font-size)' }}>无头浏览器已在独立窗口打开 ↗</div>
+      case 'files':    return <FilesView />
+      case 'browser':  return <BrowserView embedded />
       default:         return <ChatView onNavigate={(v) => setView(v as View)} />
     }
   }
 
   return (
-    <div className="app-shell">
-      {/* 拖拽条 — 窗口拖动区域 */}
-      <div style={{
-        position: 'fixed' as const, top: 0, left: 0, right: 0, height: 32, zIndex: 999,
-        WebkitAppRegion: 'drag', pointerEvents: 'none',
-      } as React.CSSProperties} />
+    <>
+      <div className="app-shell">
+        {/* 拖拽条 — 窗口拖动区域 */}
+        <div style={{
+          // v0.3.3: 右侧让出窗口按钮区(150px), 避免 OS 拖拽区域干扰最小化/最大化/关闭点击
+          position: 'fixed' as const, top: 0, left: 0, right: 150, height: 32, zIndex: 999,
+          WebkitAppRegion: 'drag', pointerEvents: 'none',
+        } as React.CSSProperties} />
 
-      {/* 全局标题栏 — 窗口控件 */}
-      <div style={{
-        position: 'fixed' as const, top: 0, right: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', height: 32,
-        WebkitAppRegion: 'no-drag',
-      } as React.CSSProperties}>
-        <WinBtn onClick={() => window.huangquan.window.minimize()}>─</WinBtn>
-        <WinBtn onClick={() => window.huangquan.window.maximize()}>□</WinBtn>
-        <WinBtn onClick={() => window.huangquan.window.close()} danger>×</WinBtn>
+        <Sidebar currentView={view} onNavigate={setView} />
+        <div className="chat-main" style={{ paddingTop: 0 }}>
+          {renderView()}
+        </div>
       </div>
-
-      <Sidebar currentView={view} onNavigate={setView} />
-      <div className="chat-main" style={{ paddingTop: 0 }}>
-        {renderView()}
-      </div>
-      {view === 'chat' && <RightPanel />}
-      {/* agent 使用浏览器时的主窗口内横幅提示 */}
+      {/* 固定定位浮层(风险确认/浏览器横幅)渲染在 flex 容器之外, 避免参与布局挤窄聊天区 */}
       <FloatBadge />
-    </div>
+      <RiskConfirmCard />
+    </>
   )
 }

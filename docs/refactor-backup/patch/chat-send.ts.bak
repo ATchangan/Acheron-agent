@@ -256,7 +256,7 @@ export async function runSend(
       const tr = await runToolRound({ sid, myGen, gSnap, cfg, p, taskGenBySid, visQueue, isVisualTask, set, get, callLLM, guard, clear, applySwitch: (s2) => { curP = s2.p; model = s2.model; set({ curModel: model }); updateContextLimit(model) } }, res, toolLog, lastMidSave)
       res = tr.res; toolLog = tr.toolLog; lastMidSave = tr.lastMidSave
       if (tr.switchTo) { curP = tr.switchTo.p; model = tr.switchTo.model; set({ curModel: model }); updateContextLimit(model) }
-      // 4. 单气泡 + Hermes 风格日志
+      // 4. 单气泡 + 风格日志
       set({ stage: null }) // 任务完成, 思考气泡消失
       const finalSession = get().sessions.find(x => x.id === sid)
       if (finalSession) {
