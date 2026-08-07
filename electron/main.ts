@@ -22,6 +22,7 @@ import { registerTraceIpc, flushTrace } from './ipc/trace'
 import { registerEngineIpc } from './ipc/engine'
 import { registerRiskConfirm } from './ipc/risk-confirm'
 import { getBrowserSession, getBrowserSessionIfExists, closeBrowserSession, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen, initBrowserViews } from './browser-session'
+import { safeClone, encKey, decKey, encProviders, decProviders, dirSize, fmtSize, startServer, type MainProvider, type MainSettingsData } from './main-utils'
 import { join, extname, dirname } from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
@@ -73,73 +74,6 @@ interface VisionParams {
   prompt?: string
 }
 // v0.3.0 M5: 本地设置数据结构(electron 不依赖渲染层类型)
-interface MainProvider { id: string; type: string; name: string; apiKey?: string; baseUrl?: string; customHeaders?: string }
-interface MainSettingsData { providers: MainProvider[]; mediaProviders?: (MediaProvider & { apiKey?: string })[]; general?: Record<string, unknown> }
-
-// ─── 安全序列化——消除循环引用和不可序列化对象导致的 IPC 报错 ──
-function safeClone(obj: unknown, seen = new WeakSet()): unknown {
-  if (obj === null || obj === undefined) return obj
-  if (typeof obj !== 'object') return obj
-  // 防止循环引用
-  if (seen.has(obj)) return '[Circular]'
-  seen.add(obj)
-  // 处理数组
-  if (Array.isArray(obj)) return obj.map(item => safeClone(item, seen))
-  // 处理普通对象
-  const result: Record<string, unknown> = {}
-  for (const key of Object.keys(obj)) {
-    try {
-      const val = (obj as Record<string, unknown>)[key]
-      // 跳过函数、Symbol、DOM 节点等不可序列化类型
-      const t = typeof val
-      if (t === 'function' || t === 'symbol' || t === 'undefined') continue
-      if (val instanceof Error) { result[key] = { message: val.message, name: val.name }; continue }
-      if (val && typeof val === 'object') {
-        // 跳过 Buffer、Stream、Electron 内部对象等
-        if (val.constructor?.name === 'BrowserWindow' || val.constructor?.name === 'WebContents') continue
-        if (Buffer.isBuffer(val)) { result[key] = '[Buffer ' + val.length + ' bytes]'; continue }
-        result[key] = safeClone(val, seen)
-      } else {
-        result[key] = val
-      }
-    } catch (e) { /* skip unreadable properties */ console.debug('[swallow]', e) }
-  }
-  return result
-}
-
-// ─── API Key 加密存储(Windows DPAPI via safeStorage) ──
-// 加密不可用(如无 keyring 的环境)时自动回退明文, 旧明文数据兼容读取
-function encKey(v: string): string {
-  if (!v || v.startsWith('__ENC__')) return v
-  try { if (safeStorage.isEncryptionAvailable()) return '__ENC__' + safeStorage.encryptString(v).toString('base64') } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  return v
-}
-function decKey(v: string): string {
-  if (!v || !v.startsWith('__ENC__')) return v
-  try { return safeStorage.decryptString(Buffer.from(v.slice(7), 'base64')) } catch { return v }
-}
-// 敏感字段全覆盖 —— apiKey + customHeaders(可含 Authorization) + webReadCookies(登录态)
-function encProviders(data: MainSettingsData): MainSettingsData {
-  if (!data || typeof data !== 'object') return data
-  const out = { ...data, general: data.general ? { ...data.general } : data.general }
-  if (Array.isArray(out.providers)) out.providers = out.providers.map((p: MainProvider) => (p && p.apiKey) ? { ...p, apiKey: encKey(p.apiKey), customHeaders: p.customHeaders ? encKey(String(p.customHeaders)) : p.customHeaders } : p)
-  if (Array.isArray((out as { mediaProviders?: unknown }).mediaProviders)) (out as { mediaProviders: (MediaProvider & { apiKey?: string })[] }).mediaProviders = (out as { mediaProviders: (MediaProvider & { apiKey?: string })[] }).mediaProviders.map((p: MediaProvider & { apiKey?: string }) => (p && p.apiKey) ? { ...p, apiKey: encKey(p.apiKey) } : p)
-  if (out.general && typeof out.general.webReadCookies === 'string' && out.general.webReadCookies.trim()) out.general.webReadCookies = encKey(out.general.webReadCookies)
-  if (out.general && typeof out.general.embeddingApiKey === 'string' && out.general.embeddingApiKey.trim()) out.general.embeddingApiKey = encKey(out.general.embeddingApiKey)
-  return out
-}
-function decProviders(data: MainSettingsData): MainSettingsData {
-  if (!data || typeof data !== 'object') return data
-  const out = { ...data, general: data.general ? { ...data.general } : data.general }
-  if (Array.isArray(out.providers)) out.providers = out.providers.map((p: MainProvider) => (p && p.apiKey) ? { ...p, apiKey: decKey(p.apiKey), customHeaders: p.customHeaders ? decKey(String(p.customHeaders)) : p.customHeaders } : p)
-  if (Array.isArray((out as { mediaProviders?: unknown }).mediaProviders)) (out as { mediaProviders: (MediaProvider & { apiKey?: string })[] }).mediaProviders = (out as { mediaProviders: (MediaProvider & { apiKey?: string })[] }).mediaProviders.map((p: MediaProvider & { apiKey?: string }) => (p && p.apiKey) ? { ...p, apiKey: decKey(p.apiKey) } : p)
-  if (out.general && typeof out.general.webReadCookies === 'string' && out.general.webReadCookies.startsWith('__ENC__')) out.general.webReadCookies = decKey(out.general.webReadCookies)
-  if (out.general && typeof out.general.embeddingApiKey === 'string' && out.general.embeddingApiKey.startsWith('__ENC__')) out.general.embeddingApiKey = decKey(out.general.embeddingApiKey)
-  return out
-}
-
-// ─── 渲染加速 —— GPU 优先, 无 GPU 自动回退 CPU ─────────
-// 模式(settings.general.rendererMode): auto(默认, GPU可用则GPU) / gpu(强制GPU) / cpu(强制CPU软件渲染)
 let rendererMode = 'auto'
 try {
   const raw0 = fs.readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf-8')
@@ -209,35 +143,6 @@ import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})
 
 // ─── HTTP 服务器 ──────────────────────────────────
-function startServer(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const mime: Record<string, string> = {
-      '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
-      '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
-      '.json': 'application/json', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
-    }
-    const s = http.createServer((req, res) => {
-      const reqPath = (req.url || '/').split('?')[0].replace(/\/$/, '') || '/index.html'
-      const fp = join(distDir, reqPath)
-      if (!fp.startsWith(distDir)) { res.writeHead(403); res.end('403'); return }
-      fs.readFile(fp, (err, data) => {
-        if (err) { res.writeHead(404); res.end('404'); return }
-        // 静态资源一律不缓存: 桌面本地服务, 避免端口复用/热重启时浏览器命中旧 JS 导致界面显示旧版
-        res.writeHead(200, {
-          'Content-Type': mime[extname(fp)] || 'application/octet-stream',
-          'Cache-Control': 'no-cache',
-        })
-        res.end(data)
-      })
-    })
-    s.listen(0, '127.0.0.1', () => {
-      const addr = s.address(); resolve(typeof addr === 'object' ? addr!.port : 0)
-    })
-    s.on('error', reject)
-  })
-}
-
-// ─── 菜单 ──────────────────────────────────────────
 function createAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
@@ -364,26 +269,6 @@ function createTray() {
   tray.on('click', () => mainWindow?.show())
 }
 // ─── 设置/会话 ─────────────────────────────────────
-function dirSize(dir: string): number {
-  let total = 0
-  try {
-    if (!fs.existsSync(dir)) return 0
-    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = join(dir, f.name)
-      if (f.isDirectory()) total += dirSize(p)
-      else if (f.isFile()) total += fs.statSync(p).size
-    }
-  } catch (e) { console.debug('[swallow]', e) }
-  return total
-}
-function fmtSize(b: number): string {
-  if (b < 1024) return b + ' B'
-  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'
-  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB'
-  return (b / 1073741824).toFixed(2) + ' GB'
-}
-
-// 会话元数据缓存 —— 避免 list 时全量解析大会话文件(大会话含图片可达数 MB)
 const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean }>()
 registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone })
 function buildSessionMeta() {
@@ -513,7 +398,7 @@ app.whenReady().then(async () => {
       } catch (e2: unknown) { console.error('[RENDER] gpu detect error:', e2 instanceof Error ? e2.message : String(e2)) }
     }, 3000)
   } catch (e: unknown) { console.error('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
-  serverPort = await startServer()
+  serverPort = await startServer(distDir)
   createAppMenu()
   // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
   try {
