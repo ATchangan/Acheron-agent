@@ -7,6 +7,8 @@ import { ArrowUp, Square } from 'lucide-react'
 import { api } from '../services/ipc'
 import { detectCaps } from './settings/consts'
 import { useChatPanels } from './useChatPanels'
+import { useModelItems } from './useModelItems'
+import { useThinkSelector } from './useThinkSelector'
 import { ChatAttachmentBar } from './ChatAttachmentBar'
 import { ChatToolbar } from './ChatToolbar'
 import { ChatThinkSelector } from './ChatThinkSelector'
@@ -23,10 +25,13 @@ export default function ChatInput() {
   const [extraText, setExtraText] = useState('')
   const [memText, setMemText] = useState('')
   const [perm, setPerm] = useState<string>(useSettingsStore.getState().general.filePermission || 'auto')
-  const [think, setThink] = useState<string>(useSettingsStore.getState().general.thinkLevel || 'medium')
-  const [thinkOnly, setThinkOnly] = useState(false)
-  const [thinkOv, setThinkOv] = useState<Record<string, string>>(useSettingsStore.getState().general.thinkOverrides || {})
   const { extraOpen, setExtraOpen, cmdOpen, setCmdOpen, memOpen, setMemOpen, permOpen, setPermOpen, thinkOpen, setThinkOpen, closeAll } = useChatPanels()
+  const fileRef = useRef<HTMLInputElement>(null)
+  const attFileRef = useRef<HTMLInputElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  const { mediaProviders, modelItems, models, currentModel, curModelName, setModelSel, supportsVision } = useModelItems()
+  const visionAssist = !supportsVision
+  const { thinkOnly, effThink, thinkLabel, ovModel, setThinkMode, toggleThinkOnly, setThinkLevel } = useThinkSelector(currentModel, curModelName)
 
   const send = useChatStore(s => s.send)
   const cid = useChatStore(s => s.cid)
@@ -46,41 +51,6 @@ export default function ChatInput() {
     return { input, output }
   }, [sessTokMap, cid])
   const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
-  const providers = useSettingsStore(s => s.providers)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const attFileRef = useRef<HTMLInputElement>(null)
-  const taRef = useRef<HTMLTextAreaElement>(null)
-
-  // 模型下拉 = 全部已配置供应商/媒体平台的模型，按能力分类
-  const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
-  const classifyModel = (m: string): 'text' | 'image' | 'video' | 'audio' => {
-    const caps = detectCaps([m])
-    if (caps.includes('图片')) return 'image'
-    if (caps.includes('视频')) return 'video'
-    if (caps.includes('语音')) return 'audio'
-    return 'text'
-  }
-  const cfgProviders = providers.filter(pp => !!pp.apiKey && (pp.models || []).length)
-  const cfgMedia = mediaProviders.filter(mp => !!mp.apiKey)
-  const modelItems: { key: string; label: string; group: 'text' | 'image' | 'video' | 'audio'; pid: string; model: string; isMedia: boolean }[] = []
-  for (const pp of cfgProviders) for (const m of (pp.models || [])) {
-    const g = classifyModel(m)
-    modelItems.push({ key: g === 'text' ? pp.id + '::' + m : g + '::' + pp.id + '::' + m, label: m, group: g, pid: pp.id, model: m, isMedia: false })
-  }
-  for (const mp of cfgMedia) {
-    const push = (ms: string[] | undefined, kind: 'image' | 'video' | 'audio') => (ms || []).forEach(m => modelItems.push({ key: kind + '::' + mp.id + '::' + m, label: m, group: kind, pid: mp.id, model: m, isMedia: true }))
-    push(mp.imgModels, 'image')
-    push(mp.videoModels, 'video')
-    push(mp.audioModels, 'audio')
-  }
-  const models = modelItems.map(x => x.key)
-  const gMain = useSettingsStore(s => (s.general).mainModel)
-  const defaultKey = (gMain && models.includes(gMain)) ? gMain : (models[0] || '')
-  const [modelSel, setModelSel] = useState(defaultKey)
-  const currentModel = modelSel || defaultKey || '未配置'
-  const curModelName = (currentModel.includes('::') ? currentModel.split('::').pop() : currentModel) || ''
-  const supportsVision = !currentModel || currentModel === '未配置' || detectCaps([curModelName]).includes('多模态')
-  const visionAssist = !supportsVision
   const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
   const ctxColor = ctxRatio > 0.9 ? 'var(--danger)' : ctxRatio > 0.7 ? 'var(--warning)' : 'var(--accent)'
 
@@ -208,47 +178,6 @@ export default function ChatInput() {
     ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...')
     : attachments.length ? '描述或说明这些文件...' : '输入消息，Enter 发送，Shift+Enter 换行（可拖入图片/视频/文件）'
   const placeholder = curBusy ? '执行中：回车发送=补充指令插话 · ' + basePlaceholder : basePlaceholder
-
-  // 推理强度交互：关闭开关 + 仅当前模型 + 中文档位（覆盖优先级 > 全局）
-  const ovModel = curModelName || currentModel
-  const effThink = thinkOnly && thinkOv[ovModel] ? thinkOv[ovModel] : think
-  const thinkLabel = effThink === 'off' ? '关闭' : (THINK_LABELS[effThink] || '标准')
-  const setThinkMode = (on: boolean) => {
-    const next = on ? (think === 'off' ? 'medium' : think) : 'off'
-    if (thinkOnly) {
-      const ov = { ...thinkOv, [ovModel]: next }
-      setThinkOv(ov)
-      useSettingsStore.getState().updateGeneral({ thinkOverrides: ov })
-    } else {
-      useSettingsStore.getState().updateGeneral({ thinkLevel: next })
-      setThink(next)
-    }
-    setThinkOpen(false)
-  }
-  const toggleThinkOnly = () => {
-    const next = !thinkOnly
-    setThinkOnly(next)
-    const ov = { ...thinkOv }
-    if (!next) {
-      delete ov[ovModel]
-    } else if (!ov[ovModel]) {
-      ov[ovModel] = think === 'off' ? 'medium' : think
-    }
-    setThinkOv(ov)
-    useSettingsStore.getState().updateGeneral({ thinkOverrides: ov })
-    setThinkOpen(false)
-  }
-  const setThinkLevel = (k: string) => {
-    if (thinkOnly) {
-      const ov = { ...thinkOv, [ovModel]: k }
-      setThinkOv(ov)
-      useSettingsStore.getState().updateGeneral({ thinkOverrides: ov })
-    } else {
-      useSettingsStore.getState().updateGeneral({ thinkLevel: k })
-      setThink(k)
-    }
-    setThinkOpen(false)
-  }
 
   return (
     <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
