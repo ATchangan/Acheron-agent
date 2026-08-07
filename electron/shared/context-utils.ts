@@ -1,5 +1,6 @@
 // electron/shared/context-utils.ts —— renderer/main 共享纯函数（B5）
 // 约束：本文件禁止 import electron API / zustand / fs，必须保持纯函数
+import { VISION_MODEL_HINTS } from './constants'
 
 export function slimToolResult(c: string, head = 800, tail = 500): string {
   if (c.length <= 1500) return c
@@ -66,4 +67,21 @@ export function buildTaskArchives<T extends { role: string; content?: unknown; t
     keep = blocks[blockIdx] ? msgs.slice(msgs.indexOf(blocks[blockIdx][0])) : msgs.slice(msgs.length)
   }
   return { keep, archives }
+}
+
+// ─── token 实测校准（模块级 EMA 状态，renderer/main 共享同一份） ───
+const scaleByModel = new Map<string, number>()
+export function calibrateTokens(model: string, actual: number, estimated: number): void {
+  if (!model || !actual || !estimated) return
+  const cur = scaleByModel.get(model) ?? 1.0
+  const ratio = Math.min(3, Math.max(0.3, actual / estimated))
+  scaleByModel.set(model, cur * 0.8 + ratio * 0.2)
+}
+export function getCalibrationScale(model: string): number {
+  return scaleByModel.get(model) ?? 1.0
+}
+
+export function isVisionModel(m: string): boolean {
+  const ml = (m || '').toLowerCase()
+  return VISION_MODEL_HINTS.some(v => ml.includes(v))
 }

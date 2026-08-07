@@ -1,25 +1,16 @@
 // electron/engine/context.ts — 独立内核上下文构建(从渲染层 context.ts/context-utils.ts/router.ts 移植)
 
-import { slimToolResult, slimToolCallArgs, buildTaskArchives } from '../shared/context-utils'
+import { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel } from '../shared/context-utils'
 import type { TaskArchive } from '../shared/context-utils'
-export { slimToolResult, slimToolCallArgs, buildTaskArchives }
+export { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel }
 export type { TaskArchive }
 import type { EngineMessage, EngineSettings, EngineToolSpec } from './types'
 import type { AgentDef } from './agents'
-import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS, VISION_MODEL_HINTS, DOMAIN_RE } from './constants'
+import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS, DOMAIN_RE } from './constants'
 import { v4 as uuidv4 } from 'uuid'
 
 // ─── token 估算 + 实测校准(按模型 EMA) ───
-const scaleByModel = new Map<string, number>()
-export function calibrateTokens(model: string, actual: number, estimated: number): void {
-  if (!model || !actual || !estimated) return
-  const cur = scaleByModel.get(model) ?? 1.0
-  const ratio = Math.min(3, Math.max(0.3, actual / estimated))
-  scaleByModel.set(model, cur * 0.8 + ratio * 0.2)
-}
-export function getCalibrationScale(model: string): number {
-  return scaleByModel.get(model) ?? 1.0
-}
+
 export function estimateTokens(text: string, model?: string): number {
   if (!text) return 0
   const s = getCalibrationScale(model || '')
@@ -36,10 +27,7 @@ export function estimateTokens(text: string, model?: string): number {
   return Math.max(1, Math.round(base * s))
 }
 
-export function isVisionModel(m: string): boolean {
-  const ml = (m || '').toLowerCase()
-  return VISION_MODEL_HINTS.some(v => ml.includes(v))
-}
+
 
 export function outputLimit(userMsg: string, cfg: EngineSettings): number | undefined {
   const base = Number(cfg.maxTokens) || 4096

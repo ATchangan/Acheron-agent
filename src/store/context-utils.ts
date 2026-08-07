@@ -1,24 +1,16 @@
+import { calibrateTokens, getCalibrationScale, isVisionModel } from '../../electron/shared/context-utils'
+export { calibrateTokens, getCalibrationScale, isVisionModel }
 // src/store/context-utils.ts —— 上下文纯函数工具(token 估算/校准/模型窗口/输出分级)
 // 从 context.ts 拆出(单文件上限红线), context.ts re-export 保持调用方兼容
 import { useChatStore } from './chat'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
-import { VISION_MODEL_HINTS } from './constants'
 
 // v0.3.4 T1: 按模型隔离的实测校准系数(初始 1.0, EMA 平滑, 限幅 0.3~3 防单次异常拉偏)
-const scaleByModel = new Map<string, number>()
-export function calibrateTokens(model: string, actual: number, estimated: number): void {
-  if (!model || !actual || !estimated) return
-  const cur = scaleByModel.get(model) ?? 1.0
-  const ratio = Math.min(3, Math.max(0.3, actual / estimated))
-  scaleByModel.set(model, cur * 0.8 + ratio * 0.2)
-}
-export function getCalibrationScale(model: string): number {
-  return scaleByModel.get(model) ?? 1.0
-}
+
 function getScale(): number {
   const m = useChatStore.getState().curModel || ''
-  return scaleByModel.get(m) ?? 1.0
+  return getCalibrationScale(m)
 }
 
 // v0.3.4 T1: 分层估算 —— 代码块(/3.5) + 中文(×1.2) + URL(段级) + 剩余(/4), 最后乘实测校准系数
@@ -102,7 +94,3 @@ function updateContextLimit(modelName: string) {
 // 导出供外部调用（模型切换时实时更新）
 export { updateContextLimit, getModelContextLimit }
 
-export function isVisionModel(m: string): boolean {
-  const ml = (m || '').toLowerCase()
-  return VISION_MODEL_HINTS.some(v => ml.includes(v))
-}
