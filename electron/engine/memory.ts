@@ -1,7 +1,8 @@
 // electron/engine/memory.ts — 独立内核记忆访问(直接读写 memory.json, 与渲染层共用同一文件)
 import * as fs from 'fs'
 import { writeFileAtomic } from '../fs-atomic'
-import { scoreOverlap } from '../shared/memory-utils'
+import { scoreOverlap, scanMemoryText } from '../shared/memory-utils'
+export { scanMemoryText }
 
 export interface EngineMemory {
   facts: string[]
@@ -30,36 +31,6 @@ export function loadMemory(memoryPath: string): EngineMemory {
 export function saveMemory(memoryPath: string, m: EngineMemory): boolean {
   try { writeFileAtomic(memoryPath, JSON.stringify(m, null, 2)); return true } catch { return false }
 }
-
-const SECRET_PATTERNS: RegExp[] = [
-  /\bsk-[A-Za-z0-9]{16,}\b/,
-  /\bsk-proj-[A-Za-z0-9_-]{20,}\b/,
-  /\bgithub_pat_[A-Za-z0-9_]{30,}\b/,
-  /\bBearer\s+[A-Za-z0-9._-]{20,}\b/i,
-  /\bapi[_-]?key\s*[:=]\s*["']?[A-Za-z0-9._-]{12,}/i,
-  /\bauthorization\s*[:=]\s*["']?[A-Za-z0-9._-]{12,}/i,
-  /\b[A-Za-z0-9]{32}\.[A-Za-z0-9]{20,}\b/,
-]
-const INJECT_PATTERNS: RegExp[] = [
-  /ignore\s+(all\s+)?previous\s+(instructions|prompts)/i,
-  /disregard\s+(all\s+)?(prior|previous)\s+(instructions|rules)/i,
-  /you\s+are\s+now\s+an?\s+unrestricted/i,
-  /忽略(之前|以上|所有)?的?(指令|提示|规则)/,
-  /(你现在|你是).{0,10}(不受限制|自由)的?(AI|助手)/,
-]
-export function scanMemoryText(text: string): { ok: boolean; reason?: string } {
-  const t = String(text || '')
-  if (!t) return { ok: true }
-  for (const re of SECRET_PATTERNS) {
-    const m = t.match(re)
-    if (m) return { ok: false, reason: '疑似包含密钥/凭证(' + m[0].slice(0, 12) + '…)，已拒绝写入记忆' }
-  }
-  for (const re of INJECT_PATTERNS) {
-    if (re.test(t)) return { ok: false, reason: '疑似提示注入内容，已拒绝写入记忆' }
-  }
-  return { ok: true }
-}
-
 
 export function memoryBlockText(mem: EngineMemory, userMsg?: string, trim = true): string {
   const pinned = mem.pinnedFacts || []
@@ -101,4 +72,3 @@ export function recallFromMemory(mem: EngineMemory, query: string, vecHits: { co
   }).slice(0, 10)
   return merged.length ? merged.map((r, i) => (i + 1) + '. ' + r.content).join('\n---\n') : '(empty)'
 }
-

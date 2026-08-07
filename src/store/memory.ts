@@ -4,38 +4,10 @@
 import { safeIPC } from '../utils/safe'
 import { useSettingsStore } from './settings'
 import type { SessionData, MemoryData } from '../global'
-import { scoreOverlap } from '../../electron/shared/memory-utils'
+import { scoreOverlap, scanMemoryText } from '../../electron/shared/memory-utils'
+export { scanMemoryText }
 
-// ─── 记忆安全扫描 ─────────────────────────────────
-// 写入前检测 凭证/API Key/提示注入 模式, 命中则拒绝保存(防敏感信息落盘 + 防记忆投毒)
-const SECRET_PATTERNS: RegExp[] = [
-  /\bsk-[A-Za-z0-9]{16,}\b/,             // OpenAI/DeepSeek 风格
-  /\bsk-proj-[A-Za-z0-9_-]{20,}\b/,      // OpenAI project key
-  /\bgithub_pat_[A-Za-z0-9_]{30,}\b/,    // GitHub PAT
-  /\bBearer\s+[A-Za-z0-9._-]{20,}\b/i,   // Bearer token
-  /\bapi[_-]?key\s*[:=]\s*["']?[A-Za-z0-9._-]{12,}/i,
-  /\bauthorization\s*[:=]\s*["']?[A-Za-z0-9._-]{12,}/i,
-  /\b[A-Za-z0-9]{32}\.[A-Za-z0-9]{20,}\b/, // GLM/火山 风格 key
-]
-const INJECT_PATTERNS: RegExp[] = [
-  /ignore\s+(all\s+)?previous\s+(instructions|prompts)/i,
-  /disregard\s+(all\s+)?(prior|previous)\s+(instructions|rules)/i,
-  /you\s+are\s+now\s+an?\s+unrestricted/i,
-  /忽略(之前|以上|所有)?的?(指令|提示|规则)/,
-  /(你现在|你是).{0,10}(不受限制|自由)的?(AI|助手)/,
-]
-export function scanMemoryText(text: string): { ok: boolean; reason?: string } {
-  const t = String(text || '')
-  if (!t) return { ok: true }
-  for (const re of SECRET_PATTERNS) {
-    const m = t.match(re)
-    if (m) return { ok: false, reason: '疑似包含密钥/凭证(' + m[0].slice(0, 12) + '…)，已拒绝写入记忆' }
-  }
-  for (const re of INJECT_PATTERNS) {
-    if (re.test(t)) return { ok: false, reason: '疑似提示注入内容，已拒绝写入记忆' }
-  }
-  return { ok: true }
-}
+// 记忆安全扫描已抽至 shared/memory-utils（B6-2），此处 re-export 保持调用方兼容
 
 // ─── 记忆冻结快照 + 使用率 ─────────────────────────
 // 会话开始(首次发送)时冻结一次记忆快照, 本轮任务内所有轮次复用同一快照:
@@ -119,4 +91,3 @@ export function memoryBlock(userMsg?: string): string {
   // 头部显示记忆使用率
   return parts.length ? '\n' + memoryUsageLine() + '\n\n' + parts.join('\n\n') + tail : ''
 }
-

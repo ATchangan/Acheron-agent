@@ -3,16 +3,13 @@
 // v0.3.0 M1: TOOLS 类型化为 ToolSpec[](结构本身已符合, 仅补类型标注)
 import type { ToolSpec } from '../types'
 import { useAgents } from './agents'
+import { filterToolsCore } from '../../electron/shared/tool-filter'
 
 // v0.3.2 T1: 角色工具白名单统一过滤(主请求与子任务共用同一函数源)
 // 规则: 协作工具(handoff/dispatch/list_agents)始终保留; 插件工具(plugin_ 前缀)恒保留(用户显式安装授权);
 //       其余仅注入该角色白名单内工具。filter 保序(TOOLS 原序 + PLUGIN_TOOLS 原序), 禁止 sort/Set 去重
 export function filterToolsByAgent(tools: ToolSpec[], agentName: string): ToolSpec[] {
-  const ag = useAgents()[agentName]
-  if (!ag || ag.tools.includes('*')) return tools
-  // 基础工具恒保留: 协作工具 + 跨会话回忆(session_search)
-  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'session_search'])
-  return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_'))
+  return filterToolsCore(tools, agentName, useAgents(), { includeMcp: false })
 }
 
 export const TOOLS: ToolSpec[] = [

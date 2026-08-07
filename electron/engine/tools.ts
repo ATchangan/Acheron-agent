@@ -9,6 +9,8 @@ import type { AgentDef } from './agents'
 import type { EngineMemory } from './memory'
 import { scanMemoryText, recallFromMemory } from './memory'
 import { errMsg } from './errmsg'
+import { parseMcpToolName } from '../shared/mcp-utils'
+export { parseMcpToolName }
 
 export const TOOLS: EngineToolSpec[] = [
   { type: 'function', function: { name: 'read', description: 'read(path, offset?, limit?) 读取文件(UTF-8); 大文件用 offset/limit 分段续读', parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' } }, required: ['path'] } } },
@@ -199,14 +201,6 @@ export function getMcpToolSpecs(force = false): EngineToolSpec[] {
   mcpSpecsCache = specs
   mcpSpecsAt = Date.now()
   return specs
-}
-
-export function parseMcpToolName(name: string): { server: string; tool: string } | null {
-  if (!name || !name.startsWith('mcp__')) return null
-  const rest = name.slice(5)
-  const i = rest.indexOf('__')
-  if (i <= 0 || i + 2 >= rest.length) return null
-  return { server: rest.slice(0, i), tool: rest.slice(i + 2) }
 }
 
 async function mcpConfirm(server: string, tool: string, args: Record<string, unknown>): Promise<boolean> {

@@ -2,6 +2,8 @@
 // MCP 服务器连接后, tools/list 的 schema 直接并入 LLM 工具列表(主流桌面 Agent 行为),
 // 工具名统一 mcp__<server>__<tool>, 由 runTool 路由回 mcpCall/mcpSSECall。
 import type { ToolSpec } from '../types'
+import { parseMcpToolName } from '../../electron/shared/mcp-utils'
+export { parseMcpToolName }
 
 interface McpToolMeta {
   name: string
@@ -29,14 +31,6 @@ function sanitize(n: string): string {
 
 function mcpToolName(server: string, tool: string): string {
   return 'mcp__' + sanitize(server) + '__' + sanitize(tool)
-}
-
-export function parseMcpToolName(name: string): { server: string; tool: string } | null {
-  if (!name || !name.startsWith('mcp__')) return null
-  const rest = name.slice(5)
-  const i = rest.indexOf('__')
-  if (i <= 0 || i + 2 >= rest.length) return null
-  return { server: rest.slice(0, i), tool: rest.slice(i + 2) }
 }
 
 function schemaToParams(schema: Record<string, unknown> | undefined): { properties: Record<string, { type: string; description?: string }>; required: string[] } {

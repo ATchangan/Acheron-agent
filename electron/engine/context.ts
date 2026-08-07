@@ -1,102 +1,23 @@
 // electron/engine/context.ts — 独立内核上下文构建(从渲染层 context.ts/context-utils.ts/router.ts 移植)
 
-import { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel } from '../shared/context-utils'
+import { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel, estimateTokens, outputLimit, getModelContextLimit } from '../shared/context-utils'
 import type { TaskArchive } from '../shared/context-utils'
-export { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel }
+export { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel, estimateTokens, outputLimit, getModelContextLimit }
 export type { TaskArchive }
+import { routeAgentCore } from '../shared/route'
+import { filterToolsCore } from '../shared/tool-filter'
 import type { EngineMessage, EngineSettings, EngineToolSpec } from './types'
 import type { AgentDef } from './agents'
-import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS, DOMAIN_RE } from './constants'
+import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS } from './constants'
 import { v4 as uuidv4 } from 'uuid'
 
-// ─── token 估算 + 实测校准(按模型 EMA) ───
-
-export function estimateTokens(text: string, model?: string): number {
-  if (!text) return 0
-  const s = getCalibrationScale(model || '')
-  let base = 0
-  const codeBlocks = text.match(/```[\s\S]*?```/g) || []
-  for (const b of codeBlocks) base += b.length / 3.5
-  const rest = text.replace(/```[\s\S]*?```/g, '')
-  const cn = (rest.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length
-  base += cn * 1.2
-  const urlM = rest.match(/[a-z]+:\/\/[^\s"'<>]+/gi) || []
-  for (const u of urlM) base += 2 + u.split(/[\/?#]/).length
-  const nonCn = rest.replace(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g, '').replace(/[a-z]+:\/\/[^\s"'<>]+/gi, '')
-  base += nonCn.length / 4
-  return Math.max(1, Math.round(base * s))
-}
-
-
-
-export function outputLimit(userMsg: string, cfg: EngineSettings): number | undefined {
-  const base = Number(cfg.maxTokens) || 4096
-  // v0.3.5 T2: 输出上限分级开关 —— 关闭时恒用全局上限
-  if (cfg.perf?.outputCap === false) return base
-  if (userMsg.length < 40 && !/(代码|文件|报告|项目|脚本|写|改|建|查|找|分析)/.test(userMsg)) {
-    return Math.min(base, 800)
-  }
-  return base
-}
-
-export function getModelContextLimit(modelName: string): number {
-  const m = modelName.toLowerCase()
-  if (m.includes('deepseek-v4') || m.includes('deepseek-chat') || m.includes('deepseek-reasoner')) return 1048576
-  if (m.includes('gpt-4.1')) return 1048576
-  if (m.includes('gemini-2.5') || m.includes('gemini-2') || m.includes('gemini-1.5')) return 1048576
-  if (m.includes('o3') || m.includes('o4') || m.includes('o1')) return 200000
-  if (m.includes('claude-4') || m.includes('claude-3.5') || m.includes('claude-3') || m.includes('claude-2')) return 200000
-  if (m.includes('yi-')) return 200000
-  if (m.includes('qwen3')) return 262144
-  if (m.includes('minimax')) return 245760
-  if (m.includes('deepseek-v3')) return 131072
-  if (m.includes('gpt-4o') || m.includes('gpt-4-turbo')) return 131072
-  if (m.includes('qwen2.5') || m.includes('qwen') || m.includes('glm') || m.includes('ernie-4.5') || m.includes('moonshot') || m.includes('kimi') || m.includes('doubao') || m.includes('skylark')) return 131072
-  if (m.includes('gpt-4-32k')) return 32768
-  if (m.includes('gpt-4')) return 8192
-  if (m.includes('gpt-3.5-turbo-16k')) return 16384
-  if (m.includes('gpt-3.5')) return 4096
-  if (m.includes('deepseek')) return 65536
-  if (m.includes('gemini')) return 32768
-  if (m.includes('ernie')) return 8192
-  return 65536
-}
+// token 估算 / 输出上限 / 上下文窗口已抽至 shared/context-utils（B6-2）
 
 // ─── 纯函数: 工具结果瘦身 / 参数截断 / 轮次折叠 / 跨任务归档 ───
 
-// ─── 意图路由(渲染层 router.ts 移植) ───
-const CAPABILITY_KEYWORDS: Record<string, string[]> = {
-  code: ['代码', '脚本', '项目', 'bug', '修复', '开发', '编程', '写个', '实现', '重构'],
-  doc: ['文档', '报告', '翻译', '总结', '纪要', '整理', '校对'],
-  security: ['安全', '漏洞', '审查', '风险', '黑客', '攻防'],
-  automation: ['定时', '监控', '自动化', '提醒', '调度', '巡检'],
-  vision: ['图片', '截图', '设计', '配色', '看图', 'ui', '图标', '视觉'],
-  chat: [],
-}
-const CAP_TO_AGENT: Record<string, string> = { code: '螺丝咕姆', doc: '三月七', security: '银狼', automation: '艾丝妲', vision: '黑天鹅', chat: '知更鸟' }
+// 意图路由纯函数已抽至 shared/route（B6-2），此处仅保留类型化包装
 export function routeAgent(userMessage: string, g: EngineSettings): string | null {
-  const t = userMessage.toLowerCase()
-  const disabled = g.disabledAgents || []
-  const collabMode = g.collabMode || '自动'
-  if (collabMode === '关闭' || collabMode === '手动') return null
-  const hitCaps = Object.entries(CAPABILITY_KEYWORDS)
-    .filter(([cap, kws]) => kws.length > 0 && kws.some(k => t.includes(k.toLowerCase())))
-    .map(([cap]) => cap)
-  if (hitCaps.length >= 2 && !disabled.includes('姬子')) return '姬子'
-  if (hitCaps.length === 1) {
-    const capAg = CAP_TO_AGENT[hitCaps[0]]
-    if (capAg && !disabled.includes(capAg)) return capAg
-  }
-  let hitDomains = 0
-  for (const [name, re] of Object.entries(DOMAIN_RE)) {
-    if (re.test(t) && !disabled.includes(name)) hitDomains++
-  }
-  if (hitDomains >= 2 && !disabled.includes('姬子')) return '姬子'
-  for (const [name, re] of Object.entries(DOMAIN_RE)) {
-    if (re.test(t)) return disabled.includes(name) ? null : name
-  }
-  if (t.trim().length < 30) return null
-  return disabled.includes('姬子') ? null : '姬子'
+  return routeAgentCore(userMessage, g.disabledAgents || [], g.collabMode || '自动')
 }
 
 // ─── system prompt 构建(与渲染层 buildPrompt 同构) ───
@@ -297,10 +218,7 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   return [{ role: 'system', content: sp, timestamp: Date.now(), id: uuidv4() }, ...d]
 }
 
-// 角色工具白名单过滤(主请求与子任务共用)
+// 角色工具白名单过滤(主请求与子任务共用)（B6-2：纯函数在 shared/tool-filter）
 export function filterToolsByAgent(tools: EngineToolSpec[], agentName: string, agents: Record<string, AgentDef>): EngineToolSpec[] {
-  const ag = agents[agentName]
-  if (!ag || ag.tools.includes('*')) return tools
-  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'session_search'])
-  return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_') || t.function.name.startsWith('mcp__'))
+  return filterToolsCore(tools, agentName, agents, { includeMcp: true })
 }
