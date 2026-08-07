@@ -1,320 +1,13 @@
+// KnowledgeView.tsx —— 藏书阁（状态编排；导入/检索/列表/问答已拆至子组件）
 import React, { useEffect, useState, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
-import { ScrollMark, UploadMark, SearchMark, AskMark, DocMark, TrashMark } from './themed-icons'
-
-/* ─── 藏书阁（原知识库） ──────────────────────────────
- * 给黄泉提供私人资料库：
- * 1. 卷宗录入 —— 导入 txt/md/json/csv，主进程分块写入向量库
- * 2. 寻章检索 —— 语义搜索已导入的内容
- * 3. 卷宗库   —— 展示已导入文件，可删除
- * 4. 典籍问答 —— 基于检索结果组织回答上下文
- * 数据载体：memory.json 中以 [doc] 开头的 facts 记录文件元数据，
- *           正文块存在 memory-vector.json 的向量库中。
- */
-
-/* ─── types ─── */
-
-// 卷宗元数据：导入文件时写入 memory facts（前缀 [doc]），用于列表展示与删除
-interface DocMeta {
-  name: string
-  path: string
-  importedAt: number
-  size: number
-}
-
-// 检索命中：content 为命中的正文块，score 为相关度（0~1）
-interface SearchResult {
-  content: string
-  score: number
-}
-
-// 允许导入的格式
-const SUPPORTED_FORMATS = ['.txt', '.md', '.json', '.csv']
-// 卷宗元数据在记忆中的标记前缀
-const DOC_TAG = '[doc]'
-
-/* ─── helpers ─── */
-
-function fmtSize(bytes: number): string {
-  if (bytes <= 0) return '未知'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1048576).toFixed(1) + ' MB'
-}
-
-function baseName(p: string): string {
-  return p.split(/[/\\]/).pop() || p
-}
-
-function parentDir(p: string): string {
-  const sep = p.includes('\\') ? '\\' : '/'
-  const idx = p.lastIndexOf(sep)
-  return idx > 0 ? p.slice(0, idx) : '.'
-}
-
-/* ─── inline styles ─── */
-
-const S = {
-  root: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    height: '100%',
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '14px 24px',
-    borderBottom: '1px solid var(--border)',
-    flexShrink: 0,
-    gap: '12px',
-  } as React.CSSProperties,
-  headerTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  headerIcon: {
-    fontSize: '24px',
-  },
-  headerH1: {
-    fontSize: '18px',
-    fontWeight: 600 as const,
-    color: 'var(--accent)',
-  },
-  headerSub: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-  },
-  statsRow: {
-    display: 'flex',
-    gap: '16px',
-  },
-  statBadge: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    padding: '4px 14px',
-    background: 'var(--bg-card)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    fontSize: '11px',
-    color: 'var(--text-secondary)',
-  },
-  statVal: {
-    fontSize: '16px',
-    fontWeight: 700 as const,
-    color: 'var(--accent-purple)',
-  },
-  body: {
-    flex: 1,
-    overflowY: 'auto' as const,
-    padding: '16px 24px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '16px',
-  },
-  section: {
-    background: 'var(--bg-card)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '16px',
-  },
-  sectionTitle: {
-    fontSize: '12px',
-    fontWeight: 600 as const,
-    color: 'var(--accent)',
-    marginBottom: '10px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  sectionIcon: {
-    fontSize: '14px',
-  },
-  /* import */
-  importRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    flexWrap: 'wrap' as const,
-  },
-  formatHint: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
-  },
-  importMsg: {
-    fontSize: '11px',
-    marginTop: '6px',
-    minHeight: '16px',
-  },
-  /* search */
-  searchRow: {
-    display: 'flex',
-    gap: '8px',
-  },
-  searchInput: {
-    flex: 1,
-    padding: '7px 10px',
-    borderRadius: 'var(--radius)',
-    border: '1px solid var(--border)',
-    background: 'var(--bg-elevated)',
-    outline: 'none',
-    fontSize: '12px',
-    color: 'var(--text-primary)',
-    fontFamily: 'inherit',
-  },
-  searchBtn: {
-    padding: '7px 14px',
-    background: 'var(--accent)',
-    color: 'var(--on-accent)',
-    border: 'none',
-    borderRadius: 'var(--radius)',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: 600 as const,
-  },
-  results: {
-    marginTop: '10px',
-    maxHeight: '300px',
-    overflowY: 'auto' as const,
-  },
-  resultItem: {
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    padding: '10px 12px',
-    marginBottom: '6px',
-  },
-  resultHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '4px',
-    fontSize: '11px',
-  },
-  resultScore: {
-    color: 'var(--accent-green)',
-    fontWeight: 600 as const,
-  },
-  resultContent: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    lineHeight: 1.5,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-word' as const,
-    maxHeight: '120px',
-    overflowY: 'auto' as const,
-  },
-  /* doc library */
-  docList: {
-    maxHeight: '220px',
-    overflowY: 'auto' as const,
-  },
-  docItem: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '8px 10px',
-    borderRadius: 'var(--radius)',
-    borderBottom: '1px solid var(--border)',
-    transition: 'background .12s',
-  },
-  docInfo: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '2px',
-    flex: 1,
-    minWidth: 0,
-  },
-  docName: {
-    fontSize: '12px',
-    color: 'var(--text-primary)',
-    fontWeight: 500 as const,
-    whiteSpace: 'nowrap' as const,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis' as const,
-  },
-  docMeta: {
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    display: 'flex',
-    gap: '10px',
-  },
-  docDel: {
-    background: 'none',
-    border: '1px solid var(--border)',
-    color: 'var(--text-muted)',
-    padding: '2px 8px',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    fontSize: '11px',
-    flexShrink: 0,
-  },
-  emptyHint: {
-    fontSize: '12px',
-    color: 'var(--text-muted)',
-    padding: '20px 0',
-    textAlign: 'center' as const,
-  },
-  /* Q&A */
-  qaInputRow: {
-    display: 'flex',
-    gap: '8px',
-  },
-  qaInput: {
-    flex: 1,
-    padding: '7px 10px',
-    borderRadius: 'var(--radius)',
-    border: '1px solid var(--border)',
-    background: 'var(--bg-elevated)',
-    outline: 'none',
-    fontSize: '12px',
-    color: 'var(--text-primary)',
-    fontFamily: 'inherit',
-  },
-  qaBtn: {
-    padding: '7px 14px',
-    background: 'var(--accent-purple)',
-    color: 'var(--on-accent)',
-    border: 'none',
-    borderRadius: 'var(--radius)',
-    cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: 600 as const,
-  },
-  qaContextBox: {
-    marginTop: '10px',
-    padding: '10px 12px',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    maxHeight: '200px',
-    overflowY: 'auto' as const,
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    lineHeight: 1.5,
-    whiteSpace: 'pre-wrap' as const,
-  },
-  qaLabel: {
-    fontSize: '10px',
-    color: 'var(--text-muted)',
-    marginBottom: '6px',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '.5px',
-  },
-  spinner: {
-    display: 'inline-block',
-    width: '12px',
-    height: '12px',
-    border: '2px solid var(--border)',
-    borderTopColor: 'var(--accent)',
-    borderRadius: '50%',
-    animation: 'spin .6s linear infinite',
-  } as React.CSSProperties,
-}
-
-/* ─── component ─── */
+import { ScrollMark } from './themed-icons'
+import { DocMeta, SearchResult, DOC_TAG, SUPPORTED_FORMATS, baseName, parentDir } from './knowledge-utils'
+import { S } from './knowledge-styles'
+import { KnowledgeImportBar } from './KnowledgeImportBar'
+import { KnowledgeSearchBar } from './KnowledgeSearchBar'
+import { KnowledgeDocList } from './KnowledgeDocList'
+import { KnowledgeQaPanel } from './KnowledgeQaPanel'
 
 export default function KnowledgeView() {
   const [docs, setDocs] = useState<DocMeta[]>([])
@@ -330,8 +23,6 @@ export default function KnowledgeView() {
 
   const [stats, setStats] = useState({ totalDocs: 0, lastImport: '' })
 
-  /* ── load docs from memory ── */
-
   // 加载卷宗列表：从记忆 facts 中筛出 [doc] 前缀的元数据并解析
   const loadDocs = useCallback(async () => {
     try {
@@ -342,7 +33,7 @@ export default function KnowledgeView() {
         try {
           const d = JSON.parse(f.slice(DOC_TAG.length))
           if (d && typeof d.name === 'string') parsed.push(d as DocMeta)
-        } catch (e) { /* skip corrupt entries */ console.debug('[swallow]', e) }
+        } catch (e) { console.debug('[swallow]', e) }
       }
       setDocs(parsed)
       const last =
@@ -350,14 +41,12 @@ export default function KnowledgeView() {
           ? new Date(Math.max(...parsed.map((d) => d.importedAt))).toLocaleString('zh-CN')
           : '暂无'
       setStats({ totalDocs: parsed.length, lastImport: last })
-    } catch (e) { /* ignore load errors */ console.debug('[swallow]', e) }
+    } catch (e) { console.debug('[swallow]', e) }
   }, [])
 
   useEffect(() => {
     loadDocs()
   }, [loadDocs])
-
-  /* ── import ── */
 
   // 卷宗录入：选择文件 → 校验格式 → 交给主进程分块入向量库 → 记录元数据
   const handleImport = async () => {
@@ -379,10 +68,9 @@ export default function KnowledgeView() {
     }
 
     setImporting(true)
-      setImportMsg(`⏳ 正在录入 ${name} …`)
+    setImportMsg(`⏳ 正在录入 ${name} …`)
 
     try {
-      // memory.importFile is a runtime extension
       const api = window.huangquan.memory
       if (typeof api.importFile !== 'function') {
         setImportMsg('❌ 卷宗录入接口不可用（请确认后端已开启检索能力）')
@@ -392,7 +80,6 @@ export default function KnowledgeView() {
 
       const ok = await api.importFile(path)
       if (ok) {
-        // determine file size – try readDir on parent, fallback to content length
         let size = 0
         try {
           const parent = parentDir(path)
@@ -403,11 +90,10 @@ export default function KnowledgeView() {
           try {
             const content = await window.huangquan.computer.readFile(path)
             size = new Blob([content]).size
-          } catch (e) { /* keep 0 */ console.debug('[swallow]', e) }
+          } catch (e) { console.debug('[swallow]', e) }
         }
 
         const doc: DocMeta = { name, path, importedAt: Date.now(), size }
-
         const mem = await window.huangquan.memory.load()
         mem.facts.push(`${DOC_TAG}${JSON.stringify(doc)}`)
         await window.huangquan.memory.save(mem)
@@ -425,9 +111,7 @@ export default function KnowledgeView() {
     }
   }
 
-  /* ── delete ── */
-
-  // 删除卷宗：从记忆 facts 中移除对应元数据（向量库内容保留，可后续优化为联动删除）
+  // 删除卷宗：从记忆 facts 中移除对应元数据
   const handleDelete = async (idx: number) => {
     const doc = docs[idx]
     if (!doc) return
@@ -437,10 +121,8 @@ export default function KnowledgeView() {
       mem.facts = mem.facts.filter((f) => f !== target)
       await window.huangquan.memory.save(mem)
       await loadDocs()
-    } catch (e) { /* ignore */ console.debug('[swallow]', e) }
+    } catch (e) { console.debug('[swallow]', e) }
   }
-
-  /* ── search ── */
 
   // 寻章检索：调主进程语义搜索，返回相关正文块
   const handleSearch = async () => {
@@ -458,16 +140,13 @@ export default function KnowledgeView() {
       const hits: SearchResult[] = await api.search(q)
       setResults(hits || [])
     } catch (e: unknown) {
-    setResults([{ content: `❌ 寻章出错: ${errMsg(e)}`, score: 0 }])
+      setResults([{ content: `❌ 寻章出错: ${errMsg(e)}`, score: 0 }])
     } finally {
       setSearching(false)
     }
   }
 
-  /* ── Q&A ── */
-
-  // 典籍问答：检索 top5 片段拼成上下文展示（当前版本不直接调模型，
-  // 后续可把上下文交给对话模型生成正式回答）
+  // 典籍问答：检索 top5 片段拼成上下文展示
   const handleQa = async () => {
     const q = qaQ.trim()
     if (!q) return
@@ -476,12 +155,11 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
-      setQaA('❌ 寻章检索不可用，无法组织回答。')
+        setQaA('❌ 寻章检索不可用，无法组织回答。')
         setQaLoading(false)
         return
       }
 
-      // 1. semantic search for relevant chunks
       const hits: SearchResult[] = await api.search(q)
       if (!hits || hits.length === 0) {
         setQaA('藏书阁中未找到相关内容。请先录入卷宗。')
@@ -489,19 +167,17 @@ export default function KnowledgeView() {
         return
       }
 
-      // 2. Build a context string from top results
       const topHits = hits.slice(0, 5)
       const context = topHits
         .map((h, i) => `[来源 ${i + 1} · 相关度 ${(h.score * 100).toFixed(0)}%]\n${h.content}`)
         .join('\n\n---\n\n')
 
-      // 3. Format the answer as context + question
       setQaA(
         `**基于藏书阁的参考回答**\n\n` +
           `**问题：** ${q}\n\n` +
           `**检索到 ${hits.length} 个相关片段，取前 ${topHits.length} 条：**\n\n` +
           context +
-          `\n\n---\n*提示：可将上述检索结果交给对话模型，获得更精确的回答*`
+          `\n\n---\n*提示：可将上述检索结果交给对话模型，获得更准确的回答*`
       )
     } catch (e: unknown) {
       setQaA(`❌ 回答出错: ${errMsg(e)}`)
@@ -510,8 +186,6 @@ export default function KnowledgeView() {
     }
   }
 
-  /* ── render ── */
-
   return (
     <div style={S.root}>
       {/* header */}
@@ -519,9 +193,9 @@ export default function KnowledgeView() {
         <div style={S.headerTitle}>
           <span style={S.headerIcon}><ScrollMark size={24} /></span>
           <div>
-            <h1 style={S.headerH1}>◇ 藏书阁</h1>
+            <h1 style={S.headerH1}>☷ 藏书阁</h1>
             <span style={S.headerSub}>私人典籍 · 寻章摘句</span>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>支持 txt / md / json / csv，导入后可在对话中检索引用</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>支持 txt / md / json / csv，录入后可在对话中检索引用</div>
           </div>
         </div>
         <div style={S.statsRow}>
@@ -538,156 +212,10 @@ export default function KnowledgeView() {
 
       {/* body */}
       <div style={S.body}>
-        {/* ── 1. Import ── */}
-        <div style={S.section}>
-          <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}><UploadMark size={13} /></span>卷宗录入
-          </div>
-          <div style={S.importRow}>
-            <button
-              className="btn-primary"
-              onClick={handleImport}
-              disabled={importing}
-              style={{ opacity: importing ? 0.6 : 1 }}
-            >
-              {importing ? '录入中…' : '选择文件'}
-            </button>
-            <span style={S.formatHint}>
-              支持格式：{SUPPORTED_FORMATS.join('、')}
-            </span>
-          </div>
-          {importMsg && (
-            <div
-              style={{
-                ...S.importMsg,
-                color: importMsg.startsWith('✅')
-                  ? 'var(--accent-green)'
-                  : importMsg.startsWith('❌') || importMsg.startsWith('⚠️')
-                  ? 'var(--danger)'
-                  : 'var(--accent)',
-              }}
-            >
-              {importing && <span style={S.spinner} />} {importMsg}
-            </div>
-          )}
-        </div>
-
-        {/* ── 2. Search ── */}
-        <div style={S.section}>
-          <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}><SearchMark size={13} /></span>寻章检索
-          </div>
-          <div style={S.searchRow}>
-            <input
-              style={S.searchInput}
-              placeholder="输入要寻章的内容…"
-              value={searchQ}
-              onChange={(e) => setSearchQ(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-            <button
-              style={S.searchBtn}
-              onClick={handleSearch}
-              disabled={searching || !searchQ.trim()}
-            >
-              {searching ? '寻章中…' : '寻章'}
-            </button>
-          </div>
-          {results.length > 0 && (
-            <div style={S.results}>
-              {results.map((r, i) => (
-                <div key={i} style={S.resultItem}>
-                  <div style={S.resultHeader}>
-                    <span style={{ color: 'var(--text-muted)' }}>结果 {i + 1}</span>
-                    <span style={S.resultScore}>契合度: {(r.score * 100).toFixed(0)}%</span>
-                  </div>
-                  <div style={S.resultContent}>
-                    {r.content.slice(0, 600)}
-                    {r.content.length > 600 ? '...' : ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {searching && <div className="empty-hint" style={{ textAlign: 'center' }}>寻章中…</div>}
-        </div>
-
-        {/* ── 3. Document Library ── */}
-        <div style={S.section}>
-          <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}><ScrollMark size={13} /></span>卷宗库
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>
-              （{docs.length} 份卷宗）
-            </span>
-          </div>
-          {docs.length === 0 ? (
-            <div style={S.emptyHint}>暂无卷宗，请先录入文件。</div>
-          ) : (
-            <div style={S.docList}>
-              {docs.map((d, i) => (
-                <div
-                  key={`${d.path}-${d.importedAt}`}
-                  style={S.docItem}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background = 'transparent'
-                  }}
-                >
-                  <div style={S.docInfo}>
-                    <span style={S.docName} title={d.path}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><DocMark size={12} />{d.name}</span>
-                    </span>
-                    <span style={S.docMeta}>
-                      <span>{new Date(d.importedAt).toLocaleString('zh-CN')}</span>
-                      <span>{fmtSize(d.size)}</span>
-                    </span>
-                  </div>
-                  <button
-                    className="btn-icon btn-danger"
-                    onClick={() => handleDelete(i)}
-                    title="删除卷宗"
-                  >
-            <TrashMark size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── 4. Q&A ── */}
-        <div style={S.section}>
-          <div style={S.sectionTitle}>
-            <span style={S.sectionIcon}><AskMark size={13} /></span>典籍问答
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>
-              依据卷宗作答
-            </span>
-          </div>
-          <div style={S.qaInputRow}>
-            <input
-              style={S.qaInput}
-              placeholder="输入问题…"
-              value={qaQ}
-              onChange={(e) => setQaQ(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleQa()}
-            />
-            <button
-              style={S.qaBtn}
-              onClick={handleQa}
-              disabled={qaLoading || !qaQ.trim()}
-            >
-              {qaLoading ? '寻章中…' : '发问'}
-            </button>
-          </div>
-          {qaA && (
-            <div style={S.qaContextBox}>
-              <div style={{ ...S.qaLabel, display: 'flex', alignItems: 'center', gap: 5 }}><DocMark size={12} />参考回答</div>
-              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{qaA}</div>
-            </div>
-          )}
-        </div>
+        <KnowledgeImportBar importing={importing} importMsg={importMsg} onImport={handleImport} />
+        <KnowledgeSearchBar q={searchQ} results={results} searching={searching} onChange={setSearchQ} onSearch={handleSearch} />
+        <KnowledgeDocList docs={docs} onDelete={handleDelete} />
+        <KnowledgeQaPanel q={qaQ} a={qaA} loading={qaLoading} onChange={setQaQ} onAsk={handleQa} />
       </div>
 
       {/* keyframe for spinner */}
