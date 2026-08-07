@@ -4,6 +4,7 @@
 import { safeIPC } from '../utils/safe'
 import { useSettingsStore } from './settings'
 import type { SessionData, MemoryData } from '../global'
+import { scoreOverlap } from '../../electron/shared/memory-utils'
 
 // ─── 记忆安全扫描 ─────────────────────────────────
 // 写入前检测 凭证/API Key/提示注入 模式, 命中则拒绝保存(防敏感信息落盘 + 防记忆投毒)
@@ -90,18 +91,6 @@ export async function refreshMemoryCache() {
   } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
 }
 // v0.3.2 T4: 相关度打分 —— 中文 bigram + 英文单词共现计数(无重合时返回 0, 调用方退回最近 N 条)
-function scoreOverlap(content: string, userMsg: string): number {
-  const tokens = (s: string): string[] => {
-    const en = (s.match(/[a-z0-9]+/gi) || []).map(x => x.toLowerCase())
-    const zh = (s.match(/[\u4e00-\u9fff]/g) || [])
-    const bigrams: string[] = []
-    for (let i = 0; i + 1 < zh.length; i++) bigrams.push(zh[i] + zh[i + 1])
-    return [...en, ...bigrams]
-  }
-  const a = new Set(tokens(userMsg))
-  if (!a.size) return 0
-  return tokens(content).filter(t => a.has(t)).length
-}
 
 // 记忆注入段 —— 置顶记忆(全量) + 长期记忆(按相关度 top5, 无 userMsg 时最近 5 条) + 情景摘要(最近 2 条)
 // v0.3.2 T4: 动态段移出 buildPrompt, 由构建层尾部注入(前缀缓存友好); 总量护栏 2500 字符按 置顶>长期>情景 裁尾部
@@ -130,3 +119,4 @@ export function memoryBlock(userMsg?: string): string {
   // 头部显示记忆使用率
   return parts.length ? '\n' + memoryUsageLine() + '\n\n' + parts.join('\n\n') + tail : ''
 }
+

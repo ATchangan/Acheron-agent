@@ -1,6 +1,7 @@
 // electron/engine/memory.ts — 独立内核记忆访问(直接读写 memory.json, 与渲染层共用同一文件)
 import * as fs from 'fs'
 import { writeFileAtomic } from '../fs-atomic'
+import { scoreOverlap } from '../shared/memory-utils'
 
 export interface EngineMemory {
   facts: string[]
@@ -59,18 +60,6 @@ export function scanMemoryText(text: string): { ok: boolean; reason?: string } {
   return { ok: true }
 }
 
-function scoreOverlap(content: string, userMsg: string): number {
-  const tokens = (s: string): string[] => {
-    const en = (s.match(/[a-z0-9]+/gi) || []).map(x => x.toLowerCase())
-    const zh = (s.match(/[\u4e00-\u9fff]/g) || [])
-    const bigrams: string[] = []
-    for (let i = 0; i + 1 < zh.length; i++) bigrams.push(zh[i] + zh[i + 1])
-    return [...en, ...bigrams]
-  }
-  const a = new Set(tokens(userMsg))
-  if (!a.size) return 0
-  return tokens(content).filter(t => a.has(t)).length
-}
 
 export function memoryBlockText(mem: EngineMemory, userMsg?: string, trim = true): string {
   const pinned = mem.pinnedFacts || []
@@ -112,3 +101,4 @@ export function recallFromMemory(mem: EngineMemory, query: string, vecHits: { co
   }).slice(0, 10)
   return merged.length ? merged.map((r, i) => (i + 1) + '. ' + r.content).join('\n---\n') : '(empty)'
 }
+
