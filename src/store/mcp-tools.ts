@@ -2,8 +2,10 @@
 // MCP 服务器连接后, tools/list 的 schema 直接并入 LLM 工具列表(主流桌面 Agent 行为),
 // 工具名统一 mcp__<server>__<tool>, 由 runTool 路由回 mcpCall/mcpSSECall。
 import type { ToolSpec } from '../types'
+import { parseMcpToolName } from '../../electron/shared/mcp-utils'
+export { parseMcpToolName }
 
-export interface McpToolMeta {
+interface McpToolMeta {
   name: string
   description?: string
   inputSchema?: Record<string, unknown>
@@ -17,26 +19,18 @@ export interface McpServerInfo {
   tools?: McpToolMeta[] | string[]
 }
 
-export let MCP_TOOLS: ToolSpec[] = []
-export const MCP_TOOL_NAMES = new Set<string>()
+let MCP_TOOLS: ToolSpec[] = []
+const MCP_TOOL_NAMES = new Set<string>()
 // 服务器 → 传输类型(stdio/sse), runTool 按此路由
-export const MCP_SERVER_KIND: Record<string, 'stdio' | 'sse'> = {}
+const MCP_SERVER_KIND: Record<string, 'stdio' | 'sse'> = {}
 
 function sanitize(n: string): string {
   const s = String(n || 'tool').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/^_+|_+$/g, '')
   return s || 'tool'
 }
 
-export function mcpToolName(server: string, tool: string): string {
+function mcpToolName(server: string, tool: string): string {
   return 'mcp__' + sanitize(server) + '__' + sanitize(tool)
-}
-
-export function parseMcpToolName(name: string): { server: string; tool: string } | null {
-  if (!name || !name.startsWith('mcp__')) return null
-  const rest = name.slice(5)
-  const i = rest.indexOf('__')
-  if (i <= 0 || i + 2 >= rest.length) return null
-  return { server: rest.slice(0, i), tool: rest.slice(i + 2) }
 }
 
 function schemaToParams(schema: Record<string, unknown> | undefined): { properties: Record<string, { type: string; description?: string }>; required: string[] } {

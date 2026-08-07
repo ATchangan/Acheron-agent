@@ -2,6 +2,8 @@
 import { useSettingsStore } from '../../store/settings'
 import { C, S } from '../settings-ui'
 import { MEDIA_PRESETS, AI_TYPES, CAP_COLORS, detectCaps } from './consts'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 媒体平台配置表单(从 ModelsTab 拆出, 行为零变化)
 const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => void }> = ({ mediaSelIdx, showToast }) => {
@@ -51,9 +53,9 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
   }
   const saveModel2 = (models: string[]) => updateMediaProvider(mp.id, { imgModels: [...(mp.imgModels || [])], videoModels: [...(mp.videoModels || [])], audioModels: [...(mp.audioModels || [])], ...(models as unknown as Record<string, never>) })
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+        <div style={U.betweenMb18}>
           <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
           <button style={S.btn('danger')} onClick={() => removeMediaProvider(mp.id)}>删除</button>
         </div>
@@ -77,16 +79,16 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
               const aud = (mp.audioModels || []).filter(x => x !== mm)
               updateMediaProvider(mp.id, { imgModels: img, videoModels: vid, audioModels: aud })
             }
-            return <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+            return <div key={i} style={U.betweenGap10Mb7}>
               <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
-              <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+              <span style={U.flexGap3}>
                 {caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}
               </span>
               <button style={{ ...S.btn('ghost'), height: 28, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', flexShrink: 0 }} onClick={() => removeM(m)}>×</button>
             </div>
           })
         })()}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, alignItems: 'center' }}>
+        <div style={U.endMt12}>
           {modelInput2 !== null ? <>
             <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput2} onChange={e => setModelInput2(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }} autoFocus />
             <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }}>确认</button>
@@ -102,26 +104,26 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
         <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={e => e.target === e.currentTarget && setDetectModal2(null)}>
           <div style={{ ...S.card, width: 480, maxHeight: '72vh', display: 'flex', flexDirection: 'column', padding: 24 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 700, color: C.text, marginBottom: 4 }}>选择要添加的模型</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div style={U.centerGap8Mb12}>
               <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, flex: 1 }}>已从接口读取 {detectModal2.items.length} 个模型，勾选后点击「添加所选」才能使用</span>
               <button style={S.btn('ghost')} onClick={() => setDetectSel2(detectModal2.items.map(x => x.model))}>全选</button>
               <button style={S.btn('ghost')} onClick={() => setDetectSel2([])}>清空</button>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 14 }}>
+            <div style={U.scrollMb14}>
               {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal2.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>
                   <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: CAP_COLORS[g] || C.text, margin: '8px 0 4px' }}>{g}</div>
                   {detectModal2.items.filter(x => x.caps[0] === g).map(x => (
                     <label key={x.model} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>
                       <input type="checkbox" checked={detectSel2.includes(x.model)} onChange={e => { setDetectSel2(prev => e.target.checked ? [...prev, x.model] : prev.filter(m => m !== x.model)) }} />
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.model}</span>
-                      <span style={{ display: 'flex', gap: 3, flexShrink: 0 }}>{x.caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}</span>
+                      <span style={U.ellipsis1}>{x.model}</span>
+                      <span style={U.flexGap3}>{x.caps.map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(150,150,160,0.13)', color: CAP_COLORS[c] || C.text }}>{c}</span>)}</span>
                     </label>
                   ))}
                 </div>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={U.flexEnd}>
               <button style={S.btn('ghost')} onClick={() => setDetectModal2(null)}>取消</button>
               <button style={S.btn('primary')} disabled={!detectSel2.length} onClick={() => {
                 const cur = mediaProviders.find(pp => pp.id === detectModal2.providerId)

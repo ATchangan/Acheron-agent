@@ -21,13 +21,9 @@ export function safeIPC(obj: unknown): unknown {
   }
 }
 
-// v0.3.0 M5: 统一错误消息提取(catch unknown 用)
-export function errMsg(e: unknown): string {
-  // 修复: 原实现递归调用自身导致 Maximum call stack size exceeded
-  return e instanceof Error ? e.message : String(e)
-}
+// v0.3.0 M5: 统一错误消息提取(catch unknown 用)（B6-2：与主进程共用 shared/errmsg）
+export { errMsg } from '../../electron/shared/errmsg'
 
 // 调试日志门禁: logLevel=debug 时才输出(生产默认 info 不打印调度/切换噪音)
 let debugEnabled = false
 export function setDebugLogging(v: boolean): void { debugEnabled = v }
-export const debugLog = (...args: unknown[]): void => { if (debugEnabled) console.log(...args) }

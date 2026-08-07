@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, SegSetting } from '../settings-ui'
 import type { MemoryData } from '../../global'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 记忆 tab(从 SettingsView 拆分, 行为零变化)
 export default function MemoryTab() {
@@ -15,7 +17,7 @@ export default function MemoryTab() {
     window.huangquan.memory.load().then((m) => { setMemF(m?.pinnedFacts || []); setFactsCount((m?.facts || []).length); setSummariesCount((m?.summaries || []).length) }).catch(() => {})
   }, [])
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)' }} title="记忆占用：置顶永久保留，长期按相关度取用，摘要随时间衰减">
         <span>置顶 <b style={{ color: C.accent }}>{memF.length}</b>/10</span>
         <span>长期 <b style={{ color: C.accent }}>{factsCount}</b>/500</span>
@@ -24,21 +26,7 @@ export default function MemoryTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>对话记忆（当前会话）</div>
-        <div style={S.label}>内容精简</div>
-        <select style={S.sel} value={g.compactStrategy || 'auto'} onChange={e => save({ compactStrategy: e.target.value })}>
-          <option value="auto">自动 — 对话变长时精简</option>
-          <option value="manual">手动 — 仅用户手动触发</option>
-          <option value="off">关闭 — 溢出则截断</option>
-        </select>
-        <div style={S.row}><div style={S.label}>触发条件</div></div>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div style={{ flex: 1 }}><div style={S.hint}>消息数超过</div><input type="number" style={S.inp} value={g.compactMsgCount || 20} onChange={e => save({ compactMsgCount: parseInt(e.target.value) || 20 })} /></div>
-          <div style={{ flex: 1 }}><div style={S.hint}>内容长度超过</div><input type="number" style={S.inp} value={g.compactTokenLimit || 50000} onChange={e => save({ compactTokenLimit: parseInt(e.target.value) || 50000 })} /></div>
-        </div>
-        <div style={S.row}><div style={S.label}>精简程度</div></div>
-        <SegSetting label="精简程度" hint="精简时保留多少原文" value={g.compactStrength ?? 1} onChange={v => save({ compactStrength: v })} options={[{ v: 0, label: '保留细节' }, { v: 1, label: '平衡' }, { v: 2, label: '激进' }]} />
-        <div style={S.hint}>{['保留更多原文，压缩比约30%', '平衡：保留关键信息，压缩比约50%', '仅保留核心结论，压缩比约80%'][g.compactStrength ?? 1]}</div>
-        <div style={{ marginTop: 8 }}>
+        <div style={U.mt8}>
           {([['keepUserGoals', '始终保留用户核心目标和约束'], ['keepPendingTasks', '始终保留未完成待办事项'], ['keepDecisions', '始终保留重要决策和原因'], ['keepRecentRaw', '保留最近5条消息原文']] as const).map(([k, l]) => <Toggle key={k} checked={g[k] !== false} onChange={v => save({ [k]: v })} label={l} />)}
         </div>
       </div>
@@ -62,7 +50,7 @@ export default function MemoryTab() {
       <div style={S.card}>
         <div style={S.section}>长期记忆</div>
         <div style={S.hint}>自动积累的事实和偏好，可浏览、搜索、删除。</div>
-        <div style={{ textAlign: 'right', marginBottom: 8 }}>
+        <div style={U.rightMb8}>
           <button style={S.btn('ghost')} onClick={async () => {
             const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [] }))
             const facts = m.facts || []

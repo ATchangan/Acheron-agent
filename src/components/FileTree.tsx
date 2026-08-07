@@ -1,5 +1,7 @@
 ﻿import React, { useEffect, useRef, useState } from 'react'
 import { errMsg } from '../utils/safe'
+import { U } from './ui-styles'
+
 
 // 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
 
@@ -125,7 +127,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
         <span>{isWorkDir ? '📁' : (expanded ? '📂' : '📁')}</span>
         <span style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={root}>{root.split(/[\\/]/).pop() || root}</span>
         {hovered === root && !isWorkDir && (
-          <span style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
+          <span style={U.gap6ml4}>
             <span title="重命名" style={{ color: C.blue, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setRenaming(root); setRenameVal(root.split(/[\\/]/).pop() || '') }}>✏️</span>
             <span title="删除" style={{ color: C.red, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); doDelete(root, root.split(/[\\/]/).pop() || '', true) }}>🗑️</span>
           </span>
@@ -153,7 +155,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
                   <span style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={it.name}>{it.name}</span>
                   <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 4px)' }}>{fmtSize(it.size)}</span>
                   {hovered === root + '\\' + it.name && (
-                    <span style={{ display: 'flex', gap: 6, marginLeft: 4 }}>
+                    <span style={U.gap6ml4}>
                       <span title="打开" style={{ color: C.green, cursor: 'pointer' }} onClick={() => doOpen(root + '\\' + it.name)}>📂</span>
                       <span title="重命名" style={{ color: C.blue, cursor: 'pointer' }} onClick={() => { setRenaming(root + '\\' + it.name); setRenameVal(it.name) }}>✏️</span>
                       <span title="删除" style={{ color: C.red, cursor: 'pointer' }} onClick={() => doDelete(root + '\\' + it.name, it.name, false)}>🗑️</span>

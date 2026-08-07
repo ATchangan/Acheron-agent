@@ -1,5 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { C, S } from '../settings-ui'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 关于 tab(从 SettingsView 拆分, 行为零变化)
 // v0.3.1 更新下载进度条: 订阅 update:progress 显示下载进度
@@ -18,7 +20,7 @@ export default function AboutTab() {
   const pct = upt.progress && upt.progress.total > 0 ? Math.min(100, Math.round((upt.progress.received / upt.progress.total) * 100)) : 0
   const fmtSize = (n: number) => n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB'
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>关于</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -30,7 +32,7 @@ export default function AboutTab() {
       <div style={S.card}>
         <div style={S.section}>软件更新</div>
                 <div style={S.hint}>从 GitHub 发布页检查最新版本并下载安装包</div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={U.wrap8mt8}>
           <button style={S.btn('primary')} onClick={async () => {
             setUpt({ ...upt, checking: true, info: null, error: '', downloading: false, progress: null })
             const r = await window.huangquan.update.check().catch((): { ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } => ({ ok: false, error: '检查失败' }))
@@ -42,9 +44,9 @@ export default function AboutTab() {
           {upt.error && <span style={{ color: C.danger, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>检查失败：{upt.error.slice(0, 80)}</span>}
         </div>
         {upt.info?.hasUpdate && (
-          <div style={{ marginTop: 8 }}>
+          <div style={U.mt8}>
             <div style={S.hint}>更新内容：{(upt.info.notes || '（无说明）').slice(0, 200)}</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={U.wrap8mt8}>
               <button style={S.btn('primary')} disabled={upt.downloading} onClick={async () => {
                 const asset = (upt.info?.assets || []).find((x: { name: string }) => /\.exe$/i.test(x.name)) || (upt.info?.assets || [])[0]
                 if (!asset) { setUpt({ ...upt, error: '发布页无安装包资产' }); return }

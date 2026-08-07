@@ -58,10 +58,10 @@ export interface EngineSettings {
   userAlias?: string
   toneStyle?: string
   verbosity?: number
-  compactStrategy?: string
-  compactMsgCount?: number
-  compactTokenLimit?: number
   compactThreshold?: number
+  compactKeepRounds?: number
+  compactTokenCap?: number
+  compactOverrides?: Record<string, number>
   taskArchive?: boolean
   perf?: Record<string, boolean | undefined>
   episodicMemory?: boolean
@@ -106,14 +106,33 @@ export interface EngineUsage {
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
+  // DeepSeek / SiliconFlow: 显式缓存命中与未命中
   prompt_cache_hit_tokens?: number
   prompt_cache_miss_tokens?: number
-  prompt_tokens_details?: { cached_tokens?: number }
+  // OpenAI / 智谱 / 通义 / 火山方舟 / Gemini(OpenAI 兼容): 明细字段
+  prompt_tokens_details?: {
+    cached_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
+  // Moonshot / Kimi: 顶层 cached_tokens
+  cached_tokens?: number
+  // OpenAI Responses API 风格明细
+  input_tokens_details?: { cached_tokens?: number }
+  // Anthropic 原生: 缓存读取 / 缓存写入(不计入 input_tokens)
   cache_read_input_tokens?: number
   cache_creation_input_tokens?: number
+  // Gemini 原生: usageMetadata
+  usageMetadata?: {
+    promptTokenCount?: number
+    candidatesTokenCount?: number
+    totalTokenCount?: number
+    cachedContentTokenCount?: number
+  }
   input_tokens?: number
   output_tokens?: number
   _readTokens?: number
+  _missTokens?: number
   _inputTokens?: number
   _writeTokens?: number
 }

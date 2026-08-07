@@ -1,43 +1,13 @@
 ﻿// src/store/memory.ts —— 记忆读写/自动提取/缓存刷新(v0.3.0 M2)
-// 职责: recordEpisodic/autoExtractMemory/refreshMemoryCache/memoryBlock
+// 职责: autoExtractMemory/refreshMemoryCache/memoryBlock
 // 迁移自 chat.ts() —— 行为未改
 import { safeIPC } from '../utils/safe'
 import { useSettingsStore } from './settings'
 import type { SessionData, MemoryData } from '../global'
+import { scoreOverlap, scanMemoryText } from '../../electron/shared/memory-utils'
+export { scanMemoryText }
 
-let episodicTimer: ReturnType<typeof setTimeout> | null = null
-let episodicPending: { op: string; path: string; status: string; ts: number }[] = []
-
-// ─── 记忆安全扫描 ─────────────────────────────────
-// 写入前检测 凭证/API Key/提示注入 模式, 命中则拒绝保存(防敏感信息落盘 + 防记忆投毒)
-const SECRET_PATTERNS: RegExp[] = [
-  /\bsk-[A-Za-z0-9]{16,}\b/,             // OpenAI/DeepSeek 风格
-  /\bsk-proj-[A-Za-z0-9_-]{20,}\b/,      // OpenAI project key
-  /\bgithub_pat_[A-Za-z0-9_]{30,}\b/,    // GitHub PAT
-  /\bBearer\s+[A-Za-z0-9._-]{20,}\b/i,   // Bearer token
-  /\bapi[_-]?key\s*[:=]\s*["']?[A-Za-z0-9._-]{12,}/i,
-  /\bauthorization\s*[:=]\s*["']?[A-Za-z0-9._-]{12,}/i,
-  /\b[A-Za-z0-9]{32}\.[A-Za-z0-9]{20,}\b/, // GLM/火山 风格 key
-]
-const INJECT_PATTERNS: RegExp[] = [
-  /ignore\s+(all\s+)?previous\s+(instructions|prompts)/i,
-  /disregard\s+(all\s+)?(prior|previous)\s+(instructions|rules)/i,
-  /you\s+are\s+now\s+an?\s+unrestricted/i,
-  /忽略(之前|以上|所有)?的?(指令|提示|规则)/,
-  /(你现在|你是).{0,10}(不受限制|自由)的?(AI|助手)/,
-]
-export function scanMemoryText(text: string): { ok: boolean; reason?: string } {
-  const t = String(text || '')
-  if (!t) return { ok: true }
-  for (const re of SECRET_PATTERNS) {
-    const m = t.match(re)
-    if (m) return { ok: false, reason: '疑似包含密钥/凭证(' + m[0].slice(0, 12) + '…)，已拒绝写入记忆' }
-  }
-  for (const re of INJECT_PATTERNS) {
-    if (re.test(t)) return { ok: false, reason: '疑似提示注入内容，已拒绝写入记忆' }
-  }
-  return { ok: true }
-}
+// 记忆安全扫描已抽至 shared/memory-utils（B6-2），此处 re-export 保持调用方兼容
 
 // ─── 记忆冻结快照 + 使用率 ─────────────────────────
 // 会话开始(首次发送)时冻结一次记忆快照, 本轮任务内所有轮次复用同一快照:
@@ -58,26 +28,6 @@ export function clearFrozenMemory(): void { frozenSnapshot = null; frozenAt = 0 
 function memoryUsageLine(): string {
   const { pinned, facts, summaries } = globalMemoryCache
   return `（置顶 ${pinned.length}/10 · 长期 ${facts.length}/500 · 摘要 ${summaries.length}/200，写满后旧内容会自动清理）`
-}
-export async function recordEpisodic(name: string, args: Record<string, unknown>, result: string) {
-  if (['write', 'edit', 'mkdir', 'exec_command', 'read', 'codebox', 'import_doc', 'save_memory'].includes(name)) {
-    episodicPending.push({ op: name, path: String(args.path || args.dirPath || '').slice(0, 120) || String(args.cmd || '').slice(0, 60), status: result.startsWith('E:') ? 'FAIL' : 'OK', ts: Date.now() })
-    if (episodicPending.length > 50) episodicPending = episodicPending.slice(-50)
-    if (episodicTimer) return
-    episodicTimer = setTimeout(async () => {
-      episodicTimer = null
-      const batch = episodicPending; episodicPending = []
-      if (!batch.length) return
-      try {
-        const mem = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [] }))
-        const episodic = mem.episodic || []
-        episodic.push(...batch)
-        if (episodic.length > 200) episodic.splice(0, episodic.length - 200)
-        mem.episodic = episodic
-        await window.huangquan.memory.save(mem).catch(() => {})
-      } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    }, 500)
-  }
 }
 
 export async function autoExtractMemory(sid: string, sessions: SessionData[]) {
@@ -113,18 +63,6 @@ export async function refreshMemoryCache() {
   } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
 }
 // v0.3.2 T4: 相关度打分 —— 中文 bigram + 英文单词共现计数(无重合时返回 0, 调用方退回最近 N 条)
-function scoreOverlap(content: string, userMsg: string): number {
-  const tokens = (s: string): string[] => {
-    const en = (s.match(/[a-z0-9]+/gi) || []).map(x => x.toLowerCase())
-    const zh = (s.match(/[\u4e00-\u9fff]/g) || [])
-    const bigrams: string[] = []
-    for (let i = 0; i + 1 < zh.length; i++) bigrams.push(zh[i] + zh[i + 1])
-    return [...en, ...bigrams]
-  }
-  const a = new Set(tokens(userMsg))
-  if (!a.size) return 0
-  return tokens(content).filter(t => a.has(t)).length
-}
 
 // 记忆注入段 —— 置顶记忆(全量) + 长期记忆(按相关度 top5, 无 userMsg 时最近 5 条) + 情景摘要(最近 2 条)
 // v0.3.2 T4: 动态段移出 buildPrompt, 由构建层尾部注入(前缀缓存友好); 总量护栏 2500 字符按 置顶>长期>情景 裁尾部
@@ -142,9 +80,14 @@ export function memoryBlock(userMsg?: string): string {
     parts.push('## 长期记忆\n' + (trim ? scored.slice(-5) : scored).map((f, i) => `${i + 1}. ${f.slice(0, 200)}`).join('\n'))
   }
   if (summaries.length) parts.push('## 近期情景摘要\n' + (trim ? summaries.slice(-2) : summaries.slice(-3)).map((s: { content: string }, i: number) => `${i + 1}. ${(s.content || '').slice(0, 200)}`).join('\n'))
-  // 总量护栏 2500 字符: 置顶全量保留, 按 长期→情景 从尾部裁剪
-  if (trim) while (parts.join('\n\n').length > 2500 && parts.length > 1) parts.pop()
-  const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
+    const tail = '\n(更早或更详细的记忆可用 recall_memory 工具检索, 不要凭记忆猜测)\n'
+// 记忆护栏 6000 字符: 超限时保留头 4000 + 尾 1500 + 截断标记，保证关键信息不丢
+  if (trim) {
+    const joined = parts.join('\n\n')
+    if (joined.length > 6000) {
+      return '\n' + memoryUsageLine() + '\n\n' + joined.slice(0, 4000) + '\n...[\u8bb0忆内容过长已截断]...\n' + joined.slice(-1500) + tail
+    }
+  }
   // 头部显示记忆使用率
   return parts.length ? '\n' + memoryUsageLine() + '\n\n' + parts.join('\n\n') + tail : ''
 }

@@ -220,7 +220,7 @@ contextBridge.exposeInMainWorld('huangquan', {
   cacheStats: () => ipcRenderer.invoke('cache:stats'),
   modelStats: {
     recordRequest: (sid: string, model: string, hit: boolean) => ipcRenderer.invoke('modelStats:recordRequest', sid, model, hit),
-    recordTokens: (sid: string, model: string, hitT: number, missT: number, writeT: number, missTok?: number) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, hitT, missT, writeT, missTok),
+    recordTokens: (sid: string, model: string, readT: number, inputT: number, writeT: number, missT?: number) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, readT, inputT, writeT, missT),
     deleteSession: (sid: string) => ipcRenderer.invoke('modelStats:deleteSession', sid),
     get: () => ipcRenderer.invoke('modelStats:get'),
     getSession: (sid: string) => ipcRenderer.invoke('modelStats:getSession', sid),

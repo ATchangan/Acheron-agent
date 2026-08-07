@@ -2,6 +2,8 @@
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, StepSetting } from '../settings-ui'
 import { detectCaps } from './consts'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 策略 tab(从 SettingsView 拆分, 行为零变化)
 export default function StrategyTab() {
@@ -12,7 +14,7 @@ export default function StrategyTab() {
   const save = (patch: Partial<import('../../types').GeneralSettings>) => { useSettingsStore.setState(s2 => ({ general: { ...(s2.general || {}), ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
   const modelOpts = providers.flatMap(pr => (pr.models || []).map(m => ({ id: pr.id + '::' + m, label: pr.name + ' · ' + m })))
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>模型选择</div>
         <div style={S.hint}>为对话、视觉、图片、视频、语音分别选择使用的模型；未配置时自动用默认供应商</div>
@@ -65,7 +67,7 @@ export default function StrategyTab() {
                 return (
                   <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: on ? C.text : C.label }}>
                     <input type="checkbox" checked={on} onChange={() => toggleVis(c.id)} style={{ accentColor: C.accent }} />
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!alive && <span style={{ color: 'var(--danger)' }}>（已失效）</span>}{!c.keyed && <span style={{ color: 'var(--warning)' }}>（未填密钥）</span>}</span>
+        <span style={U.ellipsis1}>{on && <b style={{ color: C.accent }}>#{idx + 1}</b>} {c.label}{!alive && <span style={U.danger}>（已失效）</span>}{!c.keyed && <span style={{ color: 'var(--warning)' }}>（未填密钥）</span>}</span>
                     <span style={{ display: 'flex', gap: 2 }}>
                       <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, -1)} disabled={!on || idx === 0}>↑</button>
                       <button style={{ ...S.btn('ghost'), height: 20, padding: '0 6px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => moveVis(c.id, 1)} disabled={!on || idx === curList.length - 1}>↓</button>

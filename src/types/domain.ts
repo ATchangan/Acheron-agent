@@ -139,7 +139,7 @@ export interface SearchResult { content: string; score: number }
 export interface CronJob { id: string; expression: string; prompt: string; enabled: boolean; lastRun?: string; nextRun?: string }
 
 // v0.3.3: MCP 工具自动注入 —— 服务器信息与工具 schema
-export interface McpToolInfo { name: string; description?: string; inputSchema?: Record<string, unknown> }
+interface McpToolInfo { name: string; description?: string; inputSchema?: Record<string, unknown> }
 export interface McpServerInfo {
   name: string
   cmd?: string

@@ -1,6 +1,10 @@
 // electron/cache/model-cache-stats.ts — 按 会话×模型 的 TOKEN 缓存命中统计(持久化)
 // 口径(用量统计规格 v1): 命中率 = cache.readTokens ÷ input.totalTokens, 不钳制上限
-// 字段映射: DeepSeek prompt_cache_hit_tokens → readTokens; prompt_tokens → inputTokens
+// 字段映射(由 engine.normalizeUsage 归一化后写入):
+//   readTokens  = 缓存命中读取(DeepSeek/SiliconFlow hit / OpenAI·智谱·通义·火山·Gemini cached / Kimi cached_tokens / Anthropic cache_read / Gemini cachedContentTokenCount)
+//   missTokens  = 缓存未命中(DeepSeek/SiliconFlow miss, 或 总输入 - 命中; Anthropic 含 cache_creation 写入部分)
+//   inputTokens = 输入总用量(缓存读取 + 未命中)
+//   writeTokens = 缓存写入(Anthropic cache_creation / 通义 prompt_tokens_details.cache_creation_input_tokens)
 // 结构: { [sessionId]: { [model]: { requests, readTokens, inputTokens } } }
 // 右侧面板 = 当前会话维度; 设置页 = 所有会话按模型汇总; 删除会话同步删除统计
 

@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
 import { MoreHorizontal } from 'lucide-react'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 引擎 tab(从 SettingsView 拆分, 行为零变化)
 export default function AdvancedTab() {
@@ -11,7 +13,7 @@ export default function AdvancedTab() {
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>渲染加速</div>
         <div style={S.hint}>自动识别电脑显卡：能用硬件加速就用，不能用就改用软件渲染，无需手动设置。切换后需重启应用生效。</div>
@@ -31,7 +33,7 @@ export default function AdvancedTab() {
         <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读取类工具（读取/列出/搜索等）并发执行，减少等待时间" />
       </div>
       <div style={S.card}>
-        <div style={S.section}>任务可靠性 (v0.3.3)</div>
+        <div style={S.section}>任务可靠性</div>
         <Toggle checked={g.riskConfirm !== false} onChange={v => save({ riskConfirm: v })} label="风险操作确认" hint="执行命令/删除文件等 L2-L3 操作前弹原生确认框；关闭后静默放行" />
         <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
         <Toggle checked={g.traceEnabled !== false} onChange={v => save({ traceEnabled: v })} label="本地诊断轨迹" hint="记录任务/LLM/工具调用链，可在 设置→诊断 查看；仅存本地" />
@@ -41,23 +43,17 @@ export default function AdvancedTab() {
         <Toggle checked={g.microCompact !== false} onChange={v => save({ microCompact: v })} label="微压缩（每轮小步）" hint="默认开启：每轮结束后把最旧一组问答折进运行摘要，分摊压缩成本，避免一次性大压缩停顿；关闭后回到一次性压缩" />
       </div>
       <div style={S.card}>
-        <div style={S.section}>上下文管理</div>
-        {/* v0.3.4 T2: 缓存友好度提示 —— system 头部保持稳定即可最大化供应商前缀缓存命中 */}
-        <div style={S.hint}>保持系统提示词稳定可降低每次请求费用；切换角色后首次请求费用略高属正常。</div>
-        <NumSetting label="压缩触发阈值" hint="对话变长时自动精简较早的内容" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
-      </div>
-      <div style={S.card}>
-        <div style={S.section}>缓存管理 (v0.3.3)</div>
+        <div style={S.section}>缓存管理</div>
         <Toggle checked={g.autoCleanCache !== false} onChange={v => save({ autoCleanCache: v })} label="自动清理 Chromium 缓存" hint="启动时若 Cache/Code Cache/GPU 缓存超过阈值则自动清空（默认开启）" />
         <NumSetting label="清理阈值" hint="缓存总大小超过该值(MB)时自动清理" value={g.autoCleanCacheSize || 200} min={50} max={5000} unit=" MB" onChange={v => save({ autoCleanCacheSize: v })} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+        <div style={U.centerGap8mt6}>
           <button style={S.btn('ghost')} onClick={async () => {
             try {
               const r = await window.huangquan.cacheCleanChromium()
               showToast('已清理 ' + r.freedMb + 'MB（缓存共 ' + r.totalMb + 'MB）')
             } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
           }}>立即清理</button>
-          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>清理后可释放磁盘空间，应用会自动重建缓存</span>
+          <span style={U.fs2muted}>清理后可释放磁盘空间，应用会自动重建缓存</span>
         </div>
       </div>
       <div style={S.card}>
@@ -69,7 +65,7 @@ export default function AdvancedTab() {
           <Toggle checked={g.perf?.resultSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), resultSlim: v } })} label="长内容精简" hint="过长结果只保留开头结尾和关键信息" />
           <Toggle checked={g.perf?.memoryTrim !== false} onChange={v => save({ perf: { ...(g.perf || {}), memoryTrim: v } })} label="记忆按需取用" hint="只取与当前话题相关的记忆" />
           <Toggle checked={g.perf?.workflowLazy !== false} onChange={v => save({ perf: { ...(g.perf || {}), workflowLazy: v } })} label="工作流按需显示" hint="提到工作流时才显示完整模板" />
-          <Toggle checked={g.perf?.roundFold !== false} onChange={v => save({ perf: { ...(g.perf || {}), roundFold: v } })} label="旧步骤自动折叠" hint="较早的工具步骤合并成摘要" />
+          <Toggle checked={g.perf?.compactSummary !== false} onChange={v => save({ perf: { ...(g.perf || {}), compactSummary: v } })} label="窗口阈值压缩" hint="真实用量接近模型窗口上限时，把旧轮次总结成摘要保留关键信息" />
           <Toggle checked={g.perf?.outputCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), outputCap: v } })} label="简短回复限长" hint="简单闲聊限制回答长度" />
           <Toggle checked={g.perf?.imgDowngrade !== false} onChange={v => save({ perf: { ...(g.perf || {}), imgDowngrade: v } })} label="旧图片不重复发送" hint="历史图片只发一次，需要时再取" />
           <Toggle checked={g.perf?.argSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), argSlim: v } })} label="长参数精简" hint="过长的工具参数只保留关键部分" />
@@ -79,7 +75,34 @@ export default function AdvancedTab() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
           <button style={S.btn('ghost')} onClick={() => { save({ perf: {} }); showToast('已恢复全部默认（全开）') }}>恢复默认</button>
-          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)' }}>改动即时生效并自动保存</span>
+          <span style={U.fs2muted}>改动即时生效并自动保存</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 14px', marginTop: 10 }}>
+          <NumSetting label="保留最近轮数" hint="窗口压缩时保留多少轮完整上下文" value={g.compactKeepRounds || 6} min={2} max={20} unit=" 轮" onChange={v => save({ compactKeepRounds: v })} />
+          <NumSetting label="压缩触发阈值" hint="真实输入用量达到模型窗口的此比例时触发压缩" value={Math.round((g.compactThreshold || 0.7) * 100)} min={30} max={95} unit="%" onChange={v => save({ compactThreshold: v / 100 })} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 14px', marginTop: 8 }}>
+          <NumSetting label="绝对触发阈值" hint="0=禁用；设置后到达该 token 数必压（不晚于此值）" value={g.compactTokenCap || 0} min={0} max={2000000} unit=" tokens" onChange={v => save({ compactTokenCap: v })} />
+          <div>
+            <div style={S.label}>按模型覆盖阈值</div>
+            <textarea
+              style={{ ...S.inp, height: 52, resize: 'vertical', fontFamily: 'monospace', fontSize: 'calc(var(--ui-font-size) - 3px)', lineHeight: 1.4 }}
+              placeholder={'模型名=百分比，每行一个，例如：\ndeepseek-v4-flash=85\ngpt-5=60'}
+              defaultValue={Object.entries(g.compactOverrides || {}).map(([k, v]) => `${k}=${v}`).join('\n')}
+              onBlur={e => {
+                const next: Record<string, number> = {}
+                for (const line of e.target.value.split('\n')) {
+                  const idx = line.indexOf('=')
+                  if (idx <= 0) continue
+                  const k = line.slice(0, idx).trim()
+                  const v = Number(line.slice(idx + 1).trim())
+                  if (k && v > 0 && v <= 100) next[k] = v
+                }
+                save({ compactOverrides: next })
+              }}
+            />
+            <div style={S.hint}>仅对指定模型生效，留空则全部使用上方全局阈值</div>
+          </div>
         </div>
       </div>
       <div style={S.card}>
@@ -115,15 +138,15 @@ export default function AdvancedTab() {
             <div style={{ flex: 2 }}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} placeholder="http://127.0.0.1:1234/v1" value={g.embeddingBaseUrl || ''} onChange={e => save({ embeddingBaseUrl: e.target.value })} /></div>
             <div style={{ flex: 1.2 }}><div style={S.label}>模型名</div><input style={S.inp} placeholder="text-embedding-3-small / bge-m3" value={g.embeddingModel || ''} onChange={e => save({ embeddingModel: e.target.value })} /></div>
           </div>
-          <div style={{ marginTop: 8 }}><div style={S.label}>密钥（API Key，本地服务可留空）</div><input type="password" style={S.inp} placeholder="sk-..." value={g.embeddingApiKey || ''} onChange={e => save({ embeddingApiKey: e.target.value })} /></div>
+          <div style={U.mt8}><div style={S.label}>密钥（API Key，本地服务可留空）</div><input type="password" style={S.inp} placeholder="sk-..." value={g.embeddingApiKey || ''} onChange={e => save({ embeddingApiKey: e.target.value })} /></div>
           <div style={S.hint}>保存后, 新写入的语义记忆将自动生成向量, 检索优先使用向量相似度; 未配置或服务不可用时自动回退关键词检索。</div>
         </div>
         <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-          <div style={{ flex: 1 }}><div style={S.label}>分块大小</div><input type="number" style={S.inp} value={g.ragChunkSize || 500} min={100} max={2000} onChange={e => save({ ragChunkSize: parseInt(e.target.value) || 500 })} /></div>
-          <div style={{ flex: 1 }}><div style={S.label}>相似度阈值</div><input type="number" style={S.inp} value={Math.round((g.ragThreshold || 0.3) * 100)} min={5} max={95} onChange={e => save({ ragThreshold: (parseInt(e.target.value) || 30) / 100 })} /></div>
+          <div style={U.flex1}><div style={S.label}>分块大小</div><input type="number" style={S.inp} value={g.ragChunkSize || 500} min={100} max={2000} onChange={e => save({ ragChunkSize: parseInt(e.target.value) || 500 })} /></div>
+          <div style={U.flex1}><div style={S.label}>相似度阈值</div><input type="number" style={S.inp} value={Math.round((g.ragThreshold || 0.3) * 100)} min={5} max={95} onChange={e => save({ ragThreshold: (parseInt(e.target.value) || 30) / 100 })} /></div>
         </div>
         <Toggle checked={g.ragAutoSave !== false} onChange={v => save({ ragAutoSave: v })} label="自动保存向量库" hint="每次导入文档后自动持久化到磁盘" />
-        <div style={{ textAlign: 'right', marginTop: 8 }}>
+        <div style={U.rightMt8}>
           <button style={S.btn('danger')} onClick={async () => { try { await window.huangquan.memory.clearVector(); alert('向量库已清空') } catch { alert('操作失败') } }}>清空向量库</button>
         </div>
       </div>
@@ -159,7 +182,7 @@ export default function AdvancedTab() {
           <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted }}>工具缓存命中率(总)</div>
           <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 700, color: 'var(--success)' }}>{g.stat_cacheRate || '—'} <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, fontWeight: 400 }}>({g.stat_cacheHits || 0} 命中 / {g.stat_cacheMisses || 0} 未中)</span></div>
         </div>
-        <div style={{ textAlign: 'right', marginBottom: 8 }}>
+        <div style={U.rightMb8}>
           <button style={{ ...S.btn('ghost'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 8px' }} onClick={async () => { try { const s = await window.huangquan.storageStats(); const patch: Record<string, unknown> = {}; for (const [k, v] of Object.entries(s)) patch['stat_' + k] = v; const cs = await window.huangquan.cacheStats(); patch['stat_cacheHits'] = cs?.hits || 0; patch['stat_cacheMisses'] = cs?.misses || 0; patch['stat_cacheRate'] = cs?.hit_rate || '0%'; save(patch); showToast('已刷新') } catch { showToast('统计失败') } }}>刷新</button>
         </div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>

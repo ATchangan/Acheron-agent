@@ -3,6 +3,8 @@ import { useSettingsStore } from '../../store/settings'
 import { useChatStore } from '../../store/chat'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
 import { errMsg } from '../../utils/safe'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 协作 tab(从 SettingsView 拆分, 行为零变化)
 export default function CollabTab(props: {
@@ -17,11 +19,11 @@ export default function CollabTab(props: {
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>多角色协作模式</div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
-          {['自动', '手动', '关闭'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 6, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: (g.collabMode || '自动') === s ? '#fff' : C.muted, background: (g.collabMode || '自动') === s ? C.accent : 'transparent' }}><input type="radio" style={{ display: 'none' }} checked={(g.collabMode || '自动') === s} onChange={() => save({ collabMode: s })} />{s}</label>)}
+          {['自动', '手动', '关闭'].map(s => <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 14px', borderRadius: 6, border: '1px solid ' + C.border, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: (g.collabMode || '自动') === s ? '#fff' : C.muted, background: (g.collabMode || '自动') === s ? C.accent : 'transparent' }}><input type="radio" style={U.none} checked={(g.collabMode || '自动') === s} onChange={() => save({ collabMode: s })} />{s}</label>)}
         </div>
         <NumSetting label="最多同时活跃角色" hint="dispatch 子任务同时执行的最大数量，超出部分自动排队" value={g.maxAgents || 5} min={1} max={10} unit="个" onChange={v => save({ maxAgents: v })} />
       </div>
@@ -84,14 +86,14 @@ export default function CollabTab(props: {
             ...custom.map((c: { name: string; id: string; desc?: string; steps?: number }) => [c.name, 'custom-' + c.id, c.desc || '', c.steps || 1, true] as [string, string, string, number, boolean]),
           ]
           return all.map(([name, key, desc, steps, isCustom]: [string, string, string, number, boolean]) => <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid ' + C.border }}>
-            <div><div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: C.text }}>{name}{isCustom ? <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}> · 自定义</span> : null}</div><div style={S.hint}>{desc}（{steps}步）</div></div>
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div><div style={U.fs2b600}>{name}{isCustom ? <span style={U.tinyMuted}> · 自定义</span> : null}</div><div style={S.hint}>{desc}（{steps}步）</div></div>
+            <div style={U.gap4}>
               <button style={{ ...S.btn('ghost'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 8px' }} onClick={() => { onNavigate('chat'); useChatStore.getState().send('执行工作流「' + name + '」：' + desc); showToast('工作流「' + name + '」已发送到对话执行') }}>运行</button>
               {isCustom ? <button style={{ ...S.btn('danger'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 8px' }} onClick={() => { const list = JSON.parse(localStorage.getItem('hq_custom_wfs') || '[]'); localStorage.setItem('hq_custom_wfs', JSON.stringify(list.filter((c: { id: string }) => 'custom-' + c.id !== key))); showToast('已删除自定义工作流'); setTab('collab'); }}>删除</button> : null}
             </div>
           </div>)
         })()}
-        <div style={{ textAlign: 'right', marginTop: 8 }}><button style={S.btn('primary')} onClick={() => { openWfModal('', '') }}>+ 新建工作流</button></div>
+        <div style={U.rightMt8}><button style={S.btn('primary')} onClick={() => { openWfModal('', '') }}>+ 新建工作流</button></div>
       </div>
       <div style={S.card}>
         <div style={S.section}>已安装技能</div>
@@ -105,14 +107,14 @@ export default function CollabTab(props: {
             ['部署检查清单', '手动', '来源: GitHub/xxx/deploy-checklist'],
           ].filter(([n]) => !removed.includes(n))
           return list.length ? list.map(([name, src, desc]: string[]) => <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid ' + C.border }}>
-            <div><span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: C.text }}>{name}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}> · {src}</span></div>
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div><span style={U.fs2b600}>{name}</span><span style={U.tinyMuted}> · {src}</span></div>
+            <div style={U.gap4}>
               <button style={{ ...S.btn('ghost'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 6px' }} onClick={() => showToast(name + '：' + desc)}>查看</button>
               {src !== '内置' ? <button style={{ ...S.btn('danger'), height: 24, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 6px' }} onClick={() => { const r: string[] = JSON.parse(localStorage.getItem('hq_removed_skills') || '[]'); r.push(name); localStorage.setItem('hq_removed_skills', JSON.stringify(r)); showToast('已移除技能「' + name + '」'); setTab('collab'); }}>移除</button> : null}
             </div>
           </div>) : <div style={S.hint}>暂无技能，可安装</div>
         })()}
-        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <div style={U.gap8mt10}>
           <button style={S.btn('primary')} onClick={async () => { const url = prompt('GitHub 仓库地址（https://...）：'); if (!url) return; showToast('正在安装...'); const r = await window.huangquan.skills.install(url.trim()); showToast(String(r)) }}>从 GitHub 安装</button>
           <button style={S.btn('ghost')} onClick={async () => { try { const path = await window.huangquan.skills.pickLocal(); if (!path) return; showToast('正在安装...'); const r = await window.huangquan.skills.installLocal(path); showToast(String(r)) } catch (e: unknown) { showToast('安装失败: ' + errMsg(e)) } }}>从本地安装</button>
         </div>

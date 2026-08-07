@@ -25,6 +25,8 @@ import DiagnosticsTab from './settings/DiagnosticsTab'
 import CronView from './CronView'
 import KnowledgeView from './KnowledgeView'
 import PluginsView from './PluginsView'
+import { U } from './ui-styles'
+
 
 const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean; img?: string[]; video?: string[]; audio?: string[] }> = {
   '即梦Jimeng': { type: 'multi', url: 'https://ark.cn-beijing.volces.com/api/v3', img: ['seedream-4.0', 'seedream-3.0', 'cogview-4'], video: ['seedance2.0', 'seedance2.0fast', 'doubao-seedance'] },
@@ -116,7 +118,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     ['skin', ['外观', '主题', '皮肤', '背景', '字体', '字号', '透明', '动画']],
     ['stats', ['缓存', '统计', '用量', '命中']],
     ['diagnostics', ['诊断', '轨迹', '日志', 'trace', '调试', '恢复']],
-    ['advanced', ['引擎', '性能', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
+    ['advanced', ['引擎', '性能', '性能优化', 'token优化', 'token 优化', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
     ['about', ['关于', '版本', '更新']],
     ['cron', ['定时', '任务', 'cron']],
     ['knowledge', ['知识', '文档', '导入', '知识库', '藏书', '典籍', '书', '检索', 'rag']],
@@ -180,7 +182,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
             <input style={{ ...S.inp, marginBottom: 10 }} value={wfName} placeholder="工作流名称" onChange={e => setWfName(e.target.value)} autoFocus />
             <div style={S.label}>任务描述</div>
             <textarea style={{ ...S.inp, minHeight: 60, resize: 'vertical', marginBottom: 14 }} value={wfDesc} placeholder="将按此执行（留空用名称）" onChange={e => setWfDesc(e.target.value)} />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={U.flexEnd}>
               <button style={S.btn('ghost')} onClick={() => setWfModal(false)}>取消</button>
               <button style={S.btn('primary')} disabled={!wfName.trim()} onClick={() => {
                 const name = wfName.trim(); const desc = wfDesc.trim() || name

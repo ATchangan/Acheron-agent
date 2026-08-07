@@ -9,6 +9,8 @@ import type { AgentDef } from './agents'
 import type { EngineMemory } from './memory'
 import { scanMemoryText, recallFromMemory } from './memory'
 import { errMsg } from './errmsg'
+import { parseMcpToolName } from '../shared/mcp-utils'
+export { parseMcpToolName }
 
 export const TOOLS: EngineToolSpec[] = [
   { type: 'function', function: { name: 'read', description: 'read(path, offset?, limit?) 读取文件(UTF-8); 大文件用 offset/limit 分段续读', parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' } }, required: ['path'] } } },
@@ -134,7 +136,8 @@ export function getActiveTools(ctx: ToolRunCtx): EngineToolSpec[] {
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   const autoMcp = ctx.g.mcpAutoInject !== false
   const merged = autoMcp ? [...TOOLS, ...getMcpToolSpecs()] : [...TOOLS]
-  const filtered = ctx.agent ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
+  // v0.3.5 T2: 工具白名单开关 —— 关闭时不过 agent 白名单, 返回全量工具
+  const filtered = (ctx.agent && ctx.g.perf?.toolWhitelist !== false) ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
   if (ctx.g.collabMode === '关闭') {
     return filtered.filter(t => !disabled.includes(t.function.name) && !['handoff', 'dispatch', 'list_agents'].includes(t.function.name))
   }
@@ -198,14 +201,6 @@ export function getMcpToolSpecs(force = false): EngineToolSpec[] {
   mcpSpecsCache = specs
   mcpSpecsAt = Date.now()
   return specs
-}
-
-export function parseMcpToolName(name: string): { server: string; tool: string } | null {
-  if (!name || !name.startsWith('mcp__')) return null
-  const rest = name.slice(5)
-  const i = rest.indexOf('__')
-  if (i <= 0 || i + 2 >= rest.length) return null
-  return { server: rest.slice(0, i), tool: rest.slice(i + 2) }
 }
 
 async function mcpConfirm(server: string, tool: string, args: Record<string, unknown>): Promise<boolean> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildContextualMessages, buildPrompt, estimateTokens, foldToolRounds, routeAgent, slimToolResult } from './context'
+import { buildContextualMessages, buildPrompt, estimateTokens, routeAgent, slimToolResult } from './context'
 import { getAgents } from './agents'
 
 const G = { workDir: 'D:/test', mode: 'work', collabMode: '自动', thinkLevel: 'medium' }
@@ -15,18 +15,6 @@ describe('engine context', () => {
     const out = slimToolResult(long)
     expect(out.length).toBeLessThan(2000)
     expect(out).toContain('已截断')
-  })
-
-  it('foldToolRounds 折叠旧工具轮', () => {
-    const msgs = [
-      { id: 'u1', role: 'user' as const, content: '任务', timestamp: 1 },
-      { id: 'a1', role: 'assistant' as const, content: null, timestamp: 2, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'read', arguments: '{}' } }] },
-      { id: 't1', role: 'tool' as const, content: '结果', timestamp: 3, tool_call_id: 'c1' },
-      { id: 'a2', role: 'assistant' as const, content: '最终', timestamp: 4 },
-    ]
-    const out = foldToolRounds(msgs, 0, 1)
-    expect(out.length).toBeLessThan(msgs.length)
-    expect(out.some(m => String(m.content).includes('工具调用归档'))).toBe(true)
   })
 
   it('buildPrompt 包含身份与多角色编队', () => {

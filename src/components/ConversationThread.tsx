@@ -53,7 +53,7 @@ const StreamingText: React.FC = React.memo(() => {
 // ------------------------------------------------------------
 // 用户气泡 (玻璃圆角卡, sticky 跟随滚动, 长文自动收成两行)
 // ------------------------------------------------------------
-export const UserBubble: React.FC<{
+const UserBubble: React.FC<{
   message: Message
 }> = ({ message }) => {
   const [copied, setCopied] = useState(false)
@@ -206,7 +206,7 @@ const ToolRow: React.FC<{
 // ------------------------------------------------------------
 // 助手内容块 (无卡片平铺, 悬停浮现操作栏)
 // ------------------------------------------------------------
-export const AssistantBlock: React.FC<{
+const AssistantBlock: React.FC<{
   message: Message
   toolResults?: Map<string, { content: string; timestamp: number }>
   executing?: boolean
@@ -223,6 +223,21 @@ export const AssistantBlock: React.FC<{
   useEffect(() => { if (reasoning && message._streaming) setReasonOpen(true) }, [reasoning, message._streaming])
   // 完成后默认收起（执行中展开看过程，结束收成一行）
   useEffect(() => { if (!message._streaming && reasoning) setReasonOpen(false) }, [message._streaming, reasoning])
+  // 思考过程自动跟随滚动：流式输出时贴近底部才自动滚到底，用户上滑后暂停跟随
+  const reasonRef = useRef<HTMLPreElement | null>(null)
+  const reasonFollow = useRef(true)
+  const syncReasonScroll = useCallback(() => {
+    const el = reasonRef.current
+    if (!el) return
+    const nb = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
+    reasonFollow.current = nb
+  }, [])
+  useEffect(() => {
+    if (!reasonOpen || !reasoning) return
+    const el = reasonRef.current
+    if (!el || !reasonFollow.current) return
+    el.scrollTop = el.scrollHeight
+  }, [reasoning, reasonOpen])
 
   const runByCall = useMemo(() => {
     const map = new Map<string, { ms: number; error: boolean; result: string }>()
@@ -257,7 +272,7 @@ export const AssistantBlock: React.FC<{
             <span className="hq-reasoning-arrow">{reasonOpen ? '▾' : '▸'}</span> 思考过程
             {!reasonOpen && <span className="hq-reasoning-meta">（已折叠）</span>}
           </button>
-          {reasonOpen && <pre className="hq-reasoning-text">{reasoning}</pre>}
+          {reasonOpen && <pre ref={reasonRef} onScroll={syncReasonScroll} className="hq-reasoning-text">{reasoning}</pre>}
         </div>
       )}
       {hasText && (

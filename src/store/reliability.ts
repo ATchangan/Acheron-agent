@@ -1,18 +1,16 @@
+import { backoffDelay } from '../../electron/shared/reliability'
+export { backoffDelay }
 // src/store/reliability.ts — 任务可靠性纯函数(v0.3.3 内核加固)
 // 职责: 指数退避(带抖动)/任务 token 预算计算/超限判定。全部纯函数, 可单测。
 
-export interface TokenCounter {
+interface TokenCounter {
   inputTokens?: number
   outputTokens?: number
   writeTokens?: number
 }
 
 // 指数退避 + 25% 抖动 —— 网络抖动/限流时避免固定间隔撞车
-export function backoffDelay(attempt: number, baseMs = 500, maxMs = 8000): number {
-  const safeAttempt = Math.max(0, Math.min(attempt, 10))
-  const exp = Math.min(maxMs, baseMs * Math.pow(2, safeAttempt))
-  return Math.min(maxMs, Math.round(exp * (0.75 + Math.random() * 0.5)))
-}
+
 
 // 本任务 token 增量 = 当前累计 - 任务起始基线(输入/输出/缓存写入三项)
 export function taskTokensUsed(

@@ -25,7 +25,7 @@ function sendRPC(server: MCPServer, method: string, params: Record<string, unkno
       try {
         const res = JSON.parse(line)
         if (res.id === id) { cleanup(); resolve(res.result || res) }
-      } catch {}
+      } catch (e) { console.debug('[mcp] 解析响应失败:', e) }
     }
     proc.stdout?.on('line', onLine)
     proc.stdin.write(msg)
@@ -69,4 +69,4 @@ export function listServers(): { name: string; tools: MCPTool[] }[] {
   return [...servers.entries()].map(([name, s]) => ({ name, tools: s.tools }))
 }
 
-export function disconnectAll() { for (const [_, s] of servers) { try { s.process?.kill() } catch {} }; servers.clear() }
+export function disconnectAll() { for (const [_, s] of servers) { try { s.process?.kill() } catch (e) { console.debug('[mcp] 终止进程失败:', e) } }; servers.clear() }

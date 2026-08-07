@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
   let targets
   try { targets = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`)) }
   catch (e) { console.log('CDP_UNREACHABLE:', e.message); process.exit(2) }
-  const page = targets.find(t => t.type === 'page')
+  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '黄泉Agent')) || targets.find(t => t.type === 'page')
   if (!page) { console.log('NO_PAGE'); process.exit(3) }
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })
@@ -28,6 +28,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
   }
 
   // 1. 等页面加载 + 输入框出现
+  await evalJs(`(() => { const el = [...document.querySelectorAll('.menu-item')].find(x => x.innerText.includes('对话')); if (el) { el.click(); return true } return false })()`)
+  await sleep(1000)
   let ready = false
   for (let i = 0; i < 20; i++) {
     ready = await evalJs(`!!document.querySelector('textarea')`)

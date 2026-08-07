@@ -1,8 +1,8 @@
 ﻿// src/types.ts —— 全库类型唯一来源(v0.3.0 M1)
 // 职责: 核心数据结构定义。禁止在别处重复定义同名 interface。
-// 迁移自 global.d.ts 的 GeneralSettings + 方案新增 ToolSpec/AgentDef/SubTaskCtx
+// 迁移自 global.d.ts 的 GeneralSettings + 方案新增 ToolSpec/AgentDef
 
-export interface ToolParam {
+interface ToolParam {
   type: string
   description?: string
   enum?: string[]
@@ -20,13 +20,6 @@ export interface ToolSpec {
   }
 }
 
-export interface ToolResult {
-  ok: boolean
-  data?: string
-  error?: string
-  truncated?: boolean
-}
-
 export interface AgentDef {
   role: string
   prompt: string
@@ -36,13 +29,6 @@ export interface AgentDef {
   model?: string // 模型偏好(v0.4 网关接入, 先落字段)
   memoryScope: string
   capabilities: string[] // ['dispatch','doc','security','automation','chat','vision','code']
-}
-
-export interface SubTaskCtx {
-  task: string
-  agent: string
-  parentSid: string
-  context: string // 只含任务必要上下文, 不复制全局会话
 }
 
 // v0.3.0 M1: GeneralSettings 从 global.d.ts 迁移, 字段全量类型化
@@ -67,6 +53,9 @@ export interface GeneralSettings {
   episodicMemory?: boolean
   meltdownLimit?: number
   compactThreshold?: number
+  compactKeepRounds?: number
+  compactTokenCap?: number
+  compactOverrides?: Record<string, number>
   maxToolRounds?: number
   retryCount?: number
   parallelTools?: boolean
@@ -179,13 +168,13 @@ export interface GeneralSettings {
     resultSlim?: boolean     // 0.3.2 T3 结果瘦身 1500
     memoryTrim?: boolean     // 0.3.2 T4 记忆裁剪
     workflowLazy?: boolean   // 0.3.2 T5 workflows 按需
-    roundFold?: boolean      // 0.3.2 T6 轮次折叠
     outputCap?: boolean      // 0.3.2 T7 输出上限分级
     imgDowngrade?: boolean   // 0.3.3 T1 图片降级
     argSlim?: boolean        // 0.3.3 T2 参数截断
     taskArchive?: boolean    // 0.3.3 T3 跨任务归档(迁移: perf.taskArchive ?? 旧 taskArchive 字段)
     parallelCap?: boolean    // 0.3.5 T1 并行护栏
     interjectMerge?: boolean // 0.3.4 T3 插话合并
+    compactSummary?: boolean // 窗口阈值压缩（真实用量触发 + LLM 批量摘要）
   }
   mediaImgProvider?: string
   mediaImgModel?: string

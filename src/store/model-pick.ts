@@ -2,7 +2,7 @@
 import type { ProviderConfig, SettingsData } from '../global'
 import type { GeneralSettings } from '../types'
 
-export interface ModelChoice {
+interface ModelChoice {
   main: { p: ProviderConfig; model: string }
   fast: { p: ProviderConfig; model: string }
   small: { p: ProviderConfig; model: string } | null

@@ -5,6 +5,8 @@ import ChatInput from './ChatInput'
 import { ConversationTurn, ThinkingRow } from './ConversationThread'
 import { isNearBottom, latestAssistantText } from '../store/chat-view-utils'
 import type { Message } from '../global'
+import { U } from './ui-styles'
+
 
 // 单条消息渲染错误边界: 某条消息渲染异常时降级为纯文本, 防止拖垮整个渲染进程
 class MsgBoundary extends React.Component<{ children: React.ReactNode }, { err: boolean }> {
@@ -198,7 +200,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       </div>
 
       {orphanTasks.length > 0 && (
-        <div className="error-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div className="error-bar" style={U.wrap8}>
           <span>上次退出时有 {orphanTasks.length} 个任务未完成：</span>
           {orphanTasks.slice(0, 3).map(t => (
             <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -207,7 +209,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
               <button className="tab-btn" style={{ padding: '1px 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={async () => { await window.huangquan.tasks.finish(t.id, 'aborted', '用户忽略'); useChatStore.setState(s => ({ orphanTasks: s.orphanTasks.filter(x => x.id !== t.id) })) }}>忽略</button>
             </span>
           ))}
-          {orphanTasks.length > 3 && <span style={{ color: 'var(--text-muted)' }}>…</span>}
+          {orphanTasks.length > 3 && <span style={U.textMuted}>…</span>}
           <button className="tab-btn" style={{ padding: '1px 10px', fontSize: 'calc(var(--ui-font-size) - 3px)', marginLeft: 'auto' }} onClick={async () => {
             for (const t of orphanTasks) await window.huangquan.tasks.finish(t.id, 'aborted', '用户忽略').catch(() => {})
             useChatStore.setState({ orphanTasks: [] })
@@ -216,16 +218,16 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       )}
 
       {planPending && (
-        <div className="error-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <span style={{ fontWeight: 600 }}>执行计划确认：</span>
+        <div className="error-bar" style={U.wrap8}>
+          <span style={U.b600}>执行计划确认：</span>
           <span style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={planPending.summary}>{planPending.summary || '模型准备调用工具执行任务'}</span>
           {planPending.steps.slice(0, 4).map((s, i) => (
             <span key={i} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', background: 'rgba(var(--skin-accent),.10)', border: '1px solid rgba(var(--skin-accent),.25)', borderRadius: 10, padding: '1px 8px' }}>{s.tool}</span>
           ))}
-          {planPending.steps.length > 4 && <span style={{ color: 'var(--text-muted)' }}>…</span>}
+          {planPending.steps.length > 4 && <span style={U.textMuted}>…</span>}
           <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
-            <button className="tab-btn" style={{ padding: '1px 12px' }} onClick={async () => { await window.huangquan.engine.reject(session!.id); useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[session!.id]; return { planPending: pp } }) }}>拒绝</button>
-            <button className="tab-btn active" style={{ padding: '1px 12px' }} onClick={async () => { await window.huangquan.engine.approve(session!.id); useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[session!.id]; return { planPending: pp } }) }}>批准执行</button>
+            <button className="tab-btn" style={U.px12} onClick={async () => { await window.huangquan.engine.reject(session!.id); useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[session!.id]; return { planPending: pp } }) }}>拒绝</button>
+            <button className="tab-btn active" style={U.px12} onClick={async () => { await window.huangquan.engine.approve(session!.id); useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[session!.id]; return { planPending: pp } }) }}>批准执行</button>
           </span>
         </div>
       )}
@@ -233,7 +235,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
       {!hasProvider ? (
         <div className="chat-center-empty">
           <h1>黄泉</h1><p>请先在「模型服务」中配置一个服务商</p>
-          <button className="btn-primary" style={{ marginTop: 8 }} onClick={() => onNavigate('settings')}>前往设置</button>
+          <button className="btn-primary" style={U.mt8} onClick={() => onNavigate('settings')}>前往设置</button>
         </div>
       ) : !session || msgs.length === 0 ? (
         <div className="chat-center-empty">

@@ -1,3 +1,5 @@
+import { U } from './ui-styles'
+
 ﻿import React, { useState, useEffect, useCallback } from 'react'
 
 const PinIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/></svg>
@@ -67,10 +69,10 @@ export default function MemoryView() {
       <h1 style={s.title}>◈ 置顶记忆</h1>
       <p style={s.subtitle}>{loading ? '加载中...' : `${pinnedFacts.length} 条 · ${totalChars} 字符`}</p>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)' }} title="记忆占用：置顶永久保留，长期按相关度取用，摘要随时间衰减">
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PinIcon /> 置顶 <b style={{ color: 'var(--accent)' }}>{stats.pinned}</b>/10</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><BrainIcon /> 长期 <b style={{ color: 'var(--accent)' }}>{stats.facts}</b>/500</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FileIcon /> 摘要 <b style={{ color: 'var(--accent)' }}>{stats.summaries}</b>/200</span>
-        <span style={{ color: 'var(--text-muted)' }}>在对话里说「记住…」就会自动写入</span>
+        <span style={U.inlineFlex4}><PinIcon /> 置顶 <b style={U.accent}>{stats.pinned}</b>/10</span>
+        <span style={U.inlineFlex4}><BrainIcon /> 长期 <b style={U.accent}>{stats.facts}</b>/500</span>
+        <span style={U.inlineFlex4}><FileIcon /> 摘要 <b style={U.accent}>{stats.summaries}</b>/200</span>
+        <span style={U.textMuted}>在对话里说「记住…」就会自动写入</span>
       </div>
       <p style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginBottom: 16 }}>唯一持久存储载体 — 系统规则、角色配置、个人偏好均存于此</p>
 

@@ -1,207 +1,23 @@
 // electron/engine/context.ts — 独立内核上下文构建(从渲染层 context.ts/context-utils.ts/router.ts 移植)
-// 不依赖 Zustand/window: 设置/记忆/项目约定/角色全部由引擎注入, system 前缀保持稳定以最大化前缀缓存命中。
+
+import { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel, estimateTokens, outputLimit, getModelContextLimit } from '../shared/context-utils'
+import type { TaskArchive } from '../shared/context-utils'
+export { slimToolResult, slimToolCallArgs, buildTaskArchives, calibrateTokens, getCalibrationScale, isVisionModel, estimateTokens, outputLimit, getModelContextLimit }
+export type { TaskArchive }
+import { routeAgentCore } from '../shared/route'
+import { filterToolsCore } from '../shared/tool-filter'
 import type { EngineMessage, EngineSettings, EngineToolSpec } from './types'
 import type { AgentDef } from './agents'
-import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS, VISION_MODEL_HINTS, DOMAIN_RE } from './constants'
+import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS } from './constants'
 import { v4 as uuidv4 } from 'uuid'
 
-// ─── token 估算 + 实测校准(按模型 EMA) ───
-const scaleByModel = new Map<string, number>()
-export function calibrateTokens(model: string, actual: number, estimated: number): void {
-  if (!model || !actual || !estimated) return
-  const cur = scaleByModel.get(model) ?? 1.0
-  const ratio = Math.min(3, Math.max(0.3, actual / estimated))
-  scaleByModel.set(model, cur * 0.8 + ratio * 0.2)
-}
-export function getCalibrationScale(model: string): number {
-  return scaleByModel.get(model) ?? 1.0
-}
-export function estimateTokens(text: string, model?: string): number {
-  if (!text) return 0
-  const s = getCalibrationScale(model || '')
-  let base = 0
-  const codeBlocks = text.match(/```[\s\S]*?```/g) || []
-  for (const b of codeBlocks) base += b.length / 3.5
-  const rest = text.replace(/```[\s\S]*?```/g, '')
-  const cn = (rest.match(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g) || []).length
-  base += cn * 1.2
-  const urlM = rest.match(/[a-z]+:\/\/[^\s"'<>]+/gi) || []
-  for (const u of urlM) base += 2 + u.split(/[\/?#]/).length
-  const nonCn = rest.replace(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g, '').replace(/[a-z]+:\/\/[^\s"'<>]+/gi, '')
-  base += nonCn.length / 4
-  return Math.max(1, Math.round(base * s))
-}
-
-export function isVisionModel(m: string): boolean {
-  const ml = (m || '').toLowerCase()
-  return VISION_MODEL_HINTS.some(v => ml.includes(v))
-}
-
-export function outputLimit(userMsg: string, cfg: EngineSettings): number | undefined {
-  const base = Number(cfg.maxTokens) || 4096
-  if (userMsg.length < 40 && !/(代码|文件|报告|项目|脚本|写|改|建|查|找|分析)/.test(userMsg)) {
-    return Math.min(base, 800)
-  }
-  return base
-}
-
-export function getModelContextLimit(modelName: string): number {
-  const m = modelName.toLowerCase()
-  if (m.includes('deepseek-v4') || m.includes('deepseek-chat') || m.includes('deepseek-reasoner')) return 1048576
-  if (m.includes('gpt-4.1')) return 1048576
-  if (m.includes('gemini-2.5') || m.includes('gemini-2') || m.includes('gemini-1.5')) return 1048576
-  if (m.includes('o3') || m.includes('o4') || m.includes('o1')) return 200000
-  if (m.includes('claude-4') || m.includes('claude-3.5') || m.includes('claude-3') || m.includes('claude-2')) return 200000
-  if (m.includes('yi-')) return 200000
-  if (m.includes('qwen3')) return 262144
-  if (m.includes('minimax')) return 245760
-  if (m.includes('deepseek-v3')) return 131072
-  if (m.includes('gpt-4o') || m.includes('gpt-4-turbo')) return 131072
-  if (m.includes('qwen2.5') || m.includes('qwen') || m.includes('glm') || m.includes('ernie-4.5') || m.includes('moonshot') || m.includes('kimi') || m.includes('doubao') || m.includes('skylark')) return 131072
-  if (m.includes('gpt-4-32k')) return 32768
-  if (m.includes('gpt-4')) return 8192
-  if (m.includes('gpt-3.5-turbo-16k')) return 16384
-  if (m.includes('gpt-3.5')) return 4096
-  if (m.includes('deepseek')) return 65536
-  if (m.includes('gemini')) return 32768
-  if (m.includes('ernie')) return 8192
-  return 65536
-}
+// token 估算 / 输出上限 / 上下文窗口已抽至 shared/context-utils（B6-2）
 
 // ─── 纯函数: 工具结果瘦身 / 参数截断 / 轮次折叠 / 跨任务归档 ───
-export function slimToolResult(c: string, head = 800, tail = 500): string {
-  if (c.length <= 1500) return c
-  const mid = c.slice(head, -tail)
-  const keyLines = mid.split('\n').filter((l: string) => /error|exception|failed|warning|fatal|E:/.test(l)).slice(0, 15).join('\n')
-  return c.slice(0, head) + '\n...[已截断, 共 ' + c.length + ' 字符]' + (keyLines ? '\n[关键行]\n' + keyLines : '') + '\n[尾部]\n' + c.slice(-tail)
-}
 
-const ARG_KEEP = new Set(['path', 'name', 'dirPath', 'glob', 'pattern', 'query', 'url', 'pid', 'id', 'agent', 'agent_name', 'expression', 'tool', 'key', 'fileId', 'workflow_id', 'server', 'offset', 'limit', 'lang', 'mode'])
-const ARG_SLIM_LEN = 200
-function slimArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(args || {})) {
-    if (typeof v === 'string' && v.length > ARG_SLIM_LEN && !ARG_KEEP.has(k)) {
-      out[k] = v.slice(0, ARG_SLIM_LEN) + '…[省略' + (v.length - ARG_SLIM_LEN) + '字]'
-    } else if (Array.isArray(v) && v.length > 20 && v.every(x => typeof x === 'string')) {
-      out[k] = v.slice(0, 20) + '…[省略' + (v.length - 20) + '项]'
-    } else out[k] = v
-  }
-  return out
-}
-function slimToolCallArgs(tc: { id?: string; type: string; function: { name: string; arguments: string } }): { id?: string; type: string; function: { name: string; arguments: string } } {
-  try {
-    const parsed = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>
-    return { ...tc, function: { ...tc.function, arguments: JSON.stringify(slimArgs(parsed)) } }
-  } catch { return tc }
-}
-
-export function foldToolRounds(msgs: EngineMessage[], maxRounds = 8, foldCount = 4): EngineMessage[] {
-  const rounds: { asst: EngineMessage; tools: EngineMessage[] }[] = []
-  let i = 0
-  while (i < msgs.length) {
-    const m = msgs[i]
-    if (m.role === 'assistant' && m.tool_calls?.length) {
-      const ids = new Set(m.tool_calls.map(tc => tc.id))
-      const tools: EngineMessage[] = []
-      let j = i + 1
-      while (j < msgs.length && msgs[j].role === 'tool' && ids.has(msgs[j].tool_call_id || '')) { tools.push(msgs[j]); j++ }
-      if (tools.length === m.tool_calls.length) rounds.push({ asst: m, tools })
-      i = j
-    } else i++
-  }
-  if (rounds.length <= maxRounds) return msgs
-  const fold = rounds.slice(0, foldCount)
-  const foldStart = msgs.indexOf(fold[0].asst)
-  if (foldStart > 0 && msgs.slice(0, foldStart).some(x => x.role === 'tool')) return msgs
-  const lastTools = fold[fold.length - 1].tools
-  const foldEnd = msgs.indexOf(lastTools[lastTools.length - 1]) + 1
-  const agg = new Map<string, number>()
-  const lastResult = new Map<string, string>()
-  for (const r of fold) for (const tc of r.asst.tool_calls || []) {
-    const tname = tc.function?.name || '?'
-    agg.set(tname, (agg.get(tname) || 0) + 1)
-    lastResult.set(tname, r.tools[r.tools.length - 1]?.content?.slice(0, 60) || '')
-  }
-  const summary = '[工具调用归档] 已执行: ' + [...agg].map(([n, c]) => n + '(' + c + ')').join(' ') +
-    [...lastResult].map(([n, t]) => ' | ' + n + ': ' + t).join('') +
-    '。如需早期细节请用工具重新读取或 recall_memory'
-  return [
-    ...msgs.slice(0, foldStart),
-    { id: uuidv4(), role: 'user' as const, content: summary, timestamp: Date.now() },
-    ...msgs.slice(foldEnd),
-  ]
-}
-
-export interface TaskArchive { goal: string; conclusion: string; outputs: string[]; tools: string; ts: number }
-export function buildTaskArchives(msgs: EngineMessage[]): { keep: EngineMessage[]; archives: TaskArchive[] } {
-  const blocks: EngineMessage[][] = []
-  let cur: EngineMessage[] = []
-  for (const m of msgs) {
-    if (m.role === 'user') { if (cur.length) blocks.push(cur); cur = [m] }
-    else cur.push(m)
-  }
-  if (cur.length) blocks.push(cur)
-  const archives: TaskArchive[] = []
-  let keep = msgs
-  let blockIdx = 0
-  while (blocks.length - blockIdx >= 2) {
-    const b = blocks[blockIdx]
-    if (b.length < 6 || b.filter(m => m.role === 'tool').length < 2) break
-    const goal = (b.find(m => m.role === 'user')?.content || '').slice(0, 80)
-    const lastAsst = [...b].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 50)
-    const conclusion = lastAsst ? String(lastAsst.content).replace(/\n/g, ' ').slice(0, 100) : ''
-    const outputs = [...new Set(
-      b.filter(m => m.role === 'assistant' && m.tool_calls)
-        .flatMap(m => (m.tool_calls || []).map(tc => { try { return (JSON.parse(tc.function.arguments || '{}') as { path?: unknown }).path } catch { return undefined } }))
-        .filter((p): p is string => typeof p === 'string' && p.length > 0)
-    )].slice(0, 5)
-    const toolAgg = new Map<string, number>()
-    for (const m of b) if (m.role === 'assistant' && m.tool_calls) for (const tc of m.tool_calls) {
-      const tname = tc.function?.name || '?'
-      toolAgg.set(tname, (toolAgg.get(tname) || 0) + 1)
-    }
-    const tools = [...toolAgg.entries()].slice(0, 8).map(([n, c]) => `${n}(${c})`).join(' ')
-    archives.push({ goal, conclusion, outputs, tools, ts: Date.now() })
-    blockIdx++
-    keep = blocks[blockIdx] ? msgs.slice(msgs.indexOf(blocks[blockIdx][0])) : msgs.slice(msgs.length)
-  }
-  return { keep, archives }
-}
-
-// ─── 意图路由(渲染层 router.ts 移植) ───
-const CAPABILITY_KEYWORDS: Record<string, string[]> = {
-  code: ['代码', '脚本', '项目', 'bug', '修复', '开发', '编程', '写个', '实现', '重构'],
-  doc: ['文档', '报告', '翻译', '总结', '纪要', '整理', '校对'],
-  security: ['安全', '漏洞', '审查', '风险', '黑客', '攻防'],
-  automation: ['定时', '监控', '自动化', '提醒', '调度', '巡检'],
-  vision: ['图片', '截图', '设计', '配色', '看图', 'ui', '图标', '视觉'],
-  chat: [],
-}
-const CAP_TO_AGENT: Record<string, string> = { code: '螺丝咕姆', doc: '三月七', security: '银狼', automation: '艾丝妲', vision: '黑天鹅', chat: '知更鸟' }
+// 意图路由纯函数已抽至 shared/route（B6-2），此处仅保留类型化包装
 export function routeAgent(userMessage: string, g: EngineSettings): string | null {
-  const t = userMessage.toLowerCase()
-  const disabled = g.disabledAgents || []
-  const collabMode = g.collabMode || '自动'
-  if (collabMode === '关闭' || collabMode === '手动') return null
-  const hitCaps = Object.entries(CAPABILITY_KEYWORDS)
-    .filter(([cap, kws]) => kws.length > 0 && kws.some(k => t.includes(k.toLowerCase())))
-    .map(([cap]) => cap)
-  if (hitCaps.length >= 2 && !disabled.includes('姬子')) return '姬子'
-  if (hitCaps.length === 1) {
-    const capAg = CAP_TO_AGENT[hitCaps[0]]
-    if (capAg && !disabled.includes(capAg)) return capAg
-  }
-  let hitDomains = 0
-  for (const [name, re] of Object.entries(DOMAIN_RE)) {
-    if (re.test(t) && !disabled.includes(name)) hitDomains++
-  }
-  if (hitDomains >= 2 && !disabled.includes('姬子')) return '姬子'
-  for (const [name, re] of Object.entries(DOMAIN_RE)) {
-    if (re.test(t)) return disabled.includes(name) ? null : name
-  }
-  if (t.trim().length < 30) return null
-  return disabled.includes('姬子') ? null : '姬子'
+  return routeAgentCore(userMessage, g.disabledAgents || [], g.collabMode || '自动')
 }
 
 // ─── system prompt 构建(与渲染层 buildPrompt 同构) ───
@@ -288,17 +104,15 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
     if (list[from]?.role === 'tool' && from > 0) from -= 1
     list = list.slice(from)
   }
-  list = opts.g.perf?.roundFold === false ? list : foldToolRounds(list)
   const archiveEnabled = (opts.g.perf?.taskArchive ?? opts.g.taskArchive) !== false
   const archiveRes = archiveEnabled ? buildTaskArchives(list) : { keep: list, archives: [] as TaskArchive[] }
   list = archiveRes.keep
   const archives = archiveRes.archives
-  if (!earlySummary && list.length > MAX_HISTORY_MSGS) {
+  // ??????LLM ???????????/?????????????
+  // ??????????????????????? API ????????????
+  if (list.length > MAX_HISTORY_MSGS * 5) {
     const early = list.slice(0, -MAX_HISTORY_MSGS)
-    const uN = early.filter(m => m.role === 'user').length
-    const tN = early.filter(m => m.role === 'tool').length
-    const uLast = [...early].reverse().find(m => m.role === 'user' && m.content)
-    earlySummary = `\n[前文摘要] 早期 ${early.length} 条消息已归档(约 ${uN} 轮用户交互, ${tN} 次工具调用)${uLast ? ', 最近话题: ' + String(uLast.content).replace(/\s+/g, ' ').slice(0, 60) : ''}。如需早期细节请用 recall_memory 或让用户补充。`
+    earlySummary = '\n[?????] ?? ' + early.length + ' ?????????????????????? recall_memory?'
     list = list.slice(-MAX_HISTORY_MSGS)
   }
   const injectMsgs = list.filter(m => m._inject)
@@ -401,34 +215,10 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
     }
   }
   sp += '\n## 当前时间\n' + new Date().toLocaleString('zh-CN')
-  const compStrategy = opts.g.compactStrategy || 'auto'
-  const msgLimit = opts.g.compactMsgCount || COMPACT_MSG_DEFAULT
-  const tokenLimit = opts.g.compactTokenLimit || COMPACT_TOKEN_DEFAULT
-  if (compStrategy === 'off' && d.length > msgLimit + 20) {
-    return [{ role: 'system', content: sp, timestamp: Date.now(), id: uuidv4() }, ...d.slice(-msgLimit)]
-  }
-  if (compStrategy !== 'manual' && d.length > msgLimit) {
-    const estTokens = d.reduce((s, m) => s + estimateTokens(typeof m.content === 'string' ? m.content : '', opts.model), 0)
-    const threshold = opts.g.compactThreshold ?? COMPACT_RATIO_DEFAULT
-    if (estTokens > (opts.g.compactTokenLimit ? tokenLimit : opts.cl * threshold)) {
-      const keepCount = Math.min(16, Math.floor(d.length * 0.4))
-      const keep = d.slice(-keepCount)
-      const early = d.slice(0, d.length - keepCount)
-      const userMsgs = early.filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content.slice(0, 80) : '')
-      const toolCount = early.filter(m => m.role === 'tool').length
-      const assistantMsgs = early.filter(m => m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 50)
-      const keyOutputs = assistantMsgs.slice(-3).map(m => (m.content as string).replace(/\n/g, ' ').slice(0, 100))
-      const summary = [`[上下文压缩] 早期 ${early.length} 条消息已摘要：`, `${userMsgs.length} 轮用户交互`, toolCount > 0 ? `${toolCount} 次工具调用` : '', keyOutputs.length > 0 ? `最近产出：${keyOutputs.join(' | ')}` : ''].filter(Boolean).join(' · ')
-      return [{ role: 'system', content: sp + '\n\n' + summary, timestamp: Date.now(), id: uuidv4() }, ...keep]
-    }
-  }
   return [{ role: 'system', content: sp, timestamp: Date.now(), id: uuidv4() }, ...d]
 }
 
-// 角色工具白名单过滤(主请求与子任务共用)
+// 角色工具白名单过滤(主请求与子任务共用)（B6-2：纯函数在 shared/tool-filter）
 export function filterToolsByAgent(tools: EngineToolSpec[], agentName: string, agents: Record<string, AgentDef>): EngineToolSpec[] {
-  const ag = agents[agentName]
-  if (!ag || ag.tools.includes('*')) return tools
-  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'session_search'])
-  return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_') || t.function.name.startsWith('mcp__'))
+  return filterToolsCore(tools, agentName, agents, { includeMcp: true })
 }

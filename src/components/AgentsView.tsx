@@ -4,6 +4,8 @@ import { useAgents } from '../store/agents'
 import { TOOLS } from '../store/tools'
 import { useChatStore } from '../store/chat'
 import type { AgentDef } from '../types'
+import { U } from './ui-styles'
+
 
 // v0.3.0 M3: 角色实体化管理页 —— 工具白名单(标签+可编辑勾选)/模型偏好(仅存储)/记忆范围徽标
 // 编辑保存进 settings.agentOverrides, 运行时由 useAgents() 合并生效
@@ -78,7 +80,7 @@ export default function AgentsView() {
           <div key={name} style={{ ...S.card, borderColor: isActive ? 'var(--accent)' : 'var(--border)' }}>
             <div style={S.row}>
               <span style={{ fontSize: 22 }}>{ag.icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={U.flex1min0}>
                 <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 'calc(var(--ui-font-size) + 1px)' }}>
                   {name}
                   {isActive && <span style={{ ...S.badge, background: 'var(--accent)', color: 'var(--on-accent)', marginLeft: 8 }}>工作中</span>}

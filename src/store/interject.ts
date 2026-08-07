@@ -3,7 +3,7 @@
 // 队列带会话归属 —— 多会话并发时插话只被本会话消费, 防串台
 
 // v0.3.1 M1: 插话类型 —— supplement=普通补充(可合并), retarget=改向指令(独立成项, 触发工具链熔断)
-export type InterjectKind = 'supplement' | 'retarget'
+type InterjectKind = 'supplement' | 'retarget'
 // v0.3.1 M1: 每会话队列上限(超限丢弃并统计)
 export const MAX_INTERJECT_PER_SID = 20
 

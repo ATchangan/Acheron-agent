@@ -1,5 +1,7 @@
 ﻿import React, { useState } from 'react'
 import { C, S } from '../settings-ui'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 模型缓存统计 tab(从 SettingsView 拆分, 行为零变化)
 export default function StatsTab() {
@@ -9,7 +11,7 @@ export default function StatsTab() {
     window.huangquan.modelStats.get().then((d) => setModelStats(d?.models || {})).catch(() => setModelStats({}))
   }, [])
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>模型缓存统计</div>
         <div style={S.hint}>查看每个模型在调用中的缓存命中情况。命中率越高越省钱；数据保存在本地，重启不丢失，删除历史会话不影响统计。</div>
@@ -21,15 +23,15 @@ export default function StatsTab() {
               <thead>
                 <tr style={{ color: C.muted, borderBottom: '1px solid ' + C.border, textAlign: 'left' }}>
                   <th style={{ padding: '6px 8px', fontWeight: 600 }}>模型名称</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>总请求</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="命中缓存的请求数">命中请求</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="请求级命中率 = 命中请求 ÷ 总请求">请求命中率</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>缓存读取</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>缓存写入</th>
-      <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="未命中缓存的输入用量（prompt_cache_miss_tokens）">缓存未命中</th>
-      <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="输入总用量（缓存读取 + 未命中）">输入总用量</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }} title="官方口径命中率 = 缓存读取 ÷ (缓存读取 + 缓存未命中)">命中率</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>操作</th>
+                  <th style={U.thCell}>总请求</th>
+                  <th style={U.thCell} title="命中缓存的请求数">命中请求</th>
+                  <th style={U.thCell} title="请求级命中率 = 命中请求 ÷ 总请求">请求命中率</th>
+                  <th style={U.thCell}>缓存读取</th>
+                  <th style={U.thCell}>缓存写入</th>
+      <th style={U.thCell} title="未命中缓存的输入用量（prompt_cache_miss_tokens）">缓存未命中</th>
+      <th style={U.thCell} title="输入总用量（缓存读取 + 未命中）">输入总用量</th>
+                  <th style={U.thCell} title="官方口径命中率 = 缓存读取 ÷ 输入总用量(DeepSeek 官方: prompt_cache_hit_tokens ÷ prompt_tokens)">命中率</th>
+                  <th style={U.thCell}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -41,23 +43,24 @@ export default function StatsTab() {
                   const inputT = c.inputTokens || 0
                   // 双口径显示 —— 请求级(命中请求÷总请求)与 token 级
                   const reqRate = reqs > 0 ? (hitReqs / reqs * 100).toFixed(1) : '—'
-                  // 官方口径(DeepSeek API 文档): 命中率 = prompt_cache_hit_tokens ÷ (hit + miss); 无 miss 数据时回退 hit÷输入总
+                  // 官方口径(DeepSeek API 文档): 命中率 = prompt_cache_hit_tokens ÷ prompt_tokens;
+                  // 输入总用量优先用供应商原始总输入, 缺失时回退 缓存读取 ÷ (读取 + 未命中)
                   const missT2 = c.missTokens || 0
                   const totalC = readT + missT2
-                  const rate = totalC > 0 ? (readT / totalC * 100).toFixed(1) : (inputT > 0 ? (readT / inputT * 100).toFixed(1) : '—')
+                  const rate = inputT > 0 ? (readT / inputT * 100).toFixed(1) : (totalC > 0 ? (readT / totalC * 100).toFixed(1) : '—')
                   const fmtTok = (n: number) => n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n)
                   return (
                     <tr key={m} style={{ borderBottom: '1px solid ' + C.border, color: C.text }}>
                       <td style={{ padding: '6px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m}>{m}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>{reqs}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--success)' }} title="命中缓存的请求数">{hitReqs}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--success)' }} title="请求级命中率(DeepSeek 自动缓存下通常接近 100%)">{reqRate}%</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--success)' }}>{fmtTok(readT)}</td>
+                      <td style={U.thCell2}>{reqs}</td>
+                      <td style={U.thCellOk} title="命中缓存的请求数">{hitReqs}</td>
+                      <td style={U.thCellOk} title="请求级命中率(DeepSeek 自动缓存下通常接近 100%)">{reqRate}%</td>
+                      <td style={U.thCellOk}>{fmtTok(readT)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--accent)' }}>{fmtTok(writeT)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center', color: '#d98a5f' }}>{fmtTok(missT2)}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fmtTok(inputT)}</td>
+                      <td style={U.thCell2}>{fmtTok(inputT)}</td>
       <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }} title="缓存读取用量 ÷ 输入总用量">{rate}{rate !== '—' ? '%' : ''}</td>
-                      <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                      <td style={U.thCell2}>
                         <button style={{ ...S.btn('ghost'), height: 20, fontSize: 'calc(var(--ui-font-size) - 4px)', padding: '0 6px' }} onClick={async () => { await window.huangquan.modelStats.resetOne(m); const s = await window.huangquan.modelStats.get(); setModelStats(s?.models || {}); }}>重置</button>
                       </td>
                     </tr>

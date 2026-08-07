@@ -71,6 +71,8 @@ export async function clientSend(
   const cur = get().sessions.find(x => x.id === sid)
   const taskId = uuidv4()
   try {
+    // 停止后旧任务可能尚未完全退出：开新任务前先确保主进程旧任务已失效，避免被当成插话继续跑
+    await window.huangquan.engine.stop(sid).catch(() => {})
     await window.huangquan.engine.start({
       sid,
       taskId,

@@ -1,6 +1,6 @@
 // src/store/chat-view-utils.ts —— 对话视图纯函数(v0.3.3)
 
-export const NEAR_BOTTOM_PX = 160
+const NEAR_BOTTOM_PX = 160
 
 /** 滚动容器是否已接近底部(回到底部按钮的显示/隐藏判定) */
 export function isNearBottom(

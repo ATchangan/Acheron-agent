@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outputLimit, sessionTokens, foldToolRounds, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
+import { outputLimit, sessionTokens, buildTaskArchives, buildContextualMessages, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
 import { parseDispatchTasks } from './parse-utils'
 import { scanMemoryText, freezeMemory, getFrozenMemory, clearFrozenMemory } from './memory'
 import type { Message } from '../global'
@@ -45,29 +45,6 @@ function tcPair(n: number): Message[] {
   }
   return out
 }
-
-describe('0.3.2 T6 foldToolRounds 历史轮次折叠', () => {
-  it('超过 8 对完整轮次时折叠最旧 4 对', () => {
-    const msgs = tcPair(10)
-    const out = foldToolRounds(msgs)
-    // 10 对 → 折叠 4 对(8 条)为 1 条摘要 → 13 条消息
-    expect(out.length).toBe(13)
-    expect(out[0].role).toBe('user')
-    expect(String(out[0].content)).toContain('[工具调用归档]')
-    expect(String(out[0].content)).toContain('read(4)')
-  })
-  it('≤8 对不触发折叠', () => {
-    const msgs = tcPair(8)
-    expect(foldToolRounds(msgs)).toBe(msgs)
-  })
-  it('配对不完整时跳过折叠(防悬空 tool_call_id)', () => {
-    const msgs = tcPair(9)
-    // 删除最后一对中的 tool 消息 → 有一个悬空 assistant
-    msgs.pop()
-    const out = foldToolRounds(msgs)
-    expect(out).toBe(msgs)
-  })
-})
 
 describe('0.3.3 T3 buildTaskArchives 跨任务归档', () => {
   function taskBlock(prefix: string, rounds: number): Message[] {

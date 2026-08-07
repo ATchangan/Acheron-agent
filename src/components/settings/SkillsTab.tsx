@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { C, S } from '../settings-ui'
+import { U } from '../ui-styles'
+
 
 // v0.3.1 块 H: 技能 tab(从 SettingsView 拆分, 行为零变化)
 export default function SkillsTab() {
@@ -9,7 +11,7 @@ export default function SkillsTab() {
   const [skillName, setSkillName] = useState(''); const [skillContent, setSkillContent] = useState(''); const [skillUrl, setSkillUrl] = useState('')
   useEffect(() => { window.huangquan.skills.list().then((s) => setSkillsList(s || [])).catch(() => setSkillsList([])) }, [])
   return (
-    <div style={{ flex: 1, padding: '20px 24px', overflowY: 'auto' }}>
+    <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>已安装技能</div>
   <div style={S.hint}>技能是按统一规范打包的专项能力，会自动注入到系统提示词</div>
@@ -34,7 +36,7 @@ export default function SkillsTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>从 GitHub 安装</div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={U.gap6}>
   <input style={{ ...S.inp, flex: 1 }} placeholder="仓库地址（例如 https://github.com/user/skill）" value={skillUrl} onChange={e => setSkillUrl(e.target.value)} />
           <button style={S.btn('primary')} onClick={async () => { if (!skillUrl.trim()) { showToast('请输入 Git 地址'); return } const r = await window.huangquan.skills.install(skillUrl.trim()); showToast(r === 'ok' ? '技能安装成功' : String(r)); setSkillUrl(''); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>安装</button>
         </div>

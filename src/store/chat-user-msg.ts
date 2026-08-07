@@ -4,13 +4,13 @@ import type { Message } from '../global'
 import { normalizeImage } from '../utils/image'
 import type { S } from './chat-send'
 
-export interface BuildUserMsgDeps {
+interface BuildUserMsgDeps {
   sid: string
   get: () => S
   set: (partial: S | Partial<S> | ((state: S) => S | Partial<S>), replace?: boolean) => void
 }
 
-export interface UserMsgResult {
+interface UserMsgResult {
   content: string
   images?: string[]
   userMsg: Message
