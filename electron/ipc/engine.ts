@@ -37,6 +37,9 @@ export function registerEngineIpc(deps: {
     } catch { return { providers: [], general: {} } }
   }
 
+  // v0.3.6 P1-6: 事件订阅集合 —— 渲染层注册后只向订阅者广播, 不再遍历所有窗口
+  const eventSubscribers = new Set<Electron.WebContents>()
+
   const engine = new AgentEngine({
     settingsPath,
     userDataPath,
@@ -51,11 +54,28 @@ export function registerEngineIpc(deps: {
       } catch { return '' }
     },
     sendEvent: ev => {
+      if (eventSubscribers.size > 0) {
+        for (const wc of eventSubscribers) {
+          try {
+            if (!wc.isDestroyed()) wc.send('engine:event', ev)
+            else eventSubscribers.delete(wc)
+          } catch { eventSubscribers.delete(wc) }
+        }
+        return
+      }
+      // 无订阅者时回退全窗口广播(兼容早期启动/测试环境)
       for (const w of BrowserWindow.getAllWindows()) {
         try { w.webContents.send('engine:event', ev) } catch { /* 忽略 */ }
       }
     },
     getSender,
+  })
+
+  ipcMain.handle('engine:subscribe', (e) => {
+    const wc = e.sender
+    eventSubscribers.add(wc)
+    wc.once('destroyed', () => { eventSubscribers.delete(wc) })
+    return true
   })
 
   ipcMain.handle('engine:start', (_e, p: unknown) => {

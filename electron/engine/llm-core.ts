@@ -2,6 +2,8 @@
 // 从 ipc/llm.ts 抽出的回调式流式实现: IPC 层和 AgentEngine 共用同一套请求逻辑,
 // 引擎不再经渲染层中转 LLM 流。
 
+import type { EngineUsage } from './types'
+
 export interface LlmMsg {
   role: string
   content?: string | null | Array<{ type?: string; text?: string; image_url?: { url: string } }>
@@ -76,6 +78,97 @@ export function buildReasoningParams(provider: string, baseUrl: string | undefin
     return { reasoning_effort: safe }
   }
   return {}
+}
+
+// 缓存统计统一归一化 —— 各家官方 usage 字段口径:
+//   DeepSeek / SiliconFlow : prompt_cache_hit_tokens / prompt_cache_miss_tokens
+//   OpenAI / 智谱 / 通义 / 火山方舟 / Gemini(OpenAI 兼容): prompt_tokens_details.cached_tokens
+//   OpenRouter              : prompt_tokens_details.cached_tokens / cache_write_tokens
+//   Mistral                 : num_cached_tokens / prompt_tokens_details.cached_tokens / prompt_token_details.cached_tokens(单数拼写)
+//   Kimi / Moonshot        : usage.cached_tokens(顶层)
+//   Anthropic 原生          : cache_read_input_tokens / cache_creation_input_tokens / cache_creation.ephemeral_5m|1h_input_tokens
+//                            (input_tokens 不含缓存读写, 写入单独计; SDK 形态的 cache_control 计费块也识别)
+//   Gemini 原生             : usageMetadata.cachedContentTokenCount / promptTokenCount
+export interface NormalizedUsage {
+  readT: number   // 缓存命中读取
+  missT: number   // 缓存未命中(不含缓存写入; Anthropic 仅 input_tokens 部分)
+  writeT: number  // 缓存写入(Anthropic cache_creation)
+  inputT: number  // 输入总用量(缓存读取 + 未命中), 用于命中率分母
+  rawInputT: number // 供应商原始输入计数(prompt_tokens 等), 用于上下文占用
+  outputT: number
+  sawCache: boolean // 原始 usage 是否携带缓存字段(供应商能力判定用, 含显式 0)
+}
+
+function firstNum(...vals: unknown[]): number {
+  for (const v of vals) {
+    const n = Number(v)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 0
+}
+
+export function normalizeUsage(u: EngineUsage | Record<string, unknown>): NormalizedUsage {
+  const details = (u.prompt_tokens_details || {}) as Record<string, unknown>
+  const mistralDetails = (u.prompt_token_details || {}) as Record<string, unknown>
+  const meta = (u.usageMetadata || {}) as Record<string, unknown>
+  const inputDetails = (u.input_tokens_details || {}) as Record<string, unknown>
+  const creation = (u.cache_creation || {}) as Record<string, unknown>
+  const readT = firstNum(
+    u.prompt_cache_hit_tokens,
+    details.cached_tokens,
+    u.num_cached_tokens,
+    mistralDetails.cached_tokens,
+    u.cached_tokens,
+    u.cache_read_input_tokens,
+    details.cache_read_input_tokens,
+    inputDetails.cached_tokens,
+    meta.cachedContentTokenCount,
+  )
+  let writeT = firstNum(
+    u.cache_creation_input_tokens,
+    details.cache_creation_input_tokens,
+    u.cache_write_tokens,
+    details.cache_write_tokens,
+  )
+  // Anthropic SDK 形态: cache_control 计费块(ephemeral_5m / ephemeral_1h)相加作为缓存写入
+  if (writeT <= 0) {
+    const e5 = Number(creation.ephemeral_5m_input_tokens)
+    const e1 = Number(creation.ephemeral_1h_input_tokens)
+    writeT = (Number.isFinite(e5) && e5 > 0 ? e5 : 0) + (Number.isFinite(e1) && e1 > 0 ? e1 : 0)
+  }
+  const rawInputT = firstNum(u.prompt_tokens, meta.promptTokenCount, u.input_tokens)
+  const sawCache = u.prompt_cache_hit_tokens !== undefined
+    || u.prompt_cache_miss_tokens !== undefined
+    || details.cached_tokens !== undefined
+    || details.cache_read_input_tokens !== undefined
+    || details.cache_creation_input_tokens !== undefined
+    || details.cache_write_tokens !== undefined
+    || u.cached_tokens !== undefined
+    || u.num_cached_tokens !== undefined
+    || mistralDetails.cached_tokens !== undefined
+    || u.cache_read_input_tokens !== undefined
+    || u.cache_creation_input_tokens !== undefined
+    || u.cache_write_tokens !== undefined
+    || (u.cache_creation !== undefined && typeof u.cache_creation === 'object')
+    || inputDetails.cached_tokens !== undefined
+    || meta.cachedContentTokenCount !== undefined
+  let missT = firstNum(u.prompt_cache_miss_tokens)
+  // Anthropic 原生: input_tokens 只含未命中且未写入缓存的部分; cache_creation 是单独写入费用,
+  // 不与未命中合并, 避免界面"未命中"与"写入"两列重复计算
+  const isAnthropicShape = u.input_tokens !== undefined
+    && (u.cache_read_input_tokens !== undefined
+      || u.cache_creation_input_tokens !== undefined
+      || (u.cache_creation !== undefined && typeof u.cache_creation === 'object'))
+  if (isAnthropicShape) {
+    missT = firstNum(u.input_tokens)
+  } else if (missT <= 0 && rawInputT > 0) {
+    missT = Math.max(0, rawInputT - readT)
+  }
+  // 输入总用量(缓存读取 + 未命中 + 写入); Anthropic 需要三段相加, 其余优先用供应商原始总输入
+  let inputT = rawInputT
+  if (isAnthropicShape || rawInputT <= 0) inputT = readT + missT + writeT
+  const outputT = firstNum(u.completion_tokens, meta.candidatesTokenCount, u.output_tokens)
+  return { readT, missT, writeT, inputT, rawInputT, outputT, sawCache }
 }
 
 // v0.3.3: 流式超时 —— 供应商连接挂起不发数据时任务会永远“执行中”
@@ -214,6 +307,13 @@ export async function streamChat(netFetch: typeof fetch, params: LlmChatParams, 
         try {
           const p = JSON.parse(d)
           const choice = p.choices?.[0]
+          // v0.3.5: 兼容供应商把 usage 放在独立 chunk(DeepSeek 官方流式: 结束前发
+          // {"choices":[], "usage":{...}}, 带 finish_reason 的 chunk usage 为 null);
+          // 之前只在 finish_reason 分支读 usage, 独立 usage chunk 会被整块丢弃。
+          // 重复到达由 engine.recordUsage 按 requestId 去重, 这里直接透传。
+          if (p.usage && typeof p.usage === 'object') {
+            handlers.onUsage({ requestId, ...(p.usage as Record<string, unknown>) })
+          }
           // v0.3.3: 兼容最终 chunk 的 message.tool_calls / message.content ——
           // 部分 OpenAI 兼容网关不把工具调用放在 delta, 而是放在 message 字段整体下发,
           // 只认 delta 会整体丢失工具调用(前面文字被误当最终回复提交)
@@ -245,7 +345,6 @@ export async function streamChat(netFetch: typeof fetch, params: LlmChatParams, 
           if (choice?.finish_reason) {
             finishReason = choice.finish_reason
             flushToolCalls()
-            if (p.usage) handlers.onUsage({ requestId, ...p.usage })
             continue
           }
           const c = choice?.delta?.content || (typeof choice?.message?.content === 'string' ? choice.message.content : '') || ''

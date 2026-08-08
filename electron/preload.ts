@@ -121,6 +121,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     approve: (sid: string) => ipcRenderer.invoke('engine:approve', sid),
     reject: (sid: string) => ipcRenderer.invoke('engine:reject', sid),
     resume: (taskId: string) => ipcRenderer.invoke('engine:resume', taskId),
+    subscribe: () => ipcRenderer.invoke('engine:subscribe'),
     onEvent: (cb: (ev: unknown) => void) => {
       const h = (_: unknown, ev: unknown) => cb(ev)
       ipcRenderer.on('engine:event', h)
@@ -219,8 +220,8 @@ contextBridge.exposeInMainWorld('huangquan', {
   },
   cacheStats: () => ipcRenderer.invoke('cache:stats'),
   modelStats: {
-    recordRequest: (sid: string, model: string, hit: boolean) => ipcRenderer.invoke('modelStats:recordRequest', sid, model, hit),
-    recordTokens: (sid: string, model: string, hitT: number, missT: number, writeT: number, missTok?: number) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, hitT, missT, writeT, missTok),
+    recordRequest: (sid: string, model: string, hit: boolean, supported?: boolean) => ipcRenderer.invoke('modelStats:recordRequest', sid, model, hit, supported),
+    recordTokens: (sid: string, model: string, readT: number, inputT: number, writeT: number, missT?: number, opts?: { supported?: boolean | null; provider?: string }) => ipcRenderer.invoke('modelStats:recordTokens', sid, model, readT, inputT, writeT, missT, opts),
     deleteSession: (sid: string) => ipcRenderer.invoke('modelStats:deleteSession', sid),
     get: () => ipcRenderer.invoke('modelStats:get'),
     getSession: (sid: string) => ipcRenderer.invoke('modelStats:getSession', sid),

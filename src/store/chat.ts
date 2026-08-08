@@ -71,7 +71,7 @@ if (typeof window !== 'undefined') refreshMcpTools().catch(() => {})
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], planPending: {}, streamText: '',
+  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], planPending: {}, streamText: '', streamId: '',
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
 
@@ -150,9 +150,9 @@ export const useChatStore = create<S>((set, get) => ({
       const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
       sessions.unshift(ns)
       window.huangquan.sessions.save(safeIPC(ns))
-      set({ sessions, cid: ns.id, sp, streamText: '' })
+      set({ sessions, cid: ns.id, sp, streamText: '', streamId: '' })
     } else {
-      set({ sessions, cid: ms[0].id, sp, streamText: '' })
+      set({ sessions, cid: ms[0].id, sp, streamText: '', streamId: '' })
     }
   },
 
@@ -162,7 +162,7 @@ export const useChatStore = create<S>((set, get) => ({
     loadedSessionIds.add(ns.id)
     touchLoaded(ns.id)
     // 新会话独立,不继承其他会话的流式/执行状态
-    set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [], streamText: '' }))
+    set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [], streamText: '', streamId: '' }))
     window.huangquan.sessions.save(safeIPC(ns))
   },
   switchS: async (id) => {
@@ -187,7 +187,7 @@ export const useChatStore = create<S>((set, get) => ({
       const target = s.sessions.find(x => x.id === id)
       const busy = !!target?.busy
       // streamText 是"上一条流式"的临时通道, 切换会话必须清空, 防止串台
-      return { cid: id, error: null, streamText: '', streaming: busy, executing: busy }
+      return { cid: id, error: null, streamText: '', streamId: '', streaming: busy, executing: busy }
     })
     touchLoaded(id)
     releaseRemoteSessions(id)

@@ -9,8 +9,9 @@ import { getAgents, type AgentDef } from './agents'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, type EngineMemory } from './memory'
-import { streamChat, chatOnce, abortLLM, visionOnce } from './llm-core'
+import { streamChat, chatOnce, abortLLM, visionOnce, normalizeUsage } from './llm-core'
 import type { LlmMsg } from './llm-core'
+import { classifyCacheSupport, cacheCapToSupported } from './cache-caps'
 import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
@@ -116,9 +117,16 @@ export class AgentEngine {
 
   start(params: EngineStartParams): void {
     const existing = this.tasks.get(params.sid)
-    if (existing?.running) {
+    // 仅当旧任务仍在正常运行（未被停止/失效）时，新消息才作为插话合并
+    if (existing?.running && !existing.stopped && this.curGen(params.sid) === existing.myGen) {
       this.interject(params.sid, params.content, params.images, params.attachments, 'supplement')
       return
+    }
+    // 旧任务已被停止/失效：先彻底打断再开新任务，防止旧循环继续跑
+    if (existing?.running) {
+      existing.stopped = true
+      abortLLM(params.sid)
+      void invokeHandler('computer:abort', [params.sid], null)
     }
     const myGen = this.nextGen(params.sid)
     const { providers, general: rawGeneral } = this.deps.loadSettings()
@@ -546,9 +554,12 @@ export class AgentEngine {
       this.finishTask(task, 'failed', errText)
     } finally {
       task.running = false
-      this.emit({ type: 'stage-clear', sid })
-      this.emit({ type: 'stream', sid, streaming: false, executing: false })
-      this.emit({ type: 'busy', sid, busy: false })
+      // 只有当前任务才能清状态；被新任务替换的旧任务不能覆盖新任务忙碌态
+      if (this.tasks.get(sid) === task) {
+        this.emit({ type: 'stage-clear', sid })
+        this.emit({ type: 'stream', sid, streaming: false, executing: false })
+        this.emit({ type: 'busy', sid, busy: false })
+      }
       if (task.switchedVision && task.origModel) {
         task.curP = task.p
         task.model = task.origModel
@@ -683,15 +694,30 @@ export class AgentEngine {
       let finishReason: string | undefined
       let argsBroken = false
       let flushTimer: NodeJS.Timeout | null = null
+      // v0.3.6 P1-5: 流式增量 —— 只发上次到现在的 delta, 避免长回复 O(n²) IPC 传输
+      let lastSent = 0
+      // reasoning 默认折叠展示, 与正文不同频: 每 +300 字符或 300ms 才发一次全量
+      let lastReasonLen = 0
+      let lastReasonAt = 0
       const flush = () => {
         flushTimer = null
-        this.emit({ type: 'assistant-chunk', sid, id: rid, content: text, reasoning: reasoning || undefined, streaming: true })
+        const delta = text.slice(lastSent)
+        lastSent = text.length
+        const now = Date.now()
+        const sendReason = reasoning.length > 0 && (reasoning.length > lastReasonLen + 300 || now - lastReasonAt >= 300)
+          ? reasoning
+          : undefined
+        if (sendReason !== undefined) {
+          lastReasonLen = reasoning.length
+          lastReasonAt = now
+        }
+        this.emit({ type: 'assistant-chunk', sid, id: rid, delta, reasoning: sendReason, streaming: true })
       }
       const settle = () => {
         if (settled) return
         settled = true
         if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
-        this.emit({ type: 'assistant-chunk', sid, id: rid, content: text, reasoning: reasoning || undefined, streaming: false })
+        this.emit({ type: 'assistant-chunk', sid, id: rid, delta: text.slice(lastSent), reasoning: reasoning || undefined, streaming: false })
         const ttft = firstChunkAt ? firstChunkAt - t0 : Date.now() - t0
         const duration = Date.now() - t0
         this.trace('info', 'llm.round', 'text=' + text.length + ' tools=' + tcs.length, sid, rid)
@@ -739,7 +765,7 @@ export class AgentEngine {
           if (d.content) {
             if (!firstChunkAt) firstChunkAt = Date.now()
             text += d.content
-            if (!flushTimer) flushTimer = setTimeout(flush, 40)
+            if (!flushTimer) flushTimer = setTimeout(flush, text.length > 4096 ? 90 : 40)
           }
           if (d.reasoning) {
             // 兼容累积型/增量型网关: 整段覆盖优先, 否则只追加新片段, 避免重复
@@ -747,7 +773,7 @@ export class AgentEngine {
             else if (d.reasoning.startsWith(reasoning)) reasoning = d.reasoning
             else if (!reasoning.endsWith(d.reasoning)) reasoning += d.reasoning
             if (!firstChunkAt) firstChunkAt = Date.now()
-            if (!flushTimer) flushTimer = setTimeout(flush, 40)
+            if (!flushTimer) flushTimer = setTimeout(flush, text.length > 4096 ? 90 : 40)
           }
         },
         onToolCall: tc => {
@@ -883,10 +909,15 @@ export class AgentEngine {
       for (const x of arr.slice(-250)) this.costedReqs.add(x)
     }
     this.costedReqs.add(rid)
-    const readT = u.prompt_cache_hit_tokens || u.prompt_tokens_details?.cached_tokens || u.cache_read_input_tokens || 0
-    const inputT = u.prompt_tokens || u.input_tokens || 0
-    const writeT = u.cache_creation_input_tokens || 0
-    const outT = u.completion_tokens || u.output_tokens || 0
+    // v0.3.5: 多供应商缓存字段统一归一化(DeepSeek/SiliconFlow/Kimi/OpenAI/智谱/通义/Anthropic/Gemini)
+    const n = normalizeUsage(u)
+    const readT = n.readT
+    const missT = n.missT
+    const writeT = n.writeT
+    const inputT = n.inputT
+    const outT = n.outputT
+    // v0.3.6: 供应商缓存能力判定 —— 不支持的供应商界面直接标注"不支持", 不再显示虚假的 0% 命中率
+    const cap = classifyCacheSupport(task.curP, n.sawCache)
     const mk = modelOverride || task.model
     const cur = this.sessTokBySid.get(task.sid) || {}
     const c = cur[mk] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, outputTokens: 0, hitReqs: 0 }
@@ -898,15 +929,34 @@ export class AgentEngine {
     c.hitReqs += readT > 0 ? 1 : 0
     cur[mk] = c
     this.sessTokBySid.set(task.sid, cur)
-    this.emit({ type: 'usage', sid: task.sid, model: mk, usage: { ...u, _readTokens: readT, _inputTokens: inputT, _writeTokens: writeT } })
+    this.emit({ type: 'usage', sid: task.sid, model: mk, usage: { ...u, _readTokens: readT, _missTokens: missT, _inputTokens: inputT, _writeTokens: writeT } })
     // v0.3.3: 上下文环数据源 —— 每次请求的真实 prompt 输入 + 模型上下文上限
-    const used = Number(u.prompt_tokens || u.input_tokens || 0)
+    const used = n.rawInputT
     const limit = getModelContextLimit(mk)
     if (used > 0) task.lastPromptTokens = used
     if (used > 0) this.emit({ type: 'context', sid: task.sid, used, limit })
     try {
-      void invokeHandler('modelStats:recordRequest', [task.sid, mk, readT > 0], null)
-      if (readT > 0 || inputT > 0 || writeT > 0) void invokeHandler('modelStats:recordTokens', [task.sid, mk, readT, inputT, writeT], null)
+      // v0.3.6: 只有确认支持缓存统计的请求计入观测分母(HanaAgent 同口径: 命中率 = 命中请求 ÷ 有观测请求)
+      void invokeHandler('modelStats:recordRequest', [task.sid, mk, readT > 0, cacheCapToSupported(cap)], null)
+      if (readT > 0 || inputT > 0 || writeT > 0 || missT > 0) {
+        void invokeHandler('modelStats:recordTokens', [task.sid, mk, readT, inputT, writeT, missT, {
+          supported: cacheCapToSupported(cap),
+          provider: task.curP?.name,
+        }], null)
+        // v0.3.6: 逐请求明细(HanaAgent 请求明细/按日期/按类别视图的数据源)
+        void invokeHandler('modelStats:recordEntry', [{
+          sid: task.sid,
+          model: mk,
+          provider: task.curP?.name,
+          readTokens: readT,
+          missTokens: missT,
+          writeTokens: writeT,
+          inputTokens: inputT,
+          outputTokens: outT,
+          hit: readT > 0,
+          supported: cacheCapToSupported(cap),
+        }], null)
+      }
     } catch { /* 忽略 */ }
   }
 

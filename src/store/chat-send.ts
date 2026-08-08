@@ -20,6 +20,7 @@ export interface S {
   modelCache: Record<string, { hits: number; misses: number }>
   sessTok: Record<string, Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }>>
   streamText: string // 引擎流式临时文字(不落消息, 由 step/final 事件承载最终内容)
+  streamId: string // 当前流式通道归属的消息 id —— delta 按 id 隔离, 防止并行任务/插话串文
   activeAgents: string[]
   orphanTasks: { id: string; sid: string; content: string; images?: string[]; attachments?: Message['attachments']; at: number }[]
   planPending: Record<string, { summary: string; steps: { tool: string; args: Record<string, unknown> }[] }>
@@ -71,6 +72,8 @@ export async function clientSend(
   const cur = get().sessions.find(x => x.id === sid)
   const taskId = uuidv4()
   try {
+    // 停止后旧任务可能尚未完全退出：开新任务前先确保主进程旧任务已失效，避免被当成插话继续跑
+    await window.huangquan.engine.stop(sid).catch(() => {})
     await window.huangquan.engine.start({
       sid,
       taskId,
