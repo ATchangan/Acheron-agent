@@ -268,7 +268,7 @@ function createTray() {
 }
 // ─── 设置/会话 ─────────────────────────────────────
 const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean }>()
-registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone })
+registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta })
 function buildSessionMeta() {
   sessionMeta.clear()
   if (!fs.existsSync(sessionsDir)) return

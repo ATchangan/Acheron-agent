@@ -3,7 +3,6 @@
 import type { Message, SessionData, UsageData } from '../global'
 import { useChatStore } from './chat'
 import { useSettingsStore } from './settings'
-import { safeIPC } from '../utils/safe'
 import { autoExtractMemory } from './memory'
 
 interface EngineEventMsg {
@@ -63,7 +62,7 @@ function throttledSessionSave(sid: string, delay = 1200): void {
   saveTimers.set(sid, setTimeout(() => {
     saveTimers.delete(sid)
     const s = useChatStore.getState().sessions.find(x => x.id === sid)
-    if (s) window.huangquan.sessions.save(safeIPC(s)).catch(() => {})
+    if (s) window.huangquan.sessions.save(s).catch(() => {})
   }, delay))
 }
 

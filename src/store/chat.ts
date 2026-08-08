@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from 'uuid'
 import type { SessionData, SettingsData, ProviderConfig, SkillMeta, SessionMeta } from '../global'
 import type { GeneralSettings } from '../types'
 import { useSettingsStore } from './settings'
-import { safeIPC } from '../utils/safe'
 import { getModelContextLimit, updateContextLimit, buildPrompt } from './context'
 import { refreshMemoryCache } from './memory'
 import { invalidateSid } from './session-state'
@@ -149,7 +148,7 @@ export const useChatStore = create<S>((set, get) => ({
     if (ms.length === 0) {
       const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
       sessions.unshift(ns)
-      window.huangquan.sessions.save(safeIPC(ns))
+      window.huangquan.sessions.save(ns)
       set({ sessions, cid: ns.id, sp, streamText: '', streamId: '' })
     } else {
       set({ sessions, cid: ms[0].id, sp, streamText: '', streamId: '' })
@@ -163,7 +162,7 @@ export const useChatStore = create<S>((set, get) => ({
     touchLoaded(ns.id)
     // 新会话独立,不继承其他会话的流式/执行状态
     set(s => ({ sessions: [ns, ...s.sessions], cid: ns.id, streaming: false, executing: false, error: null, activeAgents: [], streamText: '', streamId: '' }))
-    window.huangquan.sessions.save(safeIPC(ns))
+    window.huangquan.sessions.save(ns)
   },
   switchS: async (id) => {
     // autoSave 设置接入 —— 切换会话前自动保存当前会话(autoSave !== false 时)
@@ -211,7 +210,7 @@ export const useChatStore = create<S>((set, get) => ({
   togglePin: (id: string) => {
     set(s => ({ sessions: s.sessions.map(x => x.id === id ? { ...x, pinned: !x.pinned } : x) }))
     const cur = get().sessions.find(x => x.id === id)
-    if (cur) window.huangquan.sessions.save(safeIPC(cur)).catch(() => {})
+    if (cur) window.huangquan.sessions.save(cur).catch(() => {})
   },
 
   send: async (content, images, attachments?) => {

@@ -12,9 +12,8 @@ export function registerSessionIpc(deps: {
   userDataPath: string
   sessionMeta: Map<string, { title?: string; messageCount?: number; updatedAt?: string; mode?: string; pinned?: boolean }>
   buildSessionMeta: () => void
-  safeClone: (obj: unknown, seen?: WeakSet<object>) => unknown
 }): void {
-  const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone } = deps
+  const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta } = deps
   const searchIndexPath = join(userDataPath, 'search-index.json')
 
   // ─── 会话全文关键词搜索(v0.3.3: FTS5-lite 倒排索引, 替代全量扫描) ───
@@ -25,21 +24,20 @@ export function registerSessionIpc(deps: {
   })
 
   // v0.3.1 E: 每会话串行保存队列 + meta 与写盘绑定(FIX-4/5/7)
+  // v0.3.6 P2-7: pendingSaves 存对象引用, 写盘时一次 stringify; 索引直接用对象(省一次全量 parse)
   const saveQueues = new Map<string, Promise<void>>()
-  const pendingSaves = new Map<string, string>()   // id → 最新 content(防堆积合并)
-  const enqueueSave = (id: string, content: string): void => {
-    pendingSaves.set(id, content)
+  const pendingSaves = new Map<string, Record<string, unknown>>()   // id → 最新对象(防堆积合并)
+  const enqueueSave = (id: string, obj: Record<string, unknown>): void => {
+    pendingSaves.set(id, obj)
     if (saveQueues.has(id)) return               // 已有队列在跑, 合并等待
     const run = async () => {
       while (pendingSaves.has(id)) {
         const latest = pendingSaves.get(id)!; pendingSaves.delete(id)
         try {
-          await writeFileAtomicAsync(join(sessionsDir, id + '.json'), latest)
-          let mt: { title?: string; messageCount?: number; mode?: string; pinned?: boolean } = {}
-          try { mt = JSON.parse(latest) } catch { /* 忽略 */ }
+          await writeFileAtomicAsync(join(sessionsDir, id + '.json'), JSON.stringify(latest))
+          const mt = latest as { title?: string; messageCount?: number; mode?: string; pinned?: boolean }
           try {
-            const full = JSON.parse(latest)
-            if (full && full.id === id) updateIndexForSession(full, searchIndexPath)
+            if (latest && latest.id === id) updateIndexForSession(latest as { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, searchIndexPath)
           } catch { /* 忽略 */ }
           sessionMeta.set(id, {
             title: String(mt.title || '新对话').slice(0, 60), messageCount: (mt.messageCount || 0) as number,
@@ -84,12 +82,11 @@ export function registerSessionIpc(deps: {
     }
   })
   ipcMain.handle('sessions:save', (_e, s) => {
-    // 安全序列化防止循环引用导致 IPC 克隆报错
+    // v0.3.6 P2-7: IPC 结构化克隆已保证无循环引用, 去掉 safeClone 二次深拷贝; 直接传对象给保存队列
     const id = String(s?.id || '')
     if (!SAFE_ID.test(id)) return false
-    const safe = safeClone(s) as { id?: string; title?: string; messages?: { length?: number } }
-    const content = JSON.stringify({ ...safe, updatedAt: new Date().toISOString() })
-    enqueueSave(id, content)
+    const obj = { ...(s as Record<string, unknown>), updatedAt: new Date().toISOString() }
+    enqueueSave(id, obj)
     return true
   })
   ipcMain.handle('sessions:delete', (_e, id: string) => {
@@ -236,8 +233,25 @@ function rebuildIndexFromDir(sessionsDir: string): void {
 function updateIndexForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, indexPath: string): void {
   idxPath = indexPath
   if (!indexCache) loadIndex(indexPath)
+  const oldDocs = (indexCache || []).filter(d => d.sid === s.id)
+  const oldByKey = new Map(oldDocs.map(d => [d.key, d]))
   const rest = (indexCache || []).filter(d => d.sid !== s.id)
-  indexCache = [...rest, ...docsForSession(s)]
+  // v0.3.6 P2-7: 索引增量 —— 已索引且内容未变的消息复用旧文档(key 命中), 只对新增/变更消息重新分词
+  const fresh: IndexDoc[] = []
+  const msgs = s.messages || []
+  for (let i = 0; i < msgs.length && fresh.length < 300; i++) {
+    const m = msgs[i]
+    if (m.role !== 'user' && m.role !== 'assistant') continue
+    if (typeof m.content !== 'string' || m.content.trim().length < 2) continue
+    const text = m.content.trim().slice(0, 300)
+    const key = String(s.id) + ':' + (m.timestamp || i) + ':' + i
+    const old = oldByKey.get(key)
+    if (old && old.text === text) { fresh.push(old); continue }  // 未变: 复用, 不重新分词
+    const terms = indexTerms(text)
+    if (!terms.length) continue
+    fresh.push({ key, sid: String(s.id), title: String(s.title || '对话'), role: m.role, text, ts: Number(m.timestamp) || 0, terms })
+  }
+  indexCache = [...rest, ...fresh]
   scheduleIndexSave()
 }
 
