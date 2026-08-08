@@ -60,6 +60,8 @@ export function registerComputerIpc(deps: {
     if (level === 'L2' && !isMutating(detail)) return 'allow'
     try {
       const s = JSON.parse(fs.readFileSync(join(userDataPath, 'settings.json'), 'utf-8'))
+      // v0.3.6: 「永久放行全部风险操作」开关 —— 开启后 L2/L3 全部直接放行
+      if (s?.general?.riskAutoApprove === true) return 'allow'
       if (s?.general?.riskConfirm === false) return 'allow'
       // v0.3.4: 「以后都批准」—— 该操作类型已持久化放行, 直接跳过确认
       if (Array.isArray(s?.general?.riskAlwaysAllow) && s.general.riskAlwaysAllow.includes(kind)) return 'allow'

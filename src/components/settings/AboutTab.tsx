@@ -30,6 +30,19 @@ export default function AboutTab() {
         </div>
       </div>
       <div style={S.card}>
+        <div style={S.section}>开发者</div>
+        <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>
+          由 <b style={{ color: C.accent }}>ATchangan</b> 独立开发并持续维护
+        </div>
+        <a
+          href="#"
+          onClick={e => { e.preventDefault(); void window.huangquan.web.openExternal('https://github.com/ATchangan/Acheron-agent') }}
+          style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', fontSize: 'calc(var(--ui-font-size) - 1px)', marginTop: 6, display: 'inline-block' }}
+        >
+          https://github.com/ATchangan/Acheron-agent
+        </a>
+      </div>
+      <div style={S.card}>
         <div style={S.section}>软件更新</div>
                 <div style={S.hint}>从 GitHub 发布页检查最新版本并下载安装包</div>
         <div style={U.wrap8mt8}>

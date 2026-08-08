@@ -329,7 +329,7 @@
    回合制平铺 + 用户玻璃气泡 + 工具脚手架行 + 悬停操作栏
    ============================================================ */
 .hq-thread-viewport{padding:0;display:block;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scroll-behavior:auto}
-.hq-thread-content{max-width:min(var(--hq-composer-width, 48.75rem), 100%);margin:0 auto;padding:1rem 1.5rem 2.5rem;display:flex;flex-direction:column;gap:var(--hq-turn-gap, 0.375rem);min-width:0}
+.hq-thread-content{position:relative;max-width:min(var(--hq-composer-width, 48.75rem), 100%);margin:0 auto;padding:1rem 1.5rem 2.5rem;display:flex;flex-direction:column;gap:var(--hq-turn-gap, 0.375rem);min-width:0}
 .hq-turn{display:flex;flex-direction:column;gap:var(--hq-turn-gap, 0.375rem);min-width:0}
 
 /* --- 用户玻璃气泡 (sticky 跟随回合) --- */
@@ -418,3 +418,7 @@
 .risk-confirm-approve{display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-secondary);user-select:none}
 .risk-confirm-approve input{accent-color:var(--accent);cursor:pointer}
 .risk-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+
+/* ============================================================
+   v0.3.6 UI 开发需求 —— Gutter 差异标记 / 右上角面板切换 / 侧边聊天抽屉
+   ============================================================ */

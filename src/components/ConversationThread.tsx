@@ -14,6 +14,7 @@ import { TOOL_LABELS, fmtDur } from './work-steps'
 // - 助手回复: 无卡片/无气泡, 平铺 markdown, 悬停浮现操作栏
 // - 工具调用: 扁平脚手架行(状态/名称/参数/耗时, 点击展开结果)
 // - 思考中: 脉冲 + 标签 + 计时行
+// v0.3.6 P0-2: 全部子组件 memo 化, 流式 chunk 只重渲染当前块
 // ============================================================
 
 const fmtAgo = (ts: number) => {
@@ -49,6 +50,17 @@ const StreamingText: React.FC = React.memo(() => {
     </>
   )
 })
+
+// v0.3.6 P0-3: Markdown 解析缓存 —— 历史消息内容不变时跳过 react-markdown 全量解析
+const MemoizedMarkdownInner: React.FC<{ content: string }> = ({ content }) => {
+  const el = useMemo(() => (
+    <div className="markdown-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  ), [content])
+  return el
+}
+const MemoizedMarkdown = React.memo(MemoizedMarkdownInner, (p, n) => p.content === n.content)
 
 // ------------------------------------------------------------
 // 用户气泡 (玻璃圆角卡, sticky 跟随滚动, 长文自动收成两行)
@@ -160,6 +172,9 @@ const UserBubble: React.FC<{
   )
 }
 
+// v0.3.6 P0-2: 用户气泡 memo —— message 引用不变即跳过重渲染
+const UserBubbleMemo = React.memo(UserBubble)
+
 // ------------------------------------------------------------
 // 工具脚手架行 (扁平一行, 点击展开参数/结果)
 // ------------------------------------------------------------
@@ -202,6 +217,9 @@ const ToolRow: React.FC<{
     </div>
   )
 }
+
+// v0.3.6 P0-2: 工具行 memo —— 历史回合重渲染时跳过
+const ToolRowMemo = React.memo(ToolRow)
 
 // ------------------------------------------------------------
 // 助手内容块 (无卡片平铺, 悬停浮现操作栏)
@@ -280,16 +298,14 @@ const AssistantBlock: React.FC<{
           {isStreaming ? (
             <StreamingText />
           ) : content ? (
-            <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            </div>
+            <MemoizedMarkdown content={content} />
           ) : null}
         </div>
       )}
       {tools.length > 0 && (
         <div className="hq-tool-list">
           {tools.map((tc, i) => (
-            <ToolRow
+            <ToolRowMemo
               key={tc.id || `${message.id}-${i}`}
               tc={tc}
               result={toolResults?.get(tc.id || '')}
@@ -313,6 +329,9 @@ const AssistantBlock: React.FC<{
     </div>
   )
 }
+
+// v0.3.6 P0-2: 助手块 memo —— message 引用不变即跳过
+const AssistantBlockMemo = React.memo(AssistantBlock)
 
 // ------------------------------------------------------------
 // 思考状态行 (脉冲 + 标签 + 计时)
@@ -339,7 +358,7 @@ export const ThinkingRow: React.FC<{
 // ------------------------------------------------------------
 // 回合 (用户气泡 + 其后的助手块)
 // ------------------------------------------------------------
-export const ConversationTurn: React.FC<{
+const ConversationTurnBase: React.FC<{
   user?: Message
   blocks: Message[]
   toolResults?: Map<string, { content: string; timestamp: number }>
@@ -347,9 +366,9 @@ export const ConversationTurn: React.FC<{
 }> = ({ user, blocks, toolResults, executing }) => {
   return (
     <div className="hq-turn">
-      {user && <UserBubble message={user} />}
+      {user && <UserBubbleMemo message={user} />}
       {blocks.map(m => (
-        <AssistantBlock
+        <AssistantBlockMemo
           key={m.id}
           message={m}
           toolResults={toolResults}
@@ -359,3 +378,15 @@ export const ConversationTurn: React.FC<{
     </div>
   )
 }
+
+// v0.3.6 P0-2: 回合 memo —— turns 数组每次流式更新都会重建, 但历史回合的消息对象引用不变,
+// 因此按消息对象引用比较, 跳过历史回合的整树重渲染 (toolResults 变化必伴随消息变化, 可忽略)。
+const blocksSame = (a: Message[], b: Message[]): boolean => {
+  if (a === b) return true
+  if (!a || !b || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+export const ConversationTurn = React.memo(ConversationTurnBase, (p, n) =>
+  p.user === n.user && p.executing === n.executing && blocksSame(p.blocks, n.blocks),
+)

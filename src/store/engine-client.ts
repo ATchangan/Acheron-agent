@@ -3,7 +3,6 @@
 import type { Message, SessionData, UsageData } from '../global'
 import { useChatStore } from './chat'
 import { useSettingsStore } from './settings'
-import { safeIPC } from '../utils/safe'
 import { autoExtractMemory } from './memory'
 
 interface EngineEventMsg {
@@ -26,6 +25,7 @@ interface EngineEvent {
   sid: string
   id?: string
   taskId?: string
+  delta?: string
   msg?: EngineEventMsg
   content?: string | null
   reasoning?: string
@@ -62,7 +62,7 @@ function throttledSessionSave(sid: string, delay = 1200): void {
   saveTimers.set(sid, setTimeout(() => {
     saveTimers.delete(sid)
     const s = useChatStore.getState().sessions.find(x => x.id === sid)
-    if (s) window.huangquan.sessions.save(safeIPC(s)).catch(() => {})
+    if (s) window.huangquan.sessions.save(s).catch(() => {})
   }, delay))
 }
 
@@ -109,7 +109,12 @@ function applyEngineEventInner(raw: unknown): void {
     case 'assistant-chunk': {
       if (!ev.id) return
       // 临时流式通道(stream- 前缀): 只更新 streamText, 不落消息; 最终内容由 step/final 事件承载
-      useChatStore.setState({ streamText: ev.content ?? '' })
+      // v0.3.6 P1-5: delta 增量 append; 旧格式 content 全量覆盖兜底
+      useChatStore.setState(s => ({
+        // 按消息 id 隔离: 同一路增量追加; 新的一路(并行/插话)自动重置, 防止串文
+        streamId: ev.id,
+        streamText: ev.delta !== undefined ? (ev.id === s.streamId ? s.streamText + ev.delta : ev.delta) : (ev.content ?? ''),
+      }))
       if (!String(ev.id).startsWith('stream-')) {
         patchSession(ev.sid, s => ensureStreamingMessage(s, ev))
       }
@@ -126,7 +131,7 @@ function applyEngineEventInner(raw: unknown): void {
     }
     case 'step': {
       if (!ev.id) return
-      useChatStore.setState({ streamText: '' })
+      useChatStore.setState({ streamText: '', streamId: '' })
       const toolCalls = (ev.toolCalls || []).map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args) } }))
       patchSession(ev.sid, s => {
         const list = s.messages || []
@@ -166,7 +171,7 @@ function applyEngineEventInner(raw: unknown): void {
     }
     case 'final': {
       if (!ev.id) break
-      useChatStore.setState({ streamText: '' })
+      useChatStore.setState({ streamText: '', streamId: '' })
       const finalMeta = { taskTokens: ev.taskTokens, taskMs: ev.taskMs }
       patchSession(ev.sid, s => {
         const list = s.messages || []
@@ -180,7 +185,7 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'stream': {
-      if (!ev.streaming) useChatStore.setState({ streamText: '' })
+      if (!ev.streaming) useChatStore.setState({ streamText: '', streamId: '' })
       patchSession(ev.sid, s => ({ ...s, streaming: !!ev.streaming, busy: !!ev.executing }))
       setGlobal(ev)
       break
@@ -286,7 +291,7 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'task-done': {
-      useChatStore.setState({ streamText: '' })
+      useChatStore.setState({ streamText: '', streamId: '' })
       patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false, messages: stripStreaming(s.messages || []) }))
       useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[ev.sid]; return { planPending: pp } })
       if (st.cid === ev.sid) useChatStore.setState({ streaming: false, executing: false, stage: null, error: ev.status === 'failed' ? (ev.error || '任务失败') : null })
@@ -297,7 +302,7 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'error': {
-      useChatStore.setState({ streamText: '' })
+      useChatStore.setState({ streamText: '', streamId: '' })
       patchSession(ev.sid, s => ({ ...s, messages: stripStreaming(s.messages || []) }))
       if (st.cid === ev.sid) useChatStore.setState({ error: ev.message || '任务执行出错' })
       break
@@ -307,5 +312,7 @@ function applyEngineEventInner(raw: unknown): void {
 }
 
 export function bindEngineEvents(): () => void {
+  // v0.3.6 P1-6: 向主进程注册事件订阅, 引擎只向本窗口广播
+  try { window.huangquan.engine.subscribe().catch(() => {}) } catch { /* 忽略 */ }
   return window.huangquan.engine.onEvent(applyEngineEvent)
 }

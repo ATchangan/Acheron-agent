@@ -1,5 +1,7 @@
 // electron/shared/memory-utils.ts —— renderer/main 共享记忆纯函数（scoreOverlap dedup）
 // 约束：禁止 import electron API / zustand / fs
+// 注: tokens 与 search-utils.ts 的 tokenizeSearch 语义分叉(有意): 本处保留单字符英文词与下划线拆分
+//     用于记忆相关度宽松匹配; tokenizeSearch 过滤单字符并保下划线整体, 用于搜索索引精确匹配
 
 export function scoreOverlap(content: string, userMsg: string): number {
   const tokens = (s: string): string[] => {

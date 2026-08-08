@@ -3,6 +3,7 @@ import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { writeFileAtomic, writeFileAtomicAsync } from '../fs-atomic'
+import { tokenizeSearch, docsForSession, mergeIndexIncremental } from '../shared/search-utils'
 
 // 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
 const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
@@ -12,9 +13,8 @@ export function registerSessionIpc(deps: {
   userDataPath: string
   sessionMeta: Map<string, { title?: string; messageCount?: number; updatedAt?: string; mode?: string; pinned?: boolean }>
   buildSessionMeta: () => void
-  safeClone: (obj: unknown, seen?: WeakSet<object>) => unknown
 }): void {
-  const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone } = deps
+  const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta } = deps
   const searchIndexPath = join(userDataPath, 'search-index.json')
 
   // ─── 会话全文关键词搜索(v0.3.3: FTS5-lite 倒排索引, 替代全量扫描) ───
@@ -25,21 +25,20 @@ export function registerSessionIpc(deps: {
   })
 
   // v0.3.1 E: 每会话串行保存队列 + meta 与写盘绑定(FIX-4/5/7)
+  // v0.3.6 P2-7: pendingSaves 存对象引用, 写盘时一次 stringify; 索引直接用对象(省一次全量 parse)
   const saveQueues = new Map<string, Promise<void>>()
-  const pendingSaves = new Map<string, string>()   // id → 最新 content(防堆积合并)
-  const enqueueSave = (id: string, content: string): void => {
-    pendingSaves.set(id, content)
+  const pendingSaves = new Map<string, Record<string, unknown>>()   // id → 最新对象(防堆积合并)
+  const enqueueSave = (id: string, obj: Record<string, unknown>): void => {
+    pendingSaves.set(id, obj)
     if (saveQueues.has(id)) return               // 已有队列在跑, 合并等待
     const run = async () => {
       while (pendingSaves.has(id)) {
         const latest = pendingSaves.get(id)!; pendingSaves.delete(id)
         try {
-          await writeFileAtomicAsync(join(sessionsDir, id + '.json'), latest)
-          let mt: { title?: string; messageCount?: number; mode?: string; pinned?: boolean } = {}
-          try { mt = JSON.parse(latest) } catch { /* 忽略 */ }
+          await writeFileAtomicAsync(join(sessionsDir, id + '.json'), JSON.stringify(latest))
+          const mt = latest as { title?: string; messageCount?: number; mode?: string; pinned?: boolean }
           try {
-            const full = JSON.parse(latest)
-            if (full && full.id === id) updateIndexForSession(full, searchIndexPath)
+            if (latest && latest.id === id) updateIndexForSession(latest as { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, searchIndexPath)
           } catch { /* 忽略 */ }
           sessionMeta.set(id, {
             title: String(mt.title || '新对话').slice(0, 60), messageCount: (mt.messageCount || 0) as number,
@@ -84,12 +83,11 @@ export function registerSessionIpc(deps: {
     }
   })
   ipcMain.handle('sessions:save', (_e, s) => {
-    // 安全序列化防止循环引用导致 IPC 克隆报错
+    // v0.3.6 P2-7: IPC 结构化克隆已保证无循环引用, 去掉 safeClone 二次深拷贝; 直接传对象给保存队列
     const id = String(s?.id || '')
     if (!SAFE_ID.test(id)) return false
-    const safe = safeClone(s) as { id?: string; title?: string; messages?: { length?: number } }
-    const content = JSON.stringify({ ...safe, updatedAt: new Date().toISOString() })
-    enqueueSave(id, content)
+    const obj = { ...(s as Record<string, unknown>), updatedAt: new Date().toISOString() }
+    enqueueSave(id, obj)
     return true
   })
   ipcMain.handle('sessions:delete', (_e, id: string) => {
@@ -164,34 +162,6 @@ let indexDirty = false
 let indexTimer: NodeJS.Timeout | null = null
 let idxPath = ''
 
-function tokenizeSearch(text: string): string[] {
-  const t = String(text || '').toLowerCase()
-  const latin = (t.match(/[a-z0-9_]+/g) || []).filter(w => w.length > 1)
-  const cn = t.match(/[\u4e00-\u9fff]/g) || []
-  const bigrams: string[] = []
-  for (let i = 0; i + 1 < cn.length; i++) bigrams.push(cn[i] + cn[i + 1])
-  return [...latin, ...bigrams]
-}
-
-function indexTerms(text: string): string[] {
-  return [...new Set(tokenizeSearch(text))].slice(0, 60)
-}
-
-function docsForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }): IndexDoc[] {
-  const out: IndexDoc[] = []
-  const msgs = s.messages || []
-  for (let i = 0; i < msgs.length && out.length < 300; i++) {
-    const m = msgs[i]
-    if (m.role !== 'user' && m.role !== 'assistant') continue
-    if (typeof m.content !== 'string' || m.content.trim().length < 2) continue
-    const text = m.content.trim().slice(0, 300)
-    const terms = indexTerms(text)
-    if (!terms.length) continue
-    out.push({ key: String(s.id) + ':' + (m.timestamp || i) + ':' + i, sid: String(s.id), title: String(s.title || '对话'), role: m.role, text, ts: Number(m.timestamp) || 0, terms })
-  }
-  return out
-}
-
 function saveIndexNow(): void {
   if (!indexDirty || !idxPath) return
   try { writeFileAtomic(idxPath, JSON.stringify({ version: 1, docs: indexCache || [] })) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
@@ -236,8 +206,7 @@ function rebuildIndexFromDir(sessionsDir: string): void {
 function updateIndexForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, indexPath: string): void {
   idxPath = indexPath
   if (!indexCache) loadIndex(indexPath)
-  const rest = (indexCache || []).filter(d => d.sid !== s.id)
-  indexCache = [...rest, ...docsForSession(s)]
+  indexCache = mergeIndexIncremental(indexCache || [], s)
   scheduleIndexSave()
 }
 

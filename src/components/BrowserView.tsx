@@ -54,6 +54,7 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
   // v0.3.4: 内嵌模式 → 原生 WebContentsView 实时画面, 只轮询地址; 独立窗口 → 轮询截图
   useEffect(() => {
     const tickSnap = async () => {
+      if (document.hidden) return
       try {
         const s = await window.huangquan?.web.snapshot()
         if (s) {
@@ -68,6 +69,7 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
       } catch (e) { /* 静默 */ console.debug('[swallow]', e) }
     }
     const tickUrl = async () => {
+      if (document.hidden) return
       try {
         const u = await window.huangquan?.web.current()
         if (u && u !== 'about:blank') {
@@ -83,7 +85,17 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
       tickSnap()
       pollRef.current = setInterval(tickSnap, snapMs)
     }
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    // v0.3.6 P3-9: 窗口重新可见时立即补一次轮询, 避免恢复后等待一个周期
+    const onVis = () => {
+      if (document.hidden) return
+      if (embeddedMode && !cpuFallback) void tickUrl()
+      else void tickSnap()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [snapMs, embeddedMode, cpuFallback])
 
   // 内嵌实时画面: 把 WebContentsView 对齐到内容区, 挂载/尺寸变化时同步布局

@@ -37,6 +37,10 @@ app.setName('黄泉Agent')
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.huangquan.agent')
 }
+// v0.3.6 修复: stdout/stderr 被关闭时 console 写入会抛 EPIPE, 被下方既有兜底处理器记录成 FATAL 噪音。
+// 日志统一走安全包装; 未捕获异常仅对 EPIPE 静默, 其余交给既有兜底处理器(记录 crash.log)。
+function safeLog(...args: unknown[]): void { try { console.log(...args) } catch { /* 管道已关闭 */ } }
+function safeError(...args: unknown[]): void { try { console.error(...args) } catch { /* 管道已关闭 */ } }
 // 退出前把缓冲中的诊断轨迹写盘(否则最后 ~500ms 的轨迹可能丢失)
 app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
 
@@ -47,7 +51,12 @@ const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch
 // 全局崩溃捕获
 // 崩溃日志异步追加, 不再同步阻塞主进程
 function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
-process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
+process.on('uncaughtException', (err: unknown) => {
+  // stdout/stderr 被关闭导致的 EPIPE 不记 FATAL(避免刷 crash.log 噪音), 其余真实错误照常记录
+  if ((err as NodeJS.ErrnoException)?.code === 'EPIPE') return
+  console.error('[FATAL] uncaughtException:', err)
+  appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + (err as Error)?.stack + '\n')
+})
 process.on('unhandledRejection', (reason) => { console.error('[FATAL] unhandledRejection:', reason); appendCrashLog(new Date().toISOString() + ' unhandledRejection: ' + reason + '\n') })
 
 // v0.3.0 M5: LLM 调用参数结构
@@ -168,7 +177,7 @@ function createAppMenu() {
 }
 
 // ─── 窗口 / 托盘 ────────────────────────────────────
-// 读取"最小化/关闭缩至托盘"设置
+// 读取"关闭缩至托盘"设置(最小化固定为常规最小化到任务栏)
 function trayEnabled(): boolean {
   try {
     if (fs.existsSync(settingsPath)) {
@@ -247,14 +256,24 @@ function createWindow() {
     titleBarOverlay: titleBarOverlayForTheme(savedTheme),
   })
   mainWindow = win
+  // v0.3.6 修复: 聊天 Markdown 外链/任何 window.open 都不能让主窗口离开本地应用页,
+  // 否则整个窗口被外部网页占满且没有返回入口。一律交给系统默认浏览器打开。
+  win.webContents.on('will-navigate', (e, url) => {
+    const local = 'http://127.0.0.1:' + serverPort
+    if (url.startsWith(local)) return
+    e.preventDefault()
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
   win.webContents.on('render-process-gone', (_e, details) => { console.error('[FATAL] renderer crashed:', details.reason, details.exitCode); try { fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), new Date().toISOString() + ' renderer crashed: ' + details.reason + ' ' + details.exitCode + '\n') } catch (e) { console.debug('[swallow]', e) }; if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.loadURL('http://127.0.0.1:' + serverPort + '/index.html') } })
   win.loadURL('http://127.0.0.1:' + serverPort + '/index.html')
   win.once('ready-to-show', () => mainWindow?.show())
   win.on('closed', () => { mainWindow = null })
   // 关闭 → 设置开启时缩至托盘，否则正常退出
   win.on('close', (e: Electron.Event) => { if (trayEnabled() && !isQuitting) { e.preventDefault(); mainWindow?.hide() } })
-  // 最小化 → 设置开启时缩至托盘
-  win.on('minimize', () => { if (trayEnabled()) { mainWindow?.hide() } })
 }
 
 function createTray() {
@@ -270,7 +289,7 @@ function createTray() {
 }
 // ─── 设置/会话 ─────────────────────────────────────
 const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean }>()
-registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta, safeClone })
+registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta })
 function buildSessionMeta() {
   sessionMeta.clear()
   if (!fs.existsSync(sessionsDir)) return
@@ -394,10 +413,10 @@ app.whenReady().then(async () => {
     setTimeout(() => {
       try {
         const gst = app.getGPUFeatureStatus() as unknown as Record<string, string | undefined>
-        console.log('[RENDER] mode=' + rendererMode + ' gpuAcceleration=' + (gst?.gpuAcceleration || 'unknown') + ' webgl=' + gst?.webgl)
-      } catch (e2: unknown) { console.error('[RENDER] gpu detect error:', e2 instanceof Error ? e2.message : String(e2)) }
+        safeLog('[RENDER] mode=' + rendererMode + ' gpuAcceleration=' + (gst?.gpuAcceleration || 'unknown') + ' webgl=' + gst?.webgl)
+      } catch (e2: unknown) { safeError('[RENDER] gpu detect error:', e2 instanceof Error ? e2.message : String(e2)) }
     }, 3000)
-  } catch (e: unknown) { console.error('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
+  } catch (e: unknown) { safeError('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
   serverPort = await startServer(distDir)
   createAppMenu()
   // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
@@ -406,7 +425,7 @@ app.whenReady().then(async () => {
     const g = s?.general || {}
     if (g.autoCleanCache !== false) {
       const r = cleanChromiumCaches(userDataPath, Number(g.autoCleanCacheSize) || 200)
-      if (r.freedMb > 0) console.log('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
+      if (r.freedMb > 0) safeLog('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
     }
   } catch (e: unknown) { /* 设置缺失/损坏时跳过清理 */ console.debug('[swallow]', e) }
   createWindow()

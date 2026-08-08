@@ -95,6 +95,7 @@ declare global {
         approve: (sid: string) => Promise<boolean>
         reject: (sid: string) => Promise<boolean>
         resume: (taskId: string) => Promise<boolean>
+        subscribe: () => Promise<boolean>
         onEvent: (cb: (ev: unknown) => void) => () => void
       }
       mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => Promise<string>
@@ -175,10 +176,13 @@ declare global {
       }
       cacheStats: () => Promise<{ hits: number; misses: number; hit_rate?: string }>
       modelStats: {
-        recordRequest: (sid: string, model: string, hit: boolean) => Promise<unknown>
-        recordTokens: (sid: string, model: string, hitT: number, missT: number, writeT: number, missTok?: number) => Promise<unknown>
+        recordRequest: (sid: string, model: string, hit: boolean, supported?: boolean) => Promise<unknown>
+        recordTokens: (sid: string, model: string, readT: number, inputT: number, writeT: number, missT?: number, opts?: { supported?: boolean | null; provider?: string }) => Promise<unknown>
         deleteSession: (sid: string) => Promise<unknown>
-        get: () => Promise<{ models?: Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number; missTokens?: number }> }>
+        get: () => Promise<{
+          models?: Record<string, { requests: number; readTokens: number; inputTokens: number; writeTokens: number; hitReqs: number; observedReqs: number; missTokens?: number; cacheSupported?: boolean | null; providerName?: string }>
+          ledger?: { ts: number; sid: string; model: string; provider?: string; readTokens: number; missTokens: number; writeTokens: number; inputTokens: number; outputTokens: number; hit: boolean; supported: boolean | null; status: string }[]
+        }>
         getSession: (sid: string) => Promise<unknown>
         resetAll: () => Promise<unknown>
         resetOne: (model: string) => Promise<unknown>

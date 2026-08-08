@@ -95,6 +95,12 @@ export default function ToolsTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>风险操作永久放行</div>
+        <Toggle
+          checked={g.riskAutoApprove === true}
+          onChange={v => save({ riskAutoApprove: v })}
+          label="永久放行全部风险操作"
+          hint="开启后，执行命令/写入/删除等 L2-L3 风险操作不再弹确认，直接放行；关闭后恢复按类型确认。"
+        />
         <div style={S.hint}>来自风险确认卡片的「以后都批准」；此处可查看并撤销，撤销后同类操作会重新弹确认。</div>
         {(() => {
           const list: string[] = Array.isArray(g.riskAlwaysAllow) ? g.riskAlwaysAllow : []

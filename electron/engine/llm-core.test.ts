@@ -160,14 +160,24 @@ describe('normalizeUsage 多供应商缓存字段归一化', () => {
     expect(n).toMatchObject({ readT: 800, missT: 200, inputT: 1000 })
   })
 
-  it('Anthropic 原生: input_tokens 不含缓存读写, miss = input + cache_creation', () => {
+  it('Anthropic 原生: input_tokens 不含缓存读写, 未命中与写入分开统计', () => {
     const n = normalizeUsage({
       input_tokens: 100,
       output_tokens: 50,
       cache_read_input_tokens: 800,
       cache_creation_input_tokens: 100,
     })
-    expect(n).toMatchObject({ readT: 800, missT: 200, writeT: 100, inputT: 1000, outputT: 50 })
+    expect(n).toMatchObject({ readT: 800, missT: 100, writeT: 100, inputT: 1000, outputT: 50 })
+  })
+
+  it('Anthropic SDK 形态: cache_control ephemeral 计费块合并计入缓存写入', () => {
+    const n = normalizeUsage({
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 800,
+      cache_creation: { ephemeral_5m_input_tokens: 60, ephemeral_1h_input_tokens: 40 },
+    })
+    expect(n).toMatchObject({ readT: 800, missT: 100, writeT: 100, inputT: 1000, outputT: 50, sawCache: true })
   })
 
   it('Gemini 原生: usageMetadata.cachedContentTokenCount', () => {
@@ -196,8 +206,35 @@ describe('normalizeUsage 多供应商缓存字段归一化', () => {
     expect(n).toMatchObject({ readT: 700, missT: 300, writeT: 200, inputT: 1000 })
   })
 
-  it('无缓存字段时 read/miss 均为 0, 输入用原始计数', () => {
+  it('OpenRouter: prompt_tokens_details.cache_write_tokens 计入缓存写入', () => {
+    const n = normalizeUsage({
+      prompt_tokens: 1000,
+      completion_tokens: 100,
+      prompt_tokens_details: { cached_tokens: 700, cache_write_tokens: 200 },
+    })
+    expect(n).toMatchObject({ readT: 700, missT: 300, writeT: 200, inputT: 1000, sawCache: true })
+  })
+
+  it('Mistral: num_cached_tokens 与 prompt_token_details.cached_tokens(单数) 均识别', () => {
+    const n = normalizeUsage({
+      prompt_tokens: 1000,
+      completion_tokens: 100,
+      num_cached_tokens: 700,
+      prompt_token_details: { cached_tokens: 700 },
+    })
+    expect(n).toMatchObject({ readT: 700, missT: 300, writeT: 0, inputT: 1000, sawCache: true })
+  })
+
+  it('OpenAI 首次请求 cached_tokens=0 时 miss = 全部输入(不再漏计)', () => {
+    const n = normalizeUsage({
+      prompt_tokens: 15,
+      prompt_tokens_details: { cached_tokens: 0 },
+    })
+    expect(n).toMatchObject({ readT: 0, missT: 15, inputT: 15, sawCache: true })
+  })
+
+  it('无缓存字段时 read 为 0, miss 兜底为全部输入(不支持的供应商由界面标注)', () => {
     const n = normalizeUsage({ prompt_tokens: 100, completion_tokens: 20 })
-    expect(n).toMatchObject({ readT: 0, missT: 0, writeT: 0, inputT: 100, outputT: 20 })
+    expect(n).toMatchObject({ readT: 0, missT: 100, writeT: 0, inputT: 100, outputT: 20, sawCache: false })
   })
 })

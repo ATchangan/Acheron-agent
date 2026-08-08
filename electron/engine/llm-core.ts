@@ -83,16 +83,20 @@ export function buildReasoningParams(provider: string, baseUrl: string | undefin
 // 缓存统计统一归一化 —— 各家官方 usage 字段口径:
 //   DeepSeek / SiliconFlow : prompt_cache_hit_tokens / prompt_cache_miss_tokens
 //   OpenAI / 智谱 / 通义 / 火山方舟 / Gemini(OpenAI 兼容): prompt_tokens_details.cached_tokens
+//   OpenRouter              : prompt_tokens_details.cached_tokens / cache_write_tokens
+//   Mistral                 : num_cached_tokens / prompt_tokens_details.cached_tokens / prompt_token_details.cached_tokens(单数拼写)
 //   Kimi / Moonshot        : usage.cached_tokens(顶层)
-//   Anthropic 原生          : cache_read_input_tokens / cache_creation_input_tokens(input_tokens 不含缓存读写)
+//   Anthropic 原生          : cache_read_input_tokens / cache_creation_input_tokens / cache_creation.ephemeral_5m|1h_input_tokens
+//                            (input_tokens 不含缓存读写, 写入单独计; SDK 形态的 cache_control 计费块也识别)
 //   Gemini 原生             : usageMetadata.cachedContentTokenCount / promptTokenCount
 export interface NormalizedUsage {
   readT: number   // 缓存命中读取
-  missT: number   // 缓存未命中(含 Anthropic 的 cache_creation 写入部分)
+  missT: number   // 缓存未命中(不含缓存写入; Anthropic 仅 input_tokens 部分)
   writeT: number  // 缓存写入(Anthropic cache_creation)
   inputT: number  // 输入总用量(缓存读取 + 未命中), 用于命中率分母
   rawInputT: number // 供应商原始输入计数(prompt_tokens 等), 用于上下文占用
   outputT: number
+  sawCache: boolean // 原始 usage 是否携带缓存字段(供应商能力判定用, 含显式 0)
 }
 
 function firstNum(...vals: unknown[]): number {
@@ -105,33 +109,66 @@ function firstNum(...vals: unknown[]): number {
 
 export function normalizeUsage(u: EngineUsage | Record<string, unknown>): NormalizedUsage {
   const details = (u.prompt_tokens_details || {}) as Record<string, unknown>
+  const mistralDetails = (u.prompt_token_details || {}) as Record<string, unknown>
   const meta = (u.usageMetadata || {}) as Record<string, unknown>
   const inputDetails = (u.input_tokens_details || {}) as Record<string, unknown>
+  const creation = (u.cache_creation || {}) as Record<string, unknown>
   const readT = firstNum(
     u.prompt_cache_hit_tokens,
     details.cached_tokens,
+    u.num_cached_tokens,
+    mistralDetails.cached_tokens,
     u.cached_tokens,
     u.cache_read_input_tokens,
     details.cache_read_input_tokens,
     inputDetails.cached_tokens,
     meta.cachedContentTokenCount,
   )
-  const writeT = firstNum(u.cache_creation_input_tokens, details.cache_creation_input_tokens)
+  let writeT = firstNum(
+    u.cache_creation_input_tokens,
+    details.cache_creation_input_tokens,
+    u.cache_write_tokens,
+    details.cache_write_tokens,
+  )
+  // Anthropic SDK 形态: cache_control 计费块(ephemeral_5m / ephemeral_1h)相加作为缓存写入
+  if (writeT <= 0) {
+    const e5 = Number(creation.ephemeral_5m_input_tokens)
+    const e1 = Number(creation.ephemeral_1h_input_tokens)
+    writeT = (Number.isFinite(e5) && e5 > 0 ? e5 : 0) + (Number.isFinite(e1) && e1 > 0 ? e1 : 0)
+  }
   const rawInputT = firstNum(u.prompt_tokens, meta.promptTokenCount, u.input_tokens)
+  const sawCache = u.prompt_cache_hit_tokens !== undefined
+    || u.prompt_cache_miss_tokens !== undefined
+    || details.cached_tokens !== undefined
+    || details.cache_read_input_tokens !== undefined
+    || details.cache_creation_input_tokens !== undefined
+    || details.cache_write_tokens !== undefined
+    || u.cached_tokens !== undefined
+    || u.num_cached_tokens !== undefined
+    || mistralDetails.cached_tokens !== undefined
+    || u.cache_read_input_tokens !== undefined
+    || u.cache_creation_input_tokens !== undefined
+    || u.cache_write_tokens !== undefined
+    || (u.cache_creation !== undefined && typeof u.cache_creation === 'object')
+    || inputDetails.cached_tokens !== undefined
+    || meta.cachedContentTokenCount !== undefined
   let missT = firstNum(u.prompt_cache_miss_tokens)
-  // Anthropic 原生: input_tokens 只含未命中且未写入缓存的部分, cache_creation 也按未命中输入计费
+  // Anthropic 原生: input_tokens 只含未命中且未写入缓存的部分; cache_creation 是单独写入费用,
+  // 不与未命中合并, 避免界面"未命中"与"写入"两列重复计算
   const isAnthropicShape = u.input_tokens !== undefined
-    && (u.cache_read_input_tokens !== undefined || u.cache_creation_input_tokens !== undefined)
+    && (u.cache_read_input_tokens !== undefined
+      || u.cache_creation_input_tokens !== undefined
+      || (u.cache_creation !== undefined && typeof u.cache_creation === 'object'))
   if (isAnthropicShape) {
-    missT = (firstNum(u.input_tokens) || 0) + writeT
-  } else if (missT <= 0 && rawInputT > 0 && readT > 0) {
+    missT = firstNum(u.input_tokens)
+  } else if (missT <= 0 && rawInputT > 0) {
     missT = Math.max(0, rawInputT - readT)
   }
-  // 输入总用量(缓存读取 + 未命中); Anthropic 需要三段相加, 其余优先用供应商原始总输入
+  // 输入总用量(缓存读取 + 未命中 + 写入); Anthropic 需要三段相加, 其余优先用供应商原始总输入
   let inputT = rawInputT
-  if (isAnthropicShape || rawInputT <= 0) inputT = readT + missT
+  if (isAnthropicShape || rawInputT <= 0) inputT = readT + missT + writeT
   const outputT = firstNum(u.completion_tokens, meta.candidatesTokenCount, u.output_tokens)
-  return { readT, missT, writeT, inputT, rawInputT, outputT }
+  return { readT, missT, writeT, inputT, rawInputT, outputT, sawCache }
 }
 
 // v0.3.3: 流式超时 —— 供应商连接挂起不发数据时任务会永远“执行中”

@@ -1,7 +1,29 @@
-﻿import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { errMsg } from '../utils/safe'
 import { U } from './ui-styles'
 
+// v0.3.6 P3-9: 文件树轮询单例调度 —— 所有展开目录共用一个 5s 定时器,
+// 窗口隐藏时整批暂停, 不再每个目录各挂一个 interval
+const pollRoots = new Map<string, Set<() => void>>()
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const pollTick = (): void => {
+  if (typeof document !== 'undefined' && document.hidden) return
+  for (const cbs of pollRoots.values()) for (const cb of [...cbs]) cb()
+}
+const registerPoll = (root: string, cb: () => void): (() => void) => {
+  let set = pollRoots.get(root)
+  if (!set) { set = new Set(); pollRoots.set(root, set) }
+  set.add(cb)
+  if (!pollTimer) pollTimer = setInterval(pollTick, 5000)
+  return () => {
+    const s = pollRoots.get(root)
+    if (s) {
+      s.delete(cb)
+      if (s.size === 0) pollRoots.delete(root)
+    }
+    if (pollRoots.size === 0 && pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  }
+}
 
 // 工作目录文件浏览器 —— 展开/折叠 + Electron 原生右键菜单 + 文件操作
 
@@ -34,11 +56,11 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
   // 目录列表缓存(3s 新鲜度) —— 展开/刷新不再每次都 IPC 重读
   const cacheRef = useRef<Map<string, { list: FsItem[]; ts: number }>>(new Map())
 
-  // 工作目录实时刷新 —— 展开后每 5s 静默重读(不闪 loading, 保持展开状态), agent 写文件后自动可见
+  // 工作目录实时刷新 —— 展开后经单例调度器每 5s 静默重读(不闪 loading, 保持展开状态), agent 写文件后自动可见
   const hasLoaded = items !== null
   useEffect(() => {
     if (!expanded || !hasLoaded) return
-    const timer = setInterval(async () => {
+    return registerPoll(root, async () => {
       try {
         const cached = cacheRef.current.get(root)
         if (cached && Date.now() - cached.ts < 3000) return
@@ -47,8 +69,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
         cacheRef.current.set(root, { list, ts: Date.now() })
         setItems(list)
       } catch (e) { /* 目录暂时不可读则静默跳过 */ console.debug('[swallow]', e) }
-    }, 5000)
-    return () => clearInterval(timer)
+    })
   }, [expanded, hasLoaded, root])
 
   const load = async (force = false) => {

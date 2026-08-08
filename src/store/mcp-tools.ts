@@ -1,5 +1,5 @@
 // src/store/mcp-tools.ts — MCP 工具自动注入(v0.3.3 内核加固)
-// MCP 服务器连接后, tools/list 的 schema 直接并入 LLM 工具列表(主流桌面 Agent 行为),
+// MCP 服务器连接后, tools/list 的 schema 直接并入 LLM 工具列表,
 // 工具名统一 mcp__<server>__<tool>, 由 runTool 路由回 mcpCall/mcpSSECall。
 import type { ToolSpec } from '../types'
 import { parseMcpToolName } from '../../electron/shared/mcp-utils'
