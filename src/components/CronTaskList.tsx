@@ -1,5 +1,5 @@
 // CronTaskList.tsx —— 定时任务列表（从 CronView 拆出，行为不变）
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import type { CronJob } from '../global'
 import { exprLabel, relativeTime, countdown, fmtTime, type TaskMeta, type FilterTab } from './cron-utils'
 import { S } from './cron-styles'
@@ -16,6 +16,12 @@ export const CronTaskList: React.FC<{
   onCancelDelete: () => void
   onConfirmDelete: (id: string) => void
 }> = ({ tasks, meta, filter, loading, delId, onToggle, onDelete, onCancelDelete, onConfirmDelete }) => {
+  // v0.3.6 P3-9: 倒计时 tick 下沉到列表内部, 不再让整个 CronView 每秒重渲染
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const iv = setInterval(() => setTick(t => t + 1), 1000)
+    return () => clearInterval(iv)
+  }, [])
   const filtered = tasks.filter((t) => {
     const m = meta[t.id]
     if (filter === 'enabled') return t.enabled

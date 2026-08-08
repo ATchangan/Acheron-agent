@@ -9,22 +9,23 @@ import { updateContextLimit, useChatStore } from '../store/chat'
 import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw, Activity } from 'lucide-react'
 import { HourglassMark, ScrollMark, MaskMark } from './themed-icons'
 import { errMsg } from '../utils/safe'
-import AboutTab from './settings/AboutTab'
-import ModelsTab from './settings/ModelsTab'
-import StatsTab from './settings/StatsTab'
-import SkinTab from './settings/SkinTab'
-import McpTab from './settings/McpTab'
-import MemoryTab from './settings/MemoryTab'
-import StrategyTab from './settings/StrategyTab'
-import PersonaTab from './settings/PersonaTab'
-import ToolsTab from './settings/ToolsTab'
-import AdvancedTab from './settings/AdvancedTab'
-import CollabTab from './settings/CollabTab'
-import SkillsTab from './settings/SkillsTab'
-import DiagnosticsTab from './settings/DiagnosticsTab'
-import CronView from './CronView'
-import KnowledgeView from './KnowledgeView'
-import PluginsView from './PluginsView'
+// v0.3.6 P3-10: 设置各 tab 懒加载, 首屏只加载默认 tab(供应商), 减少启动与首屏 bundle
+const AboutTab = React.lazy(() => import('./settings/AboutTab'))
+const ModelsTab = React.lazy(() => import('./settings/ModelsTab'))
+const StatsTab = React.lazy(() => import('./settings/StatsTab'))
+const SkinTab = React.lazy(() => import('./settings/SkinTab'))
+const McpTab = React.lazy(() => import('./settings/McpTab'))
+const MemoryTab = React.lazy(() => import('./settings/MemoryTab'))
+const StrategyTab = React.lazy(() => import('./settings/StrategyTab'))
+const PersonaTab = React.lazy(() => import('./settings/PersonaTab'))
+const ToolsTab = React.lazy(() => import('./settings/ToolsTab'))
+const AdvancedTab = React.lazy(() => import('./settings/AdvancedTab'))
+const CollabTab = React.lazy(() => import('./settings/CollabTab'))
+const SkillsTab = React.lazy(() => import('./settings/SkillsTab'))
+const DiagnosticsTab = React.lazy(() => import('./settings/DiagnosticsTab'))
+const CronView = React.lazy(() => import('./CronView'))
+const KnowledgeView = React.lazy(() => import('./KnowledgeView'))
+const PluginsView = React.lazy(() => import('./PluginsView'))
 import { U } from './ui-styles'
 
 
@@ -170,7 +171,9 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
 
         {/* Content */}
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'diagnostics' ? <DiagnosticsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'about' ? <AboutTab /> : null}
+          <React.Suspense fallback={<div style={{ padding: 24, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>加载中…</div>}>
+            {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'diagnostics' ? <DiagnosticsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'about' ? <AboutTab /> : null}
+          </React.Suspense>
         </div>
       </div>
       {/* 新建工作流弹窗(Electron prompt 不支持) */}

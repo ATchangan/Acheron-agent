@@ -15,7 +15,6 @@ export default function CronView() {
   const [meta, setMeta] = useState<TaskMeta>({})
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterTab>('all')
-  const [tick, setTick] = useState(0)
 
   // create form
   const [newName, setNewName] = useState('')
@@ -29,12 +28,6 @@ export default function CronView() {
   const [delId, setDelId] = useState<string | null>(null)
 
   const nameRef = useRef<HTMLInputElement>(null)
-
-  // tick for countdown
-  useEffect(() => {
-    const iv = setInterval(() => setTick((t) => t + 1), 1000)
-    return () => clearInterval(iv)
-  }, [])
 
   // load
   const load = useCallback(async () => {
