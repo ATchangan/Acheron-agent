@@ -90,7 +90,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
   // 展开状态自动加载内容(初始展开的根目录直接显示内容, 无需点击)
   useEffect(() => {
     if (expanded && !items && !loading) load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [expanded, root])
 
   const toggle = async () => {

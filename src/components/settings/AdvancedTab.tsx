@@ -35,7 +35,9 @@ export default function AdvancedTab() {
       <div style={S.card}>
         <div style={S.section}>任务可靠性</div>
         <Toggle checked={g.riskConfirm !== false} onChange={v => save({ riskConfirm: v })} label="风险操作确认" hint="执行命令/删除文件等 L2-L3 操作前弹原生确认框；关闭后静默放行" />
-        <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
+        <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后本轮提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
+        <Toggle checked={g.longTaskAutoContinue === true} onChange={v => save({ longTaskAutoContinue: v })} label="长任务预算耗尽后自动继续" hint="开启后达到预算自动重置已用量续跑；关闭则达到预算直接结束本轮" />
+        <NumSetting label="自动继续次数上限" hint="自动续跑的轮数上限，超过后结束本轮" value={g.longTaskAutoMax || 5} min={1} max={20} unit="次" onChange={v => save({ longTaskAutoMax: v })} />
         <Toggle checked={g.traceEnabled !== false} onChange={v => save({ traceEnabled: v })} label="本地诊断轨迹" hint="记录任务/LLM/工具调用链，可在 设置→诊断 查看；仅存本地" />
         <Toggle checked={g.mcpAutoInject !== false} onChange={v => save({ mcpAutoInject: v })} label="MCP 工具自动注入" hint="连接过的 MCP 服务器工具 schema 自动并入模型工具列表，无需手动 mcp_call" />
         <Toggle checked={g.planGate === true} onChange={v => save({ planGate: v })} label="计划确认门（实验）" hint="首次调用工具前先展示执行计划，等你批准后再动手" />

@@ -53,15 +53,24 @@ export function registerUpdateIpc(deps: {
       const chunks: Buffer[] = []
       let received = 0
       const total = Number(res.headers.get('content-length') || 0)
+      let lastSentAt = 0
+      let lastSentBytes = 0
+      const sendProgress = () => {
+        lastSentAt = Date.now()
+        lastSentBytes = received
+        try { event.sender.send('update:progress', { received, total, ts: lastSentAt }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
+      }
+      // 一开始就上报一次, 界面立刻能看到 0%
+      sendProgress()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         if (value) chunks.push(Buffer.from(value))
         received += value.length
-        if (total > 0 && received % (1024 * 512) < 4096) {
-          try { event.sender.send('update:progress', { received, total }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-        }
+        // 每 256KB 或 300ms 上报一次: 弱网也能看到字节数/速度变化
+        if (received - lastSentBytes >= 256 * 1024 || Date.now() - lastSentAt >= 300) sendProgress()
       }
+      sendProgress()
       fs.writeFileSync(dest, Buffer.concat(chunks))
       return { ok: true, path: dest, size: received }
     } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }

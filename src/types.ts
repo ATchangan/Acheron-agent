@@ -71,6 +71,9 @@ export interface GeneralSettings {
   riskAlwaysAllow?: string[]
   // v0.3.3 内核加固: 风险操作确认/任务 token 预算/诊断轨迹/MCP 自动注入
   riskConfirm?: boolean       // 默认开: L2/L3 终端与删除操作弹原生确认
+  riskAutoApprove?: boolean   // v0.3.6: 永久放行全部风险操作(开启后 L2/L3 不再弹确认)
+  longTaskAutoContinue?: boolean // v0.3.7: 长任务预算耗尽后自动继续(重置已用量续跑)
+  longTaskAutoMax?: number    // v0.3.7: 自动继续次数上限, 超过后结束本轮
   maxTaskTokens?: number      // 单任务 token 预算, 0=不限
   traceEnabled?: boolean      // 默认开: 本地诊断轨迹
   mcpAutoInject?: boolean     // 默认开: MCP 工具 schema 自动并入 LLM

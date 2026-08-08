@@ -2,7 +2,6 @@
 // 按 requestId/会话 追加 JSONL 轨迹, 保留最近 ~2000 条, 设置页「诊断」Tab 可查/清。
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
-import { join } from 'path'
 
 export interface TraceEntry {
   ts: number

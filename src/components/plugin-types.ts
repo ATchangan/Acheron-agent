@@ -1,6 +1,4 @@
 ﻿// v0.3.1 块 K: 插件页 类型/常量(从 PluginsView 拆出, 行为零变化)
-import React, { useState, useEffect, useCallback } from 'react'
-import { errMsg } from '../utils/safe'
 
 // ─── 型定義 ────────────────────────────────────────────
 export interface PluginManifest {

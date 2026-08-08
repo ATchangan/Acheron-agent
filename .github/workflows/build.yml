@@ -24,6 +24,15 @@ jobs:
       - name: 安装依赖
         run: npm ci || npm install
 
+      - name: 单元测试
+        run: npm test
+
+      - name: Lint 检查
+        run: npm run lint
+
+      - name: 类型检查
+        run: npm run typecheck
+
       - name: 构建(渲染层 + 主进程)
         run: npm run build
 

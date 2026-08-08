@@ -11,9 +11,6 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
   const mp = mediaProviders[mediaSelIdx]
   const updateMediaProvider = useSettingsStore(s => s.updateMediaProvider)
   const removeMediaProvider = useSettingsStore(s => s.removeMediaProvider)
-  const addMediaProvider = useSettingsStore(s => s.addMediaProvider)
-  const [mpName, setMpName] = useState(''); const [mpUrl, setMpUrl] = useState(''); const [mpType, setMpType] = useState('OpenAI Compatible'); const [mpKey, setMpKey] = useState('')
-  const [mpHeaders, setMpHeaders] = useState('')
   const [modelInput2, setModelInput2] = useState<string | null>(null)
   const [loading2, setLoading2] = useState(false)
   const [detectModal2, setDetectModal2] = useState<{ providerId: string; items: { model: string; caps: string[] }[] } | null>(null)
@@ -51,7 +48,6 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
       setDetectSel2([])
     } catch (e) { showToast('读取异常: ' + String(e)) } finally { setLoading2(false) }
   }
-  const saveModel2 = (models: string[]) => updateMediaProvider(mp.id, { imgModels: [...(mp.imgModels || [])], videoModels: [...(mp.videoModels || [])], audioModels: [...(mp.audioModels || [])], ...(models as unknown as Record<string, never>) })
   return (
     <div style={U.pageBody}>
       <div style={S.card}>
@@ -59,7 +55,7 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
           <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>
           <button style={S.btn('danger')} onClick={() => removeMediaProvider(mp.id)}>删除</button>
         </div>
-        <div style={S.row}><div style={S.label}>平台名称</div><input style={S.inp} value={mp.name} onChange={e => { /* 名称不可编辑 */ }} /></div>
+        <div style={S.row}><div style={S.label}>平台名称</div><input style={S.inp} value={mp.name} onChange={() => { /* 名称不可编辑 */ }} /></div>
         <div style={S.row}><div style={S.label}>密钥（API Key）{MEDIA_PRESETS[mp.name]?.noKey ? '（本地服务无需）' : ''}</div>
           <input style={S.inp} type="password" value={mp.apiKey || ''} placeholder={MEDIA_PRESETS[mp.name]?.noKey ? '本地服务无需密钥' : 'sk-...'} onChange={e => updateMediaProvider(mp.id, { apiKey: e.target.value })} /></div>
         <div style={S.row}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} value={mp.baseUrl || ''} onChange={e => updateMediaProvider(mp.id, { baseUrl: e.target.value })} /></div>

@@ -35,6 +35,23 @@ export interface SessionMeta {
   mode?: string
   pinned?: boolean
 }
+// v0.3.7: 计划执行 —— 计划步骤/计划卡片类型(会话可持久化)
+export interface PlanStepView {
+  id: string
+  label: string
+  status: 'pending' | 'running' | 'done' | 'failed' | 'aborted' | 'paused'
+  tool?: string
+  detail?: string
+  toolCallId?: string
+  expected?: string
+  ms?: number
+  messageId?: string
+}
+export interface PlanState {
+  summary: string
+  steps: PlanStepView[]
+  pending: boolean
+}
 export interface SessionData {
   id: string
   title: string
@@ -49,6 +66,7 @@ export interface SessionData {
   activeAgents?: string[] // 协作链记录（会话隔离）
   streaming?: boolean     // 会话级流式状态（与 busy 对称）
   resumeTimer?: number    // 自动续跑 setTimeout 句柄（stop/新任务时 clearTimeout）
+  plan?: PlanState        // v0.3.7: 最近一次执行计划(随会话保存, 切换会话/重启后可回看)
 }
 export interface Message {
   id: string

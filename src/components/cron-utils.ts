@@ -1,5 +1,4 @@
 // cron-utils.ts —— 定时任务纯函数与常量（从 CronView 拆出，行为不变）
-import type { CronJob } from '../global'
 
 export interface TaskMeta {
   [id: string]: { name: string; lastRun: number | null }
@@ -32,9 +31,6 @@ export const FILTER_TABS: { value: FilterTab; label: string }[] = [
   { value: 'disabled', label: '已禁用' },
   { value: 'today', label: '今天执行过' },
 ]
-
-// ─── helper ──────────────────────────────────────────
-const api = () => window.huangquan
 
 export function exprLabel(expr: string): string {
   const p = EXPR_PRESETS.find((e) => e.value === expr)
@@ -96,4 +92,3 @@ export function isToday(ts: number): boolean {
 }
 
 // ─── style ───────────────────────────────────────────
-

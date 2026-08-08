@@ -4,15 +4,19 @@
 import { v4 as uuidv4 } from 'uuid'
 import * as fs from 'fs'
 import { join } from 'path'
-import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage } from './types'
+import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
-import { runTool, getActiveTools, getMcpToolSpecs, type ToolRunCtx } from './tools'
+import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, type EngineMemory } from './memory'
 import { streamChat, chatOnce, abortLLM, visionOnce, normalizeUsage } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { classifyCacheSupport, cacheCapToSupported } from './cache-caps'
 import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
+import { buildPlanDocContent, planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
+import { toolLabel as toolLabelOf, toolDetail as toolDetailOf, toolExpected as toolExpectedOf } from './tool-labels'
+import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
+import { listSkills } from './skill-files'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
@@ -22,6 +26,12 @@ interface TokenStat { requests: number; readTokens: number; inputTokens: number;
 interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }
 interface CallResult { text: string; reasoning?: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage; msgId?: string; truncated?: boolean }
 interface PlanGate { promise: Promise<void>; resolve: (v: boolean) => void }
+interface TaskGoal {
+  objective: string
+  status: 'active' | 'completed' | 'failed' | 'aborted'
+  startedAt: number
+  progress?: string
+}
 
 interface TaskState {
   sid: string
@@ -51,9 +61,19 @@ interface TaskState {
   projectCtx: { file: string; content: string } | null
   memory: EngineMemory
   lastMidSave: number
+  planSteps: PlanStep[]
+  planSummary: string
+  planGateChecked: boolean
+  planEmitTimer: NodeJS.Timeout | null
+  planSurprises: string[]
+  planDecisions: string[]
+  planDocTimer: NodeJS.Timeout | null
+  goal: TaskGoal
   planPending: PlanGate | null
   planApproved: boolean
   stopped: boolean
+  taskFinished: boolean
+  autoContinueCount?: number
   running: boolean
   lastMsgId?: string
   roundNum: number
@@ -73,6 +93,7 @@ export interface EngineDeps {
   userDataPath: string
   memoryPath: string
   tracePath: string
+  skillsDirs?: string[]
   netFetch: typeof fetch
   loadSettings: () => { providers: EngineProvider[]; general: EngineSettings }
   loadIshiki: () => string
@@ -138,9 +159,10 @@ export class AgentEngine {
       this.emit({ type: 'error', sid: params.sid, message: '请先配置 API Provider' })
       return
     }
-    const initialPick = this.pickInitialModel(general, providers, p, params.content, params.images)
+    const agentsMap = getAgents(general.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
+    const initialPick = pickInitialModel(general, providers, p, params.content, params.images)
     const model = params.agent && !params.agentManual
-      ? (this.pickAgentModel(general, providers, p, params.agent) || initialPick.model)
+      ? (pickAgentModel(general, providers, p, params.agent, agentsMap) || initialPick.model)
       : initialPick.model
     const userMsg: EngineMessage = params.history?.find(m => m.id === params.userMsgId)
       || { id: params.userMsgId, role: 'user', content: params.content, timestamp: params.userMsgTimestamp || Date.now(), images: params.images, attachments: params.attachments }
@@ -174,9 +196,19 @@ export class AgentEngine {
       projectCtx: null,
       memory: loadMemory(this.deps.memoryPath),
       lastMidSave: 0,
+      planSteps: [],
+      planSummary: '',
+      planGateChecked: false,
+      planEmitTimer: null,
+      planSurprises: [],
+      planDecisions: [],
+      planDocTimer: null,
+      goal: { objective: String(params.content || '').slice(0, 500), status: 'active', startedAt: Date.now() },
       planPending: null,
       planApproved: false,
       stopped: false,
+      taskFinished: false,
+      autoContinueCount: 0,
       running: true,
       roundNum: 0,
       interjects: [],
@@ -189,13 +221,15 @@ export class AgentEngine {
     startTask({ id: params.taskId, sid: params.sid, content: String(params.content).slice(0, 2000), images: params.images, attachments: params.attachments, model })
     getMcpToolSpecs(true) // 新任务启动时强制刷新 MCP 工具清单(刚连接的服务器立即生效)
     this.trace('info', 'task.start', String(params.content).slice(0, 120), params.sid, params.taskId)
+    this.planAddDecision(task, '任务启动：' + String(params.content || '').slice(0, 80))
+    this.writePlanDoc(task)
     void this.runTask(task)
   }
 
   resume(taskId: string): void {
     const rec = getTask(taskId)
     if (!rec || !rec.checkpoint) return
-    const cp = rec.checkpoint as { messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string; round: number; provider?: unknown; handoffAt?: number; handoffStack?: string[]; handoffCounts?: Record<string, number> }
+    const cp = rec.checkpoint as { messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string; round: number; provider?: unknown; handoffAt?: number; handoffStack?: string[]; handoffCounts?: Record<string, number>; planSteps?: PlanStep[]; planSummary?: string; planSurprises?: string[]; planDecisions?: string[]; goal?: TaskGoal }
     if (!cp || !Array.isArray(cp.messages)) return
     const existing = this.tasks.get(rec.sid)
     if (existing?.running) return
@@ -210,6 +244,10 @@ export class AgentEngine {
     }
     const myGen = this.nextGen(rec.sid)
     const lastUser = [...cp.messages].reverse().find(m => m.role === 'user')
+    const restoredSteps: PlanStep[] = Array.isArray(cp.planSteps) ? cp.planSteps : []
+    const hasPendingSteps = restoredSteps.some(s => s.status === 'pending' || s.status === 'paused')
+    // v0.3.7: 计划门禁开启且恢复时仍有未完成步骤 → 重新走一次计划确认; 否则直接续跑
+    const gateNeeded = general.planGate === true && hasPendingSteps
     const task: TaskState = {
       sid: rec.sid,
       taskId: rec.id,
@@ -237,9 +275,19 @@ export class AgentEngine {
       projectCtx: null,
       memory: loadMemory(this.deps.memoryPath),
       lastMidSave: 0,
+      planSteps: restoredSteps,
+      planSummary: String(cp.planSummary || ''),
+      planGateChecked: !hasPendingSteps,
+      planEmitTimer: null,
+      planSurprises: Array.isArray(cp.planSurprises) ? cp.planSurprises : [],
+      planDecisions: Array.isArray(cp.planDecisions) ? cp.planDecisions : [],
+      planDocTimer: null,
+      goal: cp.goal && cp.goal.objective ? { ...cp.goal, status: 'active' } : { objective: String(rec.content || '').slice(0, 500), status: 'active', startedAt: Date.now() },
       planPending: null,
-      planApproved: true,
+      planApproved: !gateNeeded,
       stopped: false,
+      taskFinished: false,
+      autoContinueCount: 0,
       running: true,
       roundNum: cp.round || 0,
       interjects: [],
@@ -248,16 +296,29 @@ export class AgentEngine {
     }
     this.tasks.set(rec.sid, task)
     this.emit({ type: 'restore', sid: rec.sid, messages: cp.messages, agent: cp.agent, activeAgents: cp.activeAgents || [], model: task.model })
+    if (task.planSteps.length) this.emit({ type: 'plan-update', sid: rec.sid, summary: task.planSummary || undefined, steps: task.planSteps.map(s => ({ ...s })) })
     this.emit({ type: 'busy', sid: rec.sid, busy: true })
     this.emit({ type: 'stream', sid: rec.sid, streaming: true, executing: true })
     this.trace('info', 'task.resume', rec.content.slice(0, 120), rec.sid, rec.id)
+    this.planAddDecision(task, '任务恢复（断点第 ' + task.roundNum + ' 轮）')
+    this.writePlanDoc(task)
     void this.runTask(task)
   }
 
   stop(sid: string): void {
     const task = this.tasks.get(sid)
     this.invalidate(sid)
-    if (task) { task.stopped = true; if (task.planPending) { task.planApproved = false; task.planPending.resolve(false) } }
+    if (task) {
+      task.stopped = true
+      if (task.planPending) { task.planApproved = false; task.planPending.resolve(false) }
+      this.planCloseAll(task, 'aborted', '用户停止')
+      this.emitPlan(task, true)
+      this.planAddDecision(task, '用户停止任务')
+      this.flushPlanDoc(task)
+      closeTerminalSessions(sid)
+      // v0.3.7: 停止时同步落盘任务状态, 避免进程被杀后 tasks.json 残留 running
+      this.finishTask(task, 'aborted', '用户停止')
+    }
     abortLLM(sid)
     // 打断正在执行的超长命令(exec 带 sid 注册, 可被中止)
     void invokeHandler('computer:abort', [sid], null)
@@ -284,82 +345,232 @@ export class AgentEngine {
     if (task?.planPending) { task.planApproved = false; task.planPending.resolve(false) }
   }
 
+  // v0.3.7: plan-update 节流合并(150ms) —— 长任务步骤多时避免每步一次全量 IPC
+  private emitPlan(task: TaskState, force = false): void {
+    if (force) {
+      if (task.planEmitTimer) { clearTimeout(task.planEmitTimer); task.planEmitTimer = null }
+      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps: task.planSteps.map(s => ({ ...s })) })
+      return
+    }
+    if (task.planEmitTimer) return
+    task.planEmitTimer = setTimeout(() => {
+      task.planEmitTimer = null
+      if (this.tasks.get(task.sid) !== task) return
+      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps: task.planSteps.map(s => ({ ...s })) })
+    }, 150)
+  }
+
+  private flushPlan(task: TaskState): void {
+    this.emitPlan(task, true)
+  }
+
+  // 新批次工具调用 → 追加步骤。按 tc.id 去重: 同一工具调用只生成一次步骤(门禁前/恢复后重放安全)
+  private planAppend(task: TaskState, tcs: EngineToolCall[], summary?: string): void {
+    if (summary && !task.planSummary) task.planSummary = String(summary).slice(0, 500)
+    if (!tcs.length) return
+    for (const tc of tcs) {
+      if (tc.name === 'update_plan') continue
+      if (task.planSteps.some(s => s.toolCallId && s.toolCallId === tc.id)) continue
+      // v0.3.7: 优先认领模型 update_plan 声明的 pending 步骤(无 toolCallId), 避免声明与自动生成重复
+      const declared = task.planSteps.find(s => s.status === 'pending' && !s.toolCallId && (!s.tool || s.tool === tc.name))
+      if (declared) {
+        declared.toolCallId = tc.id
+        declared.tool = tc.name
+        if (!declared.detail) declared.detail = toolDetailOf(tc)
+        if (!declared.expected) declared.expected = toolExpectedOf(tc)
+        continue
+      }
+      const step: PlanStep = { id: uuidv4(), label: toolLabelOf(tc), status: 'pending', tool: tc.name, detail: toolDetailOf(tc), toolCallId: tc.id, expected: toolExpectedOf(tc) }
+      task.planSteps.push(step)
+    }
+    this.emitPlan(task)
+  }
+
+  // 开始执行当前批次: 按 toolCallId 精确绑定步骤(缺失时回退到首个 pending), 返回按 res.tcs 顺序的 step id
+  private planStart(task: TaskState, tcs: EngineToolCall[], messageId?: string): string[] {
+    const ids: string[] = []
+    for (const tc of tcs) {
+      if (tc.name === 'update_plan') continue
+      let st = task.planSteps.find(s => s.toolCallId && s.toolCallId === tc.id)
+      if (!st) st = task.planSteps.find(s => s.status === 'pending' && !s.toolCallId && (!s.tool || s.tool === tc.name))
+      if (!st) {
+        st = { id: uuidv4(), label: toolLabelOf(tc), status: 'pending', tool: tc.name, detail: toolDetailOf(tc), toolCallId: tc.id, expected: toolExpectedOf(tc) }
+        task.planSteps.push(st)
+      }
+      st.status = 'running'
+      if (messageId) st.messageId = messageId
+      ids.push(st.id)
+    }
+    this.emitPlan(task)
+    return ids
+  }
+
+  // 工具结果返回后: 按结果打勾/打叉, 记录耗时; 基础自检(E: 前缀 / 关键工具空结果)
+  private planFinish(task: TaskState, ids: string[], results: { r: string; ms: number }[]): void {
+    ids.forEach((id, i) => {
+      const st = task.planSteps.find(x => x.id === id)
+      if (!st) return
+      const res = results[i] || { r: '', ms: 0 }
+      const r = res.r || ''
+      st.ms = (st.ms || 0) + (res.ms || 0)
+      const emptyFail = !r.trim() && ['read', 'exec_command', 'ls', 'grep', 'find', 'web_search', 'web_fetch'].includes(st.tool || '')
+      if (r.startsWith('E:') || emptyFail) {
+        st.status = 'failed'
+        const reason = emptyFail ? '空结果' : r.slice(2, 50).replace(/\s+/g, ' ')
+        if (reason) st.detail = (st.detail ? st.detail + ' · ' : '') + reason
+        this.planAddSurprise(task, st.label + ' 失败：' + (reason || '未知原因'))
+      } else {
+        st.status = 'done'
+      }
+    })
+    this.emitPlan(task)
+  }
+
+  // 熔断/异常: 所有未开始的 pending 步骤直接标 failed(不再依赖队列)
+  private planFailPending(task: TaskState, reason: string): void {
+    let changed = false
+    for (const st of task.planSteps) {
+      if (st.status === 'pending') {
+        st.status = 'failed'
+        st.detail = (st.detail ? st.detail + ' · ' : '') + reason
+        changed = true
+      }
+    }
+    if (changed) this.emitPlan(task)
+  }
+
+  // 停止/拒绝/任务失败: 未完成步骤统一收尾(paused 也视为未完成)
+  private planCloseAll(task: TaskState, status: 'aborted' | 'failed', reason?: string): void {
+    let changed = false
+    for (const st of task.planSteps) {
+      if (st.status === 'pending' || st.status === 'running' || st.status === 'paused') {
+        st.status = status
+        if (reason) st.detail = (st.detail ? st.detail + ' · ' : '') + reason
+        changed = true
+      }
+    }
+    if (changed) this.emitPlan(task)
+  }
+
+  // v0.3.7: 计划复盘 —— 任务收尾时由代码生成结构化复盘(零额外 LLM 调用)
+  private planRetrospective(task: TaskState): string {
+    const steps = task.planSteps
+    if (!steps.length) return ''
+    const total = steps.length
+    const done = steps.filter(s => s.status === 'done').length
+    const failed = steps.filter(s => s.status === 'failed').length
+    const aborted = steps.filter(s => s.status === 'aborted').length
+    const lines: string[] = []
+    lines.push(`\n\n---\n\n**执行计划复盘**：${done}/${total} 完成` + (failed ? `，${failed} 失败` : '') + (aborted ? `，${aborted} 中止` : ''))
+    for (const s of steps) {
+      if (s.status === 'failed') lines.push(`- 失败：${s.label}${s.tool ? ' (' + s.tool + ')' : ''}${s.detail ? ' — ' + s.detail : ''}`)
+      else if (s.status === 'aborted') lines.push(`- 中止：${s.label}${s.detail ? ' — ' + s.detail : ''}`)
+    }
+    const unfinished = steps.filter(s => s.status === 'pending' || s.status === 'paused').map(s => s.label)
+    if (unfinished.length) lines.push(`- 未执行：${unfinished.join('、')}`)
+    // v0.3.7: 验证闭环 —— 改过文件但没有独立验证命令时给出提醒
+    const touchedFiles = steps.some(s => (s.tool === 'write' || s.tool === 'edit' || s.tool === 'apply_patch') && s.status === 'done')
+    if (touchedFiles && !this.planHasVerification(task)) lines.push('- ⚠ 修改过文件但未检测到独立验证命令，建议补充构建/测试/检查')
+    return lines.join('\n')
+  }
+
+  // ─── v0.3.7: PLANS.md 计划文档(计划式: Progress/Surprises/Decision Log/Outcomes) ───
+  private planDocDir(): string {
+    return join(this.deps.userDataPath, 'plans')
+  }
+
+  private planDocPath(task: TaskState): string {
+    return join(this.planDocDir(), task.taskId + '.md')
+  }
+
+  private planStamp(): string {
+    const d = new Date()
+    const p2 = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`
+  }
+
+  private planAddDecision(task: TaskState, text: string): void {
+    task.planDecisions.push('`' + this.planStamp() + '` ' + text)
+    if (task.planDecisions.length > 80) task.planDecisions = task.planDecisions.slice(-80)
+    this.schedulePlanDoc(task)
+  }
+
+  private planAddSurprise(task: TaskState, text: string): void {
+    task.planSurprises.push('`' + this.planStamp() + '` ' + text)
+    if (task.planSurprises.length > 40) task.planSurprises = task.planSurprises.slice(-40)
+    this.schedulePlanDoc(task)
+  }
+
+  private buildPlanDoc(task: TaskState): string {
+    const goalStatus = task.goal.status === 'completed' ? '已完成' : task.goal.status === 'failed' ? '失败' : task.goal.status === 'aborted' ? '已中止' : '进行中'
+    const retro = this.planRetrospective(task)
+    return buildPlanDocContent({
+      goalObjective: task.goal.objective,
+      goalStatus,
+      goalProgress: task.goal.progress,
+      taskStopped: task.stopped,
+      steps: task.planSteps as PlanStepData[],
+      surprises: task.planSurprises,
+      decisions: task.planDecisions,
+      retrospective: retro.replace(/^\n*---\s*\n\n?/, ''),
+    })
+  }
+
+  private writePlanDoc(task: TaskState): void {
+    try {
+      fs.mkdirSync(this.planDocDir(), { recursive: true })
+      // v0.3.7: 异步写盘, 避免长任务高频节流时阻塞主进程
+      const content = this.buildPlanDoc(task)
+      void fs.promises.writeFile(this.planDocPath(task), content, 'utf8').catch(() => {})
+    } catch { /* 计划文档写入失败不影响主流程 */ }
+  }
+
+  private schedulePlanDoc(task: TaskState): void {
+    if (task.planDocTimer) return
+    task.planDocTimer = setTimeout(() => {
+      task.planDocTimer = null
+      if (this.tasks.get(task.sid) !== task) return
+      this.writePlanDoc(task)
+    }, 2000)
+  }
+
+  private flushPlanDoc(task: TaskState): void {
+    if (task.planDocTimer) { clearTimeout(task.planDocTimer); task.planDocTimer = null }
+    this.writePlanDoc(task)
+  }
+
+  // v0.3.7: 模型自主计划工具(update_plan) —— 声明/更新计划步骤
+  private applyPlanUpdate(task: TaskState, steps: { label?: string; status?: string; expected?: string; id?: string; tool?: string }[]): string {
+    let added = 0
+    let updated = 0
+    for (const s of steps) {
+      const label = String(s.label || '').trim()
+      if (!label) continue
+      const status = (['pending', 'running', 'done', 'failed', 'aborted'].includes(String(s.status || '')) ? String(s.status) : 'pending') as PlanStep['status']
+      const target = s.id ? task.planSteps.find(x => x.id === s.id) : undefined
+      if (target) {
+        target.label = label
+        if (s.expected !== undefined) target.expected = String(s.expected).slice(0, 200)
+        if (s.tool !== undefined) target.tool = String(s.tool)
+        if (status !== 'pending') target.status = status
+        updated++
+      } else {
+        const step: PlanStep = { id: uuidv4(), label, status, tool: s.tool !== undefined ? String(s.tool) : undefined, expected: s.expected !== undefined ? String(s.expected).slice(0, 200) : undefined }
+        task.planSteps.push(step)
+        added++
+      }
+    }
+    if (added || updated) {
+      this.planAddDecision(task, '模型 update_plan：新增 ' + added + ' 步，更新 ' + updated + ' 步（共 ' + task.planSteps.length + ' 步）')
+      this.emitPlan(task)
+      this.flushPlan(task)
+      this.schedulePlanDoc(task)
+    }
+    return 'ok:plan updated (added ' + added + ', updated ' + updated + '), total ' + task.planSteps.length
+  }
+
   private snapshotTok(sid: string): Record<string, TokenStat> {
     return JSON.parse(JSON.stringify(this.sessTokBySid.get(sid) || {})) as Record<string, TokenStat>
-  }
-
-  private pickAgentModel(g: EngineSettings, providers: EngineProvider[], p: EngineProvider, agent: string): string {
-    const ag = getAgents(g.agentOverrides as Record<string, Partial<AgentDef>> | undefined)[agent]
-    const pref = ag?.model
-    if (pref === 'vision') {
-      const cand = this.visionCandidates(g, providers, p)
-      if (cand.length) return cand[0].model
-    }
-    return p.selectedModel || p.models[0] || ''
-  }
-
-  // 多模型策略(与旧渲染层 pickModels 同构): 简单任务小模型/快模型, 复杂任务大模型
-  private pickInitialModel(g: EngineSettings, providers: EngineProvider[], p: EngineProvider, content: string, images?: string[]): { p: EngineProvider; model: string } {
-    const main = this.resolveModelFrom(g, providers, p, 'mainModel') || { p, model: p.selectedModel || p.models[0] || '' }
-    const heavyWords = ['工具', '代码', '脚本', '文件', '读取', '创建', '查找', '目录', '搜索', '网页', '下载', '执行', '命令', '终端', '分析', '总结', '报告', '修改', '删除', '移动', '复制']
-    const isSimple = g.autoFastModel !== false && !images?.length && content.length < 300 && !heavyWords.some(w => content.includes(w))
-    const fast = isSimple ? (this.resolveModelFrom(g, providers, p, 'fastModel') || main) : main
-    const small = this.resolveModelFrom(g, providers, p, 'smallModel')
-    const large = this.resolveModelFrom(g, providers, p, 'largeModel')
-    return isSimple ? (small || fast) : (large || main)
-  }
-
-  private resolveModelFrom(g: EngineSettings, providers: EngineProvider[], curP: EngineProvider, key: string): { p: EngineProvider; model: string } | null {
-    const val = g[key]
-    if (!val) return null
-    const [pid, m] = String(val).includes('::') ? String(val).split('::') : [null, String(val)]
-    if (pid) {
-      const pr = providers.find(x => x.id === pid)
-      if (pr && (pr.models || []).includes(m)) return { p: pr, model: m }
-    } else if ((curP.models || []).includes(String(val))) return { p: curP, model: String(val) }
-    return null
-  }
-
-  // 推理强度：每模型覆盖 > 全局档位；缺省回落到 medium
-  private resolveThinkLevel(task: TaskState, model?: string): string {
-    const m = model || task.model
-    const ov = (task.g.thinkOverrides || {}) as Record<string, string>
-    return ov[m] || String(task.g.thinkLevel || 'medium')
-  }
-
-  private visionCandidates(g: EngineSettings, providers: EngineProvider[], curP: EngineProvider): { p: EngineProvider; model: string }[] {
-    const out: { p: EngineProvider; model: string }[] = []
-    const list: string[] = (g.visionModels && g.visionModels.length) ? g.visionModels : (g.visionModel ? [g.visionModel] : [])
-    const push = (pid: string | null, m: string) => {
-      if (pid) {
-        const pr = providers.find(x => x.id === pid || x.name === pid)
-        if (pr && (pr.models || []).includes(m) && !out.some(c => c.model === m)) out.push({ p: pr, model: m })
-      } else {
-        const pr = providers.find(x => (x.models || []).includes(m))
-        if (pr && !out.some(c => c.model === m)) out.push({ p: pr, model: m })
-      }
-    }
-    for (const item of list) {
-      if (item.startsWith('ref:')) {
-        const pid = item.slice(4)
-        const pr = providers.find(x => x.id === pid || x.name === pid)
-        if (pr) { const m = pr.models.find(isVisionModel); if (m) push(pr.id, m) }
-      } else if (item.includes('::')) {
-        const [a, b] = item.split('::')
-        push(a, b)
-      } else push(null, item)
-    }
-    if (!out.length) {
-      const inProv = (curP.models || []).find(isVisionModel)
-      if (inProv) out.push({ p: curP, model: inProv })
-      else {
-        for (const pr of providers) {
-          const m = (pr.models || []).find(isVisionModel)
-          if (m) { out.push({ p: pr, model: m }); break }
-        }
-      }
-    }
-    return out
   }
 
   private async runTask(task: TaskState): Promise<void> {
@@ -375,7 +586,7 @@ export class AgentEngine {
       }
       // 视觉任务: 主模型不支持时切换视觉队列, 无队列则用视觉辅助分析
       if (task.images && task.images.length && !isVisionModel(task.model)) {
-        const cands = this.visionCandidates(g, task.providers, task.curP)
+        const cands = visionCandidates(g, task.providers, task.curP)
         if (cands.length) {
           task.curP = cands[0].p
           task.model = cands[0].model
@@ -385,7 +596,7 @@ export class AgentEngine {
           this.trace('info', 'model.vision-switch', task.model, sid, task.taskId)
         } else {
           // 无任何视觉候选时不再拿纯文本模型硬调 visionOnce, 直接提示配置
-          task.userMsg.content = String(task.userMsg.content || '') + '\n\n[未配置可用的视觉辅助模型，图片无法分析。可在 设置→策略→👁️视觉理解 中配置视觉模型优先级。]'
+          task.userMsg.content = String(task.userMsg.content || '') + '\n\n[未配置可用的视觉辅助模型，图片无法分析。可在 设置→策略→视觉理解 中配置视觉模型优先级。]'
           task.messages = task.messages.map(m => m.id === task.userMsgId ? { ...m, content: task.userMsg.content } : m)
           task.withImages = false
         }
@@ -424,121 +635,60 @@ export class AgentEngine {
         }
         if (this.curGen(sid) !== task.myGen) break
         const used = this.taskTokensUsed(task)
-        if (budgetExceeded(used, maxTaskTokens)) {
-          this.trace('warn', 'task.budget', '已达预算 ' + used + ' tokens', sid, task.taskId)
-          res = { text: res.text, tcs: [] }
-        }
+        const budgetAct = this.budgetAction(task, used, maxTaskTokens)
+        if (budgetAct === 'continue') { /* 自动续跑: 保留 res.tcs 继续工具轮 */ }
+        else if (budgetExceeded(used, maxTaskTokens)) res = { text: res.text, tcs: [] }
 
-        // 计划确认门: 首次工具调用前先给方案等用户批准
-        if (res.tcs.length && g.planGate === true && !task.planApproved && task.roundNum === 1) {
+        // v0.3.7: 工具调用即步骤 —— 首批在门禁前生成, 后续批次在工具轮内追加
+        if (res.tcs.length) this.planAppend(task, res.tcs, res.text)
+
+        // 计划确认门: 本轮计划未被确认前先给方案等用户批准(新任务首轮/恢复后未完成计划均触发)
+        if (res.tcs.length && g.planGate === true && !task.planApproved && !task.planGateChecked) {
           let gateResolve: (v: boolean) => void = () => {}
           const gate = new Promise<boolean>(r => { gateResolve = r })
           task.planPending = { promise: gate.then(() => {}), resolve: gateResolve }
-          this.emit({ type: 'plan', sid, summary: (res.text || '').slice(0, 200), steps: res.tcs.map(tc => ({ tool: tc.name, args: tc.args })) })
+          this.emit({ type: 'plan', sid, summary: task.planSummary || (res.text || '').slice(0, 200), steps: task.planSteps.map(s => ({ ...s })) })
+          this.flushPlan(task)
           const ok = await gate
           task.planPending = null
           if (!ok) {
             res = { text: (res.text || '') + '\n\n[用户拒绝了执行计划，任务已中止]', tcs: [] }
+            this.planCloseAll(task, 'aborted', '用户拒绝执行')
+            this.planAddDecision(task, '用户拒绝执行计划，任务中止')
+            this.flushPlan(task)
             this.finalizeTask(task, res, maxTaskTokens)
             task.stopped = true
             break
           }
+          task.planApproved = true
+          task.planGateChecked = true
+          this.planAddDecision(task, '用户批准执行计划（' + task.planSteps.length + ' 步）')
         }
 
         // 工具轮循环
-        let toolRounds = 0
-        while (res.tcs.length > 0) {
-          // 动态自动调节: 单批工具轮达到初始上限但仍有工具待执行时, 自动顺延, 直到模型停止调用工具
-          if (toolRounds >= maxToolRounds) {
-            if (maxToolRounds >= 10000) break
-            maxToolRounds = Math.min(maxToolRounds + 50, 10000)
-            this.trace('warn', 'tool.rounds-extend', '单批工具轮 ' + toolRounds + ' → 上限自动顺延至 ' + maxToolRounds, sid, task.taskId)
-          }
-          toolRounds++
-          if (this.curGen(sid) !== task.myGen) break
-          if (task.interjects.length && task.interjects[0].kind === 'retarget') {
-            task.toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
-            break
-          }
-          const rc = new Map<string, number>()
-          for (const t of task.toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
-          if (res.tcs.some(tc => (rc.get(tc.name + '::' + JSON.stringify(tc.args || {})) || 0) >= meltLimit)) {
-            this.trace('warn', 'tool.meltdown', res.tcs[0].name, sid, task.taskId)
-            break
-          }
-          const logStart = task.toolLog.length
-          const stepText = (res.text || '').trim()
-          const stepId = res.msgId || task.lastMsgId || uuidv4()
-          task.messages.push({ id: stepId, role: 'assistant', content: stepText || null, reasoning_content: res.reasoning || undefined, timestamp: Date.now(), tool_calls: res.tcs.map(tc2 => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) })
-          this.emit({ type: 'step', sid, id: stepId, content: stepText || null, reasoning: res.reasoning || undefined, toolCalls: res.tcs })
+        let loopRes = await this.runToolLoop(task, res, maxToolRounds, maxRetry, meltLimit, doParallel, maxTaskTokens)
+        res = loopRes.res
+        maxToolRounds = loopRes.maxToolRounds
 
-          const runOne = async (tc: EngineToolCall) => {
-            if (task.interjects.length && task.interjects[0].kind === 'retarget') {
-              task.toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
-              return { tc, r: 'E:改向指令熔断' }
-            }
-            let r2 = ''
-            let ms = 0
-            for (let a = 0; a <= maxRetry; a++) {
-              const t0 = Date.now()
-              this.emit({ type: 'stage', sid, phase: 'tool', label: '🔧 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
-              r2 = await this.runToolFor(task, tc)
-              ms = Date.now() - t0
-              if (!r2.startsWith('E:')) break
-              if (a < maxRetry) await new Promise(r => setTimeout(r, backoffDelay(a, 500, 8000)))
-            }
-            task.toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms, toolCallId: tc.id })
-            this.trace(r2.startsWith('E:') ? 'warn' : 'info', 'tool', tc.name + ' ' + ms + 'ms', sid, tc.id)
-            return { tc, r: r2 }
+        // v0.3.7: 验证强制闭环 —— 改过文件但未运行验证命令时, 注入验证请求(最多 2 轮)
+        let verifyForced = 0
+        while (!res.tcs.length && this.planNeedsVerify(task) && verifyForced < 2 && this.curGen(sid) === task.myGen && !task.stopped) {
+          verifyForced++
+          this.planAddDecision(task, '强制验证第 ' + verifyForced + ' 轮：检测到文件修改但无验证命令')
+          const vmsg: EngineMessage = {
+            id: uuidv4(),
+            role: 'system',
+            content: '[系统提示] 你刚修改了文件，但尚未运行任何验证命令。请立即调用 exec_command 执行验证（构建/测试/语法检查/列出改动确认），确认改动有效后再做最终总结。',
+            timestamp: Date.now(),
           }
-          const writes = ['write', 'edit', 'exec_command', 'mkdir', 'codebox']
-          const results: { tc: EngineToolCall; r: string }[] = []
-          if (doParallel) {
-            const readTcs = res.tcs.filter(tc => !writes.includes(tc.name))
-            const writeTcs = res.tcs.filter(tc => writes.includes(tc.name))
-            results.push(...(await Promise.all(readTcs.map(runOne))))
-            for (const tc of writeTcs) results.push(await runOne(tc))
-          } else {
-            for (const tc of res.tcs) results.push(await runOne(tc))
-          }
-          // v0.3.5 T1: 并行结果总量护栏 —— 结果数 >4 且总字符 >6000 时, 保留前 4 大结果全量, 其余瘦身
-          // (完整版仍进 toolLog / terminal 面板, 信息不丢; 仅控制下一轮上下文注入量)
-          if (task.g.perf?.parallelCap !== false && results.length > 4) {
-            const totalLen = results.reduce((s, x) => s + x.r.length, 0)
-            if (totalLen > 6000) {
-              const ranked = [...results].sort((a, b) => b.r.length - a.r.length)
-              const keepFull = new Set(ranked.slice(0, 4))
-              for (const x of results) if (!keepFull.has(x)) x.r = slimToolResult(x.r)
-            }
-          }
-          for (const { tc, r } of results) {
-            const toolMsg: EngineMessage = { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }
-            task.messages.push(toolMsg)
-            this.emit({ type: 'tool-msg', sid, msg: toolMsg })
-          }
-          const roundLog = task.toolLog.slice(logStart)
-          if (roundLog.length) this.emit({ type: 'tool-log', sid, stepId, log: roundLog })
-          // 断点: 每 5 轮或 30s 落盘 + 通知渲染层保存会话
-          if (toolRounds % 5 === 0 || Date.now() - task.lastMidSave > 30000) {
-            task.lastMidSave = Date.now()
-            this.checkpoint(task, toolRounds)
-          }
-          task.interjects = []
-          if (this.curGen(sid) !== task.myGen) break
-          // 多模型策略: 代码类任务切 codeModel, 文档类切 longTextModel
-          const toolNames = res.tcs.map(tc => tc.name)
-          if (toolNames.some(n => ['write', 'edit', 'exec_command', 'mkdir', 'codebox', 'grep', 'read'].includes(n))) {
-            const cm = this.resolveModel(task, 'codeModel')
-            if (cm) { task.curP = cm.p; task.model = cm.model }
-          } else if (toolNames.some(n => ['save_memory', 'recall_memory', 'web_search', 'web_fetch', 'import_doc'].includes(n))) {
-            const lm = this.resolveModel(task, 'longTextModel')
-            if (lm) { task.curP = lm.p; task.model = lm.model }
-          }
-          this.emit({ type: 'stage', sid, phase: 'thinking', label: '思考中', detail: '' })
-          if (this.curGen(sid) !== task.myGen) break
+          task.messages.push(vmsg)
+          // v0.3.7: 双源一致 —— 验证注入消息同步给渲染层(system 角色, UI 不显示但随会话持久化)
+          this.emit({ type: 'interject', sid, msg: vmsg, kind: 'system' })
+          this.checkpoint(task, task.roundNum)
           res = await callLLM(task)
-          if (budgetExceeded(this.taskTokensUsed(task), maxTaskTokens)) res = { text: res.text, tcs: [] }
-          if (this.curGen(sid) !== task.myGen) break
+          loopRes = await this.runToolLoop(task, res, maxToolRounds, maxRetry, meltLimit, doParallel, maxTaskTokens)
+          res = loopRes.res
+          maxToolRounds = loopRes.maxToolRounds
         }
 
         this.finalizeTask(task, res, maxTaskTokens)
@@ -567,15 +717,156 @@ export class AgentEngine {
     }
   }
 
+  // v0.3.7: 工具轮循环(提取自 runTask, 供主循环与验证强制闭环复用)
+  private async runToolLoop(
+    task: TaskState,
+    res: CallResult,
+    maxToolRounds: number,
+    maxRetry: number,
+    meltLimit: number,
+    doParallel: boolean,
+    maxTaskTokens: number,
+  ): Promise<{ res: CallResult; maxToolRounds: number }> {
+    const { sid } = task
+    const callLLM = this.withEmptyRetry(task)
+    let toolRounds = 0
+    while (res.tcs.length > 0) {
+      // 动态自动调节: 单批工具轮达到初始上限但仍有工具待执行时, 自动顺延, 直到模型停止调用工具
+      if (toolRounds >= maxToolRounds) {
+        if (maxToolRounds >= 10000) break
+        maxToolRounds = Math.min(maxToolRounds + 50, 10000)
+        this.trace('warn', 'tool.rounds-extend', '单批工具轮 ' + toolRounds + ' → 上限自动顺延至 ' + maxToolRounds, sid, task.taskId)
+      }
+      toolRounds++
+      if (this.curGen(sid) !== task.myGen) break
+      // v0.3.7: 后续批次的工具调用补充为计划步骤
+      if (toolRounds > 1 && res.tcs.length) this.planAppend(task, res.tcs)
+      if (task.interjects.length && task.interjects[0].kind === 'retarget') {
+        task.toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
+        this.planFailPending(task, '改向熔断')
+        break
+      }
+      const rc = new Map<string, number>()
+      for (const t of task.toolLog) { const k = t.name + '::' + JSON.stringify(t.args || {}); rc.set(k, (rc.get(k) || 0) + 1) }
+      if (res.tcs.some(tc => (rc.get(tc.name + '::' + JSON.stringify(tc.args || {})) || 0) >= meltLimit)) {
+        this.trace('warn', 'tool.meltdown', res.tcs[0].name, sid, task.taskId)
+        this.planFailPending(task, '重复调用熔断')
+        break
+      }
+      const logStart = task.toolLog.length
+      const stepText = (res.text || '').trim()
+      const stepId = res.msgId || task.lastMsgId || uuidv4()
+      task.messages.push({ id: stepId, role: 'assistant', content: stepText || null, reasoning_content: res.reasoning || undefined, timestamp: Date.now(), tool_calls: res.tcs.map(tc2 => ({ id: tc2.id, type: 'function', function: { name: tc2.name, arguments: JSON.stringify(tc2.args) } })) })
+      this.emit({ type: 'step', sid, id: stepId, content: stepText || null, reasoning: res.reasoning || undefined, toolCalls: res.tcs })
+      const planIds = this.planStart(task, res.tcs, stepId)
+
+      const runOne = async (tc: EngineToolCall) => {
+        if (task.interjects.length && task.interjects[0].kind === 'retarget') {
+          task.toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
+          return { tc, r: 'E:改向指令熔断', ms: 0 }
+        }
+        let r2 = ''
+        let ms = 0
+        for (let a = 0; a <= maxRetry; a++) {
+          const t0 = Date.now()
+          this.emit({ type: 'stage', sid, phase: 'tool', label: '执行 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
+          r2 = await this.runToolFor(task, tc)
+          ms = Date.now() - t0
+          if (!r2.startsWith('E:')) break
+          if (a < maxRetry) await new Promise(r => setTimeout(r, backoffDelay(a, 500, 8000)))
+        }
+        task.toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms, toolCallId: tc.id })
+        this.trace(r2.startsWith('E:') ? 'warn' : 'info', 'tool', tc.name + ' ' + ms + 'ms', sid, tc.id)
+        return { tc, r: r2, ms }
+      }
+      const writes = ['write', 'edit', 'apply_patch', 'exec_command', 'mkdir', 'codebox']
+      const results: { tc: EngineToolCall; r: string; ms: number }[] = []
+      if (doParallel) {
+        const readTcs = res.tcs.filter(tc => !writes.includes(tc.name))
+        const writeTcs = res.tcs.filter(tc => writes.includes(tc.name))
+        results.push(...(await Promise.all(readTcs.map(runOne))))
+        for (const tc of writeTcs) results.push(await runOne(tc))
+      } else {
+        for (const tc of res.tcs) results.push(await runOne(tc))
+      }
+      // v0.3.5 T1: 并行结果总量护栏 —— 结果数 >4 且总字符 >6000 时, 保留前 4 大结果全量, 其余瘦身
+      if (task.g.perf?.parallelCap !== false && results.length > 4) {
+        const totalLen = results.reduce((s, x) => s + x.r.length, 0)
+        if (totalLen > 6000) {
+          const ranked = [...results].sort((a, b) => b.r.length - a.r.length)
+          const keepFull = new Set(ranked.slice(0, 4))
+          for (const x of results) if (!keepFull.has(x)) x.r = slimToolResult(x.r)
+        }
+      }
+      this.planFinish(task, planIds, results.map(x => ({ r: x.r, ms: x.ms })))
+      for (const { tc, r } of results) {
+        const toolMsg: EngineMessage = { id: uuidv4(), role: 'tool', content: r, timestamp: Date.now(), tool_call_id: tc.id }
+        task.messages.push(toolMsg)
+        this.emit({ type: 'tool-msg', sid, msg: toolMsg })
+      }
+      const roundLog = task.toolLog.slice(logStart)
+      if (roundLog.length) this.emit({ type: 'tool-log', sid, stepId, log: roundLog })
+      // 断点: 每 5 轮或 30s 落盘 + 通知渲染层保存会话
+      if (toolRounds % 5 === 0 || Date.now() - task.lastMidSave > 30000) {
+        task.lastMidSave = Date.now()
+        this.checkpoint(task, toolRounds)
+      }
+      task.interjects = []
+      if (this.curGen(sid) !== task.myGen) break
+      // 多模型策略: 代码类任务切 codeModel, 文档类切 longTextModel
+      const toolNames = res.tcs.map(tc => tc.name)
+      if (toolNames.some(n => ['write', 'edit', 'apply_patch', 'exec_command', 'mkdir', 'codebox', 'grep', 'read'].includes(n))) {
+        const cm = resolveModelOf(task.g, task.providers, task.curP, 'codeModel')
+        if (cm) { task.curP = cm.p; task.model = cm.model }
+      } else if (toolNames.some(n => ['save_memory', 'recall_memory', 'web_search', 'web_fetch', 'import_doc'].includes(n))) {
+        const lm = resolveModelOf(task.g, task.providers, task.curP, 'longTextModel')
+        if (lm) { task.curP = lm.p; task.model = lm.model }
+      }
+      this.emit({ type: 'stage', sid, phase: 'thinking', label: '思考中', detail: '' })
+      if (this.curGen(sid) !== task.myGen) break
+      res = await callLLM(task)
+      const used2 = this.taskTokensUsed(task)
+      const budgetAct2 = this.budgetAction(task, used2, maxTaskTokens)
+      if (budgetAct2 === 'continue') { /* 自动续跑: 保留 tcs */ }
+      else if (budgetExceeded(used2, maxTaskTokens)) res = { text: res.text, tcs: [] }
+      if (this.curGen(sid) !== task.myGen) break
+    }
+    return { res, maxToolRounds }
+  }
+
+  // v0.3.7: 是否需要强制验证 —— 改过文件(write/edit/apply_patch)但没有任何验证命令(exec_command/codebox)
+  private planNeedsVerify(task: TaskState): boolean {
+    return planNeedsVerifyCore(task.planSteps as PlanStepData[])
+  }
+
+  // 修改之后是否有验证步骤(read 确认 / exec_command / codebox)
+  private planHasVerification(task: TaskState, firstWriteIdx = -1): boolean {
+    return planHasVerificationCore(task.planSteps as PlanStepData[], firstWriteIdx)
+  }
+
   // 消息模型: 任务流只允许「用户消息 / 步骤卡 / 最终回复」三种消息。
   // 流式文字走临时通道(不落消息), 步骤文字随步骤卡落一条, 最终回复作为独立消息追加。
   // 不创建占位消息 → 不存在“卡片前重复”的架构性可能。
-  private finalizeTask(task: TaskState, res: CallResult, maxTaskTokens: number): void {
+  private finalizeTask(task: TaskState, res: CallResult, _maxTaskTokens: number): void {
     const { sid } = task
+    // v0.3.7: Goal 进度与计划同步
+    const gTotal = task.planSteps.length
+    const gDone = task.planSteps.filter(s => s.status === 'done').length
+    if (gTotal) task.goal.progress = gDone + '/' + gTotal + ' 完成'
+    // v0.3.7: 生成复盘前先收尾步骤状态, 保证统计准确(运行中按任务是否中止收尾)
+    for (const st of task.planSteps) {
+      if (st.status === 'running') st.status = task.stopped ? 'aborted' : 'done'
+      else if (st.status === 'pending' || st.status === 'paused') {
+        st.status = 'aborted'
+        st.detail = (st.detail ? st.detail + ' · ' : '') + '未执行'
+      }
+    }
     let finalText = ((task.pendingText || '') + (res.text || '')).trim()
     task.pendingText = ''
-    if (budgetExceeded(this.taskTokensUsed(task), maxTaskTokens)) {
-      finalText += (finalText ? '\n\n' : '') + '[已达任务 token 预算上限，本轮提前结束。可在 设置→引擎→任务可靠性 中调整预算。]'
+    // v0.3.7: 计划复盘 —— 有工具步骤的任务自动附加结构化复盘
+    if (task.planSteps.length) {
+      const retro = this.planRetrospective(task)
+      if (retro) finalText = (finalText ? finalText + retro : retro.trim())
     }
     const finalId = res.msgId || task.lastMsgId || uuidv4()
     task.messages.push({
@@ -590,7 +881,25 @@ export class AgentEngine {
     const taskMs = Date.now() - (task.userMsg.timestamp || Date.now())
     this.emit({ type: 'final', sid, id: finalId, content: finalText, reasoning: res.reasoning || undefined, toolLog: task.toolLog, taskTokens, taskMs })
     if (res.usage) this.emit({ type: 'assistant-usage', sid, id: finalId, usage: res.usage })
+    this.planAddDecision(task, '任务结束，生成复盘')
+    this.flushPlanDoc(task)
     this.emit({ type: 'stage-clear', sid })
+  }
+
+  // v0.3.7: 预算处理 —— 未超限返回 none; 开启自动继续且未到上限时重置已用量继续; 否则返回 none 由调用处结束本轮
+  private budgetAction(task: TaskState, used: number, max: number): 'none' | 'continue' {
+    if (!budgetExceeded(used, max)) return 'none'
+    const auto = task.g.longTaskAutoContinue === true
+    const autoMax = Number(task.g.longTaskAutoMax) || 5
+    if (auto && (task.autoContinueCount || 0) < autoMax) {
+      task.autoContinueCount = (task.autoContinueCount || 0) + 1
+      // 重置预算基数: 续跑按新一段用量计, 不立即再次超限
+      task.tokBase = this.snapshotTok(task.sid)
+      this.planAddDecision(task, '预算自动续跑第 ' + task.autoContinueCount + ' 次（重置用量基数）')
+      this.trace('warn', 'task.budget-auto-continue', (task.autoContinueCount || 0) + '/' + autoMax, task.sid, task.taskId)
+      return 'continue'
+    }
+    return 'none'
   }
 
   // 交接完成后自动交回: 被交接角色输出最终结果后, 身份回到上一角色(默认开启, 可在 设置→协作 关闭)
@@ -604,23 +913,29 @@ export class AgentEngine {
     this.trace('info', 'handoff.auto-return', prev, task.sid, task.taskId)
   }
 
-  // 子任务模型: 角色专属模型(如黑天鹅 vision)优先, 否则继承当前模型
-  private pickSubModel(task: TaskState, ag: AgentDef): { p: EngineProvider; model: string } {
-    const pref = ag?.model
-    if (pref === 'vision') {
-      const cands = this.visionCandidates(task.g, task.providers, task.curP)
-      if (cands.length) return cands[0]
-    } else if (pref) {
-      for (const pr of task.providers) {
-        if ((pr.models || []).includes(pref)) return { p: pr, model: pref }
-      }
-    }
-    return { p: task.curP, model: task.model }
-  }
-
   private finishTask(task: TaskState, status: 'done' | 'failed' | 'aborted', error?: string): void {
+    // v0.3.7: 防重入 —— stop() 可能同步收尾, runTask 收尾再调用时直接跳过
+    if (task.taskFinished) return
+    task.taskFinished = true
     // 任务结束清除插话标记, 避免历史插话在后续请求里被持续重排到末尾
     task.messages = task.messages.map(m => m._inject ? { ...m, _inject: false } : m)
+    // v0.3.7: Goal 生命周期收尾
+    task.goal = { ...task.goal, status: status === 'done' ? 'completed' : status === 'failed' ? 'failed' : 'aborted' }
+    // v0.3.7: 收尾未完成步骤 —— 中止标 aborted, 失败标 failed
+    if (status !== 'done') this.planCloseAll(task, status === 'failed' ? 'failed' : 'aborted', status === 'failed' ? (error || '任务失败') : (error || '任务中止'))
+    else {
+      // 任务正常完成: 未认领/未执行的步骤标为未执行, 遗留 running 视为完成
+      for (const st of task.planSteps) {
+        if (st.status === 'running') st.status = 'done'
+        else if (st.status === 'pending' || st.status === 'paused') {
+          st.status = 'aborted'
+          st.detail = (st.detail ? st.detail + ' · ' : '') + '未执行'
+        }
+      }
+    }
+    this.flushPlan(task)
+    this.flushPlanDoc(task)
+    closeTerminalSessions(task.sid)
     finishTask(task.taskId, status, error)
     this.emit({ type: 'task-done', sid: task.sid, taskId: task.taskId, status, error })
   }
@@ -628,7 +943,7 @@ export class AgentEngine {
   private checkpoint(task: TaskState, round: number): void {
     // 断点剥离图片 dataURL(体积大), 原图仍在会话文件中
     const cpMsgs = task.messages.map(m => m.images && m.images.length ? { ...m, images: ['[图片已从断点剥离，原图以会话记录为准]'] } : m)
-    updateTask(task.taskId, { checkpoint: { messages: cpMsgs, agent: task.agent, activeAgents: task.activeAgents, model: task.model, round, provider: task.curP, handoffAt: task.handoffAt, handoffStack: task.handoffStack, handoffCounts: task.handoffCounts } })
+    updateTask(task.taskId, { checkpoint: { messages: cpMsgs, agent: task.agent, activeAgents: task.activeAgents, model: task.model, round, provider: task.curP, handoffAt: task.handoffAt, handoffStack: task.handoffStack, handoffCounts: task.handoffCounts, planSteps: task.planSteps.map(s => ({ ...s })), planSummary: task.planSummary, planSurprises: task.planSurprises, planDecisions: task.planDecisions, goal: { ...task.goal } } })
   }
 
   private findProvider(cp: unknown, providers: EngineProvider[], fallback: EngineProvider): EngineProvider {
@@ -640,7 +955,7 @@ export class AgentEngine {
     return fallback
   }
 
-  private withEmptyRetry(task: TaskState): (t: TaskState) => Promise<CallResult> {
+  private withEmptyRetry(_task: TaskState): (t: TaskState) => Promise<CallResult> {
     return async (t: TaskState): Promise<CallResult> => {
       let capBoost = 1
       const rid = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
@@ -755,7 +1070,7 @@ export class AgentEngine {
         temperature: Number(task.g.temperature) || 0.7,
         max_tokens: maxTokens,
         tools,
-        thinkLevel: this.resolveThinkLevel(task),
+        thinkLevel: resolveThinkLevelOf(task.g, task.model),
         headers: task.curP.headers,
         requestId: rid,
         sid,
@@ -807,7 +1122,7 @@ export class AgentEngine {
       g: task.g,
       cl: getModelContextLimit(task.model),
       spIshiki: String(task.g.ishiki || ''),
-      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || ''),
+      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', listSkills(this.deps.skillsDirs || [])),
       agent: task.agent,
       handoffFrom: task.handoffAt,
       memoryText: task.memoryText,
@@ -832,6 +1147,7 @@ export class AgentEngine {
       workDir: task.g.workDir || '',
       memoryPath: this.deps.memoryPath,
       userDataPath: this.deps.userDataPath,
+      skillsDirs: this.deps.skillsDirs,
       sender: this.deps.getSender(),
       getMemory: () => task.memory,
       saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m) },
@@ -846,6 +1162,11 @@ export class AgentEngine {
       },
       onThemeChange: (theme: string) => {
         this.emit({ type: 'ui', sid: task.sid, theme })
+      },
+      onPlanUpdate: (steps) => this.applyPlanUpdate(task, steps),
+      onGoalUpdate: (goalText) => {
+        task.goal = { objective: String(goalText).slice(0, 500), status: 'active', startedAt: task.goal.startedAt }
+        this.schedulePlanDoc(task)
       },
       runDispatch: (dTasks) => this.runDispatch(task, dTasks),
       getHandoffCounts: () => ({ ...task.handoffCounts }),
@@ -870,8 +1191,8 @@ export class AgentEngine {
     const q = String((tc.args as { question?: unknown })?.question || '').trim() || '描述这张网页截图'
     const img = String(await invokeHandler('browser:screenshot', [undefined, task.sid + '::' + task.taskId], this.deps.getSender()))
     if (!img || img.startsWith('E:') || img.length < 100) return 'E:页面截图失败: ' + (img || '空')
-    const cands = this.visionCandidates(task.g, task.providers, task.curP)
-    if (!cands.length) return 'E:未配置视觉理解模型(设置→策略→👁️视觉理解)'
+    const cands = visionCandidates(task.g, task.providers, task.curP)
+    if (!cands.length) return 'E:未配置视觉理解模型(设置→策略→视觉理解)'
     let lastErr = ''
     for (const c of cands) {
       try {
@@ -889,15 +1210,6 @@ export class AgentEngine {
       } catch (e) { lastErr = e instanceof Error ? e.message : String(e) }
     }
     return 'E:视觉分析失败: ' + lastErr
-  }
-
-  private resolveModel(task: TaskState, key: string): { p: EngineProvider; model: string } | null {
-    const val = task.g[key]
-    if (!val) return null
-    const [pid, m] = String(val).includes('::') ? String(val).split('::') : [null, String(val)]
-    if (pid) { const pr = task.providers.find(x => x.id === pid); if (pr && (pr.models || []).includes(m)) return { p: pr, model: m } }
-    else if ((task.curP.models || []).includes(String(val))) return { p: task.curP, model: String(val) }
-    return null
   }
 
   private recordUsage(task: TaskState, rid: string, u: EngineUsage, modelOverride?: string): void {
@@ -936,14 +1248,14 @@ export class AgentEngine {
     if (used > 0) task.lastPromptTokens = used
     if (used > 0) this.emit({ type: 'context', sid: task.sid, used, limit })
     try {
-      // v0.3.6: 只有确认支持缓存统计的请求计入观测分母(HanaAgent 同口径: 命中率 = 命中请求 ÷ 有观测请求)
+      // v0.3.6: 只有确认支持缓存统计的请求计入观测分母(命中率 = 命中请求 ÷ 有观测请求)
       void invokeHandler('modelStats:recordRequest', [task.sid, mk, readT > 0, cacheCapToSupported(cap)], null)
       if (readT > 0 || inputT > 0 || writeT > 0 || missT > 0) {
         void invokeHandler('modelStats:recordTokens', [task.sid, mk, readT, inputT, writeT, missT, {
           supported: cacheCapToSupported(cap),
           provider: task.curP?.name,
         }], null)
-        // v0.3.6: 逐请求明细(HanaAgent 请求明细/按日期/按类别视图的数据源)
+        // v0.3.6: 逐请求明细(请求明细/按日期/按类别视图的数据源)
         void invokeHandler('modelStats:recordEntry', [{
           sid: task.sid,
           model: mk,
@@ -1128,7 +1440,7 @@ export class AgentEngine {
         const subCtx = { ...this.buildToolCtx(task), agent: t.agent, isSubtask: true, activeAgents: [...task.activeAgents, t.agent] }
         const agTools = filterToolsByAgent(getActiveTools(subCtx), t.agent, agents).filter(tt => !COLLAB_TOOLS.includes(tt.function.name))
         // 子任务使用角色专属模型(如黑天鹅 vision), 未配置则继承当前模型
-        const subPick = this.pickSubModel(task, ag)
+        const subPick = pickSubModel(task.g, task.providers, task.curP, task.model, ag)
         const subP = subPick.p
         const subModel = subPick.model
         const subMsgs: unknown[] = [
@@ -1177,7 +1489,6 @@ export class AgentEngine {
           if (clean.length !== subMsgs.length) { subMsgs.length = 0; subMsgs.push(...clean) }
           let text = ''
           const tcs: EngineToolCall[] = []
-          let done = false
           let err: unknown = null
           const rid = 'sub' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
           await new Promise<void>((resolveOnce) => {
@@ -1188,10 +1499,10 @@ export class AgentEngine {
               baseUrl: subP.baseUrl,
               messages: subMsgs as unknown as LlmMsg[],
               tools: agTools as unknown[],
-              thinkLevel: this.resolveThinkLevel(task, subModel),
+              thinkLevel: resolveThinkLevelOf(task.g, subModel),
               requestId: rid,
             }, {
-              onChunk: d => { touch(); if (d.content) text += d.content; if (d.done) { done = true; resolveOnce() } },
+              onChunk: d => { touch(); if (d.content) text += d.content; if (d.done) { resolveOnce() } },
               onToolCall: tc => { touch(); try { if (tc?.function?.name) tcs.push({ id: tc.id || ('c' + Date.now()), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { /* 忽略 */ } },
               onUsage: u => { touch(); this.recordUsage(task, rid, u, subModel) },
               onError: e => { touch(); err = e; resolveOnce() },

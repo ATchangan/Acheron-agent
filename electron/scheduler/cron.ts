@@ -1,6 +1,5 @@
 ﻿// electron/scheduler/cron.ts — 定时任务调度器
 import * as fs from 'fs'
-import { join } from 'path'
 
 interface CronJob { id: string; expression: string; prompt: string; nextRun: number; enabled: boolean }
 

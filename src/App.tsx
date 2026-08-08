@@ -140,6 +140,23 @@ export default function App() {
     const off = window.huangquan?.web?.onEmbed?.((d) => { if (d?.show) setView('browser') })
     return () => { try { off?.() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
   }, [])
+  // v0.3.6 修复: 聊天 Markdown 里的外链(如模型回复的 GitHub 地址)点击后
+  // 不再让应用窗口跳走, 统一交给系统默认浏览器打开
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null
+      const a = el && el.closest ? el.closest('a[href]') as HTMLAnchorElement | null : null
+      if (!a) return
+      const href = a.getAttribute('href') || ''
+      if (/^https?:/i.test(href)) {
+        e.preventDefault()
+        e.stopPropagation()
+        void window.huangquan.web.openExternal(href).catch(() => {})
+      }
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
+  }, [])
   if (routeHash === '#browser') return <BrowserView />
 
   useEffect(() => {

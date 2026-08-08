@@ -45,6 +45,7 @@ export function registerEngineIpc(deps: {
     userDataPath,
     memoryPath,
     tracePath,
+    skillsDirs: [join(resourcesDir, 'skills'), join(userDataPath, 'skills')],
     netFetch,
     loadSettings,
     loadIshiki: () => {

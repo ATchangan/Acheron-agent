@@ -1,25 +1,17 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import type { SessionData, SettingsData, ProviderConfig, SkillMeta, SessionMeta } from '../global'
-import type { GeneralSettings } from '../types'
 import { useSettingsStore } from './settings'
-import { getModelContextLimit, updateContextLimit, buildPrompt } from './context'
+import { buildPrompt } from './context'
 import { refreshMemoryCache } from './memory'
 import { invalidateSid } from './session-state'
-import { clientSend, taskGenBySid } from './chat-send'
+import { clientSend, taskGenBySid, type PlanState } from './chat-send'
 import { clearInterjectForSid } from './interject'
 import type { S } from './chat-send'
 import { bindEngineEvents } from './engine-client'
 
 import { refreshMcpTools } from './mcp-tools'
 
-// v0.3.0 M5: 工具调用循环中的扁平工具项(组件收集, 非 API delta)
-interface ToolCallItem {
-  id: string
-  name: string
-  args: Record<string, unknown>
-}
-import { errMsg } from '../utils/safe'
 
 // v0.3.3 性能优化: 已加载过全量消息的会话 id(启动只读 meta, 点开/切换才读全量)
 const loadedSessionIds = new Set<string>()
@@ -70,7 +62,7 @@ if (typeof window !== 'undefined') refreshMcpTools().catch(() => {})
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], planPending: {}, streamText: '', streamId: '',
+  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, streamText: '', streamId: '',
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
 
@@ -178,6 +170,10 @@ export const useChatStore = create<S>((set, get) => ({
         loadedSessionIds.add(id)
         if (full && Array.isArray(full.messages)) {
           set(s => ({ sessions: s.sessions.map(x => x.id === id ? { ...x, messages: full.messages.filter(m => !(m as { _streaming?: boolean })._streaming), title: full.title || x.title, mode: full.mode || x.mode } : x) }))
+          // v0.3.7: 恢复随会话保存的执行计划(切会话/重启后可回看)
+          if (full.plan && !useChatStore.getState().plans[id]) {
+            useChatStore.setState(s2 => ({ plans: { ...s2.plans, [id]: full.plan as PlanState } }))
+          }
         }
       } catch { loadedSessionIds.add(id) }
     }

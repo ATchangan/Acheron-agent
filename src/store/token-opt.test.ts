@@ -37,15 +37,6 @@ describe('0.3.2 T8 sessionTokens 会话累计统计', () => {
   })
 })
 
-function tcPair(n: number): Message[] {
-  const out: Message[] = []
-  for (let i = 0; i < n; i++) {
-    out.push({ id: 'a' + i, role: 'assistant', content: null, timestamp: i, tool_calls: [{ id: 'tc' + i, type: 'function', function: { name: 'read', arguments: '{}' } }] })
-    out.push({ id: 't' + i, role: 'tool', content: 'result ' + i, timestamp: i, tool_call_id: 'tc' + i })
-  }
-  return out
-}
-
 describe('0.3.3 T3 buildTaskArchives 跨任务归档', () => {
   function taskBlock(prefix: string, rounds: number): Message[] {
     const out: Message[] = [{ id: prefix + 'u', role: 'user', content: '任务 ' + prefix, timestamp: 1 }]

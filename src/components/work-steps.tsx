@@ -1,5 +1,3 @@
-import React from 'react'
-
 // 工具中文名映射(未覆盖的工具回退显示原名)
 export const TOOL_LABELS: Record<string, string> = {
   read: '读取文件', read_file: '读取文件', write: '写入文件', edit: '编辑文件', append: '追加内容',

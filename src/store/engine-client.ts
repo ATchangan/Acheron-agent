@@ -4,6 +4,7 @@ import type { Message, SessionData, UsageData } from '../global'
 import { useChatStore } from './chat'
 import { useSettingsStore } from './settings'
 import { autoExtractMemory } from './memory'
+import type { PlanStepView, PlanState } from '../global'
 
 interface EngineEventMsg {
   id: string
@@ -48,7 +49,8 @@ interface EngineEvent {
   error?: string
   message?: string
   summary?: string
-  steps?: { tool: string; args: Record<string, unknown> }[]
+  steps?: PlanStepView[]
+  pending?: boolean
   agent?: string
   activeAgents?: string[]
   kind?: string
@@ -205,7 +207,7 @@ function applyEngineEventInner(raw: unknown): void {
       if (!m) break
       patchSession(ev.sid, s => ({ ...s, messages: [...(s.messages || []), {
         id: m.id,
-        role: 'user' as const,
+        role: (m.role === 'system' ? 'system' : 'user') as 'user' | 'system',
         content: m.content ?? '',
         timestamp: m.timestamp || Date.now(),
         images: m.images,
@@ -267,7 +269,16 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'plan': {
-      useChatStore.setState(s => ({ planPending: { ...s.planPending, [ev.sid]: { summary: ev.summary || '', steps: ev.steps || [] } } }))
+      const plan: PlanState = { summary: ev.summary || '', steps: ev.steps || [], pending: true }
+      useChatStore.setState(s => ({ plans: { ...s.plans, [ev.sid]: plan } }))
+      patchSession(ev.sid, s => ({ ...s, plan }))
+      throttledSessionSave(ev.sid, 300)
+      break
+    }
+    case 'plan-update': {
+      const prev = useChatStore.getState().plans[ev.sid]
+      const plan: PlanState = { summary: ev.summary !== undefined ? ev.summary : (prev?.summary || ''), steps: ev.steps || [], pending: prev?.pending ?? false }
+      useChatStore.setState(s => ({ plans: { ...s.plans, [ev.sid]: plan } }))
       break
     }
     case 'compact': {
@@ -292,8 +303,8 @@ function applyEngineEventInner(raw: unknown): void {
     }
     case 'task-done': {
       useChatStore.setState({ streamText: '', streamId: '' })
-      patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false, messages: stripStreaming(s.messages || []) }))
-      useChatStore.setState(s => { const pp = { ...s.planPending }; delete pp[ev.sid]; return { planPending: pp } })
+      const finalPlan = useChatStore.getState().plans[ev.sid]
+      patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false, messages: stripStreaming(s.messages || []), plan: finalPlan || s.plan }))
       if (st.cid === ev.sid) useChatStore.setState({ streaming: false, executing: false, stage: null, error: ev.status === 'failed' ? (ev.error || '任务失败') : null })
       throttledSessionSave(ev.sid, 200)
       autoExtractMemory(ev.sid, useChatStore.getState().sessions).catch(() => {})

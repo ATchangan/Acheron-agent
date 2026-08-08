@@ -30,7 +30,7 @@ export function registerModelsIpc(deps: {
 
   ipcMain.handle('models:detect', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean; type?: string }) => {
     try {
-      let base = (baseUrl || '').replace(/\/+$/, '')
+      const base = (baseUrl || '').replace(/\/+$/, '')
       if (!base) return { ok: false, error: '请先填写 Base URL' }
       // Anthropic(Claude) 鉴权是 x-api-key 而非 Bearer —— 按 baseUrl / key 前缀自动识别
       // 支持 Azure OpenAI / Google Gemini 模型列表接口
@@ -114,7 +114,7 @@ export function registerModelsIpc(deps: {
   ipcMain.handle('models:test', async (_e, baseUrl: string, apiKey: string, opts?: { anthropic?: boolean }) => {
     const t0 = Date.now()
     try {
-      let base = (baseUrl || '').replace(/\/+$/, '')
+      const base = (baseUrl || '').replace(/\/+$/, '')
       if (!base) return { ok: false, status: 0, latency: 0, message: '请先填写 Base URL' }
       const isAnthropic = !!(opts?.anthropic || /anthropic/i.test(base) || (apiKey || '').startsWith('sk-ant-'))
       let url: string

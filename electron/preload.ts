@@ -135,8 +135,8 @@ contextBridge.exposeInMainWorld('huangquan', {
   update: {
     check: () => ipcRenderer.invoke('update:check'),
     download: (url: string, fileName: string) => ipcRenderer.invoke('update:download', url, fileName),
-    onProgress: (cb: (d: { received: number; total: number }) => void) => {
-      const h = (_: unknown, d: { received: number; total: number }) => cb(d)
+    onProgress: (cb: (d: { received: number; total: number; ts: number }) => void) => {
+      const h = (_: unknown, d: { received: number; total: number; ts: number }) => cb(d)
       ipcRenderer.on('update:progress', h); return () => ipcRenderer.removeListener('update:progress', h)
     },
   },

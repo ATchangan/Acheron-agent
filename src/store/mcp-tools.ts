@@ -1,5 +1,5 @@
 // src/store/mcp-tools.ts — MCP 工具自动注入(v0.3.3 内核加固)
-// MCP 服务器连接后, tools/list 的 schema 直接并入 LLM 工具列表(主流桌面 Agent 行为),
+// MCP 服务器连接后, tools/list 的 schema 直接并入 LLM 工具列表,
 // 工具名统一 mcp__<server>__<tool>, 由 runTool 路由回 mcpCall/mcpSSECall。
 import type { ToolSpec } from '../types'
 import { parseMcpToolName } from '../../electron/shared/mcp-utils'
@@ -19,7 +19,6 @@ export interface McpServerInfo {
   tools?: McpToolMeta[] | string[]
 }
 
-let MCP_TOOLS: ToolSpec[] = []
 const MCP_TOOL_NAMES = new Set<string>()
 // 服务器 → 传输类型(stdio/sse), runTool 按此路由
 const MCP_SERVER_KIND: Record<string, 'stdio' | 'sse'> = {}
@@ -92,7 +91,6 @@ export async function refreshMcpTools(): Promise<void> {
       }
     }
   } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  MCP_TOOLS = specs
   MCP_TOOL_NAMES.clear()
   for (const n of names) MCP_TOOL_NAMES.add(n)
   Object.assign(MCP_SERVER_KIND, kinds)

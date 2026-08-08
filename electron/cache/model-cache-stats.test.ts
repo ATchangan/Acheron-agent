@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { recordRequest, recordTokens, recordEntry, getAll, resetAll, resetOne } from './model-cache-stats'
 
-describe('model-cache-stats 命中率观测口径(HanaAgent 同口径)', () => {
+describe('model-cache-stats 请求级命中率观测口径', () => {
   beforeEach(() => { resetAll() })
 
   it('支持缓存的请求计入观测分母, 命中请求计入分子', () => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, net, safeStorage } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, net } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMemoryIpc } from './ipc/memory'
@@ -22,12 +22,9 @@ import { registerTraceIpc, flushTrace } from './ipc/trace'
 import { registerEngineIpc } from './ipc/engine'
 import { registerRiskConfirm } from './ipc/risk-confirm'
 import { getBrowserSession, getBrowserSessionIfExists, closeBrowserSession, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen, initBrowserViews } from './browser-session'
-import { safeClone, encKey, decKey, encProviders, decProviders, dirSize, fmtSize, startServer, type MainProvider, type MainSettingsData } from './main-utils'
-import { join, extname, dirname } from 'path'
+import { safeClone, decKey, encProviders, decProviders, dirSize, fmtSize, startServer } from './main-utils'
+import { join } from 'path'
 import * as fs from 'fs'
-import * as http from 'http'
-import { exec } from 'child_process'
-import * as os from 'os'
 
 // 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
 // 不显式指回原目录会丢失全部配置/会话
@@ -37,6 +34,10 @@ app.setName('黄泉Agent')
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.huangquan.agent')
 }
+// v0.3.6 修复: stdout/stderr 被关闭时 console 写入会抛 EPIPE, 被下方既有兜底处理器记录成 FATAL 噪音。
+// 日志统一走安全包装; 未捕获异常仅对 EPIPE 静默, 其余交给既有兜底处理器(记录 crash.log)。
+function safeLog(...args: unknown[]): void { try { console.log(...args) } catch { /* 管道已关闭 */ } }
+function safeError(...args: unknown[]): void { try { console.error(...args) } catch { /* 管道已关闭 */ } }
 // 退出前把缓冲中的诊断轨迹写盘(否则最后 ~500ms 的轨迹可能丢失)
 app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
 
@@ -47,32 +48,15 @@ const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch
 // 全局崩溃捕获
 // 崩溃日志异步追加, 不再同步阻塞主进程
 function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
-process.on('uncaughtException', (err) => { console.error('[FATAL] uncaughtException:', err); appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + err.stack + '\n') })
+process.on('uncaughtException', (err: unknown) => {
+  // stdout/stderr 被关闭导致的 EPIPE 不记 FATAL(避免刷 crash.log 噪音), 其余真实错误照常记录
+  if ((err as NodeJS.ErrnoException)?.code === 'EPIPE') return
+  console.error('[FATAL] uncaughtException:', err)
+  appendCrashLog(new Date().toISOString() + ' uncaughtException: ' + (err as Error)?.stack + '\n')
+})
 process.on('unhandledRejection', (reason) => { console.error('[FATAL] unhandledRejection:', reason); appendCrashLog(new Date().toISOString() + ' unhandledRejection: ' + reason + '\n') })
 
 // v0.3.0 M5: LLM 调用参数结构
-interface LLMMsg { role: string; content?: unknown; tool_calls?: unknown; tool_call_id?: string; reasoning_content?: unknown }
-interface LLMChatParams {
-  provider: string
-  model: string
-  apiKey?: string
-  baseUrl?: string
-  messages: LLMMsg[]
-  temperature?: number
-  tools?: unknown[]
-  headers?: string
-  requestId?: string
-  customHeaders?: string
-  sid?: string // v0.3.1 C3: 会话级中止过滤
-}
-interface VisionParams {
-  provider: string
-  model: string
-  apiKey?: string
-  baseUrl?: string
-  imageDataUrl: string
-  prompt?: string
-}
 // v0.3.0 M5: 本地设置数据结构(electron 不依赖渲染层类型)
 let rendererMode = 'auto'
 try {
@@ -116,6 +100,11 @@ const sessionsDir = join(userDataPath, 'sessions')
 const settingsPath = join(userDataPath, 'settings.json')
 const tasksPath = join(userDataPath, 'tasks.json')
 const tracePath = join(userDataPath, 'agent-trace.jsonl')
+// v0.3.7: 崩溃防护 —— 渲染模式设为 cpu 时禁用 GPU 硬件加速(Electron 渲染进程崩溃的常见来源)
+try {
+  const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+  if (String(s?.general?.rendererMode || '') === 'cpu') app.disableHardwareAcceleration()
+} catch { /* 设置不可读时保持默认 */ }
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
 registerTaskIpc({ tasksPath })
 registerTraceIpc({ tracePath })
@@ -230,6 +219,14 @@ function titleBarOverlayForTheme(theme?: string): { color: string; symbolColor: 
     default: return { color: '#15171c', symbolColor: '#c8c8cc', height: 32 }
   }
 }
+
+// v0.3.7: 渲染进程崩溃上下文 —— 环形缓冲最近的渲染层错误, 崩溃时连同引擎轨迹一起落盘定位
+const crashContext: string[] = []
+function pushCrashContext(line: string): void {
+  crashContext.push(new Date().toISOString() + ' [renderer] ' + line)
+  if (crashContext.length > 200) crashContext.splice(0, crashContext.length - 200)
+}
+
 function createWindow() {
   let savedTheme: string | undefined
   try {
@@ -247,7 +244,45 @@ function createWindow() {
     titleBarOverlay: titleBarOverlayForTheme(savedTheme),
   })
   mainWindow = win
-  win.webContents.on('render-process-gone', (_e, details) => { console.error('[FATAL] renderer crashed:', details.reason, details.exitCode); try { fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), new Date().toISOString() + ' renderer crashed: ' + details.reason + ' ' + details.exitCode + '\n') } catch (e) { console.debug('[swallow]', e) }; if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.loadURL('http://127.0.0.1:' + serverPort + '/index.html') } })
+  // v0.3.6 修复: 聊天 Markdown 外链/任何 window.open 都不能让主窗口离开本地应用页,
+  // 否则整个窗口被外部网页占满且没有返回入口。一律交给系统默认浏览器打开。
+  win.webContents.on('will-navigate', (e, url) => {
+    const local = 'http://127.0.0.1:' + serverPort
+    if (url.startsWith(local)) return
+    e.preventDefault()
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
+    return { action: 'deny' }
+  })
+  // v0.3.7: 收集渲染层错误/警告, 崩溃时写入 crash.log 帮助定位根因
+  win.webContents.on('console-message' as never, ((...args: unknown[]) => {
+    const ev = args[0] as { details?: { level?: string | number; message?: string; lineNumber?: number; sourceId?: string } }
+    const d = ev?.details
+    const level = d?.level ?? args[1]
+    if (level === 'error' || level === 'warning' || level === 2 || level === 3) {
+      const msg = d?.message ?? args[2]
+      const src = d?.sourceId ?? args[4]
+      const line = d?.lineNumber ?? args[3]
+      pushCrashContext(String(msg || '').slice(0, 300) + (src ? ' (' + src + ':' + line + ')' : ''))
+    }
+  }) as never)
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[FATAL] renderer crashed:', details.reason, details.exitCode)
+    try {
+      const lines: string[] = []
+      lines.push(new Date().toISOString() + ' renderer crashed: ' + details.reason + ' ' + details.exitCode)
+      if (crashContext.length) lines.push('--- renderer context (last ' + Math.min(crashContext.length, 40) + ') ---', ...crashContext.slice(-40))
+      try {
+        const traceTail = fs.readFileSync(tracePath, 'utf-8').trim().split('\n').slice(-8)
+        if (traceTail.length) lines.push('--- engine trace tail ---', ...traceTail)
+      } catch { /* 无轨迹文件 */ }
+      fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), lines.join('\n') + '\n')
+    } catch (e) { console.debug('[swallow]', e) }
+    crashContext.length = 0
+    if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.loadURL('http://127.0.0.1:' + serverPort + '/index.html') }
+  })
   win.loadURL('http://127.0.0.1:' + serverPort + '/index.html')
   win.once('ready-to-show', () => mainWindow?.show())
   win.on('closed', () => { mainWindow = null })
@@ -311,34 +346,6 @@ registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (
 registerRiskConfirm({ getMainWindow: () => mainWindow, settingsPath })
 registerCronIpc()
 
-// 实时性能采样 —— CPU(os.cpus 两次采样差) + RAM + GPU(Windows 性能计数器), 2s 缓存
-let perfCache: { cpuPct: number; memPct: number; memUsed: number; memTotal: number; gpuPct: number; gpuName: string; cpus: number } | null = null; let perfCacheAt = 0
-let lastCpuSample: { idle: number; total: number } | null = null; let lastCpuAt = 0
-// GPU 采样 —— 优先 nvidia-smi(正在使用的 NVIDIA GPU, 准确), 失败回退性能计数器各引擎最大值
-let gpuViaNvidia = true
-function sampleGpu(): Promise<{ pct: number | null; name: string | null }> {
-  return new Promise((resolve) => {
-    if (gpuViaNvidia) {
-      exec('nvidia-smi --query-gpu=name,utilization.gpu --format=csv,noheader,nounits', { timeout: 3000, windowsHide: true }, (err, stdout) => {
-        if (err) { gpuViaNvidia = false; sampleGpuWin(resolve); return }
-        const line = String(stdout).trim().split('\n')[0] || ''
-        const m = line.match(/(.+),\s*(\d+)/)
-        if (m) resolve({ pct: Math.max(0, Math.min(100, parseInt(m[2]))), name: m[1].trim() })
-        else resolve({ pct: null, name: null })
-      })
-    } else sampleGpuWin(resolve)
-  })
-}
-function sampleGpuWin(resolve: (v: { pct: number | null; name: string | null }) => void) {
-  const script = "try { $s = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($s -and $s.Count -gt 0) { ($s | Measure-Object -Property CookedValue -Maximum).Maximum } else { -1 } } catch { -1 }"
-  exec('powershell.exe -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\"') + '"', { timeout: 4000, windowsHide: true }, (err, stdout) => {
-    if (err) return resolve({ pct: null, name: null })
-    const v = parseFloat(String(stdout).trim().split('\n').pop() || '')
-    resolve({ pct: isFinite(v) && v >= 0 ? Math.min(100, Math.round(v)) : null, name: null })
-  })
-}
-// readFile 缓存 —— 按 mtime+size 校验, 内容未变直接复用(整文件读取路径)
-const readFileCache = new Map<string, { mtimeMs: number; size: number; content: string }>()
 // ─── 文件浏览器操作(写操作限定工作目录内, 防误删) ──
 // set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录
 let workDirOverride: string | null = null
@@ -359,11 +366,6 @@ function assertInsideWorkDir(p: string): boolean {
     return rp === rw || rp.startsWith(rw + require('path').sep)
   } catch { return false }
 }
-// 检索提速 —— 并行遍历(16 路并发) + 扩展忽略目录 + 大文件跳过
-const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'dist-electron', 'build', 'release', 'out', 'target', '__pycache__', '.venv', 'venv', '.idea', '.vscode', '.next', '.nuxt', '.cache', 'coverage', '.gradle', '.tox', 'site-packages'])
-
-
-
 // ─── 浏览器自动化 ───────────────────────────────
 // v0.3.4: agent 浏览器会话为 WebContentsView —— 同一 webContents 可内嵌主窗口实时显示, 零额外体积
 let browserCurUrl = 'about:blank'
@@ -392,10 +394,10 @@ app.whenReady().then(async () => {
     setTimeout(() => {
       try {
         const gst = app.getGPUFeatureStatus() as unknown as Record<string, string | undefined>
-        console.log('[RENDER] mode=' + rendererMode + ' gpuAcceleration=' + (gst?.gpuAcceleration || 'unknown') + ' webgl=' + gst?.webgl)
-      } catch (e2: unknown) { console.error('[RENDER] gpu detect error:', e2 instanceof Error ? e2.message : String(e2)) }
+        safeLog('[RENDER] mode=' + rendererMode + ' gpuAcceleration=' + (gst?.gpuAcceleration || 'unknown') + ' webgl=' + gst?.webgl)
+      } catch (e2: unknown) { safeError('[RENDER] gpu detect error:', e2 instanceof Error ? e2.message : String(e2)) }
     }, 3000)
-  } catch (e: unknown) { console.error('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
+  } catch (e: unknown) { safeError('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
   serverPort = await startServer(distDir)
   createAppMenu()
   // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
@@ -404,7 +406,7 @@ app.whenReady().then(async () => {
     const g = s?.general || {}
     if (g.autoCleanCache !== false) {
       const r = cleanChromiumCaches(userDataPath, Number(g.autoCleanCacheSize) || 200)
-      if (r.freedMb > 0) console.log('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
+      if (r.freedMb > 0) safeLog('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
     }
   } catch (e: unknown) { /* 设置缺失/损坏时跳过清理 */ console.debug('[swallow]', e) }
   createWindow()

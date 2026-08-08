@@ -85,11 +85,6 @@ export function extractSkinColors(dataUrl: string): Promise<{ primary: { r: numb
 }
 
 
-// 兼容旧调用: 单主色(簇0)
-function extractDominantColor(dataUrl: string): Promise<{ r: number; g: number; b: number }> {
-  return extractSkinColors(dataUrl).then(c => c.primary)
-}
-
 // 背景图压缩 —— Chromium 对 CSS 自定义属性值有大小限制（~1MB 量级），
 // 超长 dataURL 写入 --bg-image 会静默失败导致背景图不显示；同时压缩避免 settings.json 膨胀
 export function compressImage(dataUrl: string, maxSide = 1920, quality = 0.82): Promise<string> {

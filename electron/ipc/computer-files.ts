@@ -11,7 +11,7 @@ export function registerComputerFiles(deps: {
   getEffectiveWorkDir: () => string | undefined
   userDataPath: string
 }): void {
-  const { assertInsideWorkDir, assessRisk, confirmRisk, getEffectiveWorkDir, userDataPath } = deps
+  const { assertInsideWorkDir, assessRisk, confirmRisk } = deps
 ipcMain.handle('computer:stat', async (_e, filePath: string) => {
   const st = fs.statSync(filePath)
   return { mtimeMs: st.mtimeMs, size: st.size, isFile: st.isFile(), isDirectory: st.isDirectory() }
@@ -46,7 +46,7 @@ ipcMain.handle('computer:readFile', async (_e, filePath: string, offset?: number
     let start = offset
     if (start > 0) {
       const probe = Buffer.alloc(4)
-      const probeBytes = fs.readSync(fd, probe, 0, 4, Math.max(0, start - 3))
+  fs.readSync(fd, probe, 0, 4, Math.max(0, start - 3))
       // 从 start 位置向前扫描，找到 UTF-8 序列边界
       for (let i = start - Math.max(0, start - 3); i <= start; i++) {
         const b = probe[i - Math.max(0, start - 3)]

@@ -26,7 +26,7 @@ interface ModelTok {
 }
 type SessionStats = Record<string, Record<string, ModelTok>>
 
-// v0.3.6: 逐请求明细(HanaAgent 请求明细同款) —— 供"请求明细/按日期/按类别"视图使用
+// v0.3.6: 逐请求明细 —— 供"请求明细/按日期/按类别"视图使用
 export interface LedgerEntry {
   ts: number
   sid: string
@@ -101,7 +101,7 @@ function ensure(sid: string, model: string): ModelTok {
   return sessions[sid][model]
 }
 
-// supported=true 的请求才计入命中率观测分母(HanaAgent 同口径: 命中率 = 命中请求 ÷ 有观测请求)
+// supported=true 的请求才计入命中率观测分母(命中率 = 命中请求 ÷ 有观测请求)
 export function recordRequest(sid: string, model: string, hit: boolean, supported?: boolean): void {
   if (!model) return
   const cur = ensure(sid || '_', model)

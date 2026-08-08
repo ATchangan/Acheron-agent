@@ -2,7 +2,6 @@
 // 任务开始/心跳/结束都落盘到 tasks.json(原子写), 应用重启后可列出中断任务供恢复。
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
-import { join } from 'path'
 import { writeFileAtomic } from '../fs-atomic'
 
 export interface TaskRecord {
@@ -20,6 +19,7 @@ export interface TaskRecord {
 }
 
 const MAX_KEEP = 30
+const STALE_TASK_MS = 24 * 60 * 60 * 1000 // v0.3.7: 超过 24h 未收尾的 running 视为僵尸任务
 let tasksPath = ''
 let cache: TaskRecord[] | null = null
 
@@ -49,8 +49,28 @@ function upsertAll(rec: TaskRecord): void {
 
 // ─── 供 AgentEngine 直接使用的存储 API(不依赖 IPC) ───
 export function initTaskStore(path: string): void {
+  // v0.3.7: 路径变化时强制重读(避免模块级 cache 跨路径失效)
+  if (tasksPath && tasksPath !== path) cache = null
   tasksPath = path
   loadAll()
+  // v0.3.7: 启动治理 —— 崩溃/强杀残留的超时任务自动标记中止(保留 checkpoint 供人工恢复)
+  sweepStaleTasks()
+}
+
+export function sweepStaleTasks(now = Date.now()): number {
+  cache = null // 治理必须读最新磁盘状态
+  const list = loadAll()
+  let swept = 0
+  for (const t of list) {
+    if (t.status === 'running' && now - (t.startedAt || 0) > STALE_TASK_MS) {
+      t.status = 'aborted'
+      t.error = t.error || '任务中断超时自动清理'
+      t.updatedAt = now
+      swept++
+    }
+  }
+  if (swept) saveAll(list)
+  return swept
 }
 export function listTasks(): TaskRecord[] { return loadAll() }
 export function getTask(id: string): TaskRecord | null { return loadAll().find(t => t.id === id) || null }

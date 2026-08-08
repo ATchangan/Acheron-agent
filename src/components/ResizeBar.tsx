@@ -20,7 +20,7 @@ export default function ResizeBar({ varName, storeKey, min = 140, max = 420, edg
         if (w > 0) document.documentElement.style.setProperty(varName, w + 'px')
       }
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   const onDown = (e: React.MouseEvent) => {

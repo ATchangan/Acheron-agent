@@ -25,6 +25,8 @@ export interface EngineSettings {
   toolTimeout?: number
   maxTaskTokens?: number
   riskConfirm?: boolean
+  longTaskAutoContinue?: boolean
+  longTaskAutoMax?: number
   planGate?: boolean
   llmSummary?: boolean
   microCompact?: boolean
@@ -72,6 +74,19 @@ export interface EngineToolCall {
   id: string
   name: string
   args: Record<string, unknown>
+}
+
+// v0.3.7: 计划执行 —— 一个工具调用对应一个步骤, 状态机实时推进
+export interface PlanStep {
+  id: string
+  label: string
+  status: 'pending' | 'running' | 'done' | 'failed' | 'aborted' | 'paused'
+  tool?: string
+  detail?: string
+  toolCallId?: string   // 绑定 LLM 工具调用 id: 状态机按 id 关联, 不依赖队列顺序
+  expected?: string     // 预期结果/验收标准(可选)
+  ms?: number           // 工具执行耗时(ms)
+  messageId?: string    // 对应步骤消息 id, UI 点击跳转
 }
 
 export interface EngineMessage {
@@ -162,12 +177,13 @@ export type EngineEvent =
   | { type: 'stream'; sid: string; streaming: boolean; executing: boolean }
   | { type: 'busy'; sid: string; busy: boolean }
   | { type: 'agent'; sid: string; agent: string; activeAgents: string[] }
-  | { type: 'interject'; sid: string; msg: EngineMessage; kind: 'supplement' | 'retarget' }
+  | { type: 'interject'; sid: string; msg: EngineMessage; kind: 'supplement' | 'retarget' | 'system' }
   | { type: 'usage'; sid: string; model: string; usage: EngineUsage }
   | { type: 'context'; sid: string; used: number; limit: number }
   | { type: 'restore'; sid: string; messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string }
   | { type: 'ui'; sid: string; workDir?: string; theme?: string }
-  | { type: 'plan'; sid: string; summary: string; steps: { tool: string; args: Record<string, unknown> }[] }
+  | { type: 'plan'; sid: string; summary: string; steps: PlanStep[] }
+  | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[] }
   | { type: 'compact'; sid: string; messages: EngineMessage[] }
   | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string }
   | { type: 'error'; sid: string; message: string }

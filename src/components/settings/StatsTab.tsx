@@ -3,8 +3,7 @@ import { C, S } from '../settings-ui'
 import { U } from '../ui-styles'
 
 
-// v0.3.6: 模型缓存统计页 —— 布局对齐 HanaAgent 用量统计:
-// 总览(大命中率 + 环形图 + 模型分布 + 请求明细) / 按日期(7/30 天柱状图) / 按类别(按供应商) / 按模型 / 明细
+// v0.3.6: 模型缓存统计页 —— 总览(大命中率 + 环形图 + 模型分布 + 请求明细) / 按日期(7/30 天柱状图) / 按类别(按供应商) / 按模型 / 明细
 type ModelStat = {
   requests?: number
   hitReqs?: number
@@ -220,7 +219,7 @@ export default function StatsTab() {
             </button>
           </div>
         </div>
-        <div style={S.hint}>仅供参考，具体以供应商的统计为准。命中率为请求级口径（命中缓存的请求 ÷ 有缓存观测的请求，与 HanaAgent 一致）；供应商 API 不返回缓存字段、或未能确认支持缓存统计的模型，一律标注「不支持」。</div>
+        <div style={S.hint}>仅供参考，具体以供应商的统计为准。命中率为请求级口径（命中缓存的请求 ÷ 有缓存观测的请求）；供应商 API 不返回缓存字段、或未能确认支持缓存统计的模型，一律标注「不支持」。</div>
         {entries.length === 0 ? (
           <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, padding: '12px 0', textAlign: 'center' }}>暂无使用记录 —— 调用模型产生 API 请求后，该模型会自动出现在这里</div>
         ) : (
@@ -396,7 +395,7 @@ export default function StatsTab() {
                     <th style={{ padding: '6px 8px', fontWeight: 600 }}>模型名称</th>
                     <th style={U.thCell}>总请求</th>
                     <th style={U.thCell} title="命中缓存的请求数">命中请求</th>
-                    <th style={U.thCell} title="请求级命中率（HanaAgent 同口径）= 命中缓存的请求数 ÷ 有缓存观测的请求数">命中率</th>
+                    <th style={U.thCell} title="请求级命中率 = 命中缓存的请求数 ÷ 有缓存观测的请求数">命中率</th>
                     <th style={U.thCell}>缓存读取</th>
                     <th style={U.thCell}>缓存写入</th>
                     <th style={U.thCell} title="未命中缓存的输入用量（prompt_cache_miss_tokens）">缓存未命中</th>
@@ -419,7 +418,7 @@ export default function StatsTab() {
                         <td style={{ padding: '6px 8px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m + (c.providerName ? '（' + c.providerName + '）' : '')}>{m}</td>
                         <td style={U.thCell2}>{reqs}</td>
                         <td style={U.thCellOk}>{capCell(c, String(hitReqs), '命中缓存的请求数')}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }}>{capCell(c, reqRate !== '—' ? reqRate + '%' : '—', '请求级命中率（HanaAgent 同口径）= 命中请求 ÷ 有缓存观测的请求，当前 ' + hitReqs + '/' + observed)}</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 700, color: 'var(--success)' }}>{capCell(c, reqRate !== '—' ? reqRate + '%' : '—', '请求级命中率 = 命中请求 ÷ 有缓存观测的请求，当前 ' + hitReqs + '/' + observed)}</td>
                         <td style={U.thCellOk}>{capCell(c, fmtTok(read), '缓存读取 token')}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'center', color: 'var(--accent)' }}>{capCell(c, fmtTok(write), '缓存写入 token')}</td>
                         <td style={{ padding: '6px 8px', textAlign: 'center', color: '#d98a5f' }}>{capCell(c, fmtTok(miss), '缓存未命中 token')}</td>
