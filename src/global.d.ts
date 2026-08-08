@@ -1,6 +1,5 @@
 ﻿export {}
-import type { GeneralSettings } from './types'
-import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, VisionContent, LLMChatParams, LLMMessage, ToolDef, ToolCallDelta, SearchResult, CronJob, MediaProvider, ProviderConfig, Message, McpServerInfo, TaskRecord, TraceEntry } from './types/domain'
+import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, LLMChatParams, ToolCallDelta, SearchResult, CronJob, McpServerInfo, TaskRecord, TraceEntry } from './types/domain'
 
 declare global {
   interface Window {
@@ -107,7 +106,7 @@ declare global {
       update: {
         check: () => Promise<{ ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string }>,
         download: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string; path?: string }>
-        onProgress: (cb: (d: { received: number; total: number }) => void) => () => void
+        onProgress: (cb: (d: { received: number; total: number; ts: number }) => void) => () => void
       }
       appInfo: () => Promise<{ version: string; electron: string; node: string }>
       projectContext: () => Promise<{ file: string; content: string; path: string }>

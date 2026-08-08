@@ -14,7 +14,7 @@ export default function PersonaTab() {
   useEffect(() => {
     setChatPersona(g.chatPersona || '')
     setWorkPersona(g.workPersona || '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [g?.chatPersona, g?.workPersona])
   return (
     <div style={U.pageBody}>

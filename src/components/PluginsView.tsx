@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
-import { CATEGORIES, CATEGORY_HINT, CAT_COLORS, YELLOW_RIVER } from './plugin-types'
+import { YELLOW_RIVER } from './plugin-types'
 import type { PluginManifest, PluginInfo, PluginState } from './plugin-types'
 import { s } from './plugin-styles'
 import { MaskMark, EmptyMark } from './themed-icons'

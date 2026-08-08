@@ -2,13 +2,16 @@
 // 旧 runSend 主循环已迁入主进程 AgentEngine(electron/engine/engine.ts), 本文件只保留:
 // 会话 store 类型 S + 用户消息构建 + 引擎启动/插话客户端。死代码已删除, 不再双维护。
 import { v4 as uuidv4 } from 'uuid'
-import type { Message, SessionData } from '../global'
+import type { Message, SessionData, PlanStepView, PlanState } from '../global'
 import { errMsg } from '../utils/safe'
 import { detectInterjectKind } from './interject'
 import { buildUserMessage } from './chat-user-msg'
 
 // 会话级任务代号表(兼容旧引用; 引擎在主进程有独立代号)
 export const taskGenBySid: Record<string, number> = {}
+
+// v0.3.7: 计划类型已迁移到 types/domain, 此处 re-export 兼容旧引用
+export type { PlanStepView, PlanState }
 
 export interface S {
   sessions: SessionData[]; cid: string | null; sp: string; spIshiki: string; streaming: boolean; executing: boolean; error: string | null
@@ -23,7 +26,7 @@ export interface S {
   streamId: string // 当前流式通道归属的消息 id —— delta 按 id 隔离, 防止并行任务/插话串文
   activeAgents: string[]
   orphanTasks: { id: string; sid: string; content: string; images?: string[]; attachments?: Message['attachments']; at: number }[]
-  planPending: Record<string, { summary: string; steps: { tool: string; args: Record<string, unknown> }[] }>
+  plans: Record<string, PlanState>
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>
   create: () => void
@@ -72,6 +75,8 @@ export async function clientSend(
   const cur = get().sessions.find(x => x.id === sid)
   const taskId = uuidv4()
   try {
+    // v0.3.7: 新任务清掉上一任务的计划卡片, 重新走计划流
+    set(s => { const plans = { ...s.plans }; delete plans[sid]; return { plans } })
     // 停止后旧任务可能尚未完全退出：开新任务前先确保主进程旧任务已失效，避免被当成插话继续跑
     await window.huangquan.engine.stop(sid).catch(() => {})
     await window.huangquan.engine.start({

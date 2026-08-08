@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../../store/settings'
-import { C, S, Toggle, SegSetting } from '../settings-ui'
+import { C, S, Toggle } from '../settings-ui'
 import type { MemoryData } from '../../global'
 import { U } from '../ui-styles'
 

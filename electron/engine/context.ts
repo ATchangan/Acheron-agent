@@ -8,7 +8,7 @@ import { routeAgentCore } from '../shared/route'
 import { filterToolsCore } from '../shared/tool-filter'
 import type { EngineMessage, EngineSettings, EngineToolSpec } from './types'
 import type { AgentDef } from './agents'
-import { MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT, WORKFLOWS } from './constants'
+import { MAX_HISTORY_MSGS, WORKFLOWS } from './constants'
 import { v4 as uuidv4 } from 'uuid'
 
 // token 估算 / 输出上限 / 上下文窗口已抽至 shared/context-utils（B6-2）
@@ -21,7 +21,7 @@ export function routeAgent(userMessage: string, g: EngineSettings): string | nul
 }
 
 // ─── system prompt 构建(与渲染层 buildPrompt 同构) ───
-export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, agents: Record<string, AgentDef>, wd: string): string {
+export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, agents: Record<string, AgentDef>, wd: string, skills?: { name: string; description: string }[]): string {
   const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
   const identity = '## 身份\n' + (ishiki || '').slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
   const userInfo = '## 用户\n称呼：' + (g.userAlias || '老板') + '。关注代码与办公自动化场景。\n'
@@ -31,7 +31,6 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
   const workP = String(g.workPersona || '').trim()
   const persona = '## 人格\n' + (mode === 'chat' ? (chatP || defaultChatPersona) : (workP || defaultWorkPersona)) + '\n'
   const appearance = '## 外观\n银白长发，额前黑红尖角，血色瞳光。暗黑紧身战斗装束，红色纹路蔓延。手持冷峻短剑，慵懒却危险。哥特融合未来感的暗黑美学。\n'
-  const publicIshiki = '## 边界\n对外部访客保持礼貌与边界。不透露用户隐私。不确定的事坦诚说明，不编造。\n'
   const tools = '## 可用工具\n你拥有工具调用能力(read/write/exec_command/grep/find/ls/web_read 等),需要时自动调用,无需请示。\n'
   const thinkLevel = String(g.thinkLevel || 'medium')
   const thinkReq: Record<string, string> = {
@@ -58,7 +57,8 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
     (chatP ? '## 自定义聊天人设\n' + chatP + '\n\n' : '## 回复准则\n- 名称：' + agentName + '，称呼用户为' + (g.userAlias || '老板') + '\n- 风格：' + (toneMap[toneStyle] || toneMap['实用直接']) + '\n- 详细程度：' + (verbMap[verbosity] || verbMap[2]) + '\n- 不评价，只说事实和观察\n- 对方陷入困境时不空泛安慰，问"需要我帮你做什么"\n- 技术回答必须扎实准确\n- 用户提到重要信息时使用 save_memory\n直接回复，不需要特殊格式标签。')
   const workPrompt = base +
     multiAgent +
-    (workP ? '## 自定义工作人设\n' + workP + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n每次调用工具前，先用一句简短自然语言说明这一步在做什么（例如：先读取项目说明、查找关键词、执行命令）。这句话会显示为你的工作步骤卡片，除步骤说明外不要输出其他文字。\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框')
+    (workP ? '## 自定义工作人设\n' + workP + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n每次调用工具前，先用一句简短自然语言说明这一步在做什么（例如：先读取项目说明、查找关键词、执行命令）。这句话会显示为你的工作步骤卡片，除步骤说明外不要输出其他文字。\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框') +
+    '\n## 计划执行（重要）\n- 开始任务时先复述目标与关键约束，缺条件先追问，不脑补\n- 复杂任务先用 update_plan 声明完整步骤清单（label + tool 对应工具名 + expected 预期结果 + 状态），执行中持续用 update_plan 更新状态并保持准确；计划会实时展示并打勾\n- 工具步骤会以「执行计划」清单展示并实时打勾，请保持计划文本与实际工具步骤一致\n- 每轮调用工具前仍用一句话说明这一步在做什么\n- 修改文件优先用 apply_patch（一次多 hunk 精确编辑），避免整文件重写；简单替换用 edit\n- 需要保持状态的交互命令（REPL、git、npm、长驻进程）用 terminal_open/terminal_run/terminal_close；一次性命令用 exec_command\n- 涉及文件/代码改动时，交付前必须运行验证命令（构建/测试/检查/列出结果），并把验证作为执行计划的一部分；未验证不得宣称完成\n'
   const langMap: Record<string, string> = { zh: '始终使用简体中文回复', 'zh-tw': '始终使用繁体中文回复', en: 'always reply in English', ja: '常に日本語で回答してください', auto: '自动检测用户语言并以此回复', match: '始终使用与用户提问相同的语言回复' }
   const langInstr = langMap[String(g.language || '')] ? '\n【语言要求】' + langMap[String(g.language || '')] : ''
   const tokenDiscipline = '\n## 信息调度纪律（重要）\n' +
@@ -66,7 +66,10 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
     '- 数字/代码/报错信息/用户约束必须逐字保真, 禁止约等于或转述\n' +
     '- 回复结论前置, 不重复用户原话, 修改只贴改动部分, 输出用标题/列表/表格/代码块\n' +
     '- 被截断的内容需要完整版时, 主动用工具按路径/行号/关键词取回\n'
-  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline
+  const skillsInstr = skills && skills.length
+    ? '\n\n## 已装载技能\n' + skills.map(s => `- ${s.name}: ${s.description}`).join('\n') + '\n需要技能详细指令时调用 read_skill(name) 读取 SKILL.md 全文；技能内脚本/参考资料用 read_skill(name, "scripts/xxx" 或 "references/xxx") 读取。\n'
+    : ''
+  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + skillsInstr
   if (g.customSystemPrompt) {
     const inj = g.customSystemPrompt
     const pos = g.promptInjectPos || 'end'

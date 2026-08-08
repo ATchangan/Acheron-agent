@@ -143,7 +143,7 @@ export async function webRead(rawOpts: WebReadOpts): Promise<WebReadResult> {
     let navError: string | null = null
     try {
       await page.goto(httpUrl, { waitUntil: 'networkidle', timeout: opts.timeoutMs })
-    } catch (e: unknown) {
+    } catch (_e: unknown) {
       try {
         await page.goto(httpUrl, { waitUntil: 'domcontentloaded', timeout: opts.timeoutMs })
         navError = null

@@ -2,7 +2,6 @@
 // 支持连接本地 MCP 服务器，发现和调用工具
 
 import { spawn, ChildProcess } from 'child_process'
-import { join } from 'path'
 import { createInterface } from 'readline'
 
 interface MCPServer { name: string; command: string; args: string[]; process?: ChildProcess; tools: MCPTool[]; reqId: number }
@@ -40,7 +39,7 @@ export async function connectServer(name: string, command: string, args: string[
     const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity })
     const server: MCPServer = { name, command, args, process: proc, tools: [], reqId: 0 }
     
-    const initResult = await Promise.race([
+    await Promise.race([
       new Promise<{ ok?: boolean; error?: string; serverInfo?: unknown }>((resolve, reject) => {
       const id = ++server.reqId
       proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {} } }) + '\n')

@@ -31,7 +31,14 @@ export function registerSettingsIpc(deps: {
           return data
         }
       }
-    } catch (e) { console.error('settings load error:', e) }
+    } catch (e) {
+      // v0.3.7: 加载失败先备份坏文件再降级默认配置, 绝不直接覆盖原文件(曾因 BOM 事故丢过配置)
+      try {
+        const bad = settingsPath + '.bad-' + Date.now()
+        fs.copyFileSync(settingsPath, bad)
+        console.error('[SETTINGS] load error (backed up to ' + bad + '):', e)
+      } catch (e2) { console.error('[SETTINGS] backup failed:', e2) }
+    }
     return { providers: [], general: { theme: 'dark' } }
   })
   ipcMain.handle('settings:save', (_e, s) => {

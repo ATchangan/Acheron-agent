@@ -6,11 +6,10 @@ import { useSettingsStore } from './settings'
 import { useAgents } from './agents'
 import type { Message, VisionContent, LLMMessage } from '../global'
 import type { GeneralSettings } from '../types'
-import { WORKFLOWS, MAX_HISTORY_MSGS, COMPACT_MSG_DEFAULT, COMPACT_TOKEN_DEFAULT, COMPACT_RATIO_DEFAULT } from './constants'
+import { WORKFLOWS, MAX_HISTORY_MSGS } from './constants'
 import { memoryBlock, getFrozenMemory } from './memory'
 import { getProjectContext } from './project-ctx'
 import { routeAgent } from './router'
-import { estimateTokens } from './context-utils'
 import { slimToolResult, slimToolCallArgs, buildTaskArchives, TaskArchive } from '../../electron/shared/context-utils'
 export { slimToolResult, slimToolCallArgs, buildTaskArchives }
 export type { TaskArchive }
@@ -31,9 +30,8 @@ function buildWorkflowsBlock(userMsg: string, forceFull = false): string {
 // 安全规则: 只折叠头部连续完整轮次对(assistant(tool_calls) 与 tool 消息一一配对), 否则跳过折叠
 // 纯函数: 工具结果瘦身 / 参数截断
 
-export function buildPrompt(mode: string, ishiki: string): string {
-  const tl = ''
-  const wd = useSettingsStore.getState().general.workDir || ''
+  export function buildPrompt(mode: string, ishiki: string): string {
+    const wd = useSettingsStore.getState().general.workDir || ''
   const cfg = useSettingsStore.getState().general
   
   // ── System Prompt 标准 10 段结构 ──
@@ -48,7 +46,6 @@ export function buildPrompt(mode: string, ishiki: string): string {
   const workP = String(gp.workPersona || '').trim()
   const persona = '## 人格\n' + (mode === 'chat' ? (chatP || defaultChatPersona) : (workP || defaultWorkPersona)) + '\n'
   const appearance = '## 外观\n银白长发，额前黑红尖角，血色瞳光。暗黑紧身战斗装束，红色纹路蔓延。手持冷峻短剑，慵懒却危险。哥特融合未来感的暗黑美学。\n'
-  const publicIshiki = '## 边界\n对外部访客保持礼貌与边界。不透露用户隐私。不确定的事坦诚说明，不编造。\n'
   const tools = '## 可用工具\n你拥有工具调用能力(read/write/exec_command/grep/find/ls/web_read 等),需要时自动调用,无需请示。\n'
   // 思考模式真实接线 —— 每挡注入不同的思考要求(off/quick 简化, deep/extreme/ultra 强化推理)
   const thinkLevel = String(useSettingsStore.getState().general.thinkLevel || 'medium')

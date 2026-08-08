@@ -25,7 +25,7 @@ export default function SkinTab() {
   const [bgOp, setBgOp] = useState(g.bgOpacity ?? 0.7)
   const hasBg = !!g.bgImage
   useEffect(() => { setBgOp(g.bgOpacity ?? 0.7) }, [g?.bgOpacity])
-  const [toast, setToast] = useState<string | null>(null)
+  const [, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   return (
     <div style={U.pageBody}>

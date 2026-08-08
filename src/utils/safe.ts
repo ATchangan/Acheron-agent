@@ -25,5 +25,6 @@ export function safeIPC(obj: unknown): unknown {
 export { errMsg } from '../../electron/shared/errmsg'
 
 // 调试日志门禁: logLevel=debug 时才输出(生产默认 info 不打印调度/切换噪音)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 保留外部 setDebugLogging 接口, 内部暂无读取点
 let debugEnabled = false
 export function setDebugLogging(v: boolean): void { debugEnabled = v }

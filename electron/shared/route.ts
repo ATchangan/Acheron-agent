@@ -16,7 +16,7 @@ export function routeAgentCore(userMessage: string, disabled: string[], collabMo
   const t = userMessage.toLowerCase()
   if (collabMode === '关闭' || collabMode === '手动') return null
   const hitCaps = Object.entries(CAPABILITY_KEYWORDS)
-    .filter(([cap, kws]) => kws.length > 0 && kws.some(k => t.includes(k.toLowerCase())))
+    .filter(([, kws]) => kws.length > 0 && kws.some(k => t.includes(k.toLowerCase())))
     .map(([cap]) => cap)
   if (hitCaps.length >= 2 && !disabled.includes('姬子')) return '姬子'
   if (hitCaps.length === 1) {

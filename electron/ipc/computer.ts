@@ -1,10 +1,9 @@
 // electron/ipc/computer.ts —— 电脑控制域 IPC(0.3.1 块 G 迁移, 行为零变化)
-import { ipcMain, shell, dialog, BrowserWindow, clipboard } from 'electron'
+import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import * as fs from 'fs'
-import { join, dirname, extname } from 'path'
+import { join } from 'path'
 import * as os from 'os'
 import { exec, type ChildProcess } from 'child_process'
-import { writeFileAtomic } from '../fs-atomic'
 import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 import { registerComputerFiles } from './computer-files'
 
@@ -19,7 +18,7 @@ export function registerComputerIpc(deps: {
   workspaceDir: string
   userDataPath: string
 }): void {
-  const { assertInsideWorkDir, assessRisk, getEffectiveWorkDir, getWorkDirOverride, setWorkDirOverride, netFetch, workspaceDir, userDataPath } = deps
+  const { assertInsideWorkDir, assessRisk, getEffectiveWorkDir, setWorkDirOverride, workspaceDir, userDataPath } = deps
   // 运行中的命令注册表(sid → 子进程), 供引擎停止时立即打断超长命令
   const runningExecs = new Map<string, { proc: ChildProcess; timer: ReturnType<typeof setTimeout> }>()
   // Windows 上 exec 只拿到外层 cmd.exe, kill 不会终止 powershell 子进程树 → 用 taskkill /T /F
@@ -249,8 +248,6 @@ ipcMain.handle('computer:processList', async () => {
 ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
   return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
 })
-
-const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>()
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
 

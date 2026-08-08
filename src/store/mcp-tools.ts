@@ -19,7 +19,6 @@ export interface McpServerInfo {
   tools?: McpToolMeta[] | string[]
 }
 
-let MCP_TOOLS: ToolSpec[] = []
 const MCP_TOOL_NAMES = new Set<string>()
 // 服务器 → 传输类型(stdio/sse), runTool 按此路由
 const MCP_SERVER_KIND: Record<string, 'stdio' | 'sse'> = {}
@@ -92,7 +91,6 @@ export async function refreshMcpTools(): Promise<void> {
       }
     }
   } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  MCP_TOOLS = specs
   MCP_TOOL_NAMES.clear()
   for (const n of names) MCP_TOOL_NAMES.add(n)
   Object.assign(MCP_SERVER_KIND, kinds)

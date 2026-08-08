@@ -131,7 +131,7 @@ const UserBubble: React.FC<{
           <div className="hq-user-attachments">
             {message.attachments.map((a, i) => (
               <span key={i} title={a.path} onClick={e => { e.stopPropagation(); api.computer.openFile(a.path).catch(() => {}) }}>
-                {a.kind === 'video' ? '🎬' : a.kind === 'audio' ? '🎵' : '📄'} {a.name}
+                [{a.kind === 'video' ? '视频' : a.kind === 'audio' ? '音频' : '文件'}] {a.name}
               </span>
             ))}
           </div>
@@ -283,7 +283,7 @@ const AssistantBlock: React.FC<{
   const hasText = !!content || isStreaming
 
   return (
-    <div className="hq-assistant-block group" data-role="assistant">
+    <div className="hq-assistant-block group" data-role="assistant" data-message-id={message.id}>
       {reasoning && (
         <div className="hq-reasoning-block">
           <button className="hq-reasoning-toggle" onClick={() => setReasonOpen(o => !o)}>

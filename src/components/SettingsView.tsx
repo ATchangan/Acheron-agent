@@ -1,14 +1,10 @@
-﻿import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../store/settings'
-import { C, S, Toggle, NumSetting, StepSetting, SegSetting, stepBtn } from './settings-ui'
+import { C, S } from './settings-ui'
 
-import { DEFAULT_CHAT_PERSONA, DEFAULT_WORK_PERSONA, extractSkinColors, clearSkinInlineVars } from '../store/settings'
-import type { MediaProvider, ProviderConfig, MemoryData } from '../global'
-import type { GeneralSettings } from '../types'
-import { updateContextLimit, useChatStore } from '../store/chat'
-import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Film, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Minus, Plus, Info, MoreHorizontal, Download, Upload, RotateCcw, Activity } from 'lucide-react'
+
+import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Info, Download, Upload, RotateCcw, Activity } from 'lucide-react'
 import { HourglassMark, ScrollMark, MaskMark } from './themed-icons'
-import { errMsg } from '../utils/safe'
 // v0.3.6 P3-10: 设置各 tab 懒加载, 首屏只加载默认 tab(供应商), 减少启动与首屏 bundle
 const AboutTab = React.lazy(() => import('./settings/AboutTab'))
 const ModelsTab = React.lazy(() => import('./settings/ModelsTab'))
@@ -48,7 +44,7 @@ const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean
 
 
 export default function SettingsView({ onNavigate }: { onNavigate: (v: string) => void }) {
-  const { providers, general, addProvider, removeProvider, updateProvider } = useSettingsStore()
+  useSettingsStore()
 
   // 读取后才有模型 —— 一次性迁移: 清理与官方预置完全一致的模型(旧行为自动带上的, 未经过读取)
   useEffect(() => {
@@ -67,7 +63,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
         if (Object.keys(patch).length) updateMediaProvider(mp.id, patch)
       })
     } catch (e) { /* 迁移失败不影响使用 */ console.debug('[swallow]', e) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   const [tab, setTab] = useState('models')
@@ -79,15 +75,9 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
   const [wfModal, setWfModal] = useState(false)
   const [wfName, setWfName] = useState('')
   const [wfDesc, setWfDesc] = useState('')
-  const g = general
   // 多媒体供应商
   const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
-  const addMediaProvider = useSettingsStore(s => s.addMediaProvider)
-  const removeMediaProvider = useSettingsStore(s => s.removeMediaProvider)
   const updateMediaProvider = useSettingsStore(s => s.updateMediaProvider)
-
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const save = (patch: Partial<GeneralSettings>) => { useSettingsStore.setState(s => ({ general: { ...s.general, ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
 
   const TABS = [
     { key: 'models', icon: <Key size={15} />, label: '供应商' }, { key: 'strategy', icon: <SlidersHorizontal size={15} />, label: '策略' },

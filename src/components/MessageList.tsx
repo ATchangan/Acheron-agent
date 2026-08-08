@@ -3,7 +3,6 @@ import { useChatStore } from '../store/chat'
 import { ConversationTurn, ThinkingRow } from './ConversationThread'
 import { isNearBottom, latestAssistantText } from '../store/chat-view-utils'
 import type { Message } from '../global'
-import { U } from './ui-styles'
 
 // 单条消息渲染错误边界: 某条消息渲染异常时降级为纯文本, 防止拖垮整个渲染进程
 class MsgBoundary extends React.Component<{ children: React.ReactNode }, { err: boolean }> {
