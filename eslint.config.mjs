@@ -1,6 +1,5 @@
 // v0.3.7: 渐进式 ESLint 配置 —— 只开关键规则, 历史代码噪音规则先放宽, 后续逐步收紧
 import tseslint from 'typescript-eslint'
-import reactHooks from 'eslint-plugin-react-hooks'
 
 export default tseslint.config(
   {
@@ -24,10 +23,6 @@ export default tseslint.config(
       eqeqeq: ['warn', 'smart'],
       'prefer-const': 'warn',
       'no-var': 'error',
-      'react-hooks/exhaustive-deps': 'off', // 渐进: 历史代码依赖注释跳过, 后续再收紧
     },
-  },
-  {
-    plugins: { 'react-hooks': reactHooks },
   },
 )

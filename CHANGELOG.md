@@ -4,7 +4,7 @@
 - **计划执行**：工具调用自动生成执行计划（状态机：待办/执行中/完成/失败/中止/暂停），计划卡实时打勾、可折叠、点击跳转执行记录；复杂任务支持模型用 `update_plan` 自主声明/更新计划；任务收尾自动生成「执行计划复盘」（完成/失败/未执行明细）
 - **PLANS.md 计划文档**：每个任务自动落盘 `plans/<任务ID>.md`，含 Goal / Progress / Surprises & Discoveries / Decision Log / Outcomes 五段，随断点恢复继续维护
 - **验证强制闭环**：修改文件后未运行验证命令时，引擎自动注入验证请求（最多 2 轮）并记入决策日志；write 后用 read 确认即视为验证通过
-- **技能生态兼容**：引擎注入已装载技能清单（SKILL.md 标准），新增 `read_skill` 工具按需读取技能全文与 scripts/references，市面 Claude/社区技能包可直接使用
+- **技能生态兼容**：引擎注入已装载技能清单（SKILL.md 标准），新增 `read_skill` 工具按需读取技能全文与 scripts/references，市面通用技能包可直接使用
 - **新工具**：`apply_patch` 多 hunk 结构化编辑（唯一匹配校验）；`terminal_open/run/close` 会话化终端（长驻进程、GBK/UTF-8 编解码、30 分钟空闲自动关闭）
 - **工具层声明式重构**：schema（tool-specs）/ 执行器（tool-handlers）/ 分发器（tools）/ 权限（tool-permission）分层拆分，只读工具缓存真正启用
 - **稳定性加固**：任务停止即时落盘（不再残留 running 僵尸任务）；settings 加载失败自动备份降级（不覆盖坏文件）；启动时自动清理超 24h 孤儿任务；渲染崩溃日志携带上下文与引擎轨迹；CPU 渲染模式禁用 GPU 加速防崩溃
