@@ -3,6 +3,7 @@ import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { writeFileAtomic, writeFileAtomicAsync } from '../fs-atomic'
+import { tokenizeSearch, docsForSession, mergeIndexIncremental } from '../shared/search-utils'
 
 // 会话 id 白名单校验 —— 修复路径穿越(id 含 ../ 可读写任意 .json)
 const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
@@ -161,34 +162,6 @@ let indexDirty = false
 let indexTimer: NodeJS.Timeout | null = null
 let idxPath = ''
 
-function tokenizeSearch(text: string): string[] {
-  const t = String(text || '').toLowerCase()
-  const latin = (t.match(/[a-z0-9_]+/g) || []).filter(w => w.length > 1)
-  const cn = t.match(/[\u4e00-\u9fff]/g) || []
-  const bigrams: string[] = []
-  for (let i = 0; i + 1 < cn.length; i++) bigrams.push(cn[i] + cn[i + 1])
-  return [...latin, ...bigrams]
-}
-
-function indexTerms(text: string): string[] {
-  return [...new Set(tokenizeSearch(text))].slice(0, 60)
-}
-
-function docsForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }): IndexDoc[] {
-  const out: IndexDoc[] = []
-  const msgs = s.messages || []
-  for (let i = 0; i < msgs.length && out.length < 300; i++) {
-    const m = msgs[i]
-    if (m.role !== 'user' && m.role !== 'assistant') continue
-    if (typeof m.content !== 'string' || m.content.trim().length < 2) continue
-    const text = m.content.trim().slice(0, 300)
-    const terms = indexTerms(text)
-    if (!terms.length) continue
-    out.push({ key: String(s.id) + ':' + (m.timestamp || i) + ':' + i, sid: String(s.id), title: String(s.title || '对话'), role: m.role, text, ts: Number(m.timestamp) || 0, terms })
-  }
-  return out
-}
-
 function saveIndexNow(): void {
   if (!indexDirty || !idxPath) return
   try { writeFileAtomic(idxPath, JSON.stringify({ version: 1, docs: indexCache || [] })) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
@@ -233,25 +206,7 @@ function rebuildIndexFromDir(sessionsDir: string): void {
 function updateIndexForSession(s: { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, indexPath: string): void {
   idxPath = indexPath
   if (!indexCache) loadIndex(indexPath)
-  const oldDocs = (indexCache || []).filter(d => d.sid === s.id)
-  const oldByKey = new Map(oldDocs.map(d => [d.key, d]))
-  const rest = (indexCache || []).filter(d => d.sid !== s.id)
-  // v0.3.6 P2-7: 索引增量 —— 已索引且内容未变的消息复用旧文档(key 命中), 只对新增/变更消息重新分词
-  const fresh: IndexDoc[] = []
-  const msgs = s.messages || []
-  for (let i = 0; i < msgs.length && fresh.length < 300; i++) {
-    const m = msgs[i]
-    if (m.role !== 'user' && m.role !== 'assistant') continue
-    if (typeof m.content !== 'string' || m.content.trim().length < 2) continue
-    const text = m.content.trim().slice(0, 300)
-    const key = String(s.id) + ':' + (m.timestamp || i) + ':' + i
-    const old = oldByKey.get(key)
-    if (old && old.text === text) { fresh.push(old); continue }  // 未变: 复用, 不重新分词
-    const terms = indexTerms(text)
-    if (!terms.length) continue
-    fresh.push({ key, sid: String(s.id), title: String(s.title || '对话'), role: m.role, text, ts: Number(m.timestamp) || 0, terms })
-  }
-  indexCache = [...rest, ...fresh]
+  indexCache = mergeIndexIncremental(indexCache || [], s)
   scheduleIndexSave()
 }
 
