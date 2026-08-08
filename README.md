@@ -18,6 +18,12 @@
 
 Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆/模型调度/子任务全部由引擎接管，渲染层只消费事件流。支持断点落盘恢复、计划确认门（实验，批准后才动手）。
 
+### 计划执行与验证闭环
+
+复杂任务自动生成执行计划：每个工具调用对应一个步骤，计划卡实时打勾、可折叠、点击跳转执行记录；模型可用 `update_plan` 自主声明/更新计划。任务收尾自动生成执行计划复盘（完成/失败/未执行明细），每个任务自动落盘 PLANS.md（Goal / Progress / Surprises & Discoveries / Decision Log / Outcomes），断点恢复后继续维护。
+
+修改文件后未运行验证命令时，引擎会自动注入验证请求（最多 2 轮）并记入决策日志；`write` 后用 `read` 确认即视为验证通过。
+
 ### 会话区
 
 - 回合制布局：用户消息（右侧气泡，可编辑）与助手回复（平铺 Markdown，流式原地增长）合并为回合，居中限宽
@@ -29,24 +35,27 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 
 浏览器面板内嵌主窗口实时画面（WebContentsView，100% 同步，可操作），CPU 模式自动降级离屏截图。`browse` 输出可访问性快照，配合 `browser_click` / `browser_type` / `browser_press` / `browser_scroll` / `browser_console` / `browser_vision` 可真正操作网页；每任务独立浏览器会话。
 
-### 50+ 内置工具
+### 57 个内置工具
 
-- 文件：read（>5MB 续读）、write、edit、mkdir、grep、find、ls
-- 系统：exec_command（可被「停止」递归打断）、system_info、process_list、kill_process
+- 文件：read（>5MB 续读）、write、edit、apply_patch（多 hunk 结构化编辑）、mkdir、grep、find、ls
+- 系统：exec_command（可被「停止」递归打断）、terminal_open/run/close（长驻交互终端）、system_info、process_list、kill_process
 - 网络：web_search、web_fetch、browse、browse_screenshot、web_read
 - 多媒体：TTS 语音朗读（离线可用）、read_image、media_img / media_video
 - 记忆：save_memory、recall_memory（向量检索）、import_doc、session_search
+- 计划与目标：update_plan、save_goal / list_goals、watch_file、audit_log
+- 技能：read_skill（按需读取已装载技能全文与 scripts/references）
 - 浏览器交互：browser_click / browser_type / browser_press / browser_scroll / browser_console / browser_vision
 - 沙箱：codebox；定时：schedule_task、list_schedules
 - MCP：mcp_connect / mcp_call / mcp:sse，已连接服务器工具自动注入（默认 ask 权限）
 - Agent：handoff / dispatch / list_agents；工作流：list_workflows / run_workflow（6 模板）
+- 其他：screenshot、clipboard_read/write、set_workdir、set_theme、show_card、bridge_notify、workflow
 
 工具可单独开关，有 LRU+TTL 缓存（自动释放），每个工具有独立权限（deny / ask / full）。插件在 vm 沙箱运行（require 白名单、10s 超时、4KB 截断）。
 
 ### 记忆与上下文
 
 - 语义记忆：向量化检索 + 重要度评分 + 衰减遗忘 + Token 预算
-- 上下文管理：Token 估算 + 分层压缩，自动适配模型窗口大小
+- 上下文管理：Token 估算 + 分层压缩，自动适配模型窗口大小；接近窗口上限时由模型自动总结最旧轮次（窗口阈值压缩，保留最近 N 轮，可调）
 - 多轮历史完整入引擎；会话搜索 FTS5 索引
 
 ### Token 优化（0.3.2 ~ 0.3.5 系列）
@@ -94,6 +103,7 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 - 6 套主题 + 皮肤系统；全界面中文化；定时任务 / 藏书阁 / 式神插件
 - 自动更新（检查 GitHub Releases）；工作目录自定义；诊断轨迹（纯本地）
 - 聊天/工作双模式，人设可编辑
+- 安装过程默认展开详情面板（解压/写入/快捷方式实时可见）；更新下载显示文件名、百分比、速度与剩余时间
 
 ---
 
@@ -119,9 +129,37 @@ npm run build
 npm run package:win   # NSIS 安装包
 ```
 
+> 重装依赖后执行一次安装详情补丁（安装进度条旁显示解压细节）：
+> `powershell -ExecutionPolicy Bypass -File scripts\patch-nsis-install-details.ps1`
+
 ---
 
 ## 更新日志
+
+### v0.3.7 (2026-08-09)
+
+- 计划执行：工具调用自动生成执行计划，计划卡实时打勾/折叠/跳转；模型可用 `update_plan` 自主声明/更新；任务收尾自动生成执行计划复盘
+- 每个任务自动落盘 PLANS.md（Goal / Progress / Surprises & Discoveries / Decision Log / Outcomes），断点恢复继续维护
+- 验证强制闭环：改文件未验证自动注入验证请求（最多 2 轮），write 后用 read 确认即通过
+- 技能生态兼容：SKILL.md 技能清单 + read_skill 按需读取；MCP 标准协议保持
+- 新工具：apply_patch 多 hunk 结构化编辑、terminal_open/run/close 会话化终端
+- 工具层重构：schema / 执行器 / 分发器 / 权限分层，只读工具缓存启用
+- 稳定性加固：任务停止即时落盘、settings 损坏自动备份降级、孤儿任务治理、CPU 模式禁用 GPU 加速
+- 安装与更新体验：安装详情面板默认展开；下载进度显示文件名/百分比/速度/剩余时间
+- 工程质量：184 测试、lint 0 error、独立类型检查、7 场景 eval 冒烟、CI 全链路
+
+### v0.3.6 (2026-08-08)
+
+- 流式渲染链路重构：消息列表组件化 + 子组件 memo + Markdown 缓存，流式只重渲染当前块
+- 事件增量传输：delta 推送 + 推理降频 + flush 自适应，长回复 IPC 传输量大幅缩减
+- 设置页 16 tab 懒加载，首屏 bundle 减小 47.5%；轮询收敛（单例调度器 + 窗口隐藏暂停）
+- 会话保存优化：去双层深拷贝 + 索引增量更新；渲染方式自适应（GPU 不可用自动回退）
+
+### v0.3.5 (2026-08-07)
+
+- Token 优化系列收官：11 个开关全部可单点关闭
+- 上下文压缩升级为 LLM 摘要驱动（窗口阈值压缩，接近上限自动总结最旧轮次）
+- 输出截断续写（保留已生成文本追加续写）；巨型组件拆分重构；并行结果护栏
 
 ### v0.3.4 (2026-08-06)
 
