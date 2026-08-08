@@ -80,9 +80,13 @@ export interface UsageData {
   total_tokens?: number
   prompt_cache_hit_tokens?: number
   prompt_cache_miss_tokens?: number
-  prompt_tokens_details?: { cached_tokens?: number }
+  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; cache_write_tokens?: number }
+  cache_write_tokens?: number
+  num_cached_tokens?: number
+  prompt_token_details?: { cached_tokens?: number }
   cache_read_input_tokens?: number
   cache_creation_input_tokens?: number
+  cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number }
   input_tokens?: number
   requestId?: string
   // 前端镜像统计字段(不入盘)

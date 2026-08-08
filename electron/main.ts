@@ -168,7 +168,7 @@ function createAppMenu() {
 }
 
 // ─── 窗口 / 托盘 ────────────────────────────────────
-// 读取"最小化/关闭缩至托盘"设置
+// 读取"关闭缩至托盘"设置(最小化固定为常规最小化到任务栏)
 function trayEnabled(): boolean {
   try {
     if (fs.existsSync(settingsPath)) {
@@ -253,8 +253,6 @@ function createWindow() {
   win.on('closed', () => { mainWindow = null })
   // 关闭 → 设置开启时缩至托盘，否则正常退出
   win.on('close', (e: Electron.Event) => { if (trayEnabled() && !isQuitting) { e.preventDefault(); mainWindow?.hide() } })
-  // 最小化 → 设置开启时缩至托盘
-  win.on('minimize', () => { if (trayEnabled()) { mainWindow?.hide() } })
 }
 
 function createTray() {

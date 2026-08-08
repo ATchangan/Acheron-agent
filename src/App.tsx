@@ -214,6 +214,7 @@ export default function App() {
           {renderView()}
         </div>
       </div>
+      {/* v0.3.6: 右上角按钮组 —— 固定在窗口控制按钮(最小化/最大化/关闭)正下方 */}
       {/* 固定定位浮层(风险确认/浏览器横幅)渲染在 flex 容器之外, 避免参与布局挤窄聊天区 */}
       <FloatBadge />
       <RiskConfirmCard />

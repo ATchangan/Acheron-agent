@@ -28,8 +28,8 @@ const PinIcon = ({ pinned }: { pinned: boolean }) => (
 const NAV_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
   { id: 'chat', icon: <ChatIcon />, label: '对话' },
   { id: 'agents', icon: <AgentIcon />, label: '角色编队' },
-  { id: 'files', icon: <FolderIcon />, label: '文件' },
   { id: 'browser', icon: <BrowserIcon />, label: '浏览器' },
+  { id: 'files', icon: <FolderIcon />, label: '文件' },
   { id: 'settings', icon: <SettingsIcon />, label: '设置' },
 ]
 

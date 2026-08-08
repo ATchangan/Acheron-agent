@@ -192,7 +192,7 @@ export default function AdvancedTab() {
           <button style={S.btn('primary')} onClick={async () => { try { const workDir = g.workDir || ''; const path = await window.huangquan.sessions.export(g.exportFormat || 'md', workDir); showToast(path.startsWith('E:') ? path : ('已导出：' + path)) } catch { showToast('导出失败') } }}>导出对话历史</button>
         </div>
         <div style={S.row}><div style={S.label}>导出格式</div><select style={S.sel} value={g.exportFormat || 'md'} onChange={e => save({ exportFormat: e.target.value })}><option value="md">Markdown</option><option value="json">JSON</option><option value="txt">纯文本</option></select></div>
-        <Toggle checked={g.trayEnabled !== false} onChange={v => save({ trayEnabled: v })} label="最小化/关闭时缩至系统托盘" hint="默认开启：点击最小化或关闭按钮，窗口隐藏到托盘继续运行；从托盘菜单「退出」才真正退出" />
+        <Toggle checked={g.trayEnabled !== false} onChange={v => save({ trayEnabled: v })} label="关闭时缩至系统托盘" hint="默认开启：点击关闭按钮窗口隐藏到托盘继续运行，从托盘菜单「退出」才真正退出；最小化则正常缩到任务栏" />
       </div>
       {toast && <div style={{ position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)', background: C.accent, color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 'calc(var(--ui-font-size) - 1px)', zIndex: 9999 }}>{toast}</div>}
     </div>
