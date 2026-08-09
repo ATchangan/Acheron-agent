@@ -73,12 +73,15 @@ function checkWritable(name: string, dir: string, fix: string): DiagItem {
 
 function checkProviders(settingsPath: string): DiagItem {
   try {
-    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { providers?: { id?: string; name?: string; apiKey?: string; baseUrl?: string; models?: string[] }[] }
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { providers?: { id?: string; name?: string; apiKey?: string; baseUrl?: string; models?: string[]; selectedModel?: string }[] }
     const list = Array.isArray(s.providers) ? s.providers : []
     const valid = list.filter(p => p.apiKey && p.baseUrl)
     if (!list.length) return { name: 'API 供应商', status: 'fail', detail: '未配置任何供应商', fix: '在 设置→模型服务 中添加供应商并填入 API Key' }
     if (!valid.length) return { name: 'API 供应商', status: 'fail', detail: '共 ' + list.length + ' 个供应商，但都没有完整的 API Key/地址', fix: '在 设置→模型服务 中补全密钥与地址' }
-    return { name: 'API 供应商', status: 'ok', detail: valid.length + '/' + list.length + ' 个供应商配置完整' }
+    const badSel = valid.filter(p => p.selectedModel && Array.isArray(p.models) && p.models.length && !p.models.includes(p.selectedModel!))
+    return badSel.length
+      ? { name: 'API 供应商', status: 'warn', detail: valid.length + '/' + list.length + ' 个供应商配置完整，但 ' + badSel.length + ' 个的当前模型不在模型列表内', fix: '在 设置→模型服务 中重新选择有效模型' }
+      : { name: 'API 供应商', status: 'ok', detail: valid.length + '/' + list.length + ' 个供应商配置完整' }
   } catch {
     return { name: 'API 供应商', status: 'fail', detail: '设置文件读取失败', fix: '设置文件损坏，可在 设置→引擎→数据管理 恢复出厂或备份恢复' }
   }
@@ -138,7 +141,7 @@ function checkPlugins(userDataPath: string): DiagItem {
   }
 }
 
-function checkBrowserKernel(): DiagItem {
+async function checkBrowserKernel(): Promise<DiagItem> {
   const candidates = [
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -146,9 +149,39 @@ function checkBrowserKernel(): DiagItem {
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   ]
   const hit = candidates.find(p => fs.existsSync(p))
-  return hit
+  if (!hit) return { name: '浏览器内核', status: 'warn', detail: '未找到 Edge/Chrome', fix: '浏览器工具（网页解析/实时画面）需要 Microsoft Edge 或 Google Chrome' }
+  // 读文件版本信息, 不真启动浏览器(msedge --version 冷启动会交棒实例导致误判)
+  const ok = await new Promise<boolean>(resolve => {
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', "(Get-Item -LiteralPath '" + hit + "').VersionInfo.FileVersion"], { windowsHide: true, timeout: 4000 }, (e, stdout) => resolve(!e && String(stdout || '').trim().length > 0))
+  })
+  return ok
     ? { name: '浏览器内核', status: 'ok', detail: hit }
-    : { name: '浏览器内核', status: 'warn', detail: '未找到 Edge/Chrome', fix: '浏览器工具（网页解析/实时画面）需要 Microsoft Edge 或 Google Chrome' }
+    : { name: '浏览器内核', status: 'warn', detail: '找到 ' + hit + ' 但无法读取版本信息', fix: '重新安装或修复 Edge/Chrome' }
+}
+
+function checkMemoryFile(userDataPath: string): DiagItem {
+  const p = join(userDataPath, 'memory.json')
+  try {
+    if (!fs.existsSync(p)) return { name: '记忆文件', status: 'ok', detail: '暂无记忆文件（首次使用会自动创建）' }
+    const raw = fs.readFileSync(p, 'utf-8')
+    const d = JSON.parse(raw)
+    if (!d || typeof d !== 'object') throw new Error('bad-shape')
+    return { name: '记忆文件', status: 'ok', detail: '可读且格式正常（' + raw.length + ' B）' }
+  } catch {
+    return { name: '记忆文件', status: 'fail', detail: '记忆文件损坏或不可解析', fix: '在 设置→引擎→数据管理 使用备份恢复，或清空记忆文件后重启' }
+  }
+}
+
+function checkProxy(settingsPath: string): DiagItem {
+  try {
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { general?: { proxyMode?: string; proxyUrl?: string } }
+    const mode = s.general?.proxyMode || ''
+    const url = s.general?.proxyUrl || ''
+    if (mode === 'manual' && !url) return { name: '代理', status: 'warn', detail: '代理模式为手动但未填写代理地址', fix: '在 设置→网络 中填写代理地址，或切回自动' }
+    return { name: '代理', status: 'ok', detail: url ? '已配置：' + url : '未配置（走系统代理）' }
+  } catch {
+    return { name: '代理', status: 'ok', detail: '未配置（走系统代理）' }
+  }
 }
 
 function checkRendererMode(settingsPath: string): DiagItem {
@@ -207,8 +240,10 @@ export async function runEnvironmentCheck(deps: DiagDeps): Promise<DiagItem[]> {
   items.push(checkMemory())
   items.push(checkSkills(deps.userDataPath))
   items.push(checkPlugins(deps.userDataPath))
-  items.push(checkBrowserKernel())
+  items.push(await checkBrowserKernel())
   items.push(checkRendererMode(deps.settingsPath))
+  items.push(checkMemoryFile(deps.userDataPath))
+  items.push(checkProxy(deps.settingsPath))
   items.push(await checkGit())
   items.push(await checkMcp())
   items.push(await checkLocalServer(deps))
