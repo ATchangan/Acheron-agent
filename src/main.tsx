@@ -23,7 +23,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
     if (this.state.error) {
       return (
         <div style={{ padding: '40px', color: '#ff4466', fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'pre-wrap', background: '#17181c', minHeight: '100vh' }}>
-          <h1 style={{ color: '#ff4466' }}>⚠ React 渲染错误</h1>
+  <h1 style={{ color: '#ff4466' }}>React 渲染错误</h1>
           <pre style={{ color: '#ffaa00', marginTop: 16 }}>{this.state.error.message}</pre>
           <pre style={{ color: '#999', marginTop: 8, fontSize: 'calc(var(--ui-font-size) - 2px)' }}>{this.state.error.stack}</pre>
         </div>

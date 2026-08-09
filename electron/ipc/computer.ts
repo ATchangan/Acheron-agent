@@ -6,6 +6,8 @@ import * as os from 'os'
 import { exec, type ChildProcess } from 'child_process'
 import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 import { registerComputerFiles } from './computer-files'
+import { getPowerShellCmdQuoted } from '../shared/pwsh'
+const iconv = require('iconv-lite') as { decode: (b: Buffer, enc: string) => string }
 
 
 export function registerComputerIpc(deps: {
@@ -30,13 +32,13 @@ export function registerComputerIpc(deps: {
   // 按 sid 标记杀整棵树(外层 pid 可能已脱管, 用命令行标记兜底)
   const killBySid = (sid: string) => {
     const ps = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*HQ_SID=*" + sid + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    try { exec('powershell.exe -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
+    try { exec(getPowerShellCmdQuoted() + ' -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
   }
   // 按根 PID 递归杀全部后代(cmd 外层可能提前退出, 孙进程仍挂在已死 PID 下)
   const killTreeByRoot = (rootPid: number | undefined) => {
     if (!rootPid) return
     const ps = "$root=" + rootPid + "; $all=Get-CimInstance Win32_Process; $kids=@{}; foreach($p in $all){ if($p.ParentProcessId){ if(-not $kids.ContainsKey([int]$p.ParentProcessId)){ $kids[[int]$p.ParentProcessId]=@() }; $kids[[int]$p.ParentProcessId]+=[int]$p.ProcessId } }; $st=New-Object System.Collections.Generic.Stack[int]; $st.Push($root); while($st.Count -gt 0){ $cur=$st.Pop(); if($kids.ContainsKey($cur)){ foreach($k in $kids[$cur]){ Stop-Process -Id $k -Force -ErrorAction SilentlyContinue; $st.Push($k) } }; Stop-Process -Id $cur -Force -ErrorAction SilentlyContinue }"
-    try { exec('powershell.exe -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
+    try { exec(getPowerShellCmdQuoted() + ' -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
   }
 
   // 风险操作确认 —— L2(终端写/非只读命令)与 L3(系统路径写入/删除)默认弹原生确认框;
@@ -75,7 +77,9 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
   const cmdS = String(cmd || '')
   const riskLevel = assessRisk({ type: 'terminal', command: cmdS })
   if (riskLevel === 'L4') {
-    const hit = ['rm -rf', 'rm -fr', 'format ', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'del /f /s /q c:\\', 'rd /s /q c:\\'].find(d => cmdS.toLowerCase().includes(d.toLowerCase()))
+    // v0.3.8: 危险命令归一化 —— 统一小写/反斜杠/连续空白后匹配, 防大小写与转义绕过
+    const norm = cmdS.toLowerCase().replace(/\\+/g, '/').replace(/\s+/g, ' ').trim()
+    const hit = ['rm -rf', 'rm -fr', 'format /', 'format c:', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'taskkill /im', 'del /f /s /q c:', 'del /s /q c:', 'rd /s /q c:', 'rmdir /s /q c:', 'diskpart', 'bcdedit', 'format c'].find(d => norm.includes(d))
     return 'E:permission denied: 危险命令已被拦截 (' + (hit || '').trim() + ')。如需执行请手动在终端操作。'
   }
   const cr = await confirmRisk(riskLevel, '执行命令', cmdS, sid, taskId)
@@ -90,19 +94,26 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
     const trimmed = cmd.trim()
     const isPS = /^(powershell|pwsh)\b/i.test(trimmed) ||
       /\b(Get-|Set-|New-|Invoke-|Write-|Select-|Where-|ForEach-|Start-Process)\b/i.test(trimmed) ||
-      /\$(?:env:|[a-zA-Z_]\w*)/.test(trimmed)
+      /\$(?:env:|[a-zA-Z_]\w*)/.test(trimmed) ||
+      // v0.3.7: 含非 ASCII(中文路径/中文输出)的命令一律走 PowerShell —— cmd 在部分系统(OEM 437)会把中文输出成 '?'
+      /[^\x00-\x7F]/.test(cmd)
     // v0.3.3: sid 标记写入环境变量赋值(命令行为可见), 中止时按标记杀整个进程树
     const marker = sid ? (isPS ? "$env:HQ_SID='" + sid + "'; " : 'set HQ_SID=' + sid + '&& ') : ''
     let finalCmd
     if (isPS) {
-      finalCmd = `powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${marker}${cmd.replace(/"/g, '\\"')}"`
+      finalCmd = `${getPowerShellCmdQuoted()} -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${marker}${cmd.replace(/"/g, '\\"')}"`
     } else {
       finalCmd = `cmd /c "${marker}${cmd.replace(/"/g, '\\"')}"`
     }
     // maxBuffer 从 10MB → 50MB; v0.3.0: cwd 跟随自定义工作目录(设置→引擎→工作目录)
-    const child = exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf-8', cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
+    // v0.3.8: cmd 输出为本地代码页(中文系统 GBK), 直接 utf8 读会乱码 —— 去掉 encoding 拿 Buffer, cmd 分支按需 GBK 解码
+    const child = exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
       clearTimeout(timer)
-      const out = err ? (stderr || err.message) : (stdout || '')
+      const raw = err ? (stderr || Buffer.from(err.message)) : (stdout || Buffer.from(''))
+      const text = Buffer.isBuffer(raw)
+        ? (isPS ? raw.toString('utf-8') : (() => { const u = raw.toString('utf-8'); return u.includes('\uFFFD') ? iconv.decode(raw, 'gbk') : u })())
+        : String(raw)
+      const out = text
       const truncated = out.length > 8000 ? out.slice(0, 8000) + '\n...(已截断，共' + out.length + '字符)' : out
       finish(truncated)
     })
@@ -148,7 +159,7 @@ function sampleGpu(): Promise<{ pct: number | null; name: string | null }> {
 }
 function sampleGpuWin(resolve: (v: { pct: number | null; name: string | null }) => void) {
   const script = "try { $s = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($s -and $s.Count -gt 0) { ($s | Measure-Object -Property CookedValue -Maximum).Maximum } else { -1 } } catch { -1 }"
-  exec('powershell.exe -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\"') + '"', { timeout: 4000, windowsHide: true }, (err, stdout) => {
+  exec(getPowerShellCmdQuoted() + ' -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\"') + '"', { timeout: 4000, windowsHide: true }, (err, stdout) => {
     if (err) return resolve({ pct: null, name: null })
     const v = parseFloat(String(stdout).trim().split('\n').pop() || '')
     resolve({ pct: isFinite(v) && v >= 0 ? Math.min(100, Math.round(v)) : null, name: null })

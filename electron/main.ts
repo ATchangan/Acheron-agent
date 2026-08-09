@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, net } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, net, Notification } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMemoryIpc } from './ipc/memory'
@@ -7,6 +7,10 @@ import { registerPluginsIpc } from './ipc/plugins'
 import { registerModelStatsIpc } from './ipc/model-stats'
 import { registerMcpIpc } from './ipc/mcp'
 import { registerCronIpc } from './ipc/cron'
+import { registerBackupIpc } from './ipc/backup'
+import { registerRollbackIpc } from './ipc/rollback'
+import { registerDiagnosticsIpc } from './ipc/diagnostics'
+import { setCustomAgentsDir } from './engine/agents'
 import { registerWindowIpc } from './ipc/window'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
@@ -46,8 +50,18 @@ app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ consol
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch(args[0] as string, args[1] as never)) as typeof fetch
 
 // 全局崩溃捕获
-// 崩溃日志异步追加, 不再同步阻塞主进程
-function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
+// v0.3.8: crash.log 超过 5MB 自动轮转为 crash.log.old(覆盖旧档), 防止无限增长
+const CRASH_LOG_MAX = 5 * 1024 * 1024
+function rotateCrashLogIfNeeded(): void {
+  try {
+    const p = join(app.getPath('userData'), 'crash.log')
+    if (!fs.existsSync(p) || fs.statSync(p).size < CRASH_LOG_MAX) return
+    const old = p + '.old'
+    try { fs.rmSync(old, { force: true }) } catch { /* 忽略 */ }
+    try { fs.renameSync(p, old) } catch { /* 忽略 */ }
+  } catch { /* 忽略 */ }
+}
+function appendCrashLog(line: string) { try { rotateCrashLogIfNeeded(); fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), line) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
 process.on('uncaughtException', (err: unknown) => {
   // stdout/stderr 被关闭导致的 EPIPE 不记 FATAL(避免刷 crash.log 噪音), 其余真实错误照常记录
   if ((err as NodeJS.ErrnoException)?.code === 'EPIPE') return
@@ -111,6 +125,8 @@ registerTraceIpc({ tracePath })
 const memoryPath = join(userDataPath, 'memory.json')
 registerMemoryIpc({ memoryPath, settingsPath, userDataPath, safeClone, decKey })
 const workspaceDir = join(userDataPath, 'workspace')
+// v0.3.8: 自定义子代理目录(用户放 *.json 即注册自定义角色)
+setCustomAgentsDir(join(userDataPath, 'agents'))
 // skillsDir 必须在 userData —— 安装版 app.asar 内只读, mkdir 抛 ENOTDIR 导致启动崩溃
 const skillsDir = join(userDataPath, 'skills')
 registerSkillsIpc({ skillsDir, resourcesDir })
@@ -278,9 +294,16 @@ function createWindow() {
         const traceTail = fs.readFileSync(tracePath, 'utf-8').trim().split('\n').slice(-8)
         if (traceTail.length) lines.push('--- engine trace tail ---', ...traceTail)
       } catch { /* 无轨迹文件 */ }
-      fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), lines.join('\n') + '\n')
+      appendCrashLog(lines.join('\n') + '\n')
     } catch (e) { console.debug('[swallow]', e) }
     crashContext.length = 0
+    // v0.3.8: 崩溃观察 —— 近 7 天 >=3 次时提示切换 CPU 渲染
+    const recent = countRecentCrashes()
+    if (recent >= 3) {
+      try {
+        new Notification({ title: '黄泉Agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
+      } catch { /* 忽略 */ }
+    }
     if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.loadURL('http://127.0.0.1:' + serverPort + '/index.html') }
   })
   win.loadURL('http://127.0.0.1:' + serverPort + '/index.html')
@@ -345,6 +368,19 @@ registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
 registerRiskConfirm({ getMainWindow: () => mainWindow, settingsPath })
 registerCronIpc()
+registerBackupIpc({
+  userDataPath,
+  getWorkDir: () => getEffectiveWorkDir() || userDataPath,
+  getWindow: () => mainWindow,
+})
+registerRollbackIpc({ userDataPath })
+registerDiagnosticsIpc({
+  settingsPath,
+  userDataPath,
+  getWorkDir: () => getEffectiveWorkDir() || userDataPath,
+  netFetch,
+  getServerPort: () => serverPort,
+})
 
 // ─── 文件浏览器操作(写操作限定工作目录内, 防误删) ──
 // set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录
@@ -385,6 +421,40 @@ registerBrowserIpc({ getBrowserWin, getBrowserWinIfExists, closeBrowserSession, 
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
 // ─── 启动 ──────────────────────────────────────────
+// v0.3.8: 计划文档治理 —— 保留 30 天, 防止无限堆积
+function cleanOldPlanDocs(): void {
+  try {
+    const dir = join(userDataPath, 'plans')
+    if (!fs.existsSync(dir)) return
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.md')) continue
+      try {
+        const p = join(dir, f)
+        if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p)
+      } catch { /* 单个文件失败不影响其余 */ }
+    }
+  } catch { /* 忽略 */ }
+}
+
+// v0.3.8: 崩溃观察 —— 统计 crash.log(+轮转档)近 N 天渲染崩溃次数
+function countRecentCrashes(days = 7): number {
+  try {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    let count = 0
+    for (const f of [join(userDataPath, 'crash.log'), join(userDataPath, 'crash.log.old')]) {
+      try {
+        const raw = fs.readFileSync(f, 'utf-8')
+        count += raw.split('\n').filter(l => l.includes('renderer crashed')).filter(l => {
+          const m = l.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)
+          return m ? new Date(m[1]).getTime() >= cutoff : false
+        }).length
+      } catch { /* 单个文件缺失/损坏跳过 */ }
+    }
+    return count
+  } catch { return 0 }
+}
+
 app.whenReady().then(async () => {
   // GPU 状态检测(仅日志/状态查询, 不做运行时禁用)。
   // auto 模式下 GPU 不可用时 Chromium 原生自动降级为软件渲染, 无需手动调用
@@ -400,6 +470,7 @@ app.whenReady().then(async () => {
   } catch (e: unknown) { safeError('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
   serverPort = await startServer(distDir)
   createAppMenu()
+  cleanOldPlanDocs()
   // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
   try {
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))

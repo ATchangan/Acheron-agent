@@ -9,7 +9,7 @@ export const PluginScanBar: React.FC<{
   onRetry: () => void
 }> = ({ error, onRetry }) => (
   <div className="provider-form">
-    <p style={s.msgError}>⚠️ {error}</p>
+  <p style={s.msgError}>△ {error}</p>
     <button className="btn-small" onClick={onRetry} style={U.mt8}>
       重试
     </button>

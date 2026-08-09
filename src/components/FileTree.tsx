@@ -36,8 +36,8 @@ function fmtSize(n: number): string {
 }
 const iconFor = (name: string): string => {
   const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''
-  const map: Record<string, string> = { ts: '🟦', tsx: '🟦', js: '🟨', jsx: '🟨', json: '🟩', md: '📝', txt: '📄', py: '🐍', html: '🌐', css: '🎨', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', webp: '🖼️', gif: '🖼️', svg: '🖼️', pdf: '📕', docx: '📘', xlsx: '📗', zip: '🗜️', exe: '⚙️' }
-  return map[ext] || '📄'
+  const map: Record<string, string> = { ts: '码', tsx: '码', js: '码', jsx: '码', json: '{}', md: '文', txt: '文', py: '码', html: '网', css: '样', png: '图', jpg: '图', jpeg: '图', webp: '图', gif: '图', svg: '图', pdf: '文', docx: '文', xlsx: '表', zip: '压', exe: '程' }
+  return map[ext] || '文'
 }
 
 const C = { text: 'var(--text-primary)', muted: 'var(--text-muted)', border: 'var(--border)', hover: 'var(--bg-hover)', green: 'var(--success)', red: 'var(--danger)', blue: 'var(--accent)' }
@@ -144,13 +144,13 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
         onMouseEnter={() => setHovered(root)} onMouseLeave={() => setHovered('')}
         style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 4px', borderRadius: 4, cursor: 'pointer', background: hovered === root ? C.hover : 'transparent' }}
       >
-        <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 4px)', width: 12, display: 'inline-block' }}>{loading ? '⏳' : (expanded ? '▼' : '▶')}</span>
-        <span>{isWorkDir ? '📁' : (expanded ? '📂' : '📁')}</span>
+        <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 4px)', width: 12, display: 'inline-block' }}>{loading ? '…' : (expanded ? '▼' : '▶')}</span>
+        <span>{'▣'}</span>
         <span style={{ color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={root}>{root.split(/[\\/]/).pop() || root}</span>
         {hovered === root && !isWorkDir && (
           <span style={U.gap6ml4}>
-            <span title="重命名" style={{ color: C.blue, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setRenaming(root); setRenameVal(root.split(/[\\/]/).pop() || '') }}>✏️</span>
-            <span title="删除" style={{ color: C.red, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); doDelete(root, root.split(/[\\/]/).pop() || '', true) }}>🗑️</span>
+            <span title="重命名" style={{ color: C.blue, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); setRenaming(root); setRenameVal(root.split(/[\\/]/).pop() || '') }}>改</span>
+            <span title="删除" style={{ color: C.red, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); doDelete(root, root.split(/[\\/]/).pop() || '', true) }}>删</span>
           </span>
         )}
       </div>
@@ -177,9 +177,9 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
                   <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 4px)' }}>{fmtSize(it.size)}</span>
                   {hovered === root + '\\' + it.name && (
                     <span style={U.gap6ml4}>
-                      <span title="打开" style={{ color: C.green, cursor: 'pointer' }} onClick={() => doOpen(root + '\\' + it.name)}>📂</span>
-                      <span title="重命名" style={{ color: C.blue, cursor: 'pointer' }} onClick={() => { setRenaming(root + '\\' + it.name); setRenameVal(it.name) }}>✏️</span>
-                      <span title="删除" style={{ color: C.red, cursor: 'pointer' }} onClick={() => doDelete(root + '\\' + it.name, it.name, false)}>🗑️</span>
+                      <span title="打开" style={{ color: C.green, cursor: 'pointer' }} onClick={() => doOpen(root + '\\' + it.name)}>开</span>
+                      <span title="重命名" style={{ color: C.blue, cursor: 'pointer' }} onClick={() => { setRenaming(root + '\\' + it.name); setRenameVal(it.name) }}>改</span>
+                      <span title="删除" style={{ color: C.red, cursor: 'pointer' }} onClick={() => doDelete(root + '\\' + it.name, it.name, false)}>删</span>
                     </span>
                   )}
                 </div>

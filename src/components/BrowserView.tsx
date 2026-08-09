@@ -134,7 +134,7 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
     <div className="browser-root" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: C.bg }}>
       {/* 工具栏 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid ' + C.border, background: C.card }}>
-        <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>🌐 无头浏览器</span>
+  <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>无头浏览器</span>
         <button onClick={async () => { try { await window.huangquan?.web.back() } catch {} }} title="后退" style={btn()}>←</button>
         <button onClick={async () => { try { await window.huangquan?.web.forward() } catch {} }} title="前进" style={btn()}>→</button>
         <button onClick={async () => { try { await window.huangquan?.web.reload() } catch {} }} title="刷新" style={btn()}>⟳</button>
@@ -151,7 +151,7 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 14px', borderBottom: '1px solid ' + C.border, background: '#181920' }}>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '40%' }}>{title || '(无标题)'}</span>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{url}</span>
-          {loading && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, whiteSpace: 'nowrap' }}>⏳ 加载中…</span>}
+    {loading && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, whiteSpace: 'nowrap' }}>加载中…</span>}
         </div>
       )}
       {/* 实时画面: 内嵌模式由主进程 WebContentsView 原生渲染覆盖此区域 */}
@@ -161,24 +161,24 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
             {snap
               ? <img src={snap} alt="浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
               : <div style={{ marginTop: 80, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8 }}>
-                  {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
+    {loading ? '页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
                 </div>}
           </div>
         ) : embeddedMode ? (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8, pointerEvents: 'none', padding: 12 }}>
-            {loading ? '⏳ 页面加载中…' : (url ? '' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
+    {loading ? '页面加载中…' : (url ? '' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
           </div>
         ) : (
           <div style={{ height: '100%', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
             {snap
               ? <img src={snap} alt="浏览画面" style={{ maxWidth: '100%', boxShadow: '0 0 0 1px ' + C.border, borderRadius: 8, background: '#fff' }} />
               : <div style={{ marginTop: 80, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', textAlign: 'center', lineHeight: 1.8 }}>
-                  {loading ? '⏳ 页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
+    {loading ? '页面加载中…' : (url ? '等待页面渲染…' : '暂无浏览活动\n\n让 agent 打开网页(或在上方输入网址)\n这里会实时显示它正在看的画面')}
                 </div>}
           </div>
         )}
       </div>
-      {err && <div style={{ padding: '6px 14px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--danger)', borderTop: '1px solid ' + C.border }}>⚠️ {err}</div>}
+  {err && <div style={{ padding: '6px 14px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--danger)', borderTop: '1px solid ' + C.border }}>△ {err}</div>}
       {embeddedMode && cpuFallback && (
         <div style={{ padding: '4px 14px', fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', borderTop: '1px solid ' + C.border, background: C.card }}>
           当前为 CPU 兼容渲染模式，实时画面不可用，已自动使用截图显示；在 设置→引擎→渲染加速 切到「自动」或「GPU」后即可获得实时网页画面。

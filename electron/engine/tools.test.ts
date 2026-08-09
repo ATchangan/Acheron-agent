@@ -21,7 +21,7 @@ vi.mock('./registry', () => ({
   }),
 }))
 
-import { runTool } from './tools'
+import { getActiveTools, runTool } from './tools'
 import type { ToolRunCtx } from './tool-types'
 
 function makeCtx(over: Partial<ToolRunCtx> = {}): ToolRunCtx {
@@ -112,5 +112,71 @@ describe('runTool 分发器', () => {
       expect(r).toContain('patched 2 hunks')
       expect(fs.readFileSync(f, 'utf-8')).toBe('A\nb\nC\n')
     } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('git 工具: 合法 action 转发 computer:exec, 非法 action 拒绝', async () => {
+    const ctx = makeCtx()
+    expect(await runTool('git', { action: 'status' }, ctx)).toBe('ok')
+    expect(await runTool('git', { action: 'commit', args: '-am "msg"' }, ctx)).toBe('ok')
+    const { invokeHandler } = await import('./registry')
+    const calls = vi.mocked(invokeHandler).mock.calls.filter(c => c[0] === 'computer:exec')
+    expect(calls.some(c => String(c[1]?.[0]) === 'git status')).toBe(true)
+    expect(calls.some(c => String(c[1]?.[0]) === 'git commit -am "msg"')).toBe(true)
+    expect(await runTool('git', { action: 'reset' }, ctx)).toContain('E:action 仅支持')
+    expect(await runTool('git', {}, ctx)).toContain('E:action 仅支持')
+  })
+
+  it('git 只读动作不清空读缓存, 写动作清空', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-tool-'))
+    const f = join(dir, 'a.txt')
+    fs.writeFileSync(f, 'v1', 'utf-8')
+    try {
+      const ctx = makeCtx()
+      expect(await runTool('read', { path: f }, ctx)).toBe('v1')
+      expect(await runTool('git', { action: 'status' }, ctx)).toBe('ok')
+      expect(await runTool('read', { path: f }, ctx)).toBe('v1 [cache]')
+      expect(await runTool('git', { action: 'commit', args: '-am x' }, ctx)).toBe('ok')
+      expect(await runTool('read', { path: f }, ctx)).toBe('v1')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('init_project_docs 生成 AGENTS.md 草稿且不覆盖已有文件', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-tool-'))
+    try {
+      const ctx = makeCtx({ workDir: dir })
+      const r = await runTool('init_project_docs', {}, ctx)
+      expect(r).toContain('AGENTS.md')
+      expect(r).toContain('已生成')
+      expect(fs.existsSync(join(dir, 'AGENTS.md'))).toBe(true)
+      const r2 = await runTool('init_project_docs', {}, ctx)
+      expect(r2).toContain('E:项目指令已存在')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('init_project_docs 在已有 CLAUDE.md 时也拒绝生成', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-tool-'))
+    try {
+      fs.writeFileSync(join(dir, 'CLAUDE.md'), 'x', 'utf-8')
+      const r = await runTool('init_project_docs', {}, makeCtx({ workDir: dir }))
+      expect(r).toContain('E:项目指令已存在')
+      expect(fs.existsSync(join(dir, 'AGENTS.md'))).toBe(false)
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('核心工具模式: 主控默认只挂常用工具, 显式放行/关闭后恢复', () => {
+    const names = (ctx: ToolRunCtx) => getActiveTools(ctx).map(t => t.function.name)
+    const base = makeCtx()
+    const def = names(base)
+    expect(def).toContain('read')
+    expect(def).toContain('git')
+    expect(def).toContain('update_plan')
+    expect(def).not.toContain('screenshot')
+    expect(def).not.toContain('browser_click')
+    const withPerm = names(makeCtx({ g: { filePermission: 'full', toolPerms: { screenshot: 'allow' } } }))
+    expect(withPerm).toContain('screenshot')
+    const full = names(makeCtx({ g: { filePermission: 'full', perf: { toolCore: false } } }))
+    expect(full).toContain('screenshot')
+    const agentFull = names(makeCtx({ agent: '螺丝咕姆', agents: { 螺丝咕姆: { name: '螺丝咕姆', icon: '码', role: 'r', prompt: 'p', tools: ['*'] } as never } }))
+    expect(agentFull).toContain('screenshot')
   })
 })

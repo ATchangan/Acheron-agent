@@ -35,7 +35,21 @@ export default function AdvancedTab() {
       <div style={S.card}>
         <div style={S.section}>任务可靠性</div>
         <Toggle checked={g.riskConfirm !== false} onChange={v => save({ riskConfirm: v })} label="风险操作确认" hint="执行命令/删除文件等 L2-L3 操作前弹原生确认框；关闭后静默放行" />
+        <NumSetting label="项目指令上限" hint="AGENTS.md 等按目录链合并注入的字节上限（KB，默认 32）；超限截断并打标记，可拆到子目录绕开" value={g.projectDocMaxKb || 32} min={4} max={512} unit="KB" onChange={v => save({ projectDocMaxKb: v })} />
         <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后本轮提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
+        <NumSetting label="同时运行任务上限" hint="多会话并发保护：同时运行的任务数达到上限后新任务会提示等待（默认 3）" value={g.maxConcurrentTasks || 3} min={1} max={10} unit="个" onChange={v => save({ maxConcurrentTasks: v })} />
+        <div style={S.row}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-primary)' }}>事件钩子（Hooks）</div>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginTop: 4 }}>每行 事件=命令，可用变量 HQ_EVENT/HQ_TOOL/HQ_SID/HQ_TASK_ID/HQ_RESULT/HQ_PATH/HQ_STATUS/HQ_KIND/HQ_FROM/HQ_TO；事件：tool-before、tool-after、task-start、task-end、file-write、task-stop、task-resume、compact-before、model-fallback；含中文路径/输出的命令会自动走 PowerShell（UTF-8），无需手动加前缀</div>
+            <textarea
+              value={g.hooksText || ''}
+              onChange={e => save({ hooksText: e.target.value })}
+              placeholder={'# tool-after=echo [hook] $env:HQ_TOOL 完成\ntask-start=echo 任务开始'}
+              style={{ width: '100%', minHeight: 66, marginTop: 6, padding: '8px 10px', background: 'var(--bg-root)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 'calc(var(--ui-font-size) - 2px)', fontFamily: 'monospace', resize: 'vertical', boxSizing: 'border-box' }}
+            />
+          </div>
+        </div>
         <Toggle checked={g.longTaskAutoContinue === true} onChange={v => save({ longTaskAutoContinue: v })} label="长任务预算耗尽后自动继续" hint="开启后达到预算自动重置已用量续跑；关闭则达到预算直接结束本轮" />
         <NumSetting label="自动继续次数上限" hint="自动续跑的轮数上限，超过后结束本轮" value={g.longTaskAutoMax || 5} min={1} max={20} unit="次" onChange={v => save({ longTaskAutoMax: v })} />
         <Toggle checked={g.traceEnabled !== false} onChange={v => save({ traceEnabled: v })} label="本地诊断轨迹" hint="记录任务/LLM/工具调用链，可在 设置→诊断 查看；仅存本地" />
@@ -192,6 +206,8 @@ export default function AdvancedTab() {
           <button style={S.btn('danger')} onClick={async () => { if (!confirm('确定清空全部对话历史？此操作不可恢复')) return; try { await window.huangquan.sessions.clearAll(); showToast('对话历史已清空'); window.location.reload() } catch { showToast('操作失败') } }}>清除对话历史</button>
           <button style={S.btn('danger')} onClick={async () => { if (!confirm('恢复出厂设置将重置全部配置（保留对话历史），确定？')) return; try { const ok = await window.huangquan.settings.reset(); showToast(ok ? '已恢复出厂设置，请重启应用' : '操作失败'); } catch { showToast('操作失败') } }}>恢复出厂设置</button>
           <button style={S.btn('primary')} onClick={async () => { try { const workDir = g.workDir || ''; const path = await window.huangquan.sessions.export(g.exportFormat || 'md', workDir); showToast(path.startsWith('E:') ? path : ('已导出：' + path)) } catch { showToast('导出失败') } }}>导出对话历史</button>
+          <button style={S.btn('primary')} onClick={async () => { try { const r = await window.huangquan.backup.create(); showToast(r.ok ? ('已备份：' + (r.path || '')) : (r.canceled ? '已取消' : ('备份失败：' + (r.error || '')))) } catch { showToast('备份失败') } }}>备份数据</button>
+          <button style={S.btn('danger')} onClick={async () => { try { const r = await window.huangquan.backup.restore(); showToast(r.ok ? '已从备份恢复，请重启应用' : (r.canceled ? '已取消' : ('恢复失败：' + (r.error || '')))) } catch { showToast('恢复失败') } }}>从备份恢复</button>
         </div>
         <div style={S.row}><div style={S.label}>导出格式</div><select style={S.sel} value={g.exportFormat || 'md'} onChange={e => save({ exportFormat: e.target.value })}><option value="md">Markdown</option><option value="json">JSON</option><option value="txt">纯文本</option></select></div>
         <Toggle checked={g.trayEnabled !== false} onChange={v => save({ trayEnabled: v })} label="关闭时缩至系统托盘" hint="默认开启：点击关闭按钮窗口隐藏到托盘继续运行，从托盘菜单「退出」才真正退出；最小化则正常缩到任务栏" />

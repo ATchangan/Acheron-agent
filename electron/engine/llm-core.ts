@@ -39,7 +39,7 @@ const activeRequests = new Map<string, { ctrl: AbortController; sid?: string }>(
 
 // ─── 推理强度 → API 原生参数（对照主流实现的 wire 形态）──────────
 // off = 关闭思考；quick/medium/deep/extreme/ultra 分别映射 low/medium/high/xhigh/max。
-// DeepSeek 用 thinking 开关；OpenRouter/Nous 用 reasoning{enabled,effort}（透传扩展档位）；
+// DeepSeek 用 thinking 开关；OpenRouter 用 reasoning{enabled,effort}（透传扩展档位）；
 // OpenAI 官方用 reasoning_effort（xhigh/max 收敛为 high）；其余 OpenAI 兼容服务不硬塞原生参数，
 // 由提示词中的思考要求兜底，避免不认识的字段导致 400。
 const EFFORT_BY_LEVEL: Record<string, string> = {

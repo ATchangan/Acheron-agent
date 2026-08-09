@@ -15,6 +15,9 @@ export type { PlanStepView, PlanState }
 
 export interface S {
   sessions: SessionData[]; cid: string | null; sp: string; spIshiki: string; streaming: boolean; executing: boolean; error: string | null
+  errorStep: { messageId?: string } | null
+  fileChanges: number
+  lastTaskId: string
   stage: { sid: string; phase: 'thinking' | 'tool'; label: string; detail: string } | null
   terminal: { id: string; name: string; args: Record<string, unknown>; result: string; time: number }[]
   cu: number; cl: number
@@ -25,7 +28,7 @@ export interface S {
   streamText: string // 引擎流式临时文字(不落消息, 由 step/final 事件承载最终内容)
   streamId: string // 当前流式通道归属的消息 id —— delta 按 id 隔离, 防止并行任务/插话串文
   activeAgents: string[]
-  orphanTasks: { id: string; sid: string; content: string; images?: string[]; attachments?: Message['attachments']; at: number }[]
+  orphanTasks: { id: string; sid: string; content: string; images?: string[]; attachments?: Message['attachments']; at: number; planProgress?: string }[]
   plans: Record<string, PlanState>
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>

@@ -1,6 +1,7 @@
 // electron/engine/tool-handlers.ts — 声明式工具执行器(每个工具一个 handler, 与 schema/分发器分离)
 import { spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
+import { join } from 'path'
 import { Notification } from 'electron'
 import { invokeHandler } from './registry'
 import { WORKFLOWS } from './constants'
@@ -11,6 +12,7 @@ import { applyPatchToContent } from '../shared/patch-utils'
 import { getMcpToolSpecs } from './tool-specs'
 import { checkFilePermission } from './tool-permission'
 import { resolveSkillFile } from './skill-files'
+import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
 
 const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer; decode: (b: Buffer, enc: string) => string }
 
@@ -111,6 +113,50 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const out = r || '(empty output)'
     return out.length > 3000 ? out.slice(0, 1500) + '\n...[输出过长已截断, 共 ' + out.length + ' 字符, 头尾已保留]\n' + out.slice(-1500) : out
   } },
+  { name: 'git', writeOp: (A) => !['status', 'diff', 'log'].includes(String(A.action || '').trim().toLowerCase()), run: async (A, ctx) => {
+    const action = String(A.action || '').trim()
+    const allowed = ['status', 'diff', 'log', 'commit', 'stash', 'push', 'pull', 'checkout']
+    if (!allowed.includes(action)) return 'E:action 仅支持 ' + allowed.join('/')
+    const args = String(A.args || '').trim()
+    // 只读 action 与写 action 分开标注, 方便后续权限控制
+    const cmd = 'git ' + action + (args ? ' ' + args : '')
+    return String(await invokeHandler('computer:exec', [cmd, ctx.sid, ctx.taskId], ctx.sender))
+  } },
+  { name: 'init_project_docs', writeOp: true, run: (A, ctx) => {
+    const wd = ctx.workDir || ''
+    if (!wd) return 'E:未设置工作目录'
+    const target = join(wd, 'AGENTS.md')
+    const existing = ['AGENTS.override.md', 'AGENTS.md', 'CLAUDE.md', '.agents.md'].map(n => join(wd, n)).find(p => fs.existsSync(p))
+    if (existing) return 'E:项目指令已存在(' + existing + ')。为避免覆盖，请手动修改，或先删除后再生成'
+    const sections: string[] = []
+    try {
+      const readme = fs.readFileSync(join(wd, 'README.md'), 'utf-8')
+      const head = readme.slice(0, 800).trim()
+      if (head) sections.push('## 项目概览\n' + head)
+    } catch { /* 无 README 跳过 */ }
+    try {
+      const pkg = JSON.parse(fs.readFileSync(join(wd, 'package.json'), 'utf-8')) as { scripts?: Record<string, string> }
+      const scripts = Object.entries(pkg.scripts || {})
+      if (scripts.length) sections.push('## 常用命令\n' + scripts.map(([k, v]) => '- `' + k + '`: ' + v).join('\n'))
+    } catch { /* 无 package.json 跳过 */ }
+    const tree: string[] = []
+    try {
+      for (const ent of fs.readdirSync(wd, { withFileTypes: true })) {
+        if (ent.name.startsWith('.') || ['node_modules', 'dist', 'dist-electron', 'release', '.git'].includes(ent.name)) continue
+        tree.push('- ' + ent.name + (ent.isDirectory() ? '/' : ''))
+        if (ent.isDirectory()) {
+          for (const sub of fs.readdirSync(join(wd, ent.name), { withFileTypes: true }).slice(0, 12)) {
+            if (!sub.name.startsWith('.')) tree.push('  - ' + sub.name + (sub.isDirectory() ? '/' : ''))
+          }
+        }
+      }
+    } catch { /* 目录读取失败跳过 */ }
+    if (tree.length) sections.push('## 目录结构\n' + tree.join('\n'))
+    sections.push('## 约定\n- 本机为 Windows: 命令一律用 PowerShell 语法\n- 修改文件后必须运行验证命令（构建/测试/检查）再宣称完成\n- 按项目实际情况继续补充规则')
+    const content = '# AGENTS.md\n\n自动生成的项目指令草稿，请按项目实际情况修改完善。\n\n' + sections.join('\n\n') + '\n'
+    fs.writeFileSync(target, content, 'utf-8')
+    return target + ' (已生成 ' + content.length + ' 字符草稿，请检查后继续使用)'
+  } },
   { name: 'terminal_open', run: async (A, ctx) => {
     const id = String(A.id || '')
     if (!id) return 'E:need id'
@@ -132,7 +178,8 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const opts = { cwd: cwd || undefined, windowsHide: true }
     let proc: ChildProcess
     let enc: 'gbk' | 'utf8' = 'gbk'
-    if (shell === 'powershell') proc = spawn('powershell.exe', ['-NoLogo', '-NoExit', '-Command', '-'], opts)
+    // v0.3.8: 与 exec_command 同源 —— 有 PowerShell 7 时交互终端也用 pwsh(UTF-8), 否则 Windows PowerShell(GBK)
+    if (shell === 'powershell') { proc = spawn(getPowerShellCmd(), ['-NoLogo', '-NoExit', '-Command', '-'], opts); enc = getPowerShellIsPwsh() ? 'utf8' : 'gbk' }
     else if (shell === 'cmd') proc = spawn('cmd.exe', [], opts)
     else if (shell === 'node') { proc = spawn('node', ['-i'], opts); enc = 'utf8' }
     else { proc = spawn('python', ['-X', 'utf8', '-u', '-i'], opts); enc = 'utf8' }

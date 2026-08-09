@@ -14,6 +14,15 @@ import { checkFilePermission } from './tool-permission'
 export { parseMcpToolName, TOOLS, getMcpToolSpecs, closeTerminalSessions }
 export type { ToolRunCtx }
 
+// v0.3.8: 主控核心工具集 —— 默认只给常用工具, 省 schema/上下文; 进阶工具可在 设置→工具 单独放行或关闭核心模式
+const CORE_TOOLS = new Set([
+  'read', 'write', 'edit', 'apply_patch', 'mkdir', 'ls', 'grep', 'find',
+  'exec_command', 'git', 'terminal_open', 'terminal_run', 'terminal_close',
+  'web_search', 'web_fetch', 'web_read', 'read_skill', 'init_project_docs', 'update_plan',
+  'system_info', 'session_search', 'save_memory', 'recall_memory',
+  'list_agents', 'dispatch', 'handoff', 'list_workflows', 'run_workflow',
+])
+
 // ─── 工具缓存(引擎内, 写操作自动失效) ───
 const toolCache = new Map<string, { result: string; ts: number }>()
 function getCached(key: string, ttlKey: string): string | null {
@@ -33,7 +42,13 @@ export function getActiveTools(ctx: ToolRunCtx): EngineToolSpec[] {
   const autoMcp = ctx.g.mcpAutoInject !== false
   const merged = autoMcp ? [...TOOLS, ...getMcpToolSpecs()] : [...TOOLS]
   // v0.3.5 T2: 工具白名单开关 —— 关闭时不过 agent 白名单, 返回全量工具
-  const filtered = (ctx.agent && ctx.g.perf?.toolWhitelist !== false) ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
+  let filtered = (ctx.agent && ctx.g.perf?.toolWhitelist !== false) ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
+  // v0.3.8: 核心工具模式(默认开) —— 只约束主控(无 agent / 姬子), 其它角色仍按各自白名单; 用户在工具权限里显式配置过的工具自动放行
+  const isMain = !ctx.agent || ctx.agent === '姬子'
+  if (ctx.g.perf?.toolCore !== false && isMain) {
+    const explicit = new Set(Object.keys(ctx.g.toolPerms || {}).filter(k => (ctx.g.toolPerms || {})[k] !== 'deny'))
+    filtered = filtered.filter(t => CORE_TOOLS.has(t.function.name) || explicit.has(t.function.name) || t.function.name.startsWith('mcp__') || t.function.name.startsWith('plugin_'))
+  }
   if (ctx.g.collabMode === '关闭') {
     return filtered.filter(t => !disabled.includes(t.function.name) && !['handoff', 'dispatch', 'list_agents'].includes(t.function.name))
   }
@@ -118,7 +133,8 @@ export async function runTool(name: string, a: Record<string, unknown>, ctx: Too
       const cached = getCached(ck, name)
       if (cached) return cached + ' [cache]'
     }
-    if (def.writeOp) onWriteOp()
+    const writeOp = typeof def.writeOp === 'function' ? def.writeOp(a) : def.writeOp
+    if (writeOp) onWriteOp()
     const r = await def.run(a as Record<string, string>, ctx)
     if (def.cacheable) setCached(ck, r)
     return r

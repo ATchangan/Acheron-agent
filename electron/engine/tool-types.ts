@@ -33,6 +33,6 @@ export interface ToolRunCtx {
 export interface ToolHandler {
   name: string
   run: (A: Record<string, string>, ctx: ToolRunCtx) => Promise<string> | string
-  writeOp?: boolean    // 写操作: 执行前清除读缓存
+  writeOp?: boolean | ((args: Record<string, unknown>) => boolean)  // 写操作: 执行前清除读缓存; 函数形式按本次参数动态判定
   cacheable?: boolean  // 只读可缓存结果(写操作会自动失效)
 }

@@ -1,4 +1,5 @@
 // electron/engine/types.ts — 独立内核共享类型
+import type { GeneralSettings } from '../shared/settings-types'
 
 export interface EngineProvider {
   id: string
@@ -12,61 +13,8 @@ export interface EngineProvider {
 }
 
 // 引擎用设置快照(主进程直接读 settings.json, 无需渲染层)
-export interface EngineSettings {
-  workDir?: string
-  mode?: string
-  language?: string
-  temperature?: number
-  maxTokens?: number
-  maxToolRounds?: number
-  retryCount?: number
-  parallelTools?: boolean
-  meltdownLimit?: number
-  toolTimeout?: number
-  maxTaskTokens?: number
-  riskConfirm?: boolean
-  longTaskAutoContinue?: boolean
-  longTaskAutoMax?: number
-  planGate?: boolean
-  llmSummary?: boolean
-  microCompact?: boolean
-  traceEnabled?: boolean
-  mcpAutoInject?: boolean
-  filePermission?: string
-  collabMode?: string
-  disabledAgents?: string[]
-  disabledTools?: string[]
-  toolPerms?: Record<string, string>
-  pluginPerm?: Record<string, string>
-  autoMemoryEnabled?: boolean
-  autoFastModel?: boolean
-  mainModel?: string
-  fastModel?: string
-  smallModel?: string
-  largeModel?: string
-  codeModel?: string
-  longTextModel?: string
-  visionModels?: string[]
-  visionModel?: string
-  maxHandoffChain?: number
-  singleBubble?: boolean
-  thinkLevel?: string
-  thinkOverrides?: Record<string, string>
-  chatPersona?: string
-  workPersona?: string
-  customSystemPrompt?: string
-  promptInjectPos?: string
-  agentName?: string
-  userAlias?: string
-  toneStyle?: string
-  verbosity?: number
-  compactThreshold?: number
-  compactKeepRounds?: number
-  compactTokenCap?: number
-  compactOverrides?: Record<string, number>
-  taskArchive?: boolean
-  perf?: Record<string, boolean | undefined>
-  episodicMemory?: boolean
+// v0.3.8: 字段唯一来源为 shared/settings-types.ts 的 GeneralSettings, 此处只做扩展(快照可缺字段)
+export interface EngineSettings extends Partial<GeneralSettings> {
   [k: string]: unknown
 }
 
@@ -183,9 +131,9 @@ export type EngineEvent =
   | { type: 'restore'; sid: string; messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string }
   | { type: 'ui'; sid: string; workDir?: string; theme?: string }
   | { type: 'plan'; sid: string; summary: string; steps: PlanStep[] }
-  | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[] }
+  | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[]; changedIds?: string[] }
   | { type: 'compact'; sid: string; messages: EngineMessage[] }
-  | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string }
+  | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string; failedStep?: { label: string; tool?: string; detail?: string; messageId?: string }; fileChanges?: number }
   | { type: 'error'; sid: string; message: string }
 
 export interface EngineStartParams {

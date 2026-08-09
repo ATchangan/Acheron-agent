@@ -21,6 +21,7 @@ describe('engine context', () => {
     const sp = buildPrompt('work', '测试人设', G, getAgents(), 'D:/test')
     expect(sp).toContain('多角色编队')
     expect(sp).toContain('黄泉')
+    expect(sp).toContain('简单任务直接调工具')
   })
 
   it('routeAgent 简单消息不路由, 代码消息路由螺丝咕姆', () => {
@@ -55,7 +56,7 @@ describe('engine context', () => {
     const msgs = [
       { id: 'u1', role: 'user' as const, content: '早期需求', timestamp: 1 },
       { id: 'a1', role: 'assistant' as const, content: null, timestamp: 2, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'handoff', arguments: '{"agent_name":"三月七"}' } }] },
-      { id: 't1', role: 'tool' as const, content: '✅ 已交接给 三月七', timestamp: 3, tool_call_id: 'c1' },
+    { id: 't1', role: 'tool' as const, content: '[已交接] 已交接给 三月七', timestamp: 3, tool_call_id: 'c1' },
       { id: 'a2', role: 'assistant' as const, content: '接手后的回答', timestamp: 4 },
     ]
     const g = { ...G, handoffContext: false }

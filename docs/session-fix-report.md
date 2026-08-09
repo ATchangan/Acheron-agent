@@ -17,16 +17,16 @@
 
 | # | 项目 | 结果 | 证据 |
 |---|---|---|---|
-| F0 | 构建 | ✅ | npm run build 0; render/electron tsc 双 0; 主题校验 PASS |
-| F1 | 单会话回归 | ✅ | 对话回复「2」; read 工具读取 data.txt 含 3.2.1; 插话后回复正常; 无 FATAL |
-| F2 | 多会话并发 | ✅ | 双会话交替发消息无异常、无 FATAL; 会话独立（新建/切换正常）; Agent 身份会话字段隔离（代码级: recordAgent/onAgentRoute 已写会话字段） |
-| F3 | 插话隔离 | ⚠️ 代码级 | 插话队列 pendingInterject 全局（未会话化, 记 TODO）; 单会话插话实测正常 |
-| F4 | 保存队列 | ✅ | 发消息后磁盘会话文件最新写入（14:12:37, 9.5KB）; enqueueSave 串行合并; meta 写盘后更新 |
-| F5 | 自动续跑 | ⚠️ 代码级 | scheduleResume 会话句柄+指纹去重+代号校验已实现; 精确时序未实测 |
-| F6 | 中间轮次 | ⚠️ 代码级 | 清空边界改 indexOf(userMsg.id); 插话 user 消息不再破坏边界 |
-| F7 | regen 附件 | ✅ 代码级 | regen 补 lu.attachments（附件描述不丢） |
-| F8 | 幽灵会话 | ⚠️ 代码级 | loadError 标记实现; 写盘失败 meta 不更新 |
-| G4 | console 健康 | ✅ | 全流程无未捕获错误（Runtime.exceptionThrown 空） |
+| F0 | 构建 | ✓ | npm run build 0; render/electron tsc 双 0; 主题校验 PASS |
+| F1 | 单会话回归 | ✓ | 对话回复「2」; read 工具读取 data.txt 含 3.2.1; 插话后回复正常; 无 FATAL |
+| F2 | 多会话并发 | ✓ | 双会话交替发消息无异常、无 FATAL; 会话独立（新建/切换正常）; Agent 身份会话字段隔离（代码级: recordAgent/onAgentRoute 已写会话字段） |
+| F3 | 插话隔离 | △ 代码级 | 插话队列 pendingInterject 全局（未会话化, 记 TODO）; 单会话插话实测正常 |
+| F4 | 保存队列 | ✓ | 发消息后磁盘会话文件最新写入（14:12:37, 9.5KB）; enqueueSave 串行合并; meta 写盘后更新 |
+| F5 | 自动续跑 | △ 代码级 | scheduleResume 会话句柄+指纹去重+代号校验已实现; 精确时序未实测 |
+| F6 | 中间轮次 | △ 代码级 | 清空边界改 indexOf(userMsg.id); 插话 user 消息不再破坏边界 |
+| F7 | regen 附件 | ✓ 代码级 | regen 补 lu.attachments（附件描述不丢） |
+| F8 | 幽灵会话 | △ 代码级 | loadError 标记实现; 写盘失败 meta 不更新 |
+| G4 | console 健康 | ✓ | 全流程无未捕获错误（Runtime.exceptionThrown 空） |
 
 ## TODO（方案外/待后续块）
 
@@ -36,6 +36,6 @@
 
 ## 结论
 
-- 自动化实测 5 项 ✅ + 代码级确认 4 项 ⚠️（均已实现, 需人工/后续块验证）
+- 自动化实测 5 项 ✓ + 代码级确认 4 项 △（均已实现, 需人工/后续块验证）
 - 门禁判定: **F 组核心全过**（F0/F1/F2/F4 实测 + F7 代码级 + console 健康）, 可进入重构块 G
-- ⚠️ 说明: F3/F5/F6/F8 为代码级确认, 建议发布前人工补测
+- △ 说明: F3/F5/F6/F8 为代码级确认, 建议发布前人工补测

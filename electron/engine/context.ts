@@ -21,7 +21,7 @@ export function routeAgent(userMessage: string, g: EngineSettings): string | nul
 }
 
 // ─── system prompt 构建(与渲染层 buildPrompt 同构) ───
-export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, agents: Record<string, AgentDef>, wd: string, skills?: { name: string; description: string }[]): string {
+export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, agents: Record<string, AgentDef>, wd: string, skills?: { name: string; description: string }[], planStage = false): string {
   const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
   const identity = '## 身份\n' + (ishiki || '').slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
   const userInfo = '## 用户\n称呼：' + (g.userAlias || '老板') + '。关注代码与办公自动化场景。\n'
@@ -58,7 +58,9 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
   const workPrompt = base +
     multiAgent +
     (workP ? '## 自定义工作人设\n' + workP + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n每次调用工具前，先用一句简短自然语言说明这一步在做什么（例如：先读取项目说明、查找关键词、执行命令）。这句话会显示为你的工作步骤卡片，除步骤说明外不要输出其他文字。\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框') +
-    '\n## 计划执行（重要）\n- 开始任务时先复述目标与关键约束，缺条件先追问，不脑补\n- 复杂任务先用 update_plan 声明完整步骤清单（label + tool 对应工具名 + expected 预期结果 + 状态），执行中持续用 update_plan 更新状态并保持准确；计划会实时展示并打勾\n- 工具步骤会以「执行计划」清单展示并实时打勾，请保持计划文本与实际工具步骤一致\n- 每轮调用工具前仍用一句话说明这一步在做什么\n- 修改文件优先用 apply_patch（一次多 hunk 精确编辑），避免整文件重写；简单替换用 edit\n- 需要保持状态的交互命令（REPL、git、npm、长驻进程）用 terminal_open/terminal_run/terminal_close；一次性命令用 exec_command\n- 涉及文件/代码改动时，交付前必须运行验证命令（构建/测试/检查/列出结果），并把验证作为执行计划的一部分；未验证不得宣称完成\n'
+    '\n## 计划执行\n- 简单任务直接调工具，不要调用 update_plan；复杂任务（约 3 步以上）或用户要求计划时才用 update_plan 声明步骤\n- 每轮调用工具前用一句话说明在做什么；修改文件优先 apply_patch，简单替换用 edit，避免整文件重写\n- 交互/长驻命令（REPL、git、npm）用 terminal_open/run/close；一次性命令用 exec_command\n- 涉及文件/代码改动时，交付前必须运行验证命令（构建/测试/检查/列出结果）并列入计划；未验证不得宣称完成\n'
+    '\n## Windows 命令纪律\n- 命令一律写 PowerShell 语法，禁止 bash/Linux 语法；含中文路径/输出的命令自动走 PowerShell（UTF-8）\n- 路径含空格用引号包裹；变量用 $env:VAR\n'
+    '\n## Git 工作流\n- 改代码前 git status/diff，改完 git diff 验证，确认后 git commit；统一用 git 工具，不要用 exec_command 拼 git 命令\n'
   const langMap: Record<string, string> = { zh: '始终使用简体中文回复', 'zh-tw': '始终使用繁体中文回复', en: 'always reply in English', ja: '常に日本語で回答してください', auto: '自动检测用户语言并以此回复', match: '始终使用与用户提问相同的语言回复' }
   const langInstr = langMap[String(g.language || '')] ? '\n【语言要求】' + langMap[String(g.language || '')] : ''
   const tokenDiscipline = '\n## 信息调度纪律（重要）\n' +
@@ -69,7 +71,10 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
   const skillsInstr = skills && skills.length
     ? '\n\n## 已装载技能\n' + skills.map(s => `- ${s.name}: ${s.description}`).join('\n') + '\n需要技能详细指令时调用 read_skill(name) 读取 SKILL.md 全文；技能内脚本/参考资料用 read_skill(name, "scripts/xxx" 或 "references/xxx") 读取。\n'
     : ''
-  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + skillsInstr
+  const planStageInstr = planStage
+    ? '\n\n## 计划阶段（当前）\n你正处于计划确认阶段：只能调用只读工具（read/ls/grep/find/web_search 等）探索，禁止修改文件或执行有副作用的命令。请先输出完整执行计划（建议用 update_plan 声明步骤），计划会展示给用户等待批准，批准后你才能执行。\n'
+    : ''
+  const finalBase = (mode === 'chat' ? chatPrompt : workPrompt) + langInstr + tokenDiscipline + skillsInstr + planStageInstr
   if (g.customSystemPrompt) {
     const inj = g.customSystemPrompt
     const pos = g.promptInjectPos || 'end'
@@ -88,7 +93,7 @@ export interface ContextBuildOpts {
   agent?: string
   handoffFrom?: number
   memoryText: string
-  projectCtx?: { file: string; content: string }
+  projectCtx?: { file: string; content: string; truncated?: boolean }
   model: string
   workflowsFull: boolean
   agents: Record<string, AgentDef>
@@ -190,7 +195,10 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   let sp = buildPrompt(currentMode, ishiki, opts.g, opts.agents, opts.g.workDir || '') + earlySummary
   const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
-  if (opts.projectCtx?.file && opts.projectCtx.content) sp += '\n## 项目约定\n' + opts.projectCtx.content + '\n'
+  if (opts.projectCtx?.file && opts.projectCtx.content) {
+    sp += '\n## 项目约定\n' + opts.projectCtx.content + '\n' +
+      '\n> 项目指令按目录链合并(根→工作目录, 深层优先); 读取子目录文件时会自动注入该目录规则; 常驻文件建议保持精简(200 行内), 重内容放子目录。\n'
+  }
   if (currentMode === 'work') {
     const need = opts.workflowsFull || Object.values(WORKFLOWS).some(w => w.triggers.some(t => lastUserText.includes(t)))
     sp += need

@@ -47,9 +47,12 @@ interface EngineEvent {
   taskMs?: number
   status?: 'done' | 'failed' | 'aborted'
   error?: string
+  failedStep?: { label?: string; tool?: string; detail?: string; messageId?: string }
+  fileChanges?: number
   message?: string
   summary?: string
   steps?: PlanStepView[]
+  changedIds?: string[]
   pending?: boolean
   agent?: string
   activeAgents?: string[]
@@ -277,7 +280,14 @@ function applyEngineEventInner(raw: unknown): void {
     }
     case 'plan-update': {
       const prev = useChatStore.getState().plans[ev.sid]
-      const plan: PlanState = { summary: ev.summary !== undefined ? ev.summary : (prev?.summary || ''), steps: ev.steps || [], pending: prev?.pending ?? false }
+      // v0.3.8: 增量合并 —— 只 patch 变化的步骤, 避免全量数组频繁替换
+      const seen = new Set<string>()
+      let steps = (ev.steps || []).filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true })
+      if (ev.changedIds && ev.changedIds.length && prev) {
+        const byId = new Map(steps.map(s => [s.id, s]))
+        steps = [...prev.steps.map(s => byId.get(s.id) || s), ...steps.filter(s => !prev.steps.some(p => p.id === s.id))]
+      }
+      const plan: PlanState = { summary: ev.summary !== undefined ? ev.summary : (prev?.summary || ''), steps, pending: prev?.pending ?? false }
       useChatStore.setState(s => ({ plans: { ...s.plans, [ev.sid]: plan } }))
       break
     }
@@ -305,7 +315,16 @@ function applyEngineEventInner(raw: unknown): void {
       useChatStore.setState({ streamText: '', streamId: '' })
       const finalPlan = useChatStore.getState().plans[ev.sid]
       patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false, messages: stripStreaming(s.messages || []), plan: finalPlan || s.plan }))
-      if (st.cid === ev.sid) useChatStore.setState({ streaming: false, executing: false, stage: null, error: ev.status === 'failed' ? (ev.error || '任务失败') : null })
+      if (st.cid === ev.sid) {
+        // v0.3.8: 失败归因 —— 错误提示附带失败步骤
+        let errText = ''
+        if (ev.status === 'failed') {
+          errText = ev.error || '任务失败'
+          const fs2 = ev.failedStep as { label?: string; tool?: string } | undefined
+          if (fs2?.label) errText += '（失败于步骤：' + fs2.label + (fs2.tool ? ' / ' + fs2.tool : '') + '）'
+        }
+        useChatStore.setState({ streaming: false, executing: false, stage: null, error: errText || null, errorStep: ev.failedStep?.messageId ? { messageId: ev.failedStep.messageId } : null, fileChanges: ev.fileChanges || 0, lastTaskId: ev.taskId || '' })
+      }
       throttledSessionSave(ev.sid, 200)
       autoExtractMemory(ev.sid, useChatStore.getState().sessions).catch(() => {})
       // v0.3.3: 任务结束关闭该任务的独立浏览器会话(隔离, 不串页面)

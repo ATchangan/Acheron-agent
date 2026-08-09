@@ -53,9 +53,9 @@ export const ChatToolbar: React.FC<{
       <IconBtn title="快捷指令" onClick={onToggleCmd}><Command size={16} /></IconBtn>
       {cmdOpen && (
         <div className="dropdown-menu">
-          <div className="dropdown-item" onClick={() => { onSetText('/diary'); onSend() }}>📔 /diary 生成日记</div>
-          <div className="dropdown-item" onClick={() => { onSetText('/xing'); onSend() }}>✨ /xing 提取流程</div>
-          <div className="dropdown-item" onClick={() => { onSetText('/compact'); onSend() }}>🗜️ /compact 压缩历史</div>
+          <div className="dropdown-item" onClick={() => { onSetText('/diary'); onSend() }}>/diary 生成日记</div>
+          <div className="dropdown-item" onClick={() => { onSetText('/xing'); onSend() }}>/xing 提取流程</div>
+          <div className="dropdown-item" onClick={() => { onSetText('/compact'); onSend() }}>/compact 压缩历史</div>
         </div>
       )}
     </div>
@@ -74,7 +74,7 @@ export const ChatToolbar: React.FC<{
 
     {/* 文件权限 */}
     <div className="dropdown-wrap">
-      <IconBtn title={`文件权限: ${PERM_LABELS[perm as FilePerm] || perm}`} onClick={onTogglePerm}>{PERM_ICONS[perm as FilePerm] || '⚙'}</IconBtn>
+          <IconBtn title={`文件权限: ${PERM_LABELS[perm as FilePerm] || perm}`} onClick={onTogglePerm}>{PERM_ICONS[perm as FilePerm] || '?'}</IconBtn>
       {permOpen && (
         <div className="dropdown-menu">
           {(Object.keys(PERM_ICONS) as FilePerm[]).map(k => (

@@ -1,6 +1,6 @@
 ﻿// electron/mcp/sse-transport.ts — MCP SSE 传输层补充
 // 在现有 stdio 传输基础上增加 SSE/HTTP 传输支持
-// 灵感来源：Anthropic MCP Spec 2024-11-05 Transport Layer
+// 灵感来源：MCP Spec 2024-11-05 Transport Layer
 // 用 Electron net.fetch(跟随系统代理), 不再用 Node 全局 fetch(undici 不读系统代理)
 
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => {
