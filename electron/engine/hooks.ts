@@ -1,7 +1,7 @@
 // electron/engine/hooks.ts — 事件钩子(Hooks): 工具调用前后/任务启停/文件写入时执行自定义命令
 import { exec } from 'child_process'
 import type { EngineSettings } from './types'
-import { getPowerShellCmd } from '../shared/pwsh'
+import { getPowerShellCmdQuoted } from '../shared/pwsh'
 
 export type HookEvent =
   | 'tool-before' | 'tool-after' | 'task-start' | 'task-end' | 'file-write'
@@ -38,7 +38,7 @@ export function runHooks(g: EngineSettings, event: HookEvent, vars: Record<strin
       // 用户已显式写 powershell/pwsh 前缀或纯 ASCII 命令保持原样
       const trimmed = raw.trim()
       const cmd = /[^\x00-\x7F]/.test(raw) && !/^(powershell|pwsh)\b/i.test(trimmed)
-        ? getPowerShellCmd() + ' -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' + raw.replace(/"/g, '\\"') + '"'
+        ? getPowerShellCmdQuoted() + ' -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' + raw.replace(/"/g, '\\"') + '"'
         : raw
       await new Promise<void>(resolve => {
         try {

@@ -12,7 +12,7 @@ import { applyPatchToContent } from '../shared/patch-utils'
 import { getMcpToolSpecs } from './tool-specs'
 import { checkFilePermission } from './tool-permission'
 import { resolveSkillFile } from './skill-files'
-import { getPowerShellCmd } from '../shared/pwsh'
+import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
 
 const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer; decode: (b: Buffer, enc: string) => string }
 
@@ -179,7 +179,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     let proc: ChildProcess
     let enc: 'gbk' | 'utf8' = 'gbk'
     // v0.3.8: 与 exec_command 同源 —— 有 PowerShell 7 时交互终端也用 pwsh(UTF-8), 否则 Windows PowerShell(GBK)
-    if (shell === 'powershell') { proc = spawn(getPowerShellCmd(), ['-NoLogo', '-NoExit', '-Command', '-'], opts); enc = getPowerShellCmd() === 'pwsh' ? 'utf8' : 'gbk' }
+    if (shell === 'powershell') { proc = spawn(getPowerShellCmd(), ['-NoLogo', '-NoExit', '-Command', '-'], opts); enc = getPowerShellIsPwsh() ? 'utf8' : 'gbk' }
     else if (shell === 'cmd') proc = spawn('cmd.exe', [], opts)
     else if (shell === 'node') { proc = spawn('node', ['-i'], opts); enc = 'utf8' }
     else { proc = spawn('python', ['-X', 'utf8', '-u', '-i'], opts); enc = 'utf8' }

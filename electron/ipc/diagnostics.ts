@@ -5,7 +5,7 @@ import * as fs from 'fs'
 import { join } from 'path'
 import * as os from 'os'
 import { execFile } from 'child_process'
-import { getPowerShellCmd } from '../shared/pwsh'
+import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
 
 export interface DiagItem {
   name: string
@@ -29,8 +29,13 @@ function probe(exe: string, args: string[]): Promise<boolean> {
 }
 
 async function checkPowerShell7(): Promise<DiagItem> {
-  const cmd = getPowerShellCmd()
-  if (cmd === 'pwsh') return { name: 'PowerShell 7', status: 'ok', detail: 'pwsh 可用，已优先使用' }
+  if (getPowerShellIsPwsh()) {
+    // 显示真实版本与安装路径(Store 安装不在 Program Files, 避免误判为未安装)
+    const info = await new Promise<string>(resolve => {
+      execFile(getPowerShellCmd(), ['-NoProfile', '-NonInteractive', '-Command', '& { $v = $PSVersionTable.PSVersion.ToString(); $p = (Get-Command pwsh).Source; "$v | $p" }'], { windowsHide: true, timeout: 4000 }, (e, stdout) => resolve(e ? '' : String(stdout || '').trim()))
+    })
+    return { name: 'PowerShell 7', status: 'ok', detail: 'pwsh ' + (info || '已安装') + ' 可用，已优先使用' }
+  }
   return { name: 'PowerShell 7', status: 'warn', detail: '未检测到可用的 PowerShell 7，已回退 Windows PowerShell', fix: '安装 PowerShell 7 可获得现代语法与 UTF-8 输出：winget install Microsoft.PowerShell' }
 }
 
