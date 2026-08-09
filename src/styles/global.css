@@ -347,8 +347,8 @@
 .hq-user-stop{position:absolute;right:6px;bottom:6px;z-index:10;display:none;width:22px;height:22px;align-items:center;justify-content:center;background:transparent;border:none;border-radius:4px;color:var(--danger);cursor:pointer}
 .hq-user-bubble:hover .hq-user-stop{display:inline-flex}
 .hq-user-stop:hover{background:var(--bg-hover)}
-.hq-user-hover-actions{position:absolute;right:6px;top:6px;z-index:10;display:none;gap:2px;align-items:center}
-.hq-user-bubble:hover .hq-user-hover-actions,.hq-user-bubble:focus-within .hq-user-hover-actions{display:inline-flex}
+.hq-user-hover-actions{display:none;gap:2px;align-items:center;justify-content:flex-end;margin-top:2px;padding:0 2px}
+.hq-user-sticky:hover .hq-user-hover-actions,.hq-user-sticky:focus-within .hq-user-hover-actions{display:flex}
 .hq-user-time{font-size:11px;color:var(--text-muted);margin-left:4px}
 .hq-mini-btn{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:4px;color:var(--text-muted);cursor:pointer;padding:0}
 .hq-mini-btn:hover{background:var(--bg-hover);color:var(--text-primary)}
