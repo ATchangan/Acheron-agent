@@ -23,6 +23,24 @@ export interface PlanDocOptions {
   retrospective: string
 }
 
+// 计划步骤去重: 按 id 去重; 未认领的 pending/paused 步骤按 label+tool 去重(防模型重复 update_plan 撑大总数)
+export function dedupePlanSteps<T extends { id: string; label: string; tool?: string; status: string }>(steps: T[]): T[] {
+  const out: T[] = []
+  const seenIds = new Set<string>()
+  const seenSig = new Set<string>()
+  for (const s of steps) {
+    if (s.id && seenIds.has(s.id)) continue
+    if (s.id) seenIds.add(s.id)
+    if ((s.status === 'pending' || s.status === 'paused') && !('toolCallId' in s)) {
+      const sig = 'l:' + s.label + '|t:' + (s.tool || '')
+      if (seenSig.has(sig)) continue
+      seenSig.add(sig)
+    }
+    out.push(s)
+  }
+  return out
+}
+
 const STATUS_LABEL: Record<string, string> = { done: '完成', running: '进行中', failed: '失败', aborted: '中止', paused: '暂停', pending: '待办' }
 
 // PLANS.md 文档构建(计划式: Goal/Progress/Surprises/Decision Log/Outcomes)

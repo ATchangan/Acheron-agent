@@ -35,6 +35,16 @@ const TEXT_CHUNK =
   'data: {"usage":{"prompt_tokens":20,"completion_tokens":10}}\n\n' +
   'data: [DONE]\n\n'
 
+function updateChunk(id: string): string {
+  const args = '{\\"steps\\":[{\\"label\\":\\"\\u67e5\\u770b\\u76ee\\u5f55\\",\\"tool\\":\\"ls\\"},{\\"label\\":\\"\\u8bfb\\u53d6\\u6587\\u4ef6\\",\\"tool\\":\\"read\\"}]}'
+  return (
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"' + id + '","function":{"name":"update_plan","arguments":"' + args + '"}}]}}]}\n\n' +
+    'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n' +
+    'data: {"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n' +
+    'data: [DONE]\n\n'
+  )
+}
+
 function waitFor(events: { type: string }[], type: string, timeoutMs = 8000): Promise<boolean> {
   return new Promise(resolve => {
     const t0 = Date.now()
@@ -200,5 +210,36 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     expect(done).toBe(true)
     expect(bodies.some(b => b.includes('项目约定') && b.includes('只准用 PowerShell 命令'))).toBe(true)
     fs.rmSync(join(tmp, 'AGENTS.md'), { force: true })
+  }, 20000)
+
+  it('重复 update_plan 不产生一模一样的两条步骤', async () => {
+    const events: { type: string; steps?: { id: string; label: string }[] }[] = []
+    let call = 0
+    const netFetch = vi.fn(async () => {
+      call++
+      return sseResponse(call === 1 ? [updateChunk('u1')] : call === 2 ? [updateChunk('u2')] : [TEXT_CHUNK])
+    }) as unknown as typeof fetch
+    const engine = new AgentEngine({
+      settingsPath: join(tmp, 'settings.json'),
+      userDataPath: tmp,
+      memoryPath: join(tmp, 'memory.json'),
+      tracePath: join(tmp, 'trace.jsonl'),
+      netFetch,
+      loadSettings: () => ({
+        providers: [{ id: 'p1', name: 'D', type: 'OpenAI Compatible', apiKey: 'k', baseUrl: 'http://x/v1', models: ['m1'], selectedModel: 'm1' }],
+        general: { workDir: tmp, maxToolRounds: 50 },
+      }),
+      loadIshiki: () => '',
+      sendEvent: ev => events.push(ev as { type: string }),
+      getSender: () => null,
+    })
+
+    engine.start({ sid: 's6', taskId: 't6', content: '\u89c4\u5212\u4e00\u4e0b', userMsgId: 'u6', userMsgTimestamp: Date.now(), history: [] })
+    const done = await waitFor(events, 'task-done')
+    expect(done).toBe(true)
+    const lastPlan = [...events].reverse().find(e => e.type === 'plan-update')
+    const steps = lastPlan?.steps || []
+    expect(steps.length).toBe(2)
+    expect(new Set(steps.map(s => s.label)).size).toBe(2)
   }, 20000)
 })

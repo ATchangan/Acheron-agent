@@ -281,7 +281,8 @@ function applyEngineEventInner(raw: unknown): void {
     case 'plan-update': {
       const prev = useChatStore.getState().plans[ev.sid]
       // v0.3.8: 增量合并 —— 只 patch 变化的步骤, 避免全量数组频繁替换
-      let steps = ev.steps || []
+      const seen = new Set<string>()
+      let steps = (ev.steps || []).filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true })
       if (ev.changedIds && ev.changedIds.length && prev) {
         const byId = new Map(steps.map(s => [s.id, s]))
         steps = [...prev.steps.map(s => byId.get(s.id) || s), ...steps.filter(s => !prev.steps.some(p => p.id === s.id))]

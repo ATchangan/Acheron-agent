@@ -13,7 +13,7 @@ import { streamChat, chatOnce, abortLLM, visionOnce, normalizeUsage } from './ll
 import type { LlmMsg } from './llm-core'
 import { classifyCacheSupport, cacheCapToSupported } from './cache-caps'
 import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
-import { buildPlanDocContent, planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
+import { buildPlanDocContent, dedupePlanSteps, planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
 import { toolLabel as toolLabelOf, toolDetail as toolDetailOf, toolExpected as toolExpectedOf } from './tool-labels'
 import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills } from './skill-files'
@@ -90,6 +90,7 @@ interface TaskState {
   switchedVision: boolean
   earlySummary?: string
   earlySummaryDone?: boolean
+  skillsCache?: { name: string; description: string }[]
   lastCompactAt?: number
   lastPromptTokens?: number
   compactCount?: number
@@ -443,6 +444,7 @@ export class AgentEngine {
       const step: PlanStep = { id: uuidv4(), label: toolLabelOf(tc), status: 'pending', tool: tc.name, detail: toolDetailOf(tc), toolCallId: tc.id, expected: toolExpectedOf(tc) }
       task.planSteps.push(step)
     }
+    task.planSteps = dedupePlanSteps(task.planSteps)
     this.emitPlan(task)
   }
 
@@ -461,6 +463,7 @@ export class AgentEngine {
       if (messageId) st.messageId = messageId
       ids.push(st.id)
     }
+    task.planSteps = dedupePlanSteps(task.planSteps)
     this.emitPlan(task)
     return ids
   }
@@ -607,7 +610,11 @@ export class AgentEngine {
       const label = String(s.label || '').trim()
       if (!label) continue
       const status = (['pending', 'running', 'done', 'failed', 'aborted'].includes(String(s.status || '')) ? String(s.status) : 'pending') as PlanStep['status']
-      const target = s.id ? task.planSteps.find(x => x.id === s.id) : undefined
+      let target = s.id ? task.planSteps.find(x => x.id === s.id) : undefined
+      // 无 id 时按 label+tool 合并已存在的未认领 pending 步骤, 防止重复 update_plan 产生一模一样条目
+      if (!target) {
+        target = task.planSteps.find(x => !x.toolCallId && x.status === 'pending' && x.label === label && (s.tool === undefined || x.tool === s.tool))
+      }
       if (target) {
         target.label = label
         if (s.expected !== undefined) target.expected = String(s.expected).slice(0, 200)
@@ -620,6 +627,7 @@ export class AgentEngine {
         added++
       }
     }
+    task.planSteps = dedupePlanSteps(task.planSteps)
     if (added || updated) {
       this.planAddDecision(task, '模型 update_plan：新增 ' + added + ' 步，更新 ' + updated + ' 步（共 ' + task.planSteps.length + ' 步）')
       this.emitPlan(task)
@@ -638,6 +646,7 @@ export class AgentEngine {
     try {
       const g = task.g
       task.memoryText = memoryBlockText(task.memory, task.content)
+      task.skillsCache = listSkills(this.deps.skillsDirs || [])
       const projectInstr = discoverProjectInstructions(g.workDir || '', (Number(g.projectDocMaxKb) || 32) * 1024)
       task.projectCtx = projectInstr ? { file: projectInstr.files[0].path, content: projectInstr.content, truncated: projectInstr.truncated, dirs: projectInstr.dirs } : null
       task.instrVisited = new Set(task.projectCtx?.dirs || chainDirs(g.workDir || ''))
@@ -1233,7 +1242,7 @@ export class AgentEngine {
       g: task.g,
       cl: getModelContextLimit(task.model),
       spIshiki: String(task.g.ishiki || ''),
-      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', listSkills(this.deps.skillsDirs || []), task.g.planGate === true && !task.planApproved),
+      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', task.skillsCache || listSkills(this.deps.skillsDirs || []), task.g.planGate === true && !task.planApproved),
       agent: task.agent,
       handoffFrom: task.handoffAt,
       memoryText: task.memoryText,

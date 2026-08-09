@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPlanDocContent, planHasVerification, planNeedsVerify, type PlanStepData } from './plan-core'
+import { buildPlanDocContent, dedupePlanSteps, planHasVerification, planNeedsVerify, type PlanStepData } from './plan-core'
 
 const step = (over: Partial<PlanStepData>): PlanStepData => ({ id: 's1', label: '步骤', status: 'pending', ...over })
 
@@ -75,5 +75,28 @@ describe('planNeedsVerify / planHasVerification', () => {
     const steps = [step({ id: 'a', label: '读', tool: 'read', status: 'done' }), step({ id: 'b', label: '写', tool: 'write', status: 'done' }), step({ id: 'c', label: '验', tool: 'codebox', status: 'done' })]
     expect(planHasVerification(steps, 1)).toBe(true)
     expect(planHasVerification(steps, 0)).toBe(true)
+  })
+
+  it('dedupePlanSteps: 重复 id 与相同 label+tool 的未认领 pending 步骤去重', () => {
+    const steps: PlanStepData[] = [
+      { id: 'a', label: '查看目录', tool: 'ls', status: 'pending' },
+      { id: 'a', label: '查看目录', tool: 'ls', status: 'pending' },
+      { id: 'b', label: '读取文件', tool: 'read', status: 'pending' },
+      { id: 'b', label: '读取文件', tool: 'read', status: 'pending' },
+      { id: 'c', label: '查看目录', tool: 'ls', status: 'done' },
+    ]
+    const out = dedupePlanSteps(steps)
+    expect(out.length).toBe(3)
+    expect(out.map(s => s.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('dedupePlanSteps: 已认领(toolCallId)或已完成的相同步骤保留', () => {
+    const steps = [
+      { id: 'a', label: '查看目录', tool: 'ls', status: 'pending', toolCallId: 'c1' },
+      { id: 'b', label: '查看目录', tool: 'ls', status: 'pending' },
+      { id: 'c', label: '查看目录', tool: 'ls', status: 'done' },
+    ]
+    const out = dedupePlanSteps(steps)
+    expect(out.length).toBe(3)
   })
 })
