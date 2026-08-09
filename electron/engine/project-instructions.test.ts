@@ -4,7 +4,8 @@ import * as os from 'os'
 import { join } from 'path'
 import {
   chainDirs, collectSubdirInstructions, discoverProjectInstructions,
-  findGitRoot, formatInstructionFiles, hasInjectionRisk, resolveInstructionFile,
+  findGitRoot, formatInstructionFiles, hasInjectionRisk, matchPathPattern,
+  parseInstructionFrontmatter, resolveInstructionFile,
 } from './project-instructions'
 
 describe('project-instructions 项目指令发现', () => {
@@ -108,5 +109,45 @@ describe('project-instructions 项目指令发现', () => {
     const r = formatInstructionFiles([{ path: 'p', content: 'a'.repeat(200) }], 50)
     expect(r.truncated).toBe(true)
     expect(r.text).toContain('已截断')
+  })
+
+  it('超大指令文件只读前缀, 不全量读入内存', () => {
+    const w = join(root, 'big'); fs.mkdirSync(w, { recursive: true })
+    fs.writeFileSync(join(w, 'AGENTS.md'), 'x'.repeat(200 * 1024), 'utf-8')
+    const r = discoverProjectInstructions(w, 1024)
+    expect(r).not.toBeNull()
+    expect(r!.truncated).toBe(true)
+    expect(r!.content.length).toBeLessThan(3000)
+  })
+
+  it('frontmatter paths 解析: 列表与内联两种形态', () => {
+    const list = parseInstructionFrontmatter('---\npaths:\n  - src/**\n  - "*.ts"\n---\n正文')
+    expect(list.frontmatter.paths).toEqual(['src/**', '*.ts'])
+    expect(list.body.trim()).toBe('正文')
+    const inline = parseInstructionFrontmatter('---\npaths: [src/**, docs/**]\n---\n正文2')
+    expect(inline.frontmatter.paths).toEqual(['src/**', 'docs/**'])
+    expect(parseInstructionFrontmatter('无 frontmatter').frontmatter.paths).toBeUndefined()
+  })
+
+  it('matchPathPattern: ** 跨目录、* 不跨段、? 单字符', () => {
+    expect(matchPathPattern('src/main.ts', 'src/**')).toBe(true)
+    expect(matchPathPattern('src/a/b.ts', 'src/**')).toBe(true)
+    expect(matchPathPattern('main.ts', '*.ts')).toBe(true)
+    expect(matchPathPattern('src/main.ts', '*.ts')).toBe(false)
+    expect(matchPathPattern('src/main.ts', 'src/*.ts')).toBe(true)
+    expect(matchPathPattern('src/1a.ts', 'src/?a.ts')).toBe(true)
+    expect(matchPathPattern('src/a.ts', 'src/?a.ts')).toBe(false)
+  })
+
+  it('路径作用域: 匹配才注入, 不匹配跳过', () => {
+    const repo = join(root, 'repo3'); fs.mkdirSync(join(repo, 'pkg', 'src'), { recursive: true })
+    fs.mkdirSync(join(repo, '.git'))
+    const work = join(repo, 'pkg')
+    fs.mkdirSync(join(work, 'backend', 'src'), { recursive: true })
+    fs.writeFileSync(join(work, 'backend', 'AGENTS.md'), '---\npaths:\n  - src/**\n---\nSRC_RULE', 'utf-8')
+    const hit = collectSubdirInstructions(join(work, 'backend', 'src', 'main.ts'), new Set(chainDirs(work)))
+    expect(hit.some(f => f.path.endsWith('AGENTS.md') && f.content.includes('SRC_RULE'))).toBe(true)
+    const miss = collectSubdirInstructions(join(work, 'backend', 'README.md'), new Set(chainDirs(work)))
+    expect(miss.some(f => f.path.endsWith('AGENTS.md'))).toBe(false)
   })
 })

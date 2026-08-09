@@ -26,6 +26,17 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 
 修改文件后未运行验证命令时，引擎会自动注入验证请求（最多 2 轮）并记入决策日志；`write` 后用 `read` 确认即视为验证通过。
 
+### 项目指令（AGENTS.md）与执行机制
+
+- **项目指令自动发现**：任务开始时自动读取工作目录的项目指令，文件名优先级 `AGENTS.override.md` > `AGENTS.md` > `CLAUDE.md` > `.agents.md`；git 仓库内按「根目录 → 工作目录」逐层合并，深层规则优先；不在 git 仓库时只看工作目录。合并上限默认 32 KiB（设置 → 引擎 → 项目指令上限可调），超限自动截断并打标记，不再静默丢内容
+- **子目录按需注入**：模型读取某个子目录的文件时，自动把该目录（上溯最多 5 层）的项目规则附加到工具结果，每会话每目录只注入一次，单文件 8k 上限；支持在文件头部写 `paths` 作用域（YAML frontmatter，如 `src/**`、`*.ts`），只对匹配路径生效
+- **注入安全扫描**：所有项目指令注入前扫描提示注入模式，可疑文件直接跳过
+- **一键生成项目指令**：模型可调用 `init_project_docs` 扫描工作目录生成 AGENTS.md 草稿（项目概览 / 常用命令 / 目录结构 / 默认约定），已存在时不覆盖
+- **事件钩子（Hooks）**：设置 → 引擎 可配 `事件=命令` 钩子，支持 tool-before / tool-after / task-start / task-end / file-write / task-stop / task-resume / compact-before / model-fallback，注入 `HQ_EVENT/HQ_TOOL/HQ_SID/HQ_TASK_ID/HQ_RESULT/HQ_PATH/HQ_STATUS` 等环境变量；含中文路径/输出的命令自动走 PowerShell（UTF-8）
+- **任务文件回滚**：引擎在写操作前记录原内容，任务结束后聊天页出现「回滚文件改动」横幅，一键恢复任务开始前的状态（≤50 个文件，单文件 >5MB 跳过）
+- **Windows 命令纪律**：PowerShell 7（pwsh）优先，其次 Windows PowerShell，纯 ASCII 简单命令才走 cmd；交互终端、Hooks、内部脚本统一同一套检测
+- **自定义子代理**：`%APPDATA%\huangquan-agent\agents\*.json` 放 `{"名称":{role,prompt,tools,model?}}` 即注册自定义角色
+
 ### 会话区
 
 - 回合制布局：用户消息（右侧气泡，可编辑）与助手回复（平铺 Markdown，流式原地增长）合并为回合，居中限宽
@@ -37,7 +48,7 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 
 浏览器面板内嵌主窗口实时画面（WebContentsView，100% 同步，可操作），CPU 模式自动降级离屏截图。`browse` 输出可访问性快照，配合 `browser_click` / `browser_type` / `browser_press` / `browser_scroll` / `browser_console` / `browser_vision` 可真正操作网页；每任务独立浏览器会话。
 
-### 57 个内置工具
+### 59 个内置工具
 
 - 文件：read（>5MB 续读）、write、edit、apply_patch（多 hunk 结构化编辑）、mkdir、grep、find、ls
 - 系统：exec_command（可被「停止」递归打断）、terminal_open/run/close（长驻交互终端）、system_info、process_list、kill_process

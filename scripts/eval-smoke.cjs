@@ -91,10 +91,15 @@ async function waitSessionInfo(ev, tries = 10) {
 
 async function main() {
   let riskWas = null
+  let hooksWas = ''
+  let planGateWas = false
+  const fsEval = require('fs')
   await withPage(async ev => {
     // 写文件类场景需要关掉风险确认(测试完恢复)
-    const cfg = await ev(`(async () => { const c = await window.huangquan.settings.load(); return { riskConfirm: c.general.riskConfirm } })()`)
+    const cfg = await ev(`(async () => { const c = await window.huangquan.settings.load(); return { riskConfirm: c.general.riskConfirm, hooksText: c.general.hooksText || '', planGate: c.general.planGate === true } })()`)
     riskWas = cfg.result?.value?.riskConfirm
+    hooksWas = cfg.result?.value?.hooksText || ''
+    planGateWas = !!cfg.result?.value?.planGate
     if (riskWas !== false) await ev(`(async () => { const c = await window.huangquan.settings.load(); c.general.riskConfirm = false; await window.huangquan.settings.save(c); return true })()`)
 
     // 场景1: 工具任务计划闭环
@@ -168,6 +173,81 @@ async function main() {
         verified || retroHint,
         JSON.stringify({ tools: tools7, verified, retroHint }))
     }
+
+    // 场景8: git 工具链路
+    await sendTask(ev, '必须调用 git 工具，动作 status：查看工作台目录的 git 状态（不要修改任何文件）')
+    await sleep(1200)
+    const r8 = await waitSessionInfo(ev)
+    const gitCalls = (r8.result?.value?.calls || []).filter(c => c.name === 'git')
+    report('场景8: git 工具链路',
+      gitCalls.length > 0 && gitCalls.some(c => String(c.args.action || '').toLowerCase() === 'status'),
+      JSON.stringify({ gitCalls: gitCalls.map(c => c.args), tools: r8.result?.value?.toolNames || [] }))
+
+    // 场景9: 子目录项目指令按需注入
+    const instrDir = 'D:\\桌面\\黄泉工作台\\eval-instr'
+    try {
+      fsEval.mkdirSync(instrDir, { recursive: true })
+      fsEval.writeFileSync(instrDir + '\\AGENTS.md', '---\npaths:\n  - notes.txt\n---\nEVAL_RULE_9F3A', 'utf-8')
+      fsEval.writeFileSync(instrDir + '\\notes.txt', 'eval notes', 'utf-8')
+    } catch { /* 准备失败走 FAIL */ }
+    await sendTask(ev, '请读取 ' + instrDir + '\\notes.txt 的内容，并告诉我 eval-instr 目录的项目规则里的暗号是什么')
+    await sleep(1200)
+    const r9 = await waitSessionInfo(ev)
+    report('场景9: 子目录项目指令按需注入',
+      (r9.result?.value?.last || '').includes('EVAL_RULE_9F3A'),
+      JSON.stringify({ tools: r9.result?.value?.toolNames || [], tail: (r9.result?.value?.last || '').slice(-160) }))
+    try { fsEval.rmSync(instrDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
+
+    // 场景10: 任务文件回滚
+    const rbFile = 'D:\\桌面\\黄泉工作台\\eval-rb.txt'
+    await sendTask(ev, '请使用 write 工具在 ' + rbFile + ' 写入 hello，然后读回确认')
+    await sleep(1500)
+    const r10 = await waitSessionInfo(ev)
+    let rbDetail = 'no-task'
+    let rbOk = false
+    try {
+      const rbRes = await ev(`(async () => {
+        const tasks = await window.huangquan.tasks.list()
+        const now = Date.now()
+        const t = [...tasks].filter(x => String(x.content || '').includes('eval-rb') && (now - (x.startedAt || 0)) < 5 * 60 * 1000).pop()
+        if (!t) return { ok: false, error: 'task-not-found' }
+        const r = await window.huangquan.rollback.apply(t.id)
+        return { ok: r.ok, restored: r.restored, error: r.error, taskId: t.id }
+      })()`)
+      const rbInfo = rbRes.result?.value
+      rbOk = !!rbInfo?.ok && (rbInfo.restored || 0) > 0
+      rbDetail = JSON.stringify(rbInfo)
+    } catch (e) { rbDetail = 'ERR:' + String(e) }
+    const rbExists = fsEval.existsSync(rbFile)
+    report('场景10: 任务文件回滚', rbOk && !rbExists, JSON.stringify({ rb: rbDetail, fileExistsAfter: rbExists, tools: r10.result?.value?.toolNames || [] }))
+    if (fsEval.existsSync(rbFile)) { try { fsEval.unlinkSync(rbFile) } catch { /* 忽略 */ } }
+
+    // 场景11: Hooks 事件触发(task-start 写标记文件)
+    const hookFile = 'C:\\Users\\ROG\\AppData\\Local\\Temp\\hq-eval-hook-' + Date.now() + '.txt'
+    const hookLine = 'task-start=powershell -NoProfile -Command "Set-Content -LiteralPath \'' + hookFile + '\' -Value ok"'
+    await ev(`(async () => { const c = await window.huangquan.settings.load(); c.general.hooksText = ${JSON.stringify(hookLine)}; await window.huangquan.settings.save(c); return true })()`)
+    await sendTask(ev, '你好')
+    await sleep(1500)
+    const hookHit = fsEval.existsSync(hookFile)
+    report('场景11: Hooks 事件触发', hookHit, JSON.stringify({ file: hookFile, hit: hookHit }))
+    if (fsEval.existsSync(hookFile)) { try { fsEval.unlinkSync(hookFile) } catch { /* 忽略 */ } }
+
+    // 场景12: 计划确认门(启用 → 出计划 → 点批准 → 完成)
+    await ev(`(async () => { const c = await window.huangquan.settings.load(); c.general.planGate = true; await window.huangquan.settings.save(c); return true })()`)
+    await sendTask(ev, '用工具查看工作台目录的文件')
+    let approved12 = false
+    for (let i = 0; i < 40 && !approved12; i++) {
+      await sleep(1000)
+      const click = await ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').includes('批准执行')); if (b) { b.click(); return true } return false })()`)
+      if (click.result?.value) approved12 = true
+    }
+    let done12 = false
+    for (let i = 0; i < 60 && !done12; i++) {
+      await sleep(1000)
+      const st = await ev(`(() => document.body.innerText.includes('执行计划复盘'))()`)
+      if (st.result?.value) done12 = true
+    }
+    report('场景12: 计划确认门(批准后执行)', approved12 && done12, JSON.stringify({ approved: approved12, done: done12 }))
   }).finally(async () => {
     // 恢复风险确认
     if (riskWas !== false) {
@@ -175,6 +255,9 @@ async function main() {
         await withPage(ev => ev(`(async () => { const c = await window.huangquan.settings.load(); c.general.riskConfirm = true; await window.huangquan.settings.save(c); return true })()`))
       } catch { /* 忽略 */ }
     }
+    try {
+      await withPage(ev => ev(`(async () => { const c = await window.huangquan.settings.load(); c.general.hooksText = ${JSON.stringify(hooksWas)}; c.general.planGate = ${planGateWas ? 'true' : 'false'}; await window.huangquan.settings.save(c); return true })()`))
+    } catch { /* 忽略 */ }
   })
 
   const failed = results.filter(r => !r.pass)
@@ -196,7 +279,7 @@ async function main() {
   } else {
     console.log('HISTORY: first run (' + record.passed + '/' + record.total + ')')
   }
-  process.exit(failed.length ? 1 : 0)
+  process.exitCode = failed.length ? 1 : 0
 }
 
 main().catch(e => { console.error('EVAL_FATAL:', e); process.exit(2) })

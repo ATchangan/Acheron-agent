@@ -337,6 +337,7 @@ export class AgentEngine {
     this.emit({ type: 'busy', sid: rec.sid, busy: true })
     this.emit({ type: 'stream', sid: rec.sid, streaming: true, executing: true })
     this.trace('info', 'task.resume', rec.content.slice(0, 120), rec.sid, rec.id)
+    runHooks(task.g, 'task-resume', { sid: rec.sid, taskId: rec.id })
     this.planAddDecision(task, '任务恢复（断点第 ' + task.roundNum + ' 轮）')
     this.writePlanDoc(task)
     void this.runTask(task)
@@ -353,6 +354,7 @@ export class AgentEngine {
       this.planAddDecision(task, '用户停止任务')
       this.flushPlanDoc(task)
       closeTerminalSessions(sid)
+      runHooks(task.g, 'task-stop', { sid, taskId: task.taskId })
       // v0.3.7: 停止时同步落盘任务状态, 避免进程被杀后 tasks.json 残留 running
       this.finishTask(task, 'aborted', '用户停止')
     }
@@ -1076,11 +1078,12 @@ export class AgentEngine {
     const sameProvModels = (task.curP.models || []).filter(m => m && m !== old)
     if (sameProvModels.length) {
       task.model = sameProvModels[0]
-      task.modelFailCount = 0
-      task.modelFallbackUsed = true
-      this.planAddDecision(task, '主模型 ' + old + ' 失败，切换同供应商模型 ' + task.model)
-      this.trace('warn', 'model.fallback', old + ' → ' + task.model, task.sid, task.taskId)
-      return true
+    task.modelFailCount = 0
+    task.modelFallbackUsed = true
+    this.planAddDecision(task, '主模型 ' + old + ' 失败，切换同供应商模型 ' + task.model)
+    this.trace('warn', 'model.fallback', old + ' → ' + task.model, task.sid, task.taskId)
+    runHooks(task.g, 'model-fallback', { sid: task.sid, taskId: task.taskId, from: old, to: task.model })
+    return true
     }
     // 其次: 其他有 key 的供应商
     const alt = task.providers.find(x => x.apiKey && x.baseUrl && x.id !== task.curP.id)
@@ -1488,6 +1491,7 @@ export class AgentEngine {
     const uText = String(msgs[foldStart].content || '').slice(0, 1200)
     const aText = String(msgs[foldEnd - 1].content || '').slice(0, 1600)
     try {
+      runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'micro' })
       const rid = 'micro_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
       const summary = await chatOnce(this.deps.netFetch, {
         provider: task.curP.type,
@@ -1538,6 +1542,7 @@ export class AgentEngine {
       const cands = pickCompactCandidates(task.messages, keepRounds)
       if (cands.length < 3) return
       this.emit({ type: 'stage', sid: task.sid, phase: 'thinking', label: '正在压缩历史', detail: cands.length + ' 条旧消息 → 摘要' })
+      runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'window' })
       const { system, user } = buildCompactPrompt(cands)
       const summary = await chatOnce(this.deps.netFetch, {
         provider: task.curP.type,

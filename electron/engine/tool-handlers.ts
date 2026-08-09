@@ -1,6 +1,7 @@
 // electron/engine/tool-handlers.ts — 声明式工具执行器(每个工具一个 handler, 与 schema/分发器分离)
 import { spawn, type ChildProcess } from 'child_process'
 import * as fs from 'fs'
+import { join } from 'path'
 import { Notification } from 'electron'
 import { invokeHandler } from './registry'
 import { WORKFLOWS } from './constants'
@@ -120,6 +121,40 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     // 只读 action 与写 action 分开标注, 方便后续权限控制
     const cmd = 'git ' + action + (args ? ' ' + args : '')
     return String(await invokeHandler('computer:exec', [cmd, ctx.sid, ctx.taskId], ctx.sender))
+  } },
+  { name: 'init_project_docs', writeOp: true, run: (A, ctx) => {
+    const wd = ctx.workDir || ''
+    if (!wd) return 'E:未设置工作目录'
+    const target = join(wd, 'AGENTS.md')
+    if (fs.existsSync(target)) return 'E:AGENTS.md 已存在(' + target + ')。为避免覆盖，请手动修改，或先删除后再生成'
+    const sections: string[] = []
+    try {
+      const readme = fs.readFileSync(join(wd, 'README.md'), 'utf-8')
+      const head = readme.slice(0, 800).trim()
+      if (head) sections.push('## 项目概览\n' + head)
+    } catch { /* 无 README 跳过 */ }
+    try {
+      const pkg = JSON.parse(fs.readFileSync(join(wd, 'package.json'), 'utf-8')) as { scripts?: Record<string, string> }
+      const scripts = Object.entries(pkg.scripts || {})
+      if (scripts.length) sections.push('## 常用命令\n' + scripts.map(([k, v]) => '- `' + k + '`: ' + v).join('\n'))
+    } catch { /* 无 package.json 跳过 */ }
+    const tree: string[] = []
+    try {
+      for (const ent of fs.readdirSync(wd, { withFileTypes: true })) {
+        if (ent.name.startsWith('.') || ['node_modules', 'dist', 'dist-electron', 'release', '.git'].includes(ent.name)) continue
+        tree.push('- ' + ent.name + (ent.isDirectory() ? '/' : ''))
+        if (ent.isDirectory()) {
+          for (const sub of fs.readdirSync(join(wd, ent.name), { withFileTypes: true }).slice(0, 12)) {
+            if (!sub.name.startsWith('.')) tree.push('  - ' + sub.name + (sub.isDirectory() ? '/' : ''))
+          }
+        }
+      }
+    } catch { /* 目录读取失败跳过 */ }
+    if (tree.length) sections.push('## 目录结构\n' + tree.join('\n'))
+    sections.push('## 约定\n- 本机为 Windows: 命令一律用 PowerShell 语法\n- 修改文件后必须运行验证命令（构建/测试/检查）再宣称完成\n- 按项目实际情况继续补充规则')
+    const content = '# AGENTS.md\n\n自动生成的项目指令草稿，请按项目实际情况修改完善。\n\n' + sections.join('\n\n') + '\n'
+    fs.writeFileSync(target, content, 'utf-8')
+    return target + ' (已生成 ' + content.length + ' 字符草稿，请检查后继续使用)'
   } },
   { name: 'terminal_open', run: async (A, ctx) => {
     const id = String(A.id || '')

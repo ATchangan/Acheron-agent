@@ -36,11 +36,19 @@ describe('hooks 事件钩子', () => {
       'tool-before=echo before\n' +
       'tool-before=echo before2\n' +
       'task-start=echo start\n' +
+      'task-stop=echo stop\n' +
+      'task-resume=echo resume\n' +
+      'compact-before=echo compact\n' +
+      'model-fallback=echo fb\n' +
       'bad-event=oops\n' +
       '=no-event\n'
     )
     expect(out['tool-before']).toEqual(['echo before', 'echo before2'])
     expect(out['task-start']).toEqual(['echo start'])
+    expect(out['task-stop']).toEqual(['echo stop'])
+    expect(out['task-resume']).toEqual(['echo resume'])
+    expect(out['compact-before']).toEqual(['echo compact'])
+    expect(out['model-fallback']).toEqual(['echo fb'])
     const anyOut = out as Record<string, string[] | undefined>
     expect(anyOut['bad-event']).toBeUndefined()
     expect(anyOut['']).toBeUndefined()

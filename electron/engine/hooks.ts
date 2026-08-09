@@ -3,8 +3,10 @@ import { exec } from 'child_process'
 import type { EngineSettings } from './types'
 import { getPowerShellCmd } from '../shared/pwsh'
 
-export type HookEvent = 'tool-before' | 'tool-after' | 'task-start' | 'task-end' | 'file-write'
-const HOOK_EVENTS: HookEvent[] = ['tool-before', 'tool-after', 'task-start', 'task-end', 'file-write']
+export type HookEvent =
+  | 'tool-before' | 'tool-after' | 'task-start' | 'task-end' | 'file-write'
+  | 'task-stop' | 'task-resume' | 'compact-before' | 'model-fallback'
+const HOOK_EVENTS: HookEvent[] = ['tool-before', 'tool-after', 'task-start', 'task-end', 'file-write', 'task-stop', 'task-resume', 'compact-before', 'model-fallback']
 
 // 解析 hooksText: 每行 "事件=命令", # 开头为注释
 export function parseHooksText(text: string | undefined): Partial<Record<HookEvent, string[]>> {

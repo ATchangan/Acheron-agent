@@ -139,4 +139,17 @@ describe('runTool 分发器', () => {
       expect(await runTool('read', { path: f }, ctx)).toBe('v1')
     } finally { fs.rmSync(dir, { recursive: true, force: true }) }
   })
+
+  it('init_project_docs 生成 AGENTS.md 草稿且不覆盖已有文件', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-tool-'))
+    try {
+      const ctx = makeCtx({ workDir: dir })
+      const r = await runTool('init_project_docs', {}, ctx)
+      expect(r).toContain('AGENTS.md')
+      expect(r).toContain('已生成')
+      expect(fs.existsSync(join(dir, 'AGENTS.md'))).toBe(true)
+      const r2 = await runTool('init_project_docs', {}, ctx)
+      expect(r2).toContain('E:AGENTS.md 已存在')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
 })
