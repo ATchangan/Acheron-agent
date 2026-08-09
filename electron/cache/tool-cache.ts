@@ -1,5 +1,5 @@
 ﻿// electron/cache/tool-cache.ts — 工具结果缓存
-// 灵感来源：LangChain Cache / Claude Prompt Caching
+// 灵感来源：主流 Prompt Caching 缓存机制
 //
 // 缓存策略：
 //   - 幂等操作缓存（read, ls, system_info, grep, find, web_search, process_list）

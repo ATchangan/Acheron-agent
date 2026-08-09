@@ -1,7 +1,7 @@
 // electron/engine/project-instructions.ts —— 项目指令发现与注入
-// 发现语义对齐 Codex: AGENTS.override.md > AGENTS.md > CLAUDE.md > .agents.md(每目录至多一个),
+// 发现语义: AGENTS.override.md > AGENTS.md > CLAUDE.md > .agents.md(每目录至多一个),
 // git 根 → 工作目录逐层合并, 深层靠后优先, 合并上限默认 32 KiB(可配置), 超限打截断标记
-// 注入策略对齐 Hermes: 启动只注入工作目录链; 读取子目录文件时按需注入该目录(最多上溯 5 层)规则
+// 注入策略: 启动只注入工作目录链; 读取子目录文件时按需注入该目录(最多上溯 5 层)规则
 import * as fs from 'fs'
 import { dirname, join } from 'path'
 
