@@ -101,7 +101,7 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 
 ### 推理强度
 
-原生参数驱动：DeepSeek/Kimi/智谱/豆包/SiliconFlow 走 thinking、OpenRouter/Nous 走 reasoning、OpenAI 推理模型/Grok/LM Studio 走 reasoning_effort，其余提示词兜底。支持「关闭思考」与「仅当前模型」档位。
+原生参数驱动：DeepSeek/Kimi/智谱/豆包/SiliconFlow 走 thinking、OpenRouter 走 reasoning、OpenAI 推理模型/Grok/LM Studio 走 reasoning_effort，其余提示词兜底。支持「关闭思考」与「仅当前模型」档位。
 
 ### 视觉与媒体
 
