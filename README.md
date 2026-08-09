@@ -158,7 +158,6 @@ npm run package:win   # NSIS 安装包
 ## 更新日志
 
 ### v0.3.8 (2026-08-10)
-- 项目指令生态：AGENTS.md / CLAUDE.md / .agents.md 目录链合并 + 子目录按需注入 + `init_project_docs` 一键生成
 - 执行机制：原生 `git` 工具、Hooks 9 类事件、任务文件一键回滚、自定义子代理、模型失败自动降级
 - PowerShell 7 全场景路由（PATH / 已知路径 / Windows PowerShell 回退），GBK 解码修复乱码，危险命令黑名单收窄
 - 效率优化：系统提示精简、`update_plan` 按需、验证 1 轮、主控核心工具模式；同任务耗时 61.6s → 5.1s
