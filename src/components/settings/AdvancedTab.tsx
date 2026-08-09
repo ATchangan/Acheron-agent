@@ -40,7 +40,7 @@ export default function AdvancedTab() {
         <div style={S.row}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-primary)' }}>事件钩子（Hooks）</div>
-            <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginTop: 4 }}>每行 事件=命令，可用变量 HQ_TOOL/HQ_SID/HQ_RESULT/HQ_PATH/HQ_STATUS；事件：tool-before、tool-after、task-start、task-end、file-write；含中文路径的命令建议用 PowerShell 语法（如 Set-Content）</div>
+            <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginTop: 4 }}>每行 事件=命令，可用变量 HQ_TOOL/HQ_SID/HQ_RESULT/HQ_PATH/HQ_STATUS；事件：tool-before、tool-after、task-start、task-end、file-write；含中文路径/输出的命令会自动走 PowerShell（UTF-8），无需手动加前缀</div>
             <textarea
               value={g.hooksText || ''}
               onChange={e => save({ hooksText: e.target.value })}

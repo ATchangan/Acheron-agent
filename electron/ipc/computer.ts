@@ -3,20 +3,10 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import * as os from 'os'
-import { exec, execSync, type ChildProcess } from 'child_process'
+import { exec, type ChildProcess } from 'child_process'
 import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 import { registerComputerFiles } from './computer-files'
-
-// v0.3.8: PowerShell 7(pwsh)优先, 不存在时回退 Windows PowerShell —— pwsh 支持 && 与现代语法
-let pwshAvailable: boolean | null = null
-function getPowerShellCmd(): string {
-  if (pwshAvailable === null) {
-    try {
-      pwshAvailable = execSync('where.exe pwsh', { windowsHide: true, stdio: 'pipe' }).toString().trim().length > 0
-    } catch { pwshAvailable = false }
-  }
-  return pwshAvailable ? 'pwsh' : 'powershell'
-}
+import { getPowerShellCmd } from '../shared/pwsh'
 
 
 export function registerComputerIpc(deps: {
@@ -41,13 +31,13 @@ export function registerComputerIpc(deps: {
   // 按 sid 标记杀整棵树(外层 pid 可能已脱管, 用命令行标记兜底)
   const killBySid = (sid: string) => {
     const ps = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*HQ_SID=*" + sid + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    try { exec('powershell.exe -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
+    try { exec(getPowerShellCmd() + ' -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
   }
   // 按根 PID 递归杀全部后代(cmd 外层可能提前退出, 孙进程仍挂在已死 PID 下)
   const killTreeByRoot = (rootPid: number | undefined) => {
     if (!rootPid) return
     const ps = "$root=" + rootPid + "; $all=Get-CimInstance Win32_Process; $kids=@{}; foreach($p in $all){ if($p.ParentProcessId){ if(-not $kids.ContainsKey([int]$p.ParentProcessId)){ $kids[[int]$p.ParentProcessId]=@() }; $kids[[int]$p.ParentProcessId]+=[int]$p.ProcessId } }; $st=New-Object System.Collections.Generic.Stack[int]; $st.Push($root); while($st.Count -gt 0){ $cur=$st.Pop(); if($kids.ContainsKey($cur)){ foreach($k in $kids[$cur]){ Stop-Process -Id $k -Force -ErrorAction SilentlyContinue; $st.Push($k) } }; Stop-Process -Id $cur -Force -ErrorAction SilentlyContinue }"
-    try { exec('powershell.exe -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
+    try { exec(getPowerShellCmd() + ' -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
   }
 
   // 风险操作确认 —— L2(终端写/非只读命令)与 L3(系统路径写入/删除)默认弹原生确认框;
@@ -163,7 +153,7 @@ function sampleGpu(): Promise<{ pct: number | null; name: string | null }> {
 }
 function sampleGpuWin(resolve: (v: { pct: number | null; name: string | null }) => void) {
   const script = "try { $s = (Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction Stop).CounterSamples; if ($s -and $s.Count -gt 0) { ($s | Measure-Object -Property CookedValue -Maximum).Maximum } else { -1 } } catch { -1 }"
-  exec('powershell.exe -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\"') + '"', { timeout: 4000, windowsHide: true }, (err, stdout) => {
+  exec(getPowerShellCmd() + ' -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\"') + '"', { timeout: 4000, windowsHide: true }, (err, stdout) => {
     if (err) return resolve({ pct: null, name: null })
     const v = parseFloat(String(stdout).trim().split('\n').pop() || '')
     resolve({ pct: isFinite(v) && v >= 0 ? Math.min(100, Math.round(v)) : null, name: null })
