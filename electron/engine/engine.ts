@@ -18,6 +18,7 @@ import { toolLabel as toolLabelOf, toolDetail as toolDetailOf, toolExpected as t
 import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills } from './skill-files'
 import { runHooks } from './hooks'
+import { isPlanReadonlyTool } from './plan-tools'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
@@ -1293,7 +1294,7 @@ export class AgentEngine {
       }
     }
     // v0.3.8: 计划模式 —— 批准前只允许只读/规划类工具, 模型先探索并输出计划
-    if (task.g.planGate === true && !task.planApproved && !this.isPlanReadonlyTool(tc)) {
+    if (task.g.planGate === true && !task.planApproved && !isPlanReadonlyTool(tc.name, tc.args)) {
       return 'E:计划阶段只读：当前处于计划确认阶段，只能读取/检索与规划（read/ls/grep/find/web_search/update_plan 等），请先输出执行计划等待批准'
     }
     // v0.3.3: browser_vision 需要引擎的视觉模型队列(截图 + 视觉通道回答)
@@ -1308,16 +1309,6 @@ export class AgentEngine {
       runHooks(task.g, 'file-write', { tool: tc.name, sid: task.sid, taskId: task.taskId, path: String((tc.args || {}).path || '') })
     }
     return r
-  }
-
-  // v0.3.8: 计划阶段只读工具判断 —— git 仅放行 status/diff/log 只读动作
-  private isPlanReadonlyTool(tc: EngineToolCall): boolean {
-    if (['read', 'ls', 'grep', 'find', 'web_search', 'web_fetch', 'web_read', 'session_search', 'recall_memory', 'list_agents', 'list_workflows', 'list_goals', 'list_schedules', 'system_info', 'update_plan', 'read_skill'].includes(tc.name)) return true
-    if (tc.name === 'git') {
-      const action = String((tc.args || {}).action || '').trim()
-      return ['status', 'diff', 'log'].includes(action)
-    }
-    return false
   }
 
   private async runBrowserVision(task: TaskState, tc: EngineToolCall): Promise<string> {

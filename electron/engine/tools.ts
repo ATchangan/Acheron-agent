@@ -118,7 +118,8 @@ export async function runTool(name: string, a: Record<string, unknown>, ctx: Too
       const cached = getCached(ck, name)
       if (cached) return cached + ' [cache]'
     }
-    if (def.writeOp) onWriteOp()
+    const writeOp = typeof def.writeOp === 'function' ? def.writeOp(a) : def.writeOp
+    if (writeOp) onWriteOp()
     const r = await def.run(a as Record<string, string>, ctx)
     if (def.cacheable) setCached(ck, r)
     return r

@@ -112,7 +112,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const out = r || '(empty output)'
     return out.length > 3000 ? out.slice(0, 1500) + '\n...[输出过长已截断, 共 ' + out.length + ' 字符, 头尾已保留]\n' + out.slice(-1500) : out
   } },
-  { name: 'git', writeOp: true, run: async (A, ctx) => {
+  { name: 'git', writeOp: (A) => !['status', 'diff', 'log'].includes(String(A.action || '').trim().toLowerCase()), run: async (A, ctx) => {
     const action = String(A.action || '').trim()
     const allowed = ['status', 'diff', 'log', 'commit', 'stash', 'push', 'pull', 'checkout']
     if (!allowed.includes(action)) return 'E:action 仅支持 ' + allowed.join('/')

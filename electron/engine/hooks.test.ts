@@ -16,6 +16,18 @@ function waitForFile(p: string, timeoutMs = 8000): Promise<boolean> {
   })
 }
 
+function waitForText(p: string, text: string, timeoutMs = 8000): Promise<boolean> {
+  return new Promise(resolve => {
+    const t0 = Date.now()
+    const timer = setInterval(() => {
+      try {
+        if (fs.existsSync(p) && fs.readFileSync(p, 'utf-8').includes(text)) { clearInterval(timer); resolve(true); return }
+      } catch { /* 继续等 */ }
+      if (Date.now() - t0 > timeoutMs) { clearInterval(timer); resolve(false) }
+    }, 50)
+  })
+}
+
 describe('hooks 事件钩子', () => {
   it('parseHooksText 按行解析事件=命令, 忽略注释/空行/非法事件', () => {
     const out = parseHooksText(
@@ -61,6 +73,22 @@ describe('hooks 事件钩子', () => {
       fs.rmSync(dir, { recursive: true, force: true })
     }
   }, 15000)
+
+  it('同一事件多个命令按配置顺序串行执行', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-hooks-seq-'))
+    const out = join(dir, 'seq.txt')
+    try {
+      const c1 = `powershell -NoProfile -Command "Set-Content -LiteralPath '${out}' -Value 'first'"`
+      const c2 = `powershell -NoProfile -Command "Add-Content -LiteralPath '${out}' -Value 'second'"`
+      runHooks({ hooksText: 'task-start=' + c1 + '\ntask-start=' + c2 } as never, 'task-start', {})
+      expect(await waitForText(out, 'second')).toBe(true)
+      const content = fs.readFileSync(out, 'utf-8')
+      expect(content.includes('first')).toBe(true)
+      expect(content.indexOf('first')).toBeLessThan(content.indexOf('second'))
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }, 20000)
 
   it('未配置对应事件时不执行任何命令', () => {
     expect(() => runHooks({ hooksText: 'task-start=echo hi' } as never, 'tool-after', { tool: 'read' })).not.toThrow()

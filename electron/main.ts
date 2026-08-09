@@ -49,8 +49,18 @@ app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ consol
 const netFetch: typeof fetch = ((...args: Parameters<typeof fetch>) => net.fetch(args[0] as string, args[1] as never)) as typeof fetch
 
 // 全局崩溃捕获
-// 崩溃日志异步追加, 不再同步阻塞主进程
-function appendCrashLog(line: string) { try { fs.promises.appendFile(join(app.getPath('userData'), 'crash.log'), line).catch(() => {}) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
+// v0.3.8: crash.log 超过 5MB 自动轮转为 crash.log.old(覆盖旧档), 防止无限增长
+const CRASH_LOG_MAX = 5 * 1024 * 1024
+function rotateCrashLogIfNeeded(): void {
+  try {
+    const p = join(app.getPath('userData'), 'crash.log')
+    if (!fs.existsSync(p) || fs.statSync(p).size < CRASH_LOG_MAX) return
+    const old = p + '.old'
+    try { fs.rmSync(old, { force: true }) } catch { /* 忽略 */ }
+    try { fs.renameSync(p, old) } catch { /* 忽略 */ }
+  } catch { /* 忽略 */ }
+}
+function appendCrashLog(line: string) { try { rotateCrashLogIfNeeded(); fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), line) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
 process.on('uncaughtException', (err: unknown) => {
   // stdout/stderr 被关闭导致的 EPIPE 不记 FATAL(避免刷 crash.log 噪音), 其余真实错误照常记录
   if ((err as NodeJS.ErrnoException)?.code === 'EPIPE') return
@@ -283,7 +293,7 @@ function createWindow() {
         const traceTail = fs.readFileSync(tracePath, 'utf-8').trim().split('\n').slice(-8)
         if (traceTail.length) lines.push('--- engine trace tail ---', ...traceTail)
       } catch { /* 无轨迹文件 */ }
-      fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), lines.join('\n') + '\n')
+      appendCrashLog(lines.join('\n') + '\n')
     } catch (e) { console.debug('[swallow]', e) }
     crashContext.length = 0
     // v0.3.8: 崩溃观察 —— 近 7 天 >=3 次时提示切换 CPU 渲染
@@ -419,15 +429,21 @@ function cleanOldPlanDocs(): void {
   } catch { /* 忽略 */ }
 }
 
-// v0.3.8: 崩溃观察 —— 统计 crash.log 近 N 天渲染崩溃次数
+// v0.3.8: 崩溃观察 —— 统计 crash.log(+轮转档)近 N 天渲染崩溃次数
 function countRecentCrashes(days = 7): number {
   try {
-    const raw = fs.readFileSync(join(userDataPath, 'crash.log'), 'utf-8')
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-    return raw.split('\n').filter(l => l.includes('renderer crashed')).filter(l => {
-      const m = l.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)
-      return m ? new Date(m[1]).getTime() >= cutoff : false
-    }).length
+    let count = 0
+    for (const f of [join(userDataPath, 'crash.log'), join(userDataPath, 'crash.log.old')]) {
+      try {
+        const raw = fs.readFileSync(f, 'utf-8')
+        count += raw.split('\n').filter(l => l.includes('renderer crashed')).filter(l => {
+          const m = l.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)
+          return m ? new Date(m[1]).getTime() >= cutoff : false
+        }).length
+      } catch { /* 单个文件缺失/损坏跳过 */ }
+    }
+    return count
   } catch { return 0 }
 }
 

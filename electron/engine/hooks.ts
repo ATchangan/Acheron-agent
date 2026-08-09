@@ -29,18 +29,23 @@ export function runHooks(g: EngineSettings, event: HookEvent, vars: Record<strin
   if (!cmds || !cmds.length) return
   const env: Record<string, string> = { ...(process.env as Record<string, string>), HQ_EVENT: event }
   for (const [k, v] of Object.entries(vars)) env['HQ_' + k.toUpperCase()] = String(v)
-  for (const raw of cmds) {
-    // v0.3.8: 含中文路径/输出的命令自动走 PowerShell(UTF-8), 与 exec_command 同源策略, 避免 cmd 乱码;
-    // 用户已显式写 powershell/pwsh 前缀或纯 ASCII 命令保持原样
-    const trimmed = raw.trim()
-    const cmd = /[^\x00-\x7F]/.test(raw) && !/^(powershell|pwsh)\b/i.test(trimmed)
-      ? getPowerShellCmd() + ' -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' + raw.replace(/"/g, '\\"') + '"'
-      : raw
-    try {
-      // 非阻塞执行, 10s 超时, 失败只记日志不影响主流程
-      exec(cmd, { timeout: 10000, windowsHide: true, env, maxBuffer: 1024 * 1024 }, err => {
-        if (err) console.debug('[hooks] ' + event + ' -> ' + err.message)
+  // v0.3.8: 同一事件多条命令串行执行(按配置顺序), 全程不阻塞主流程; 单条 10s 超时
+  void (async () => {
+    for (const raw of cmds) {
+      // 含中文路径/输出的命令自动走 PowerShell(UTF-8), 与 exec_command 同源策略, 避免 cmd 乱码;
+      // 用户已显式写 powershell/pwsh 前缀或纯 ASCII 命令保持原样
+      const trimmed = raw.trim()
+      const cmd = /[^\x00-\x7F]/.test(raw) && !/^(powershell|pwsh)\b/i.test(trimmed)
+        ? getPowerShellCmd() + ' -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' + raw.replace(/"/g, '\\"') + '"'
+        : raw
+      await new Promise<void>(resolve => {
+        try {
+          exec(cmd, { timeout: 10000, windowsHide: true, env, maxBuffer: 1024 * 1024 }, err => {
+            if (err) console.debug('[hooks] ' + event + ' -> ' + err.message)
+            resolve()
+          })
+        } catch { resolve() }
       })
-    } catch { /* 忽略 */ }
-  }
+    }
+  })()
 }

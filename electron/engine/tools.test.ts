@@ -113,4 +113,30 @@ describe('runTool 分发器', () => {
       expect(fs.readFileSync(f, 'utf-8')).toBe('A\nb\nC\n')
     } finally { fs.rmSync(dir, { recursive: true, force: true }) }
   })
+
+  it('git 工具: 合法 action 转发 computer:exec, 非法 action 拒绝', async () => {
+    const ctx = makeCtx()
+    expect(await runTool('git', { action: 'status' }, ctx)).toBe('ok')
+    expect(await runTool('git', { action: 'commit', args: '-am "msg"' }, ctx)).toBe('ok')
+    const { invokeHandler } = await import('./registry')
+    const calls = vi.mocked(invokeHandler).mock.calls.filter(c => c[0] === 'computer:exec')
+    expect(calls.some(c => String(c[1]?.[0]) === 'git status')).toBe(true)
+    expect(calls.some(c => String(c[1]?.[0]) === 'git commit -am "msg"')).toBe(true)
+    expect(await runTool('git', { action: 'reset' }, ctx)).toContain('E:action 仅支持')
+    expect(await runTool('git', {}, ctx)).toContain('E:action 仅支持')
+  })
+
+  it('git 只读动作不清空读缓存, 写动作清空', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-tool-'))
+    const f = join(dir, 'a.txt')
+    fs.writeFileSync(f, 'v1', 'utf-8')
+    try {
+      const ctx = makeCtx()
+      expect(await runTool('read', { path: f }, ctx)).toBe('v1')
+      expect(await runTool('git', { action: 'status' }, ctx)).toBe('ok')
+      expect(await runTool('read', { path: f }, ctx)).toBe('v1 [cache]')
+      expect(await runTool('git', { action: 'commit', args: '-am x' }, ctx)).toBe('ok')
+      expect(await runTool('read', { path: f }, ctx)).toBe('v1')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
 })
