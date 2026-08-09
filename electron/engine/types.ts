@@ -24,6 +24,8 @@ export interface EngineSettings {
   meltdownLimit?: number
   toolTimeout?: number
   maxTaskTokens?: number
+  maxConcurrentTasks?: number
+  hooksText?: string
   riskConfirm?: boolean
   longTaskAutoContinue?: boolean
   longTaskAutoMax?: number
@@ -183,9 +185,9 @@ export type EngineEvent =
   | { type: 'restore'; sid: string; messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string }
   | { type: 'ui'; sid: string; workDir?: string; theme?: string }
   | { type: 'plan'; sid: string; summary: string; steps: PlanStep[] }
-  | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[] }
+  | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[]; changedIds?: string[] }
   | { type: 'compact'; sid: string; messages: EngineMessage[] }
-  | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string }
+  | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string; failedStep?: { label: string; tool?: string; detail?: string; messageId?: string }; fileChanges?: number }
   | { type: 'error'; sid: string; message: string }
 
 export interface EngineStartParams {

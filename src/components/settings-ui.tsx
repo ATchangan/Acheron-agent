@@ -36,14 +36,14 @@ export const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void
 )
 
 // Number input with label
-export const NumSetting: React.FC<{ label: string; hint: string; value: number; min: number; max: number; unit: string; onChange: (v: number) => void }> = ({ label, hint, value, min, max, unit, onChange }) => (
+export const NumSetting: React.FC<{ label: string; hint: string; value: number; min: number; max: number; unit: string; step?: number; onChange: (v: number) => void }> = ({ label, hint, value, min, max, unit, step, onChange }) => (
   <div style={{ ...S.row, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
     <div style={U.flex1}>
       <div style={S.label}>{label}</div>
       <div style={S.hint}>{hint}</div>
     </div>
     <div style={U.flexGap8shrink}>
-      <input type="number" style={S.num} min={min} max={max} value={value} onChange={e => onChange(Math.max(min, Math.min(max, parseInt(e.target.value) || value)))} />
+      <input type="number" style={S.num} min={min} max={max} step={step ?? 1} value={value} onChange={e => onChange(Math.max(min, Math.min(max, parseFloat(e.target.value) || value)))} />
       <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.muted, whiteSpace: 'nowrap' }}>{unit}</span>
     </div>
   </div>

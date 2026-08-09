@@ -75,6 +75,8 @@ export interface GeneralSettings {
   longTaskAutoContinue?: boolean // v0.3.7: 长任务预算耗尽后自动继续(重置已用量续跑)
   longTaskAutoMax?: number    // v0.3.7: 自动继续次数上限, 超过后结束本轮
   maxTaskTokens?: number      // 单任务 token 预算, 0=不限
+  maxConcurrentTasks?: number // v0.3.8: 同时运行的任务上限(多会话并发保护), 默认 3
+  hooksText?: string           // v0.3.8: 事件钩子(每行 事件=命令; tool-before/tool-after/task-start/task-end/file-write)
   traceEnabled?: boolean      // 默认开: 本地诊断轨迹
   mcpAutoInject?: boolean     // 默认开: MCP 工具 schema 自动并入 LLM
   planGate?: boolean          // 实验: 首次工具调用前展示计划等用户批准(独立内核)

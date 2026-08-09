@@ -76,7 +76,12 @@ export function registerSessionIpc(deps: {
     const p = join(sessionsDir, id + '.json')
     try {
       if (!fs.existsSync(p)) { sessionMeta.delete(id); return { id, title: '新对话', messages: [], loadError: 'missing' } }
-      return JSON.parse(fs.readFileSync(p, 'utf-8'))
+      const d = JSON.parse(fs.readFileSync(p, 'utf-8'))
+      // v0.3.8: schema 版本校验 —— 未来版本文件提示, 避免静默错读
+      if (d && typeof d === 'object' && Number(d.schemaVersion || 1) > 1) {
+        return { ...d, loadError: 'newer-schema' }
+      }
+      return d
     } catch (e) {
       console.error('[SESSIONS] load error:', id, e instanceof Error ? e.message : String(e))
       return { id, title: '（加载失败）', messages: [], loadError: 'corrupt' }
@@ -86,7 +91,8 @@ export function registerSessionIpc(deps: {
     // v0.3.6 P2-7: IPC 结构化克隆已保证无循环引用, 去掉 safeClone 二次深拷贝; 直接传对象给保存队列
     const id = String(s?.id || '')
     if (!SAFE_ID.test(id)) return false
-    const obj = { ...(s as Record<string, unknown>), updatedAt: new Date().toISOString() }
+    // v0.3.8: 会话文件 schema 版本 —— 为未来迁移预留
+    const obj = { ...(s as Record<string, unknown>), updatedAt: new Date().toISOString(), schemaVersion: 1 }
     enqueueSave(id, obj)
     return true
   })

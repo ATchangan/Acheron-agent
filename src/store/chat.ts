@@ -62,7 +62,7 @@ if (typeof window !== 'undefined') refreshMcpTools().catch(() => {})
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, streamText: '', streamId: '',
+  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, streamText: '', streamId: '',
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
 
@@ -125,7 +125,15 @@ export const useChatStore = create<S>((set, get) => ({
     // v0.3.3: 恢复上次异常退出留下的运行中任务(任务队列在主进程落盘)
     const orphanTasks = (await window.huangquan.tasks.list().catch(() => []))
       .filter(t => t.status === 'running')
-      .map(t => ({ id: t.id, sid: t.sid, content: t.content, images: t.images, attachments: t.attachments, at: t.startedAt }))
+      .map(t => {
+        let planProgress = ''
+        try {
+          const cp = t.checkpoint as { planSteps?: { status?: string }[] } | undefined
+          const steps = cp?.planSteps || []
+          if (steps.length) planProgress = steps.filter(s => s.status === 'done').length + '/' + steps.length + ' 步'
+        } catch { /* 忽略 */ }
+        return { id: t.id, sid: t.sid, content: t.content, images: t.images, attachments: t.attachments, at: t.startedAt, planProgress }
+      })
     set({ sessions: list, cid: ns.id, sp, orphanTasks })
   },
 

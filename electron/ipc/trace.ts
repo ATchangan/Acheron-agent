@@ -2,6 +2,7 @@
 // 按 requestId/会话 追加 JSONL 轨迹, 保留最近 ~2000 条, 设置页「诊断」Tab 可查/清。
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
+import { dirname, join } from 'path'
 
 export interface TraceEntry {
   ts: number
@@ -14,6 +15,7 @@ export interface TraceEntry {
 
 const MAX_BYTES = 2 * 1024 * 1024
 const KEEP_LINES = 1000
+const KEEP_ARCHIVES_MS = 7 * 24 * 60 * 60 * 1000 // v0.3.8: 归档保留 7 天
 const FLUSH_MS = 500
 const FLUSH_LINES = 50
 
@@ -34,6 +36,19 @@ export function flushTrace(): void {
     try {
       const st = fs.statSync(path)
       if (st.size > MAX_BYTES) {
+        // v0.3.8: 归档而非丢弃 —— 旧文件改名保留, 再清理超期归档
+        try {
+          const archive = path + '.old-' + Date.now()
+          fs.renameSync(path, archive)
+          for (const f of fs.readdirSync(dirname(path))) {
+            if (!f.startsWith('agent-trace.jsonl.old-')) continue
+            try {
+              const fp = join(dirname(path), f)
+              if (Date.now() - fs.statSync(fp).mtimeMs > KEEP_ARCHIVES_MS) fs.unlinkSync(fp)
+            } catch { /* 单个清理失败忽略 */ }
+          }
+          return
+        } catch { /* 归档失败则回退截断 */ }
         const raw = fs.readFileSync(path, 'utf-8')
         fs.writeFileSync(path, raw.split('\n').filter(Boolean).slice(-KEEP_LINES).join('\n') + '\n', 'utf-8')
       }

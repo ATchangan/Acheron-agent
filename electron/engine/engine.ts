@@ -17,6 +17,7 @@ import { buildPlanDocContent, planNeedsVerify as planNeedsVerifyCore, planHasVer
 import { toolLabel as toolLabelOf, toolDetail as toolDetailOf, toolExpected as toolExpectedOf } from './tool-labels'
 import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills } from './skill-files'
+import { runHooks } from './hooks'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
@@ -49,6 +50,8 @@ interface TaskState {
   curP: EngineProvider
   model: string
   origModel: string
+  modelFailCount: number
+  modelFallbackUsed: boolean
   agent?: string
   agentManual?: boolean
   activeAgents: string[]
@@ -59,12 +62,14 @@ interface TaskState {
   tokBase: Record<string, TokenStat>
   memoryText: string
   projectCtx: { file: string; content: string } | null
+  fileSnapshots: Record<string, string | null>
   memory: EngineMemory
   lastMidSave: number
   planSteps: PlanStep[]
   planSummary: string
   planGateChecked: boolean
   planEmitTimer: NodeJS.Timeout | null
+  planLastSnapshot: string
   planSurprises: string[]
   planDecisions: string[]
   planDocTimer: NodeJS.Timeout | null
@@ -105,6 +110,7 @@ export class AgentEngine {
   private deps: EngineDeps
   private tasks = new Map<string, TaskState>()
   private gens = new Map<string, number>()
+  private runningTasks = 0
   private sessTokBySid = new Map<string, Record<string, TokenStat>>()
   private costedReqs = new Set<string>()
   private traceOn = true
@@ -159,6 +165,15 @@ export class AgentEngine {
       this.emit({ type: 'error', sid: params.sid, message: '请先配置 API Provider' })
       return
     }
+    // v0.3.8: 多会话并发上限 —— 防止同时跑太多任务吃满资源
+    const maxConcurrent = Math.max(1, Number(general.maxConcurrentTasks) || 3)
+    if (this.runningTasks >= maxConcurrent) {
+      this.emit({ type: 'busy', sid: params.sid, busy: false })
+      this.emit({ type: 'stream', sid: params.sid, streaming: false, executing: false })
+      this.emit({ type: 'error', sid: params.sid, message: '同时运行的任务已达上限（' + maxConcurrent + ' 个，当前运行 ' + this.runningTasks + ' 个），请等待当前任务完成后再发送。可在 设置→引擎 中调整上限' })
+      return
+    }
+    this.runningTasks++
     const agentsMap = getAgents(general.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
     const initialPick = pickInitialModel(general, providers, p, params.content, params.images)
     const model = params.agent && !params.agentManual
@@ -184,6 +199,8 @@ export class AgentEngine {
       curP: initialPick.p,
       model,
       origModel: model,
+      modelFailCount: 0,
+      modelFallbackUsed: false,
       agent: params.agent,
       agentManual: params.agentManual,
       activeAgents: params.agent ? [params.agent] : [],
@@ -194,12 +211,14 @@ export class AgentEngine {
       tokBase: this.snapshotTok(params.sid),
       memoryText: '',
       projectCtx: null,
+      fileSnapshots: {},
       memory: loadMemory(this.deps.memoryPath),
       lastMidSave: 0,
       planSteps: [],
       planSummary: '',
       planGateChecked: false,
       planEmitTimer: null,
+      planLastSnapshot: '',
       planSurprises: [],
       planDecisions: [],
       planDocTimer: null,
@@ -221,6 +240,7 @@ export class AgentEngine {
     startTask({ id: params.taskId, sid: params.sid, content: String(params.content).slice(0, 2000), images: params.images, attachments: params.attachments, model })
     getMcpToolSpecs(true) // 新任务启动时强制刷新 MCP 工具清单(刚连接的服务器立即生效)
     this.trace('info', 'task.start', String(params.content).slice(0, 120), params.sid, params.taskId)
+    runHooks(general, 'task-start', { sid: params.sid, taskId: params.taskId, content: String(params.content || '').slice(0, 200) })
     this.planAddDecision(task, '任务启动：' + String(params.content || '').slice(0, 80))
     this.writePlanDoc(task)
     void this.runTask(task)
@@ -242,6 +262,14 @@ export class AgentEngine {
       this.emit({ type: 'error', sid: rec.sid, message: '请先配置 API Provider' })
       return
     }
+    const maxConcurrent = Math.max(1, Number(general.maxConcurrentTasks) || 3)
+    if (this.runningTasks >= maxConcurrent) {
+      this.emit({ type: 'busy', sid: rec.sid, busy: false })
+      this.emit({ type: 'stream', sid: rec.sid, streaming: false, executing: false })
+      this.emit({ type: 'error', sid: rec.sid, message: '同时运行的任务已达上限（' + maxConcurrent + ' 个，当前运行 ' + this.runningTasks + ' 个），请等待当前任务完成后再恢复' })
+      return
+    }
+    this.runningTasks++
     const myGen = this.nextGen(rec.sid)
     const lastUser = [...cp.messages].reverse().find(m => m.role === 'user')
     const restoredSteps: PlanStep[] = Array.isArray(cp.planSteps) ? cp.planSteps : []
@@ -264,6 +292,8 @@ export class AgentEngine {
       curP: this.findProvider(cp.provider, providers, p),
       model: cp.model || p.selectedModel || p.models[0] || '',
       origModel: cp.model || p.selectedModel || p.models[0] || '',
+      modelFailCount: 0,
+      modelFallbackUsed: false,
       agent: cp.agent,
       activeAgents: cp.activeAgents || [],
       handoffStack: cp.handoffStack || [],
@@ -273,12 +303,14 @@ export class AgentEngine {
       tokBase: this.snapshotTok(rec.sid),
       memoryText: '',
       projectCtx: null,
+      fileSnapshots: {},
       memory: loadMemory(this.deps.memoryPath),
       lastMidSave: 0,
       planSteps: restoredSteps,
       planSummary: String(cp.planSummary || ''),
       planGateChecked: !hasPendingSteps,
       planEmitTimer: null,
+      planLastSnapshot: '',
       planSurprises: Array.isArray(cp.planSurprises) ? cp.planSurprises : [],
       planDecisions: Array.isArray(cp.planDecisions) ? cp.planDecisions : [],
       planDocTimer: null,
@@ -347,17 +379,38 @@ export class AgentEngine {
 
   // v0.3.7: plan-update 节流合并(150ms) —— 长任务步骤多时避免每步一次全量 IPC
   private emitPlan(task: TaskState, force = false): void {
+    const { steps, changedIds } = this.buildPlanEvent(task)
     if (force) {
       if (task.planEmitTimer) { clearTimeout(task.planEmitTimer); task.planEmitTimer = null }
-      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps: task.planSteps.map(s => ({ ...s })) })
+      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps, changedIds })
       return
     }
     if (task.planEmitTimer) return
     task.planEmitTimer = setTimeout(() => {
       task.planEmitTimer = null
       if (this.tasks.get(task.sid) !== task) return
-      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps: task.planSteps.map(s => ({ ...s })) })
+      const latest = this.buildPlanEvent(task)
+      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps: latest.steps, changedIds: latest.changedIds })
     }, 150)
+  }
+
+  // v0.3.8: 计划增量 —— 对比上次快照, 只标记变化的步骤 id, 渲染层按 id 局部 patch
+  private buildPlanEvent(task: TaskState): { steps: PlanStep[]; changedIds?: string[] } {
+    const steps = task.planSteps.map(s => ({ ...s }))
+    const snapshot = JSON.stringify(steps)
+    let changedIds: string[] | undefined
+    if (task.planLastSnapshot && task.planLastSnapshot !== snapshot) {
+      try {
+        const prev = JSON.parse(task.planLastSnapshot) as PlanStep[]
+        const prevById = new Map(prev.map(s => [s.id, s]))
+        const prevIds = new Set(prev.map(s => s.id))
+        changedIds = steps.filter(s => JSON.stringify(prevById.get(s.id)) !== JSON.stringify(s)).map(s => s.id)
+        for (const s of steps) if (!prevIds.has(s.id)) changedIds.push(s.id)
+        if (!changedIds.length) changedIds = undefined
+      } catch { changedIds = undefined }
+    }
+    task.planLastSnapshot = snapshot
+    return { steps, changedIds }
   }
 
   private flushPlan(task: TaskState): void {
@@ -704,6 +757,7 @@ export class AgentEngine {
       this.finishTask(task, 'failed', errText)
     } finally {
       task.running = false
+      this.runningTasks = Math.max(0, this.runningTasks - 1)
       // 只有当前任务才能清状态；被新任务替换的旧任务不能覆盖新任务忙碌态
       if (this.tasks.get(sid) === task) {
         this.emit({ type: 'stage-clear', sid })
@@ -937,7 +991,23 @@ export class AgentEngine {
     this.flushPlanDoc(task)
     closeTerminalSessions(task.sid)
     finishTask(task.taskId, status, error)
-    this.emit({ type: 'task-done', sid: task.sid, taskId: task.taskId, status, error })
+    // v0.3.8: 失败归因 —— 附带第一个失败步骤, 便于界面直接定位
+    let failedStep: { label: string; tool?: string; detail?: string; messageId?: string } | undefined
+    if (status === 'failed') {
+      const bad = task.planSteps.find(s => s.status === 'failed')
+      if (bad) failedStep = { label: bad.label, tool: bad.tool, detail: bad.detail, messageId: bad.messageId }
+    }
+    // v0.3.8: 文件快照持久化 —— 写操作过的文件保存原内容, 供一键回滚
+    const fileChanges = Object.keys(task.fileSnapshots).length
+    if (fileChanges) {
+      try {
+        const dir = join(this.deps.userDataPath, 'rollback')
+        fs.mkdirSync(dir, { recursive: true })
+        fs.writeFileSync(join(dir, task.taskId + '.json'), JSON.stringify({ taskId: task.taskId, sid: task.sid, content: String(task.content || '').slice(0, 200), at: Date.now(), files: task.fileSnapshots }), 'utf-8')
+      } catch { /* 快照落盘失败不影响任务 */ }
+    }
+    this.emit({ type: 'task-done', sid: task.sid, taskId: task.taskId, status, error, failedStep, fileChanges })
+    runHooks(task.g, 'task-end', { sid: task.sid, taskId: task.taskId, status })
   }
 
   private checkpoint(task: TaskState, round: number): void {
@@ -980,10 +1050,41 @@ export class AgentEngine {
             await new Promise(r => setTimeout(r, backoffDelay(i, 800, 10000)))
             continue
           }
+          // v0.3.8: 非可重试错误 → 降级备用模型重试一次(同供应商其他模型优先, 其次其他有 key 的供应商; 每任务最多降级一次)
+          t.modelFailCount = (t.modelFailCount || 0) + 1
+          if (!t.modelFallbackUsed && this.switchFallbackModel(t)) {
+            await new Promise(r => setTimeout(r, backoffDelay(i, 800, 10000)))
+            continue
+          }
           throw e
         }
       }
     }
+  }
+
+  // v0.3.8: 切换到备用模型 —— 返回是否切换成功
+  private switchFallbackModel(task: TaskState): boolean {
+    const old = task.model
+    // 优先: 同供应商的其他模型
+    const sameProvModels = (task.curP.models || []).filter(m => m && m !== old)
+    if (sameProvModels.length) {
+      task.model = sameProvModels[0]
+      task.modelFailCount = 0
+      task.modelFallbackUsed = true
+      this.planAddDecision(task, '主模型 ' + old + ' 失败，切换同供应商模型 ' + task.model)
+      this.trace('warn', 'model.fallback', old + ' → ' + task.model, task.sid, task.taskId)
+      return true
+    }
+    // 其次: 其他有 key 的供应商
+    const alt = task.providers.find(x => x.apiKey && x.baseUrl && x.id !== task.curP.id)
+    if (!alt) return false
+    task.curP = alt
+    task.model = alt.selectedModel || (alt.models && alt.models[0]) || old
+    task.modelFailCount = 0
+    task.modelFallbackUsed = true
+    this.planAddDecision(task, '主模型 ' + old + ' 连续失败，降级到 ' + task.model)
+    this.trace('warn', 'model.fallback', old + ' → ' + task.model, task.sid, task.taskId)
+    return true
   }
 
   // v0.3.3: 输出上限按轮次自适应 —— 纯聊天(无工具)用省钱档 800;
@@ -1122,7 +1223,7 @@ export class AgentEngine {
       g: task.g,
       cl: getModelContextLimit(task.model),
       spIshiki: String(task.g.ishiki || ''),
-      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', listSkills(this.deps.skillsDirs || [])),
+      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', listSkills(this.deps.skillsDirs || []), task.g.planGate === true && !task.planApproved),
       agent: task.agent,
       handoffFrom: task.handoffAt,
       memoryText: task.memoryText,
@@ -1180,11 +1281,43 @@ export class AgentEngine {
   }
 
   private async runToolFor(task: TaskState, tc: EngineToolCall): Promise<string> {
+    runHooks(task.g, 'tool-before', { tool: tc.name, sid: task.sid, taskId: task.taskId })
+    // v0.3.8: 文件快照 —— 写操作前记录原内容, 任务结束可一键回滚
+    if (['write', 'edit', 'apply_patch'].includes(tc.name)) {
+      const p = String((tc.args || {}).path || '')
+      if (p && !(p in task.fileSnapshots) && Object.keys(task.fileSnapshots).length < 50) {
+        try {
+          task.fileSnapshots[p] = fs.existsSync(p) ? fs.readFileSync(p, 'utf-8').slice(0, 5 * 1024 * 1024) : null
+          if (fs.existsSync(p) && fs.statSync(p).size > 5 * 1024 * 1024) task.fileSnapshots[p] = '__SKIP__'
+        } catch { task.fileSnapshots[p] = null }
+      }
+    }
+    // v0.3.8: 计划模式 —— 批准前只允许只读/规划类工具, 模型先探索并输出计划
+    if (task.g.planGate === true && !task.planApproved && !this.isPlanReadonlyTool(tc)) {
+      return 'E:计划阶段只读：当前处于计划确认阶段，只能读取/检索与规划（read/ls/grep/find/web_search/update_plan 等），请先输出执行计划等待批准'
+    }
     // v0.3.3: browser_vision 需要引擎的视觉模型队列(截图 + 视觉通道回答)
-    if (tc.name === 'browser_vision') return this.runBrowserVision(task, tc)
-    const ctx = this.buildToolCtx(task)
-    const r = await runTool(tc.name, tc.args, ctx)
+    let r: string
+    if (tc.name === 'browser_vision') r = await this.runBrowserVision(task, tc)
+    else {
+      const ctx = this.buildToolCtx(task)
+      r = await runTool(tc.name, tc.args, ctx)
+    }
+    runHooks(task.g, 'tool-after', { tool: tc.name, sid: task.sid, taskId: task.taskId, result: r.slice(0, 200) })
+    if (['write', 'edit', 'apply_patch'].includes(tc.name) && !r.startsWith('E:')) {
+      runHooks(task.g, 'file-write', { tool: tc.name, sid: task.sid, taskId: task.taskId, path: String((tc.args || {}).path || '') })
+    }
     return r
+  }
+
+  // v0.3.8: 计划阶段只读工具判断 —— git 仅放行 status/diff/log 只读动作
+  private isPlanReadonlyTool(tc: EngineToolCall): boolean {
+    if (['read', 'ls', 'grep', 'find', 'web_search', 'web_fetch', 'web_read', 'session_search', 'recall_memory', 'list_agents', 'list_workflows', 'list_goals', 'list_schedules', 'system_info', 'update_plan', 'read_skill'].includes(tc.name)) return true
+    if (tc.name === 'git') {
+      const action = String((tc.args || {}).action || '').trim()
+      return ['status', 'diff', 'log'].includes(action)
+    }
+    return false
   }
 
   private async runBrowserVision(task: TaskState, tc: EngineToolCall): Promise<string> {
@@ -1285,7 +1418,8 @@ export class AgentEngine {
 
   private readProjectCtx(workDir: string): { file: string; content: string } | null {
     try {
-      for (const name of ['AGENTS.md', '.agents.md']) {
+      // v0.3.8: 兼容主流生态项目指令: AGENTS.md / CLAUDE.md / .agents.md
+      for (const name of ['AGENTS.md', 'CLAUDE.md', '.agents.md']) {
         const p = join(workDir, name)
         if (fs.existsSync(p)) return { file: name, content: fs.readFileSync(p, 'utf-8').slice(0, 4000) }
       }

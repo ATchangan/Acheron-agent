@@ -139,9 +139,10 @@ async function main() {
     const r5 = await waitSessionInfo(ev)
     const steps5 = r5.result?.value?.planSteps || []
     const allTerminal = steps5.length > 0 && steps5.every(s => ['done', 'failed', 'aborted'].includes(s.status))
+    const toolCalls5 = (r5.result?.value?.calls || []).filter(c => c.name !== 'update_plan').length
     report('场景5: 计划状态机(步骤收敛/复盘存在)',
       !!r5.result?.value && steps5.length > 0 && allTerminal && r5.result.value.last.includes('\u6267\u884c\u8ba1\u5212\u590d\u76d8'),
-      JSON.stringify({ stepCount: steps5.length, allTerminal, statuses: [...new Set(steps5.map(s => s.status))], tools: r5.result?.value?.toolNames || [] }))
+      JSON.stringify({ stepCount: steps5.length, toolCalls: toolCalls5, mismatch: toolCalls5 !== steps5.length, allTerminal, statuses: [...new Set(steps5.map(s => s.status))], tools: r5.result?.value?.toolNames || [] }))
 
     // 场景6: 技能链路(read_skill 读取真实技能)
     await sendTask(ev, '\u5148\u7528 read_skill \u8bfb\u53d6\u6280\u80fd code-review \u7684 SKILL.md\uff0c\u7136\u540e\u544a\u8bc9\u6211\u5b83\u7684\u89e6\u53d1\u6761\u4ef6\u662f\u4ec0\u4e48')
@@ -179,6 +180,22 @@ async function main() {
   const failed = results.filter(r => !r.pass)
   console.log('\n=== EVAL REPORT ===')
   console.log(JSON.stringify({ total: results.length, passed: results.length - failed.length, failed: failed.length, results }, null, 2))
+  // v0.3.8: 历史对比 —— 追加本次结果并对比上一次通过率
+  const fs = require('fs')
+  const historyFile = __dirname + '/eval-history.jsonl'
+  let prev = null
+  try {
+    const lines = fs.readFileSync(historyFile, 'utf-8').trim().split('\n').filter(Boolean)
+    if (lines.length) prev = JSON.parse(lines[lines.length - 1])
+  } catch { /* 无历史 */ }
+  const record = { ts: new Date().toISOString(), total: results.length, passed: results.length - failed.length, failed: failed.length, results }
+  try { fs.appendFileSync(historyFile, JSON.stringify(record) + '\n') } catch { /* 忽略 */ }
+  if (prev) {
+    const delta = record.passed - (prev.passed || 0)
+    console.log('HISTORY: prev ' + (prev.passed || 0) + '/' + (prev.total || 0) + ' \u2192 now ' + record.passed + '/' + record.total + (delta !== 0 ? ' (delta ' + (delta > 0 ? '+' : '') + delta + ')' : ''))
+  } else {
+    console.log('HISTORY: first run (' + record.passed + '/' + record.total + ')')
+  }
   process.exit(failed.length ? 1 : 0)
 }
 

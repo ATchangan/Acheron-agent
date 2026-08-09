@@ -4,4 +4,5 @@ dist-electron/
 release/
 coverage/
 *.log
+scripts/eval-history.jsonl
 .DS_Store

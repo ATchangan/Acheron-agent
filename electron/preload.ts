@@ -63,6 +63,13 @@ contextBridge.exposeInMainWorld('huangquan', {
     export: (format: string, workDir?: string) => ipcRenderer.invoke('sessions:export', format, workDir),
     search: (query: string, limit?: number) => ipcRenderer.invoke('sessions:search', query, limit),
   },
+  backup: {
+    create: () => ipcRenderer.invoke('backup:create'),
+    restore: () => ipcRenderer.invoke('backup:restore'),
+  },
+  rollback: {
+    apply: (taskId: string) => ipcRenderer.invoke('rollback:apply', taskId),
+  },
   ishiki: { load: () => ipcRenderer.invoke('ishiki:load') },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),

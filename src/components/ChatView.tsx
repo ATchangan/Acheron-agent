@@ -13,6 +13,9 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const streaming = useChatStore(s => s.streaming)
   const executing = useChatStore(s => s.executing)
   const error = useChatStore(s => s.error)
+  const errorStep = useChatStore(s => s.errorStep)
+  const fileChanges = useChatStore(s => s.fileChanges)
+  const lastTaskId = useChatStore(s => s.lastTaskId)
   const activeAgents = useChatStore(s => s.activeAgents)
   const orphanTasks = useChatStore(s => s.orphanTasks)
   const restoreTask = useChatStore(s => s.restoreTask)
@@ -66,6 +69,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
           {orphanTasks.slice(0, 3).map(t => (
             <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.content}>{String(t.content || '').slice(0, 40)}</span>
+              {t.planProgress && <span style={U.textMuted}>已完成 {t.planProgress}</span>}
               <button className="tab-btn active" style={{ padding: '1px 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => restoreTask(t.id)}>恢复</button>
               <button className="tab-btn" style={{ padding: '1px 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={async () => { await window.huangquan.tasks.finish(t.id, 'aborted', '用户忽略'); useChatStore.setState(s => ({ orphanTasks: s.orphanTasks.filter(x => x.id !== t.id) })) }}>忽略</button>
             </span>
@@ -141,6 +145,22 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
         </div>
       )}
 
+      {fileChanges > 0 && lastTaskId && (
+        <div className="error-bar" style={U.wrap8}>
+          <span>该任务修改了 {fileChanges} 个文件，可回滚到任务开始前的状态</span>
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <button className="tab-btn" style={U.px12} onClick={async () => {
+              try {
+                const r = await window.huangquan.rollback.apply(lastTaskId)
+                useChatStore.setState({ fileChanges: 0, lastTaskId: '' })
+                alert(r.ok ? ('已回滚 ' + (r.restored || 0) + ' 个文件') : ('回滚失败：' + (r.error || '')))
+              } catch { useChatStore.setState({ fileChanges: 0, lastTaskId: '' }) }
+            }}>回滚文件改动</button>
+            <button className="tab-btn" style={{ padding: '0 6px' }} title="关闭提示" onClick={() => useChatStore.setState({ fileChanges: 0, lastTaskId: '' })}>×</button>
+          </span>
+        </div>
+      )}
+
       {!hasProvider ? (
         <div className="chat-center-empty">
           <h1>黄泉</h1><p>请先在「模型服务」中配置一个服务商</p>
@@ -159,6 +179,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
         <div className="error-bar">
           <span>{error}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+            {errorStep?.messageId && <button className="tab-btn" style={{ padding: '1px 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => jumpToMsg(errorStep.messageId!)}>定位失败步骤</button>}
             <button className="tab-btn" style={{ padding: '1px 12px', fontSize: 'calc(var(--ui-font-size) - 2px)' }} onClick={retryLast}>重试</button>
             <button onClick={() => useChatStore.setState({ error: null })}>×</button>
           </span>

@@ -33,9 +33,16 @@ declare global {
         save: (s: unknown) => Promise<boolean>
         delete: (id: string) => Promise<boolean>
         audit: () => Promise<string[]>
-    clearAll: () => Promise<boolean>
-    export: (format: string, workDir?: string) => Promise<string>
-    search: (query: string, limit?: number) => Promise<{ sid: string; title: string; role: string; snippet: string; ts: number }[]>
+        clearAll: () => Promise<boolean>
+        export: (format: string, workDir?: string) => Promise<string>
+        search: (query: string, limit?: number) => Promise<{ sid: string; title: string; role: string; snippet: string; ts: number }[]>
+      },
+      backup: {
+        create: () => Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
+        restore: () => Promise<{ ok: boolean; canceled?: boolean; error?: string }>
+      },
+      rollback: {
+        apply: (taskId: string) => Promise<{ ok: boolean; restored?: number; error?: string }>
       },
       ishiki: { load: () => Promise<string> }
       skills: {

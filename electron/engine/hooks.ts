@@ -1,0 +1,39 @@
+// electron/engine/hooks.ts — 事件钩子(Hooks): 工具调用前后/任务启停/文件写入时执行自定义命令
+import { exec } from 'child_process'
+import type { EngineSettings } from './types'
+
+export type HookEvent = 'tool-before' | 'tool-after' | 'task-start' | 'task-end' | 'file-write'
+const HOOK_EVENTS: HookEvent[] = ['tool-before', 'tool-after', 'task-start', 'task-end', 'file-write']
+
+// 解析 hooksText: 每行 "事件=命令", # 开头为注释
+export function parseHooksText(text: string | undefined): Partial<Record<HookEvent, string[]>> {
+  const out: Partial<Record<HookEvent, string[]>> = {}
+  if (!text || !String(text).trim()) return out
+  for (const line of String(text).split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const eq = t.indexOf('=')
+    if (eq <= 0) continue
+    const ev = t.slice(0, eq).trim() as HookEvent
+    const cmd = t.slice(eq + 1).trim()
+    if (!HOOK_EVENTS.includes(ev) || !cmd) continue
+    ;(out[ev] = out[ev] || []).push(cmd)
+  }
+  return out
+}
+
+export function runHooks(g: EngineSettings, event: HookEvent, vars: Record<string, string> = {}): void {
+  const hooks = parseHooksText(g.hooksText)
+  const cmds = hooks[event]
+  if (!cmds || !cmds.length) return
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), HQ_EVENT: event }
+  for (const [k, v] of Object.entries(vars)) env['HQ_' + k.toUpperCase()] = String(v)
+  for (const cmd of cmds) {
+    try {
+      // 非阻塞执行, 10s 超时, 失败只记日志不影响主流程
+      exec(cmd, { timeout: 10000, windowsHide: true, env, maxBuffer: 1024 * 1024 }, err => {
+        if (err) console.debug('[hooks] ' + event + ' -> ' + err.message)
+      })
+    } catch { /* 忽略 */ }
+  }
+}

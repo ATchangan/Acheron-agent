@@ -3,9 +3,20 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import * as os from 'os'
-import { exec, type ChildProcess } from 'child_process'
+import { exec, execSync, type ChildProcess } from 'child_process'
 import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 import { registerComputerFiles } from './computer-files'
+
+// v0.3.8: PowerShell 7(pwsh)优先, 不存在时回退 Windows PowerShell —— pwsh 支持 && 与现代语法
+let pwshAvailable: boolean | null = null
+function getPowerShellCmd(): string {
+  if (pwshAvailable === null) {
+    try {
+      pwshAvailable = execSync('where.exe pwsh', { windowsHide: true, stdio: 'pipe' }).toString().trim().length > 0
+    } catch { pwshAvailable = false }
+  }
+  return pwshAvailable ? 'pwsh' : 'powershell'
+}
 
 
 export function registerComputerIpc(deps: {
@@ -75,7 +86,9 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
   const cmdS = String(cmd || '')
   const riskLevel = assessRisk({ type: 'terminal', command: cmdS })
   if (riskLevel === 'L4') {
-    const hit = ['rm -rf', 'rm -fr', 'format ', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'del /f /s /q c:\\', 'rd /s /q c:\\'].find(d => cmdS.toLowerCase().includes(d.toLowerCase()))
+    // v0.3.8: 危险命令归一化 —— 统一小写/反斜杠/连续空白后匹配, 防大小写与转义绕过
+    const norm = cmdS.toLowerCase().replace(/\\+/g, '/').replace(/\s+/g, ' ').trim()
+    const hit = ['rm -rf', 'rm -fr', 'format /', 'format c:', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'taskkill /im', 'del /f /s /q c:', 'del /s /q c:', 'rd /s /q c:', 'rmdir /s /q c:', 'diskpart', 'bcdedit', 'format c'].find(d => norm.includes(d))
     return 'E:permission denied: 危险命令已被拦截 (' + (hit || '').trim() + ')。如需执行请手动在终端操作。'
   }
   const cr = await confirmRisk(riskLevel, '执行命令', cmdS, sid, taskId)
@@ -90,12 +103,14 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
     const trimmed = cmd.trim()
     const isPS = /^(powershell|pwsh)\b/i.test(trimmed) ||
       /\b(Get-|Set-|New-|Invoke-|Write-|Select-|Where-|ForEach-|Start-Process)\b/i.test(trimmed) ||
-      /\$(?:env:|[a-zA-Z_]\w*)/.test(trimmed)
+      /\$(?:env:|[a-zA-Z_]\w*)/.test(trimmed) ||
+      // v0.3.7: 含非 ASCII(中文路径/中文输出)的命令一律走 PowerShell —— cmd 在部分系统(OEM 437)会把中文输出成 '?'
+      /[^\x00-\x7F]/.test(cmd)
     // v0.3.3: sid 标记写入环境变量赋值(命令行为可见), 中止时按标记杀整个进程树
     const marker = sid ? (isPS ? "$env:HQ_SID='" + sid + "'; " : 'set HQ_SID=' + sid + '&& ') : ''
     let finalCmd
     if (isPS) {
-      finalCmd = `powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${marker}${cmd.replace(/"/g, '\\"')}"`
+      finalCmd = `${getPowerShellCmd()} -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${marker}${cmd.replace(/"/g, '\\"')}"`
     } else {
       finalCmd = `cmd /c "${marker}${cmd.replace(/"/g, '\\"')}"`
     }

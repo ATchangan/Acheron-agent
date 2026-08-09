@@ -1,5 +1,27 @@
 # 更新日志
 
+## v0.3.8（2026-08-09）
+- **Windows 命令执行修复**：cmd 在部分系统（OEM 437）会把中文输出成 `?`，现改为含非 ASCII 的命令自动走 PowerShell（UTF-8 输出），纯 ASCII 简单命令仍走 cmd；系统提示新增「Windows 命令纪律」（只写 PowerShell 语法、禁止 bash 语法、中文路径用 PowerShell）
+- exec_command 工具说明同步更新
+- **任务失败归因**：任务失败时错误提示附带失败步骤与工具，计划卡可点击定位
+- **一键备份/恢复**：设置 → 引擎 → 数据管理新增「备份数据/从备份恢复」（zip 打包 settings/tasks/memory/sessions/plans/skills 等，恢复含覆盖确认与越权防护）
+- **日志归档轮转**：agent-trace 超 2MB 时归档旧文件而非截断，归档保留 7 天
+- **网络安全加固**：web_fetch/web_read 拦截回环/链路本地/内网地址（SSRF 防护）；外部网络内容自动加「不可信指令」标记
+- **多会话并发上限**：新增「同时运行任务上限」（默认 3），超限新任务提示等待；断点恢复同样受控
+- **会话 schema 版本**：会话文件写入 schemaVersion=1，为未来迁移预留
+- **执行机制与项目集成（本轮）**：
+  - **项目指令兼容**：引擎自动读取 `AGENTS.md` / `CLAUDE.md` / `.agents.md`（优先 AGENTS.md），主流生态项目指令可直接生效
+  - **Git 原生工具**：新增 `git(action, args?)`（status/diff/log/commit/stash/push/pull/checkout），系统提示要求改代码前先 status/diff、改后 diff 验证、确认后 commit，不再手拼 git 命令
+  - **事件钩子 Hooks**：设置 → 引擎 → 任务可靠性新增事件钩子文本域，支持 `tool-before` / `tool-after` / `task-start` / `task-end` / `file-write`，注入 `HQ_EVENT/HQ_TOOL/HQ_SID/HQ_TASK_ID/HQ_RESULT/HQ_PATH/HQ_STATUS` 环境变量（每行 `事件=命令`，10s 超时、失败仅记日志不影响主流程）
+  - **计划确认门完善**：计划阶段系统提示注入「计划阶段」约束，只放行只读/检索/规划工具；git 在计划阶段仅允许 status/diff/log 只读动作
+  - **自定义子代理**：用户目录 `%APPDATA%\huangquan-agent\agents\*.json` 放 `{"名称":{role,prompt,tools,model?}}` 即注册自定义角色，与内置角色同机制合并
+  - **任务文件快照回滚**：引擎写操作前记录原内容（≤50 个文件、单文件 >5MB 跳过），任务结束落盘 `rollback/<任务ID>.json`；聊天页出现「回滚文件改动」横幅，一键恢复任务开始前状态
+  - **模型失败自动降级**：非可重试错误自动切换到同供应商其他模型，其次其他有 key 的供应商重试一次（每任务最多一次）；修复此前降级逻辑永远无法触发的死代码
+  - **计划增量传输**：plan-update 只带变化的步骤 id，渲染层局部 patch，长任务计划卡不再整表替换
+  - **崩溃观察**：近 7 天渲染崩溃 ≥3 次时系统通知建议切换 CPU 渲染；计划文档保留 30 天后自动清理
+  - **修复**：系统提示「计划执行」段落重复拼接；自定义子代理默认字段合并
+  - **测试**：新增 hooks 解析/执行、自定义子代理合并、rollback 恢复、计划确认门批准/拒绝流程测试，测试总量 33 文件 203 用例全绿
+
 ## v0.3.7（2026-08-09）
 - **计划执行**：工具调用自动生成执行计划（状态机：待办/执行中/完成/失败/中止/暂停），计划卡实时打勾、可折叠、点击跳转执行记录；复杂任务支持模型用 `update_plan` 自主声明/更新计划；任务收尾自动生成「执行计划复盘」（完成/失败/未执行明细）
 - **PLANS.md 计划文档**：每个任务自动落盘 `plans/<任务ID>.md`，含 Goal / Progress / Surprises & Discoveries / Decision Log / Outcomes 五段，随断点恢复继续维护
