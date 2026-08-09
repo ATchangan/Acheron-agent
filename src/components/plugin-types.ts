@@ -28,10 +28,10 @@ export interface PluginState {
 
 // ─── 定数 ──────────────────────────────────────────────
 export const CATEGORIES: Record<string, { label: string; emoji: string }> = {
-  oni: { label: '鬼族', emoji: '👹' },
-  yokai: { label: '妖族', emoji: '👺' },
-  sen: { label: '仙族', emoji: '🧚' },
-  jin: { label: '人族', emoji: '👤' },
+  oni: { label: '鬼族', emoji: '鬼' },
+  yokai: { label: '妖族', emoji: '妖' },
+  sen: { label: '仙族', emoji: '仙' },
+  jin: { label: '人族', emoji: '人' },
 }
 
 export const CATEGORY_HINT: Record<string, string> = {

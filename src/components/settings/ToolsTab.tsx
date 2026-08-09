@@ -76,7 +76,7 @@ export default function ToolsTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>工具权限</div>
-        <div style={S.hint}>点击切换单个工具权限：🟢 放行 → 🟡 询问（需人工确认）→ 🔴 禁用。区别于上方的整体开关（禁用=完全不加载）。</div>
+  <div style={S.hint}>点击切换单个工具权限：放行 → 询问（需人工确认）→ 禁用。区别于上方的整体开关（禁用=完全不加载）。</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
           {PERM_TOOLS.map(t => {
             const cur = (g.toolPerms || {})[t] || 'allow'
@@ -87,7 +87,7 @@ export default function ToolsTab() {
                   color: cur === 'allow' ? C.green : cur === 'ask' ? C.accent : C.danger,
                   background: cur === 'allow' ? 'rgba(0,180,0,0.06)' : cur === 'ask' ? C.accentBg : 'rgba(255,50,50,0.06)' }}
                 title={`当前: ${cur === 'allow' ? '放行' : cur === 'ask' ? '询问' : '禁用'}，点击切换`}>
-                {t} {cur === 'allow' ? '🟢' : cur === 'ask' ? '🟡' : '🔴'}
+    {t} {cur === 'allow' ? '放行' : cur === 'ask' ? '询问' : '禁用'}
               </span>
             )
           })}
@@ -128,7 +128,7 @@ export default function ToolsTab() {
                 <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 3px)' }}>{(t.description || '').slice(0, 40)}</div>
               </div>
               <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: perm === 'allow' ? C.green : perm === 'deny' ? C.danger : C.accent, padding: '2px 10px', borderRadius: 10, border: '1px solid ' + (perm === 'allow' ? C.green : perm === 'deny' ? C.danger : C.accent) }}>
-                {perm === 'allow' ? '🟢 放行' : perm === 'deny' ? '🔴 禁用' : '🟡 询问'}
+    {perm === 'allow' ? '放行' : perm === 'deny' ? '禁用' : '询问'}
               </span>
             </div>
           )

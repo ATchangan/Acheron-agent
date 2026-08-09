@@ -38,8 +38,8 @@ export const CronTaskList: React.FC<{
       {!loading && filtered.length === 0 && (
         <div style={S.empty}>
           {filter === 'all'
-            ? '⏳ 轮回台中尚无任务，渡一叶舟入轮回吧'
-            : '⏳ 此筛选下空空如也'}
+  ? '轮回台中尚无任务，渡一叶舟入轮回吧'
+  : '此筛选下空空如也'}
         </div>
       )}
 

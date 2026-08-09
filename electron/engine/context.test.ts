@@ -55,7 +55,7 @@ describe('engine context', () => {
     const msgs = [
       { id: 'u1', role: 'user' as const, content: '早期需求', timestamp: 1 },
       { id: 'a1', role: 'assistant' as const, content: null, timestamp: 2, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'handoff', arguments: '{"agent_name":"三月七"}' } }] },
-      { id: 't1', role: 'tool' as const, content: '✅ 已交接给 三月七', timestamp: 3, tool_call_id: 'c1' },
+    { id: 't1', role: 'tool' as const, content: '[已交接] 已交接给 三月七', timestamp: 3, tool_call_id: 'c1' },
       { id: 'a2', role: 'assistant' as const, content: '接手后的回答', timestamp: 4 },
     ]
     const g = { ...G, handoffContext: false }

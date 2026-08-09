@@ -318,7 +318,7 @@ const AssistantBlock: React.FC<{
       {hasText && (
         <div className="hq-msg-actions">
           <span className="hq-msg-age">{fmtAgo(message.timestamp)}</span>
-          {message.meta?.taskMs !== undefined && <span className="hq-msg-meta" title="任务总时长">⏱{fmtDur(message.meta.taskMs)}</span>}
+  {message.meta?.taskMs !== undefined && <span className="hq-msg-meta" title="任务总时长">{fmtDur(message.meta.taskMs)}</span>}
           {message.meta?.taskTokens != null && <span className="hq-msg-meta" title="本任务总消耗(全 agent)">{message.meta.taskTokens} token</span>}
           {ttsEnabled && <button title={ttsBusy ? '朗读中…' : '语音朗读'} onClick={speak}><Volume2 size={13} /></button>}
           <button title="重新生成" onClick={regen}><RefreshCw size={13} /></button>

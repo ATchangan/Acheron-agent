@@ -55,7 +55,7 @@ export default function KnowledgeView() {
     try {
       path = await window.huangquan.computer.selectFile()
     } catch {
-      setImportMsg('❌ 文件选择器不可用')
+    setImportMsg('✗ 文件选择器不可用')
       return
     }
     if (!path) return
@@ -63,17 +63,17 @@ export default function KnowledgeView() {
     const name = baseName(path)
     const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
     if (!SUPPORTED_FORMATS.includes(ext)) {
-      setImportMsg(`⚠️ 不支持的格式: ${ext}（支持 ${SUPPORTED_FORMATS.join(', ')}）`)
+    setImportMsg(`△ 不支持的格式: ${ext}（支持 ${SUPPORTED_FORMATS.join(', ')}）`)
       return
     }
 
     setImporting(true)
-    setImportMsg(`⏳ 正在录入 ${name} …`)
+    setImportMsg(`正在录入 ${name} …`)
 
     try {
       const api = window.huangquan.memory
       if (typeof api.importFile !== 'function') {
-        setImportMsg('❌ 卷宗录入接口不可用（请确认后端已开启检索能力）')
+    setImportMsg('✗ 卷宗录入接口不可用（请确认后端已开启检索能力）')
         setImporting(false)
         return
       }
@@ -98,14 +98,14 @@ export default function KnowledgeView() {
         mem.facts.push(`${DOC_TAG}${JSON.stringify(doc)}`)
         await window.huangquan.memory.save(mem)
 
-        setImportMsg(`✅ ${name} 录入成功`)
+    setImportMsg(`✓ ${name} 录入成功`)
         await loadDocs()
         setTimeout(() => setImportMsg(''), 3000)
       } else {
-        setImportMsg(`❌ ${name} 录入失败`)
+    setImportMsg(`✗ ${name} 录入失败`)
       }
     } catch (e: unknown) {
-      setImportMsg(`❌ 错误: ${errMsg(e)}`)
+    setImportMsg(`✗ 错误: ${errMsg(e)}`)
     } finally {
       setImporting(false)
     }
@@ -133,14 +133,14 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
-        setResults([{ content: '❌ memory.search 不可用', score: 0 }])
+    setResults([{ content: '✗ memory.search 不可用', score: 0 }])
         setSearching(false)
         return
       }
       const hits: SearchResult[] = await api.search(q)
       setResults(hits || [])
     } catch (e: unknown) {
-      setResults([{ content: `❌ 寻章出错: ${errMsg(e)}`, score: 0 }])
+    setResults([{ content: `✗ 寻章出错: ${errMsg(e)}`, score: 0 }])
     } finally {
       setSearching(false)
     }
@@ -155,7 +155,7 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
-        setQaA('❌ 寻章检索不可用，无法组织回答。')
+    setQaA('✗ 寻章检索不可用，无法组织回答。')
         setQaLoading(false)
         return
       }
@@ -180,7 +180,7 @@ export default function KnowledgeView() {
           `\n\n---\n*提示：可将上述检索结果交给对话模型，获得更准确的回答*`
       )
     } catch (e: unknown) {
-      setQaA(`❌ 回答出错: ${errMsg(e)}`)
+    setQaA(`✗ 回答出错: ${errMsg(e)}`)
     } finally {
       setQaLoading(false)
     }
@@ -193,7 +193,7 @@ export default function KnowledgeView() {
         <div style={S.headerTitle}>
           <span style={S.headerIcon}><ScrollMark size={24} /></span>
           <div>
-            <h1 style={S.headerH1}>☷ 藏书阁</h1>
+  <h1 style={S.headerH1}>藏书阁</h1>
             <span style={S.headerSub}>私人典籍 · 寻章摘句</span>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>支持 txt / md / json / csv，录入后可在对话中检索引用</div>
           </div>

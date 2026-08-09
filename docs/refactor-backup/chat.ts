@@ -353,7 +353,7 @@ export const useChatStore = create<S>((set, get) => ({
               const fails = visionDesc.replace(/^E:ALL_VISION_FAILED:\s*/, '').split(' | ')
               why = '所有视觉辅助模型均无法连通：' + fails.join('；')
             } else why = (visionDesc || '').replace(/^E:/, '') || '视觉分析失败'
-            content = content + '\n\n[图片未能分析：' + why + '。可在 设置→策略→👁️视觉理解 中配置视觉辅助模型优先级（如通义 qwen-vl、智谱 glm-4v、Kimi vision 等）。]'
+            content = content + '\n\n[图片未能分析：' + why + '。可在 设置→策略→目视觉理解 中配置视觉辅助模型优先级（如通义 qwen-vl、智谱 glm-4v、Kimi vision 等）。]'
           }
           set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
         }
@@ -509,7 +509,7 @@ export const useChatStore = create<S>((set, get) => ({
           const doEpisodic = gSnap.episodicMemory !== false
 
           const runOne = async (tc: ToolCallItem) => { let r2 = '', ms = 0; for (let a = 0; a <= maxRetry; a++) { const t0 = Date.now(); // v0.2.3: 思考气泡显示「正在调用 XX」
-            const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '🔧 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
+            const argS = JSON.stringify(tc.args || {}); set({ stage: { sid, phase: 'tool', label: '工 ' + tc.name, detail: argS && argS.length > 40 ? argS.slice(0, 40) + '…' : (argS || '') } })
             r2 = await runTool(tc.name, tc.args, cfg); ms = Date.now() - t0; if (!r2.startsWith('E:')) break; if (a < maxRetry) await new Promise(r => setTimeout(r, 500)) } if (r2 && !r2.startsWith('E:')) setCached(tc.name + ':' + JSON.stringify(tc.args || {}), r2); toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms }); // v0.2.3: 完成后显示 ✓(带结果摘要)
           set({ stage: { sid, phase: 'tool', label: '✓ ' + tc.name, detail: (r2 && r2.length > 50 ? r2.slice(0, 50) + '…' : (r2 || '')) } })
           if (doEpisodic) recordEpisodic(tc.name, tc.args, r2).catch(() => {}); if (tc.name === 'handoff' && tc.args?.agent_name) { const to = String(tc.args.agent_name); const curAg = useChatStore.getState().activeAgents || []; const maxChain = gSnap.maxHandoffChain || 3; if (!curAg.includes(to) && curAg.length >= maxChain) { return { tc, r: 'E:交接链已达上限(' + maxChain + '), 请在当前 Agent 直接完成任务, 不要再交接' } } set(s => ({ activeAgents: s.activeAgents.includes(to) ? s.activeAgents : [...s.activeAgents, to] })) }; return { tc, r: r2 } }

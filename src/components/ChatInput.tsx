@@ -232,13 +232,13 @@ export default function ChatInput() {
               onChange={e => { const v = e.target.value; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: v || undefined, agentManual: !!v } : x) })) }}
               defaultValue="">
               <option value="">自动</option>
-              <option value="姬子">☀ 主控</option>
-              <option value="三月七">📄 文档</option>
-              <option value="银狼">🛡 安全</option>
-              <option value="艾丝妲">📊 通知</option>
-              <option value="知更鸟">🎵 陪伴</option>
-              <option value="黑天鹅">🃏 设计</option>
-              <option value="螺丝咕姆">🔧 开发</option>
+          <option value="姬子">主控</option>
+          <option value="三月七">文档</option>
+          <option value="银狼">安全</option>
+          <option value="艾丝妲">通知</option>
+          <option value="知更鸟">陪伴</option>
+          <option value="黑天鹅">设计</option>
+          <option value="螺丝咕姆">开发</option>
             </select>
 
             {/* 模型选择器 */}
@@ -283,7 +283,7 @@ export default function ChatInput() {
               <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
               <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
                 strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
-              <text x="14" y="17" textAnchor="middle" fontSize="9" fill="var(--text-muted)" fontWeight="600">{ctxRatio > 0.7 ? '⚠' : '◉'}</text>
+          <text x="14" y="17" textAnchor="middle" fontSize="9" fill="var(--text-muted)" fontWeight="600">{ctxRatio > 0.7 ? '!' : '◉'}</text>
             </svg>
 
             {/* 发送/停止按钮 */}

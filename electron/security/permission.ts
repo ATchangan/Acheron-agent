@@ -32,6 +32,6 @@ export function assessRisk(action:{type:'filesystem'|'terminal'|'screenshot',ope
 export function formatRiskWarning(level: RiskLevel, tool: string, args: Record<string, unknown>): string | null {
   if(level==='L0'||level==='L1')return null
   const a=JSON.stringify(args).slice(0,80)
-  if(level==='L3'||level==='L4')return`[⚠ 高风险] ${tool}(${a}) — 可能造成不可逆影响，需确认后执行`
-  return`[⚡ 注意] ${tool}(${a}) — 将在沙箱外执行`
+    if(level==='L3'||level==='L4')return`[高风险] ${tool}(${a}) — 可能造成不可逆影响，需确认后执行`
+    return`[注意] ${tool}(${a}) — 将在沙箱外执行`
 }

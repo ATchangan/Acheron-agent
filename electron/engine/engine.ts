@@ -530,7 +530,7 @@ export class AgentEngine {
     if (unfinished.length) lines.push(`- 未执行：${unfinished.join('、')}`)
     // v0.3.7: 验证闭环 —— 改过文件但没有独立验证命令时给出提醒
     const touchedFiles = steps.some(s => (s.tool === 'write' || s.tool === 'edit' || s.tool === 'apply_patch') && s.status === 'done')
-    if (touchedFiles && !this.planHasVerification(task)) lines.push('- ⚠ 修改过文件但未检测到独立验证命令，建议补充构建/测试/检查')
+    if (touchedFiles && !this.planHasVerification(task)) lines.push('- [!] 修改过文件但未检测到独立验证命令，建议补充构建/测试/检查')
     return lines.join('\n')
   }
 
@@ -1704,7 +1704,7 @@ export class AgentEngine {
       const err = xr.error ? '（未知角色）' : ''
       out.push(`【${x.agent}${err}】${xr.error || ''}\n任务: ${x.task}\n结果: ${xr.result || '(empty)'}`)
     }
-    return '📤 分发完成，共 ' + tasks.length + ' 个子任务：\n\n' + out.join('\n\n---\n\n')
+    return '[分发完成] 共 ' + tasks.length + ' 个子任务：\n\n' + out.join('\n\n---\n\n')
   }
 }
 

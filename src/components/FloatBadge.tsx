@@ -41,7 +41,7 @@ export default function FloatBadge() {
         boxShadow: 'var(--shadow-2)', userSelect: 'none',
       }}
     >
-      <span style={{ fontSize: 'calc(var(--ui-font-size) + 3px)', animation: 'floatSpin 1.6s linear infinite' }}>🌐</span>
+  <span style={{ fontSize: 'calc(var(--ui-font-size) + 3px)', animation: 'floatSpin 1.6s linear infinite' }}>◉</span>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>正在使用浏览器</span>
         <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--accent-purple)', whiteSpace: 'nowrap' }}>点击查看实时画面</span>

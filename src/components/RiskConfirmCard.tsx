@@ -56,7 +56,7 @@ export default function RiskConfirmCard() {
   return (
     <div className="risk-confirm-card" role="alertdialog" aria-label="风险操作确认">
       <div className="risk-confirm-head">
-        <span className="risk-confirm-icon">⚠</span>
+  <span className="risk-confirm-icon">!</span>
         <span className="risk-confirm-title">风险操作确认 · {cur.kind}</span>
         {queue.length > 1 && <span className="risk-confirm-count">{queue.length} 个待确认</span>}
       </div>
