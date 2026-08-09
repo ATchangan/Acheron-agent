@@ -74,8 +74,9 @@ export default function ToolsTab() {
           <button style={S.btn('ghost')} onClick={() => save({ disabledTools: [] })}>恢复默认</button>
         </div>
       </div>
-      <div style={S.card}>
-        <div style={S.section}>工具权限</div>
+  <div style={S.card}>
+  <div style={S.section}>工具权限</div>
+  <Toggle checked={g.perf?.toolCore !== false} onChange={v => save({ perf: { ...(g.perf || {}), toolCore: v } })} label="核心工具模式（默认开）" hint="主控默认只挂常用工具，减少每轮 token 与延迟；在下方把某个工具设为「放行/询问」即可单独加入，关闭后恢复全量工具" />
   <div style={S.hint}>点击切换单个工具权限：放行 → 询问（需人工确认）→ 禁用。区别于上方的整体开关（禁用=完全不加载）。</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
           {PERM_TOOLS.map(t => {

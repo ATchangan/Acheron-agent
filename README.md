@@ -24,7 +24,9 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 
 复杂任务自动生成执行计划：每个工具调用对应一个步骤，计划卡实时打勾、可折叠、点击跳转执行记录；模型可用 `update_plan` 自主声明/更新计划。任务收尾自动生成执行计划复盘（完成/失败/未执行明细），每个任务自动落盘 PLANS.md（Goal / Progress / Surprises & Discoveries / Decision Log / Outcomes），断点恢复后继续维护。
 
-修改文件后未运行验证命令时，引擎会自动注入验证请求（最多 2 轮）并记入决策日志；`write` 后用 `read` 确认即视为验证通过。
+修改文件后未运行验证命令时，引擎会自动注入验证请求（最多 1 轮，控制效率成本）并记入决策日志；`write` 后用 `read` 确认即视为验证通过。
+
+简单任务不会要求模型先调用 `update_plan` 声明计划（工具调用会自动生成步骤卡），复杂任务或你明确要求计划时才会走计划声明，减少无效轮次。
 
 ### 项目指令（AGENTS.md）与执行机制
 
@@ -49,6 +51,8 @@ Agent 主循环运行在主进程：LLM 直连、工具分发、上下文/记忆
 浏览器面板内嵌主窗口实时画面（WebContentsView，100% 同步，可操作），CPU 模式自动降级离屏截图。`browse` 输出可访问性快照，配合 `browser_click` / `browser_type` / `browser_press` / `browser_scroll` / `browser_console` / `browser_vision` 可真正操作网页；每任务独立浏览器会话。
 
 ### 59 个内置工具
+
+主控角色默认启用「核心工具模式」（约 28 个常用工具：文件/命令/Git/终端/网络/技能/计划/记忆/协作），每轮上下文更小、响应更快；进阶工具（截图、浏览器操作、定时、媒体等）可在 设置→工具 单独放行，或关闭核心工具模式恢复全量 59 个。
 
 - 文件：read（>5MB 续读）、write、edit、apply_patch（多 hunk 结构化编辑）、mkdir、grep、find、ls
 - 系统：exec_command（可被「停止」递归打断）、terminal_open/run/close（长驻交互终端）、system_info、process_list、kill_process

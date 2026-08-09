@@ -21,7 +21,7 @@ vi.mock('./registry', () => ({
   }),
 }))
 
-import { runTool } from './tools'
+import { getActiveTools, runTool } from './tools'
 import type { ToolRunCtx } from './tool-types'
 
 function makeCtx(over: Partial<ToolRunCtx> = {}): ToolRunCtx {
@@ -161,5 +161,22 @@ describe('runTool 分发器', () => {
       expect(r).toContain('E:项目指令已存在')
       expect(fs.existsSync(join(dir, 'AGENTS.md'))).toBe(false)
     } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('核心工具模式: 主控默认只挂常用工具, 显式放行/关闭后恢复', () => {
+    const names = (ctx: ToolRunCtx) => getActiveTools(ctx).map(t => t.function.name)
+    const base = makeCtx()
+    const def = names(base)
+    expect(def).toContain('read')
+    expect(def).toContain('git')
+    expect(def).toContain('update_plan')
+    expect(def).not.toContain('screenshot')
+    expect(def).not.toContain('browser_click')
+    const withPerm = names(makeCtx({ g: { filePermission: 'full', toolPerms: { screenshot: 'allow' } } }))
+    expect(withPerm).toContain('screenshot')
+    const full = names(makeCtx({ g: { filePermission: 'full', perf: { toolCore: false } } }))
+    expect(full).toContain('screenshot')
+    const agentFull = names(makeCtx({ agent: '螺丝咕姆', agents: { 螺丝咕姆: { name: '螺丝咕姆', icon: '码', role: 'r', prompt: 'p', tools: ['*'] } as never } }))
+    expect(agentFull).toContain('screenshot')
   })
 })

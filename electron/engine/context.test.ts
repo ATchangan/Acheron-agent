@@ -21,6 +21,7 @@ describe('engine context', () => {
     const sp = buildPrompt('work', '测试人设', G, getAgents(), 'D:/test')
     expect(sp).toContain('多角色编队')
     expect(sp).toContain('黄泉')
+    expect(sp).toContain('简单任务直接调工具')
   })
 
   it('routeAgent 简单消息不路由, 代码消息路由螺丝咕姆', () => {

@@ -609,7 +609,8 @@ export class AgentEngine {
     for (const s of steps) {
       const label = String(s.label || '').trim()
       if (!label) continue
-      const status = (['pending', 'running', 'done', 'failed', 'aborted'].includes(String(s.status || '')) ? String(s.status) : 'pending') as PlanStep['status']
+      // 完成/失败状态只能由引擎按工具实际执行结果写入, 不信任模型在 update_plan 里自报的 done/failed
+      const status: PlanStep['status'] = String(s.status || '').trim() === 'paused' ? 'paused' : 'pending'
       let target = s.id ? task.planSteps.find(x => x.id === s.id) : undefined
       // 无 id 时按 label+tool 合并已存在的未认领 pending 步骤, 防止重复 update_plan 产生一模一样条目
       if (!target) {
@@ -619,7 +620,7 @@ export class AgentEngine {
         target.label = label
         if (s.expected !== undefined) target.expected = String(s.expected).slice(0, 200)
         if (s.tool !== undefined) target.tool = String(s.tool)
-        if (status !== 'pending') target.status = status
+        if (status === 'paused') target.status = 'paused'
         updated++
       } else {
         const step: PlanStep = { id: uuidv4(), label, status, tool: s.tool !== undefined ? String(s.tool) : undefined, expected: s.expected !== undefined ? String(s.expected).slice(0, 200) : undefined }
@@ -741,9 +742,9 @@ export class AgentEngine {
         res = loopRes.res
         maxToolRounds = loopRes.maxToolRounds
 
-        // v0.3.7: 验证强制闭环 —— 改过文件但未运行验证命令时, 注入验证请求(最多 2 轮)
+        // v0.3.7: 验证强制闭环 —— 改过文件但未运行验证命令时, 注入验证请求(最多 1 轮, 控制效率成本)
         let verifyForced = 0
-        while (!res.tcs.length && this.planNeedsVerify(task) && verifyForced < 2 && this.curGen(sid) === task.myGen && !task.stopped) {
+        while (!res.tcs.length && this.planNeedsVerify(task) && verifyForced < 1 && this.curGen(sid) === task.myGen && !task.stopped) {
           verifyForced++
           this.planAddDecision(task, '强制验证第 ' + verifyForced + ' 轮：检测到文件修改但无验证命令')
           const vmsg: EngineMessage = {

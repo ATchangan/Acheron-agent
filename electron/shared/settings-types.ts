@@ -162,6 +162,7 @@ export interface GeneralSettings {
     parallelCap?: boolean    // 0.3.5 T1 并行护栏
     interjectMerge?: boolean // 0.3.4 T3 插话合并
     compactSummary?: boolean // 窗口阈值压缩（真实用量触发 + LLM 批量摘要）
+    toolCore?: boolean        // 0.3.8: 主控核心工具模式(默认开), 关闭后恢复全量工具
   }
   mediaImgProvider?: string
   mediaImgModel?: string

@@ -36,7 +36,7 @@ const TEXT_CHUNK =
   'data: [DONE]\n\n'
 
 function updateChunk(id: string): string {
-  const args = '{\\"steps\\":[{\\"label\\":\\"\\u67e5\\u770b\\u76ee\\u5f55\\",\\"tool\\":\\"ls\\"},{\\"label\\":\\"\\u8bfb\\u53d6\\u6587\\u4ef6\\",\\"tool\\":\\"read\\"}]}'
+  const args = '{\\"steps\\":[{\\"label\\":\\"\\u67e5\\u770b\\u76ee\\u5f55\\",\\"tool\\":\\"ls\\",\\"status\\":\\"done\\"},{\\"label\\":\\"\\u8bfb\\u53d6\\u6587\\u4ef6\\",\\"tool\\":\\"read\\",\\"status\\":\\"done\\"}]}'
   return (
     'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"' + id + '","function":{"name":"update_plan","arguments":"' + args + '"}}]}}]}\n\n' +
     'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n' +
@@ -213,7 +213,7 @@ describe('AgentEngine 主循环(mock LLM)', () => {
   }, 20000)
 
   it('重复 update_plan 不产生一模一样的两条步骤', async () => {
-    const events: { type: string; steps?: { id: string; label: string }[] }[] = []
+    const events: { type: string; steps?: { id: string; label: string; status?: string }[] }[] = []
     let call = 0
     const netFetch = vi.fn(async () => {
       call++
@@ -241,5 +241,8 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const steps = lastPlan?.steps || []
     expect(steps.length).toBe(2)
     expect(new Set(steps.map(s => s.label)).size).toBe(2)
+    const twoStep = events.find(e => e.type === 'plan-update' && (e.steps?.length || 0) === 2)
+    expect(twoStep).toBeTruthy()
+    expect(twoStep!.steps!.every(s => s.status === 'pending')).toBe(true)
   }, 20000)
 })
