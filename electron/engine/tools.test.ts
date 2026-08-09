@@ -149,7 +149,17 @@ describe('runTool 分发器', () => {
       expect(r).toContain('已生成')
       expect(fs.existsSync(join(dir, 'AGENTS.md'))).toBe(true)
       const r2 = await runTool('init_project_docs', {}, ctx)
-      expect(r2).toContain('E:AGENTS.md 已存在')
+      expect(r2).toContain('E:项目指令已存在')
+    } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('init_project_docs 在已有 CLAUDE.md 时也拒绝生成', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-tool-'))
+    try {
+      fs.writeFileSync(join(dir, 'CLAUDE.md'), 'x', 'utf-8')
+      const r = await runTool('init_project_docs', {}, makeCtx({ workDir: dir }))
+      expect(r).toContain('E:项目指令已存在')
+      expect(fs.existsSync(join(dir, 'AGENTS.md'))).toBe(false)
     } finally { fs.rmSync(dir, { recursive: true, force: true }) }
   })
 })

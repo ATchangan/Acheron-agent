@@ -150,4 +150,16 @@ describe('project-instructions 项目指令发现', () => {
     const miss = collectSubdirInstructions(join(work, 'backend', 'README.md'), new Set(chainDirs(work)))
     expect(miss.some(f => f.path.endsWith('AGENTS.md'))).toBe(false)
   })
+
+  it('路径作用域: 首次不匹配不锁死目录, 后续匹配路径仍能注入', () => {
+    const repo = join(root, 'repo4'); fs.mkdirSync(join(repo, 'pkg', 'backend', 'src'), { recursive: true })
+    fs.mkdirSync(join(repo, '.git'))
+    const work = join(repo, 'pkg')
+    fs.writeFileSync(join(work, 'backend', 'AGENTS.md'), '---\npaths:\n  - src/**\n---\nSRC_RULE', 'utf-8')
+    const visited = new Set(chainDirs(work))
+    const miss = collectSubdirInstructions(join(work, 'backend', 'README.md'), visited)
+    expect(miss.some(f => f.path.endsWith('AGENTS.md'))).toBe(false)
+    const hit = collectSubdirInstructions(join(work, 'backend', 'src', 'main.ts'), visited)
+    expect(hit.some(f => f.path.endsWith('AGENTS.md') && f.content.includes('SRC_RULE'))).toBe(true)
+  })
 })

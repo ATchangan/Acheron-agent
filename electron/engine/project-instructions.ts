@@ -202,16 +202,18 @@ export function collectSubdirInstructions(path: string, visited: Set<string>): I
       dir = dirname(dir)
     }
     if (visited.has(dir)) { dir = dirname(dir); continue }
-    visited.add(dir)
     const p = resolveInstructionFile(dir)
+    let handled = false
     if (p) {
       const f = readInstructionFile(p, SUBDIR_FILE_CAP_CHARS, SUBDIR_FILE_CAP_CHARS * 4)
       if (f && !hasInjectionRisk(f.content)) {
         const parsed = parseInstructionFrontmatter(f.content)
         const body = parsed.body.trim()
-        if (!body) { dir = dirname(dir); continue }
-        if (!parsed.frontmatter.paths || parsed.frontmatter.paths.length === 0 || matchesAnyScope(path, dir, parsed.frontmatter.paths)) {
+        const scoped = (parsed.frontmatter.paths || []).length > 0
+        if (body && (!scoped || matchesAnyScope(path, dir, parsed.frontmatter.paths!))) {
           out.push({ path: p, content: body, truncated: f.truncated })
+          visited.add(dir) // 规则已注入(含作用域命中): 本会话不再重复
+          handled = true
         } else {
           // 路径作用域不匹配: 不注入、不标记已访问, 留给其它路径后续触发
           dir = dirname(dir)
@@ -219,6 +221,8 @@ export function collectSubdirInstructions(path: string, visited: Set<string>): I
         }
       }
     }
+    // 无规则文件 / 注入风险 / 空正文: 标记已访问, 避免重复扫描
+    if (!handled) visited.add(dir)
     const parent = dirname(dir)
     if (parent === dir) break
     dir = parent

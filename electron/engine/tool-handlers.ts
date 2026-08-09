@@ -126,7 +126,8 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const wd = ctx.workDir || ''
     if (!wd) return 'E:未设置工作目录'
     const target = join(wd, 'AGENTS.md')
-    if (fs.existsSync(target)) return 'E:AGENTS.md 已存在(' + target + ')。为避免覆盖，请手动修改，或先删除后再生成'
+    const existing = ['AGENTS.override.md', 'AGENTS.md', 'CLAUDE.md', '.agents.md'].map(n => join(wd, n)).find(p => fs.existsSync(p))
+    if (existing) return 'E:项目指令已存在(' + existing + ')。为避免覆盖，请手动修改，或先删除后再生成'
     const sections: string[] = []
     try {
       const readme = fs.readFileSync(join(wd, 'README.md'), 'utf-8')

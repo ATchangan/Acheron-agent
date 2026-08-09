@@ -230,7 +230,9 @@ async function main() {
     await sleep(1500)
     const hookHit = fsEval.existsSync(hookFile)
     report('场景11: Hooks 事件触发', hookHit, JSON.stringify({ file: hookFile, hit: hookHit }))
-    if (fsEval.existsSync(hookFile)) { try { fsEval.unlinkSync(hookFile) } catch { /* 忽略 */ } }
+    for (let t = 0; t < 5 && fsEval.existsSync(hookFile); t++) {
+      try { fsEval.unlinkSync(hookFile) } catch { await sleep(300) }
+    }
 
     // 场景12: 计划确认门(启用 → 出计划 → 点批准 → 完成)
     await ev(`(async () => { const c = await window.huangquan.settings.load(); c.general.planGate = true; await window.huangquan.settings.save(c); return true })()`)
