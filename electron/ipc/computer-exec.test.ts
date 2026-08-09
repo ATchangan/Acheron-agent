@@ -16,7 +16,7 @@ function setup() {
   }) as never)
   registerComputerIpc({
     assertInsideWorkDir: () => true,
-    assessRisk: (e: { command?: string }) => /del|taskkill|format|shutdown|diskpart|bcdedit|rmdir|rd \/s/i.test(String(e?.command || '')) ? 'L4' : 'L1',
+    assessRisk: (e: { command?: string }) => /del|taskkill|format c:|shutdown|diskpart|bcdedit|rmdir|rd \/s/i.test(String(e?.command || '')) ? 'L4' : 'L1',
     getEffectiveWorkDir: () => os.tmpdir(),
     getWorkDirOverride: () => null,
     setWorkDirOverride: () => { /* noop */ },
@@ -67,6 +67,17 @@ describe('computer:exec 危险命令拦截', () => {
     const out = await runExec('taskkill //f //im explorer.exe')
     expect(out).toContain('危险命令已被拦截')
   })
+
+  it('Format-Table 等正常 PowerShell 命令不被误拦', async () => {
+    const out = await runExec('Get-ChildItem C:\\Windows | Select-Object Name | Format-Table')
+    expect(out).not.toContain('危险命令')
+  }, 30000)
+
+  it('cmd 输出按 GBK 解码, 不出现替换字符乱码', async () => {
+    const out = await runExec('dir C:\\Windows')
+    expect(out.length).toBeGreaterThan(0)
+    expect(out).not.toContain('\uFFFD')
+  }, 30000)
 
   it('正常命令不误拦', async () => {
     const out = await runExec('echo safe command')

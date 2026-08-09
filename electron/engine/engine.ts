@@ -476,7 +476,8 @@ export class AgentEngine {
       const res = results[i] || { r: '', ms: 0 }
       const r = res.r || ''
       st.ms = (st.ms || 0) + (res.ms || 0)
-      const emptyFail = !r.trim() && ['read', 'exec_command', 'ls', 'grep', 'find', 'web_search', 'web_fetch'].includes(st.tool || '')
+      // 空目录/无匹配对 ls/find/grep 是正常结果, 只有 read/exec/web 空输出才算可疑失败
+      const emptyFail = !r.trim() && ['read', 'exec_command', 'web_search', 'web_fetch'].includes(st.tool || '')
       if (r.startsWith('E:') || emptyFail) {
         st.status = 'failed'
         const reason = emptyFail ? '空结果' : r.slice(2, 50).replace(/\s+/g, ' ')

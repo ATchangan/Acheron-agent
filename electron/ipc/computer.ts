@@ -7,6 +7,7 @@ import { exec, type ChildProcess } from 'child_process'
 import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 import { registerComputerFiles } from './computer-files'
 import { getPowerShellCmd } from '../shared/pwsh'
+const iconv = require('iconv-lite') as { decode: (b: Buffer, enc: string) => string }
 
 
 export function registerComputerIpc(deps: {
@@ -105,9 +106,14 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
       finalCmd = `cmd /c "${marker}${cmd.replace(/"/g, '\\"')}"`
     }
     // maxBuffer 从 10MB → 50MB; v0.3.0: cwd 跟随自定义工作目录(设置→引擎→工作目录)
-    const child = exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, encoding: 'utf-8', cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
+    // v0.3.8: cmd 输出为本地代码页(中文系统 GBK), 直接 utf8 读会乱码 —— 去掉 encoding 拿 Buffer, cmd 分支按需 GBK 解码
+    const child = exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
       clearTimeout(timer)
-      const out = err ? (stderr || err.message) : (stdout || '')
+      const raw = err ? (stderr || Buffer.from(err.message)) : (stdout || Buffer.from(''))
+      const text = Buffer.isBuffer(raw)
+        ? (isPS ? raw.toString('utf-8') : (() => { const u = raw.toString('utf-8'); return u.includes('\uFFFD') ? iconv.decode(raw, 'gbk') : u })())
+        : String(raw)
+      const out = text
       const truncated = out.length > 8000 ? out.slice(0, 8000) + '\n...(已截断，共' + out.length + '字符)' : out
       finish(truncated)
     })
