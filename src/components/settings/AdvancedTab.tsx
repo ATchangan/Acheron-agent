@@ -35,6 +35,7 @@ export default function AdvancedTab() {
       <div style={S.card}>
         <div style={S.section}>任务可靠性</div>
         <Toggle checked={g.riskConfirm !== false} onChange={v => save({ riskConfirm: v })} label="风险操作确认" hint="执行命令/删除文件等 L2-L3 操作前弹原生确认框；关闭后静默放行" />
+        <NumSetting label="项目指令上限" hint="AGENTS.md 等按目录链合并注入的字节上限（KB，默认 32）；超限截断并打标记，可拆到子目录绕开" value={g.projectDocMaxKb || 32} min={4} max={512} unit="KB" onChange={v => save({ projectDocMaxKb: v })} />
         <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后本轮提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
         <NumSetting label="同时运行任务上限" hint="多会话并发保护：同时运行的任务数达到上限后新任务会提示等待（默认 3）" value={g.maxConcurrentTasks || 3} min={1} max={10} unit="个" onChange={v => save({ maxConcurrentTasks: v })} />
         <div style={S.row}>

@@ -3,7 +3,7 @@
 // 渲染层只负责: 发送启动请求、消费事件流、展示结果。
 import { v4 as uuidv4 } from 'uuid'
 import * as fs from 'fs'
-import { join } from 'path'
+import { isAbsolute, join } from 'path'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
@@ -19,6 +19,7 @@ import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolve
 import { listSkills } from './skill-files'
 import { runHooks } from './hooks'
 import { isPlanReadonlyTool } from './plan-tools'
+import { chainDirs, collectSubdirInstructions, discoverProjectInstructions, type InstructionFile } from './project-instructions'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
@@ -62,7 +63,8 @@ interface TaskState {
   toolLog: ToolLogEntry[]
   tokBase: Record<string, TokenStat>
   memoryText: string
-  projectCtx: { file: string; content: string } | null
+  projectCtx: { file: string; content: string; truncated?: boolean; dirs?: string[] } | null
+  instrVisited: Set<string>
   fileSnapshots: Record<string, string | null>
   memory: EngineMemory
   lastMidSave: number
@@ -212,6 +214,7 @@ export class AgentEngine {
       tokBase: this.snapshotTok(params.sid),
       memoryText: '',
       projectCtx: null,
+      instrVisited: new Set<string>(),
       fileSnapshots: {},
       memory: loadMemory(this.deps.memoryPath),
       lastMidSave: 0,
@@ -304,6 +307,7 @@ export class AgentEngine {
       tokBase: this.snapshotTok(rec.sid),
       memoryText: '',
       projectCtx: null,
+      instrVisited: new Set<string>(),
       fileSnapshots: {},
       memory: loadMemory(this.deps.memoryPath),
       lastMidSave: 0,
@@ -632,7 +636,9 @@ export class AgentEngine {
     try {
       const g = task.g
       task.memoryText = memoryBlockText(task.memory, task.content)
-      task.projectCtx = this.readProjectCtx(g.workDir || '')
+      const projectInstr = discoverProjectInstructions(g.workDir || '', (Number(g.projectDocMaxKb) || 32) * 1024)
+      task.projectCtx = projectInstr ? { file: projectInstr.files[0].path, content: projectInstr.content, truncated: projectInstr.truncated, dirs: projectInstr.dirs } : null
+      task.instrVisited = new Set(task.projectCtx?.dirs || chainDirs(g.workDir || ''))
       // LLM 摘要压缩(实验): 长会话早期消息交给模型压缩, 替代规则截断
       if (g.llmSummary === true && !task.earlySummaryDone && task.messages.length > 40) {
         task.earlySummaryDone = true
@@ -1304,11 +1310,42 @@ export class AgentEngine {
       const ctx = this.buildToolCtx(task)
       r = await runTool(tc.name, tc.args, ctx)
     }
+    // v0.3.8: 子目录项目指令按需注入 —— 模型读取/操作某目录文件时, 自动把该目录(上溯 5 层)的规则附加到工具结果
+    if (r.startsWith('E:')) { /* 工具失败不注入, 避免混淆错误信息 */ } else {
+      r = this.attachSubdirInstructions(task, tc, r)
+    }
     runHooks(task.g, 'tool-after', { tool: tc.name, sid: task.sid, taskId: task.taskId, result: r.slice(0, 200) })
     if (['write', 'edit', 'apply_patch'].includes(tc.name) && !r.startsWith('E:')) {
       runHooks(task.g, 'file-write', { tool: tc.name, sid: task.sid, taskId: task.taskId, path: String((tc.args || {}).path || '') })
     }
     return r
+  }
+
+  // 从工具参数里提取文件/目录路径(含 exec_command 中带引号的 Windows 路径)
+  private extractToolPaths(tc: EngineToolCall): string[] {
+    const a = tc.args || {}
+    const out: string[] = []
+    const push = (v: unknown): void => { if (typeof v === 'string' && v.trim()) out.push(v.trim()) }
+    push(a.path)
+    push(a.dirPath)
+    push(a.targetPath)
+    if (typeof a.cmd === 'string' && a.cmd) {
+      const m = String(a.cmd).match(/(?:^|[\s'"])([A-Za-z]:\\[^\s"'<>|]+)/g)
+      if (m) for (const x of m) out.push(x.replace(/^[\s'"]/, '').trim())
+    }
+    return out
+  }
+
+  private attachSubdirInstructions(task: TaskState, tc: EngineToolCall, result: string): string {
+    const workDir = task.g.workDir || ''
+    const found = new Map<string, InstructionFile>()
+    for (const raw of this.extractToolPaths(tc)) {
+      const p = isAbsolute(raw) ? raw : join(workDir, raw)
+      for (const f of collectSubdirInstructions(p, task.instrVisited)) found.set(f.path, f)
+    }
+    if (!found.size) return result
+    const block = [...found.values()].map(f => `## ${f.path}\n${f.content}`).join('\n\n')
+    return result + '\n\n--- 目录项目指令(读取该目录时自动注入) ---\n' + block
   }
 
   private async runBrowserVision(task: TaskState, tc: EngineToolCall): Promise<string> {
@@ -1405,17 +1442,6 @@ export class AgentEngine {
       used += (c.inputTokens - (b.inputTokens || 0)) + (c.outputTokens - (b.outputTokens || 0)) + (c.writeTokens - (b.writeTokens || 0))
     }
     return Math.max(0, used)
-  }
-
-  private readProjectCtx(workDir: string): { file: string; content: string } | null {
-    try {
-      // v0.3.8: 兼容主流生态项目指令: AGENTS.md / CLAUDE.md / .agents.md
-      for (const name of ['AGENTS.md', 'CLAUDE.md', '.agents.md']) {
-        const p = join(workDir, name)
-        if (fs.existsSync(p)) return { file: name, content: fs.readFileSync(p, 'utf-8').slice(0, 4000) }
-      }
-    } catch { /* 忽略 */ }
-    return null
   }
 
   private async makeEarlySummary(task: TaskState): Promise<string> {

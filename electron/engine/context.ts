@@ -93,7 +93,7 @@ export interface ContextBuildOpts {
   agent?: string
   handoffFrom?: number
   memoryText: string
-  projectCtx?: { file: string; content: string }
+  projectCtx?: { file: string; content: string; truncated?: boolean }
   model: string
   workflowsFull: boolean
   agents: Record<string, AgentDef>
@@ -195,7 +195,10 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   let sp = buildPrompt(currentMode, ishiki, opts.g, opts.agents, opts.g.workDir || '') + earlySummary
   const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
-  if (opts.projectCtx?.file && opts.projectCtx.content) sp += '\n## 项目约定\n' + opts.projectCtx.content + '\n'
+  if (opts.projectCtx?.file && opts.projectCtx.content) {
+    sp += '\n## 项目约定\n' + opts.projectCtx.content + '\n' +
+      '\n> 项目指令按目录链合并(根→工作目录, 深层优先); 读取子目录文件时会自动注入该目录规则; 常驻文件建议保持精简(200 行内), 重内容放子目录。\n'
+  }
   if (currentMode === 'work') {
     const need = opts.workflowsFull || Object.values(WORKFLOWS).some(w => w.triggers.some(t => lastUserText.includes(t)))
     sp += need

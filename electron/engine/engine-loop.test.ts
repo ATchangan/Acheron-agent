@@ -171,4 +171,34 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const ev = events.find(e => e.type === 'task-done')
     expect(ev?.status).toBe('aborted')
   }, 20000)
+
+  it('项目指令(AGENTS.md)按目录链注入系统提示', async () => {
+    fs.writeFileSync(join(tmp, 'AGENTS.md'), '只准用 PowerShell 命令', 'utf-8')
+    const events: { type: string }[] = []
+    const bodies: string[] = []
+    const netFetch = vi.fn(async (_u: unknown, init?: { body?: string }) => {
+      bodies.push(String(init?.body || ''))
+      return sseResponse([TEXT_CHUNK])
+    }) as unknown as typeof fetch
+    const engine = new AgentEngine({
+      settingsPath: join(tmp, 'settings.json'),
+      userDataPath: tmp,
+      memoryPath: join(tmp, 'memory.json'),
+      tracePath: join(tmp, 'trace.jsonl'),
+      netFetch,
+      loadSettings: () => ({
+        providers: [{ id: 'p1', name: 'D', type: 'OpenAI Compatible', apiKey: 'k', baseUrl: 'http://x/v1', models: ['m1'], selectedModel: 'm1' }],
+        general: { workDir: tmp, maxToolRounds: 50 },
+      }),
+      loadIshiki: () => '',
+      sendEvent: ev => events.push(ev as { type: string }),
+      getSender: () => null,
+    })
+
+    engine.start({ sid: 's5', taskId: 't5', content: '\u4f60\u597d', userMsgId: 'u5', userMsgTimestamp: Date.now(), history: [] })
+    const done = await waitFor(events, 'task-done')
+    expect(done).toBe(true)
+    expect(bodies.some(b => b.includes('项目约定') && b.includes('只准用 PowerShell 命令'))).toBe(true)
+    fs.rmSync(join(tmp, 'AGENTS.md'), { force: true })
+  }, 20000)
 })

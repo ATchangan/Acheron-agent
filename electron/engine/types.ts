@@ -26,6 +26,7 @@ export interface EngineSettings {
   maxTaskTokens?: number
   maxConcurrentTasks?: number
   hooksText?: string
+  projectDocMaxKb?: number
   riskConfirm?: boolean
   longTaskAutoContinue?: boolean
   longTaskAutoMax?: number
