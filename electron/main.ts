@@ -9,6 +9,7 @@ import { registerMcpIpc } from './ipc/mcp'
 import { registerCronIpc } from './ipc/cron'
 import { registerBackupIpc } from './ipc/backup'
 import { registerRollbackIpc } from './ipc/rollback'
+import { registerDiagnosticsIpc } from './ipc/diagnostics'
 import { setCustomAgentsDir } from './engine/agents'
 import { registerWindowIpc } from './ipc/window'
 import { registerWebIpc } from './ipc/web'
@@ -373,6 +374,13 @@ registerBackupIpc({
   getWindow: () => mainWindow,
 })
 registerRollbackIpc({ userDataPath })
+registerDiagnosticsIpc({
+  settingsPath,
+  userDataPath,
+  getWorkDir: () => getEffectiveWorkDir() || userDataPath,
+  netFetch,
+  getServerPort: () => serverPort,
+})
 
 // ─── 文件浏览器操作(写操作限定工作目录内, 防误删) ──
 // set_workdir 只改内存(不持久化污染用户设置), 重启/应用重载后恢复用户设置的工作目录

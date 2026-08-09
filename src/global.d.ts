@@ -44,6 +44,9 @@ declare global {
       rollback: {
         apply: (taskId: string) => Promise<{ ok: boolean; restored?: number; error?: string }>
       },
+      diagnostics: {
+        check: () => Promise<{ name: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }[]>
+      },
       ishiki: { load: () => Promise<string> }
       skills: {
         list: () => Promise<SkillMeta[]>

@@ -70,6 +70,9 @@ contextBridge.exposeInMainWorld('huangquan', {
   rollback: {
     apply: (taskId: string) => ipcRenderer.invoke('rollback:apply', taskId),
   },
+  diagnostics: {
+    check: () => ipcRenderer.invoke('diagnostics:check'),
+  },
   ishiki: { load: () => ipcRenderer.invoke('ishiki:load') },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
