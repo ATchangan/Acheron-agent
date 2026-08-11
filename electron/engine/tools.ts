@@ -1,6 +1,5 @@
 // electron/engine/tools.ts — 工具分发器(schema/执行器已拆分到 tool-specs / tool-handlers)
 // 本文件只保留: 权限/缓存/白名单/MCP 确认 + runTool 分发框架。
-import { dialog } from 'electron'
 import { invokeHandler } from './registry'
 import { CACHE_TTL } from './constants'
 import type { EngineToolSpec } from './types'
@@ -11,6 +10,7 @@ import { TOOLS, getMcpToolSpecs } from './tool-specs'
 import { TOOL_HANDLERS, closeTerminalSessions, setRunToolRef } from './tool-handlers'
 import type { ToolRunCtx } from './tool-types'
 import { checkFilePermission } from './tool-permission'
+import { requestRiskConfirm } from '../ipc/risk-confirm'
 export { parseMcpToolName, TOOLS, getMcpToolSpecs, closeTerminalSessions }
 export type { ToolRunCtx }
 
@@ -64,18 +64,17 @@ function filterTools(tools: EngineToolSpec[], agentName: string, agents: Record<
   return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_') || (autoMcp && t.function.name.startsWith('mcp__')))
 }
 
-async function mcpConfirm(server: string, tool: string, args: Record<string, unknown>): Promise<boolean> {
+async function mcpConfirm(server: string, tool: string, args: Record<string, unknown>, ctx: ToolRunCtx): Promise<boolean> {
   try {
-    const { response } = await dialog.showMessageBox({
-      type: 'warning',
-      buttons: ['拒绝', '允许'],
-      defaultId: 1,
-      cancelId: 0,
-      title: 'MCP 工具调用确认',
-      message: '是否允许调用 MCP 工具？',
+    // 自省整改: MCP 确认统一走软件内风险确认卡片(与 L2/L3 操作同一套「本次任务/以后都批准」)
+    const d = await requestRiskConfirm({
+      kind: 'MCP 工具调用',
       detail: server + '/' + tool + (args && Object.keys(args).length ? '\n\n参数：' + JSON.stringify(args).slice(0, 800) : ''),
+      level: 'L3',
+      sid: ctx.sid,
+      taskId: ctx.taskId,
     })
-    return response === 1
+    return d === 'allow'
   } catch { return false }
 }
 
@@ -94,7 +93,7 @@ export async function runTool(name: string, a: Record<string, unknown>, ctx: Too
     const lv = (ctx.g.toolPerms || {})[name] || 'ask' // MCP 工具默认首次调用需确认
     if (lv === 'deny') return 'E:permission denied: ' + name + ' 已被禁止(可在 设置→工具→权限 中修改)'
     if (lv === 'ask') {
-      const ok = await mcpConfirm(t.server, t.tool, a || {})
+      const ok = await mcpConfirm(t.server, t.tool, a || {}, ctx)
       if (!ok) return 'E:permission denied: 用户拒绝了 MCP 工具调用'
     }
     try {

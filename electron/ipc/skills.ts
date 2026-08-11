@@ -13,16 +13,21 @@ export function registerSkillsIpc(deps: {
     try {
       const dirs = [join(resourcesDir, 'skills')]
       if (fs.existsSync(skillsDir)) dirs.push(skillsDir)
-      const skills: { name: string; path: string; description: string }[] = []
-      for (const dir of dirs) {
+      const skills: { name: string; path: string; description: string; builtin: boolean }[] = []
+      const seen = new Set<string>()
+      for (let di = 0; di < dirs.length; di++) {
+        const dir = dirs[di]
+        const builtin = di === 0
         if (!fs.existsSync(dir)) continue
         for (const entry of fs.readdirSync(dir)) {
+          if (seen.has(entry)) continue // 用户目录同名技能覆盖内置, 列表不重复
           const skillDir = join(dir, entry)
           const mdPath = join(skillDir, 'SKILL.md')
           if (fs.existsSync(mdPath)) {
+            seen.add(entry)
             const content = fs.readFileSync(mdPath, 'utf-8')
             const desc = (content.match(/description:\s*(.+)/i)?.[1] || entry).trim()
-            skills.push({ name: entry, path: mdPath, description: desc })
+            skills.push({ name: entry, path: mdPath, description: desc, builtin })
           }
         }
       }
@@ -97,6 +102,10 @@ export function registerSkillsIpc(deps: {
   })
   ipcMain.handle('skills:delete', (_e, name: string) => {
     try {
+      // 自省整改: 资源包内置技能不可删除(只读), 只能通过设置→技能「隐藏」
+      if (fs.existsSync(join(resourcesDir, 'skills', String(name || ''), 'SKILL.md'))) {
+        return '内置技能不能删除，可在 设置→技能 中点击「隐藏」'
+      }
       const dir = join(skillsDir, name)
       if (fs.existsSync(dir)) {
         fs.rmSync(dir, { recursive: true, force: true })

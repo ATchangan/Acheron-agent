@@ -58,6 +58,8 @@ export interface GeneralSettings {
   maxTaskTokens?: number      // 单任务 token 预算, 0=不限
   maxConcurrentTasks?: number // v0.3.8: 同时运行的任务上限(多会话并发保护), 默认 3
   hooksText?: string           // v0.3.8: 事件钩子(每行 事件=命令)
+  hiddenSkills?: string[]      // 自省整改: 内置技能隐藏名单(资源技能不可删, 只能隐藏)
+  dangerCommandExtra?: string[] // 自省整改: 危险命令黑名单扩展(额外子串, 命中即 L4 拦截)
   projectDocMaxKb?: number     // v0.3.8: 项目指令合并注入上限(KB, 默认 32), 超限截断并打标记
   traceEnabled?: boolean      // 默认开: 本地诊断轨迹
   mcpAutoInject?: boolean     // 默认开: MCP 工具 schema 自动并入 LLM

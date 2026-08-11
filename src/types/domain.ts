@@ -112,7 +112,7 @@ export interface UsageData {
   _inputTokens?: number
   _writeTokens?: number
 }
-export interface SkillMeta { name: string; path: string; description: string }
+export interface SkillMeta { name: string; path: string; description: string; builtin?: boolean }
 export interface MemoryData { facts: string[]; summaries: { content: string; timestamp: number }[]; pinnedFacts?: string[]; episodic?: { op: string; path: string; status: string; ts: number }[]; goals?: { goal: string; status: string; steps?: unknown[]; created?: number }[]; plugins?: Record<string, { enabled: boolean; category: string }> }
 export interface FileItem { name: string; isDirectory: boolean; size: number }
 export interface SystemInfo {

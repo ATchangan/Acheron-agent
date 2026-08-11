@@ -331,7 +331,9 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (!fact) return 'E:need fact'
     const scan = scanMemoryText(fact)
     if (!scan.ok) return 'E:' + scan.reason
-    if (A.pinned) {
+    // 自省整改 #7: 约定/规则/偏好类事实自动置顶, 避免关键约定沉底丢失
+    const autoPin = !A.pinned && /约定|规则|偏好|以后|必须|每次/.test(fact)
+    if (A.pinned || autoPin) {
       const pf = m.pinnedFacts || []
       if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'
       m.pinnedFacts = [...pf, fact]
@@ -340,7 +342,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       m.facts = [...m.facts, fact]
     }
     ctx.saveMemory(m)
-    return 'ok:saved'
+    return 'ok:saved' + (autoPin ? '（已自动置顶：约定/规则类）' : '')
   } },
   { name: 'recall_memory', run: async (A, ctx) => {
     const query = (A.query || '').trim()

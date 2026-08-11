@@ -7,9 +7,24 @@ import { U } from '../ui-styles'
 export default function SkillsTab() {
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
-  const [skillsList, setSkillsList] = useState<{ name: string; path?: string; description?: string }[]>([])
+  const [skillsList, setSkillsList] = useState<{ name: string; path?: string; description?: string; builtin?: boolean }[]>([])
+  const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [skillName, setSkillName] = useState(''); const [skillContent, setSkillContent] = useState(''); const [skillUrl, setSkillUrl] = useState('')
-  useEffect(() => { window.huangquan.skills.list().then((s) => setSkillsList(s || [])).catch(() => setSkillsList([])) }, [])
+  useEffect(() => {
+    window.huangquan.skills.list().then((s) => setSkillsList(s || [])).catch(() => setSkillsList([]))
+    window.huangquan.settings.load().then((s) => setHidden(new Set((s.general?.hiddenSkills || []).map(String)))).catch(() => {})
+  }, [])
+  const toggleHidden = async (name: string, hide: boolean) => {
+    try {
+      const s = await window.huangquan.settings.load()
+      const list = new Set((s.general?.hiddenSkills || []).map(String))
+      if (hide) list.add(name); else list.delete(name)
+      s.general = { ...s.general, hiddenSkills: [...list] }
+      await window.huangquan.settings.save(s)
+      setHidden(list)
+      showToast(hide ? '已隐藏：不再注入系统提示（read_skill 仍可读取）' : '已恢复显示')
+    } catch { showToast('设置保存失败') }
+  }
   return (
     <div style={U.pageBody}>
       <div style={S.card}>
@@ -18,11 +33,17 @@ export default function SkillsTab() {
         {skillsList.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '10px 0' }}>暂无技能，可创建或从 GitHub 安装</div> : skillsList.map((sk, i: number) => (
           <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 6, background: C.input, marginBottom: 6, border: '1px solid ' + C.border }}>
             <div style={{ flex: 1, overflow: 'hidden' }}>
-              <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, fontWeight: 600 }}>{sk.name}</div>
-              <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sk.description}</div>
+              <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: hidden.has(sk.name) ? C.muted : C.text, fontWeight: 600 }}>
+                {sk.name}
+                {sk.builtin ? <span style={{ marginLeft: 8, fontSize: 'calc(var(--ui-font-size) - 4px)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px' }}>内置</span> : null}
+                {hidden.has(sk.name) ? <span style={{ marginLeft: 8, fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted }}>（已隐藏）</span> : null}
+              </div>
+              <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: hidden.has(sk.name) ? 0.5 : 1 }}>{sk.description}</div>
             </div>
             <button style={{ ...S.btn('ghost'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={async () => { const c = await window.huangquan.skills.load(sk.path || ''); showToast(c.slice(0, 120) + (c.length > 120 ? '…' : '')) }}>查看</button>
-            <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={async () => { if (!confirm('删除技能 ' + sk.name + '？')) return; const r = await window.huangquan.skills.delete(sk.name); showToast(r === true ? '已删除' : String(r)); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>删除</button>
+            {sk.builtin
+              ? <button style={{ ...S.btn('ghost'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={() => toggleHidden(sk.name, !hidden.has(sk.name))}>{hidden.has(sk.name) ? '恢复' : '隐藏'}</button>
+              : <button style={{ ...S.btn('danger'), height: 26, fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '0 10px', marginLeft: 8 }} onClick={async () => { if (!confirm('删除技能 ' + sk.name + '？')) return; const r = await window.huangquan.skills.delete(sk.name); showToast(r === true ? '已删除' : String(r)); window.huangquan.skills.list().then((s) => setSkillsList(s || [])) }}>删除</button>}
           </div>
         ))}
       </div>

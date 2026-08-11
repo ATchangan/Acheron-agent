@@ -353,7 +353,9 @@ export class AgentEngine {
     try {
       const g = task.g
       task.memoryText = memoryBlockText(task.memory, task.content)
-      task.skillsCache = listSkills(this.deps.skillsDirs || [])
+      // 自省整改: 内置技能隐藏名单 —— 隐藏的技能不注入系统提示, 但仍可 read_skill 读取
+      const hiddenSkills = new Set((task.g.hiddenSkills || []).map(String))
+      task.skillsCache = listSkills(this.deps.skillsDirs || []).filter(s => !hiddenSkills.has(s.name))
       const projectInstr = discoverProjectInstructions(g.workDir || '', (Number(g.projectDocMaxKb) || 32) * 1024)
       task.projectCtx = projectInstr ? { file: projectInstr.files[0].path, content: projectInstr.content, truncated: projectInstr.truncated, dirs: projectInstr.dirs } : null
       task.instrVisited = new Set(task.projectCtx?.dirs || chainDirs(g.workDir || ''))
@@ -450,7 +452,8 @@ export class AgentEngine {
 
         // v0.3.7: 验证强制闭环 —— 改过文件但未运行验证命令时, 注入验证请求(最多 1 轮, 控制效率成本)
         let verifyForced = 0
-        while (!res.tcs.length && this.planNeedsVerify(task) && verifyForced < 1 && this.curGen(sid) === task.myGen && !task.stopped) {
+        // 自省整改 #3: 强制验证最多 2 轮 —— 首轮未产生验证命令时再给一次强提示
+        while (!res.tcs.length && this.planNeedsVerify(task) && verifyForced < 2 && this.curGen(sid) === task.myGen && !task.stopped) {
           verifyForced++
           this.planAddDecision(task, '强制验证第 ' + verifyForced + ' 轮：检测到文件修改但无验证命令')
           const vmsg: EngineMessage = {
@@ -467,6 +470,9 @@ export class AgentEngine {
           loopRes = await this.runToolLoop(task, res, maxToolRounds, maxRetry, meltLimit, doParallel, maxTaskTokens)
           res = loopRes.res
           maxToolRounds = loopRes.maxToolRounds
+        }
+        if (verifyForced > 0 && this.planNeedsVerify(task)) {
+          this.planAddSurprise(task, '写文件后两轮强制验证均未产生验证命令(read/exec_command/codebox)，交付请人工复核')
         }
 
         this.finalizeTask(task, res, maxTaskTokens)
@@ -642,6 +648,10 @@ export class AgentEngine {
     }
     let finalText = ((task.pendingText || '') + (res.text || '')).trim()
     task.pendingText = ''
+    // 自省整改 #12: 交付闭环 —— 未附「本次改进点」时在决策日志记一笔
+    if (task.planSteps.length && !finalText.includes('本次改进点')) {
+      this.planAddSurprise(task, '交付未附「本次改进点」，复盘闭环未完成')
+    }
     // v0.3.7: 计划复盘 —— 有工具步骤的任务自动附加结构化复盘
     if (task.planSteps.length) {
       const retro = this.planRetrospective(task)

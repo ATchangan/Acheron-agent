@@ -163,6 +163,11 @@ export class PlanController {
     }
     const unfinished = steps.filter(s => s.status === 'pending' || s.status === 'paused').map(s => s.label)
     if (unfinished.length) lines.push(`- 未执行：${unfinished.join('、')}`)
+    // 自省整改 #4/#6: 多步骤但未协作 —— 复盘给出并行提示
+    const toolsUsed = new Set(steps.map(s => s.tool).filter(Boolean))
+    if (steps.length >= 3 && !toolsUsed.has('dispatch') && !toolsUsed.has('handoff')) {
+      lines.push('- [协作提示] 本任务步骤较多且未使用 dispatch/handoff，下次可尝试按领域并行拆分')
+    }
     // 验证闭环 —— 改过文件但没有独立验证命令时给出提醒
     const touchedFiles = steps.some(s => (s.tool === 'write' || s.tool === 'edit' || s.tool === 'apply_patch') && s.status === 'done')
     if (touchedFiles && !planHasVerificationCore(steps as PlanStepData[])) lines.push('- [!] 修改过文件但未检测到独立验证命令，建议补充构建/测试/检查')

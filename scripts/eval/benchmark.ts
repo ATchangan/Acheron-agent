@@ -141,7 +141,11 @@ async function main(): Promise<void> {
   const failed = cases.length - passed
   const report = { at: new Date().toISOString(), mode, total: cases.length, passed, failed, cases }
   try {
-    fs.appendFileSync(join(process.cwd(), 'scripts/eval/eval-history.jsonl'), JSON.stringify(report) + '\n', 'utf-8')
+    // 自省整改: 评估历史只保留最近 200 条, 避免无限累积
+    const histPath = join(process.cwd(), 'scripts/eval/eval-history.jsonl')
+    const lines = fs.existsSync(histPath) ? fs.readFileSync(histPath, 'utf-8').split('\n').filter(Boolean) : []
+    lines.push(JSON.stringify(report))
+    fs.writeFileSync(histPath, lines.slice(-200).join('\n') + '\n', 'utf-8')
   } catch { /* 历史记录失败不影响评估 */ }
   console.log('\n评估结果[' + mode + ']: ' + passed + '/' + cases.length + ' 通过')
   for (const c of cases) console.log((c.pass ? '  [OK]' : '  [X]') + ' ' + c.id + ' ' + c.name + (c.detail && !c.pass ? ' — ' + c.detail : ''))

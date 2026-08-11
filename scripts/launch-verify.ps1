@@ -16,6 +16,8 @@ if (-not $tmpUd) {
   $tmpUd = Join-Path $env:TEMP ("hq-v" + $Port)
   if (Test-Path -LiteralPath $tmpUd) { Remove-Item -LiteralPath $tmpUd -Recurse -Force }
 }
+$oldUserData = $env:HQ_USER_DATA
+$env:HQ_USER_DATA = $tmpUd
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $exe
@@ -57,3 +59,4 @@ if (-not $alive) {
 }
 
 Write-Output 'DONE'
+$env:HQ_USER_DATA = $oldUserData

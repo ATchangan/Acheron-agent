@@ -33,7 +33,8 @@ import * as fs from 'fs'
 
 // 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
 // 不显式指回原目录会丢失全部配置/会话
-app.setPath('userData', join(app.getPath('appData'), 'huangquan-agent'))
+// 自省整改: 支持 HQ_USER_DATA 环境变量做测试隔离(测试数据不污染真实用户数据)
+app.setPath('userData', process.env.HQ_USER_DATA ? process.env.HQ_USER_DATA : join(app.getPath('appData'), 'huangquan-agent'))
 // 任务栏/系统托盘显示应用名与 AppUserModelID —— 不设置时 Windows 任务栏右键显示 "Electron"
 app.setName('黄泉Agent')
 if (process.platform === 'win32') {

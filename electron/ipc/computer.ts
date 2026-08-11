@@ -79,7 +79,10 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
   if (riskLevel === 'L4') {
     // v0.3.8: 危险命令归一化 —— 统一小写/反斜杠/连续空白后匹配, 防大小写与转义绕过
     const norm = cmdS.toLowerCase().replace(/\\+/g, '/').replace(/\s+/g, ' ').trim()
-    const hit = ['rm -rf', 'rm -fr', 'format /', 'format c:', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'taskkill /im', 'del /f /s /q c:', 'del /s /q c:', 'rd /s /q c:', 'rmdir /s /q c:', 'diskpart', 'bcdedit', 'format c'].find(d => norm.includes(d))
+    // 自省整改: 黑名单支持设置扩展(dangerCommandExtra), 无需改代码即可追加拦截规则
+    let extraPatterns: string[] = []
+    try { extraPatterns = JSON.parse(fs.readFileSync(join(userDataPath, 'settings.json'), 'utf-8'))?.general?.dangerCommandExtra || [] } catch { /* 设置缺失时只用内置黑名单 */ }
+    const hit = ['rm -rf', 'rm -fr', 'format /', 'format c:', 'mkfs', 'dd if=', 'shutdown', 'restart', 'reg delete', 'chmod 777', 'curl | bash', 'wget | sh', '> /dev/sda', 'taskkill /f /im', 'taskkill /im', 'del /f /s /q c:', 'del /s /q c:', 'rd /s /q c:', 'rmdir /s /q c:', 'diskpart', 'bcdedit', 'format c', ...extraPatterns.map(String).filter(Boolean)].find(d => norm.includes(d.toLowerCase()))
     return 'E:permission denied: 危险命令已被拦截 (' + (hit || '').trim() + ')。如需执行请手动在终端操作。'
   }
   const cr = await confirmRisk(riskLevel, '执行命令', cmdS, sid, taskId)
