@@ -28,24 +28,22 @@ export function parseSkillDescription(content: string, fallback: string): string
 
 // 扫描技能目录: 每个含 SKILL.md 的子目录视为一个技能
 export function listSkills(skillsDirs: string[]): SkillMeta[] {
-  const out: SkillMeta[] = []
-  const seen = new Set<string>()
+  // 同名技能: 后扫描的目录优先(引擎目录顺序为 内置→用户, 用户同名覆盖内置)
+  const byName = new Map<string, SkillMeta>()
   for (const dir of skillsDirs || []) {
     if (!dir || !fs.existsSync(dir)) continue
     let entries: string[] = []
     try { entries = fs.readdirSync(dir) } catch { continue }
     for (const entry of entries) {
-      if (seen.has(entry)) continue
       const mdPath = join(dir, entry, 'SKILL.md')
       if (!fs.existsSync(mdPath)) continue
-      seen.add(entry)
       try {
         const content = fs.readFileSync(mdPath, 'utf-8')
-        out.push({ name: entry, description: parseSkillDescription(content, entry) })
-      } catch { out.push({ name: entry, description: entry }) }
+        byName.set(entry, { name: entry, description: parseSkillDescription(content, entry) })
+      } catch { byName.set(entry, { name: entry, description: entry }) }
     }
   }
-  return out
+  return [...byName.values()]
 }
 
 // 解析技能内文件路径: 必须位于某个技能目录内(防越权), 返回绝对路径或 null

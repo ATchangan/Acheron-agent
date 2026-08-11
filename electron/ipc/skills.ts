@@ -11,27 +11,24 @@ export function registerSkillsIpc(deps: {
 
   ipcMain.handle('skills:list', () => {
     try {
-      const dirs = [join(resourcesDir, 'skills')]
-      if (fs.existsSync(skillsDir)) dirs.push(skillsDir)
-      const skills: { name: string; path: string; description: string; builtin: boolean }[] = []
-      const seen = new Set<string>()
-      for (let di = 0; di < dirs.length; di++) {
-        const dir = dirs[di]
-        const builtin = di === 0
+      // 用户目录优先: 同名技能以用户版为准(可删/可改), 内置只补空缺
+      const dirs: { path: string; builtin: boolean }[] = []
+      if (fs.existsSync(skillsDir)) dirs.push({ path: join(skillsDir), builtin: false })
+      dirs.push({ path: join(resourcesDir, 'skills'), builtin: true })
+      const byName = new Map<string, { name: string; path: string; description: string; builtin: boolean }>()
+      for (const { path: dir, builtin } of dirs) {
         if (!fs.existsSync(dir)) continue
         for (const entry of fs.readdirSync(dir)) {
-          if (seen.has(entry)) continue // 用户目录同名技能覆盖内置, 列表不重复
           const skillDir = join(dir, entry)
           const mdPath = join(skillDir, 'SKILL.md')
           if (fs.existsSync(mdPath)) {
-            seen.add(entry)
             const content = fs.readFileSync(mdPath, 'utf-8')
             const desc = (content.match(/description:\s*(.+)/i)?.[1] || entry).trim()
-            skills.push({ name: entry, path: mdPath, description: desc, builtin })
+            byName.set(entry, { name: entry, path: mdPath, description: desc, builtin })
           }
         }
       }
-      return skills
+      return [...byName.values()]
     } catch { return [] }
   })
   // 只允许读取技能目录内的文件(防越权读取任意路径)
