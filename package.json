@@ -17,6 +17,7 @@
     "test": "vitest run",
     "eval:unit": "tsx scripts/eval/benchmark.ts unit",
     "eval:live": "tsx scripts/eval/benchmark.ts live",
+    "brand:scan": "node scripts/eval/brand-scan.mjs",
     "release:check": "node scripts/eval/release-check.mjs"
   },
   "dependencies": {

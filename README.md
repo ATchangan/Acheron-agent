@@ -161,7 +161,7 @@ npm run package:win   # NSIS 安装包
 - 修复：记忆/上下文提示中文乱码（0.3.7/0.3.8 受影响）；子代理统一执行管道（回滚快照/钩子/审计/子目录指令全覆盖）；memoryScope 私有记忆真正隔离
 - 子代理交付结构化（目标/状态/产出物/未决问题）+ 执行过程实时可见；微压缩批量折叠；失败教训自动沉淀
 - 新增 `skill_manage` 技能管理（create/patch/read/list + 安全扫描）；诊断页支持导出引擎轨迹
-- 工程纪律：`npm run release:check` 发布门禁（lint/typecheck/test/eval:unit/版本/tag 一致性）
+- 工程纪律：`npm run release:check` 发布门禁（lint/typecheck/test/eval:unit/brand:scan/版本/tag 一致性）
 
 ### v0.3.8 (2026-08-10)
 - 执行机制：原生 `git` 工具、Hooks 9 类事件、任务文件一键回滚、自定义子代理、模型失败自动降级

@@ -76,8 +76,11 @@ function runUnit(): void {
   check('sub-result', '子代理结果结构化解析', sub.goal === '写报告' && sub.outputs?.[0] === 'D:/out.md')
 }
 
-async function pickTool(p: { type: string; apiKey?: string; baseUrl?: string; selectedModel?: string; models?: string[] }, g: Record<string, unknown>, tools: typeof TOOLS, prompt: string): Promise<string | null> {
+async function pickTool(p: { type: string; apiKey?: string; baseUrl?: string; selectedModel?: string; models?: string[] }, g: Record<string, unknown>, tools: typeof TOOLS, prompt: string): Promise<{ tool: string | null; err?: string; finish?: string; text?: string }> {
   const tcs: { name: string }[] = []
+  let err: unknown = null
+  let finish: string | undefined
+  let text = ''
   await streamChat(fetch, {
     provider: p.type,
     model: p.selectedModel || (p.models && p.models[0]) || '',
@@ -89,14 +92,15 @@ async function pickTool(p: { type: string; apiKey?: string; baseUrl?: string; se
     ],
     tools: tools as never,
     thinkLevel: String(g.thinkLevel || 'off'),
-    temperature: 0,
+    temperature: 0.2,
+    max_tokens: 1024,
   }, {
-    onChunk: () => {},
+    onChunk: d => { if (d.content) text += d.content; if (d.finishReason) finish = d.finishReason },
     onToolCall: tc => { if (tc?.function?.name) tcs.push({ name: tc.function.name }) },
     onUsage: () => {},
-    onError: () => {},
+    onError: e => { err = e },
   })
-  return tcs[0]?.name || null
+  return { tool: tcs[0]?.name || null, err: err ? (typeof err === 'string' ? err : err instanceof Error ? err.message : JSON.stringify(err)) : undefined, finish, text: text.slice(0, 120) }
 }
 
 async function runLive(settingsPath: string): Promise<void> {
@@ -124,7 +128,7 @@ async function runLive(settingsPath: string): Promise<void> {
   for (const t of tasks) {
     try {
       const got = await pickTool(p, raw.general || {}, tools, t.prompt)
-      check(t.id, '工具选择期望 ' + t.expect, got === t.expect, '期望 ' + t.expect + '，实际 ' + (got || '(无工具调用)'))
+      check(t.id, '工具选择期望 ' + t.expect, got.tool === t.expect, '期望 ' + t.expect + '，实际 ' + (got.tool || '(无工具调用)') + (got.err ? ' | 错误: ' + got.err : '') + (got.finish ? ' | finish: ' + got.finish : '') + (got.text ? ' | 文本: ' + got.text : ''))
     } catch (e) { check(t.id, '工具选择期望 ' + t.expect, false, e instanceof Error ? e.message : String(e)) }
   }
 }

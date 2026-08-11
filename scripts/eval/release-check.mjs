@@ -1,5 +1,5 @@
 // scripts/eval/release-check.mjs — 发布门禁(0.3.9 工程纪律)
-// 检查: 版本一致性 / CHANGELOG 条目 / HEAD tag / lint / typecheck / test / eval:unit
+// 检查: 版本一致性 / CHANGELOG 条目 / HEAD tag / 品牌词 / lint / typecheck / test / eval:unit
 import { execSync } from 'node:child_process'
 import * as fs from 'node:fs'
 
@@ -29,7 +29,7 @@ if (status) console.log('⚠️ 工作区非空: ' + status.split('\n').length +
 else console.log('✅ 工作区干净')
 
 // 4. 质量门禁
-for (const script of ['lint', 'typecheck', 'test', 'eval:unit']) {
+for (const script of ['lint', 'typecheck', 'test', 'eval:unit', 'brand:scan']) {
   console.log('▶ npm run ' + script)
   try { execSync('npm run ' + script, { stdio: 'inherit', timeout: 900000 }) }
   catch { fail('npm run ' + script + ' 失败') }
