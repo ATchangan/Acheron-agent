@@ -3,6 +3,7 @@ import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { writeFileAtomic } from '../fs-atomic'
+import { normalizeMemory } from '../shared/memory-utils'
 
 // ─── 语义记忆 ───────────────────────────────────
 interface MemoryVectorModule {
@@ -71,8 +72,8 @@ export function registerMemoryIpc(deps: {
 
   ipcMain.handle('memory:load', () => loadMemory())
   ipcMain.handle('memory:save', (_e, memory) => {
-    // 安全序列化防止循环引用; 更新缓存 + 串行写盘
-    const safe = safeClone(memory) as Record<string, unknown>
+    // 安全序列化防止循环引用; 容量归一化封顶(自省整改 #2); 更新缓存 + 串行写盘
+    const safe = normalizeMemory(safeClone(memory) as Record<string, unknown>)
     memCache = safe
     enqueueMemorySave(JSON.stringify(safe, null, 2))
     return true

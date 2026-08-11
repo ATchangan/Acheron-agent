@@ -2,7 +2,7 @@
 import * as fs from 'fs'
 import { dirname, join } from 'path'
 import { writeFileAtomic } from '../fs-atomic'
-import { scoreOverlap, scanMemoryText } from '../shared/memory-utils'
+import { scoreOverlap, scanMemoryText, normalizeMemory } from '../shared/memory-utils'
 export { scanMemoryText }
 
 export interface EngineMemory {
@@ -39,7 +39,7 @@ export function loadMemory(memoryPath: string): EngineMemory {
 }
 
 export function saveMemory(memoryPath: string, m: EngineMemory): boolean {
-  try { writeFileAtomic(memoryPath, JSON.stringify(m, null, 2)); return true } catch { return false }
+  try { writeFileAtomic(memoryPath, JSON.stringify(normalizeMemory(m), null, 2)); return true } catch { return false }
 }
 
 // v0.3.9: 私有记忆命名空间 —— memoryScope=private 的角色使用独立 memory-<角色>.json

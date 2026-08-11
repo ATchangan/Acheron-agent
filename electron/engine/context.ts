@@ -46,7 +46,7 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
   const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
   const multiAgent = '## 多角色编队\n你属于黄泉编队的一员。编队成员：\n' +
     Object.entries(agents).map(([n, ag]) => `- ${ag.icon} ${n} (${ag.role}): ${ag.tools.includes('*') ? '全工具权限' : '专业领域(' + (ag.capabilities || []).join('/') + ')'}`).join('\n') +
-    '\n使用 handoff 工具将任务交接给更合适的角色；复杂任务用 dispatch 把子任务分发给多个角色并行执行；使用 list_agents 查看编队信息。\n'
+    '\n使用 handoff 工具交接给更合适的角色（必须带 context 字段：任务背景/已完成/未决问题，禁止只传结论）；复杂任务（预计 3 步以上或跨领域）必须用 dispatch 拆成子任务并行执行，禁止串行单干；使用 list_agents 查看编队信息。\n'
   const base = yuan + identity + userInfo + persona + appearance + tools + think + pinned + env
   const agentName = g.agentName || '黄泉'
   const toneStyle = g.toneStyle || '实用直接'
@@ -57,7 +57,7 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
     (chatP ? '## 自定义聊天人设\n' + chatP + '\n\n' : '## 回复准则\n- 名称：' + agentName + '，称呼用户为' + (g.userAlias || '老板') + '\n- 风格：' + (toneMap[toneStyle] || toneMap['实用直接']) + '\n- 详细程度：' + (verbMap[verbosity] || verbMap[2]) + '\n- 不评价，只说事实和观察\n- 对方陷入困境时不空泛安慰，问"需要我帮你做什么"\n- 技术回答必须扎实准确\n- 用户提到重要信息时使用 save_memory\n直接回复，不需要特殊格式标签。')
   const workPrompt = base +
     multiAgent +
-    (workP ? '## 自定义工作人设\n' + workP + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n每次调用工具前，先用一句简短自然语言说明这一步在做什么（例如：先读取项目说明、查找关键词、执行命令）。这句话会显示为你的工作步骤卡片，除步骤说明外不要输出其他文字。\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框') +
+    (workP ? '## 自定义工作人设\n' + workP + '\n\n' : '## 任务执行（静默）\n接收任务后拆解步骤，静默调用工具完成，全部完成后一次性输出最终结果。\n每次调用工具前，先用一句简短自然语言说明这一步在做什么（例如：先读取项目说明、查找关键词、执行命令）。这句话会显示为你的工作步骤卡片，除步骤说明外不要输出其他文字。\n\n## 行为规范\n- 能操作本机任何文件和程序，直接调用工具无需确认\n- 任务执行到底不得中途停止\n\n## 下载文件\n用 exec_command 执行: Invoke-WebRequest -Uri "<URL>" -OutFile "<路径>"（禁止用 web_fetch 下载）\n\n## 最终回复格式（硬性约束）\n成功输出必须含以下全部字段：\n任务名称：xxx任务执行成功\n文件保存路径：完整本地绝对路径\n任务说明：文件用途、打开方式\n本次改进点：一句话说明下次同类任务可以更快/更稳的地方\n\n失败输出：\n任务结果：任务执行失败\n失败原因：通俗解释报错原因\n建议方案：给出解决办法\n严禁"操作完成""搞定""OK"等简略回复\n禁止把 web_search 结果、exec_command 中间日志发到聊天框') +
     '\n## 计划执行\n- 简单任务直接调工具，不要调用 update_plan；复杂任务（约 3 步以上）或用户要求计划时才用 update_plan 声明步骤\n- 每轮调用工具前用一句话说明在做什么；修改文件优先 apply_patch，简单替换用 edit，避免整文件重写\n- 交互/长驻命令（REPL、git、npm）用 terminal_open/run/close；一次性命令用 exec_command\n- 涉及文件/代码改动时，交付前必须运行验证命令（构建/测试/检查/列出结果）并列入计划；未验证不得宣称完成\n'
     '\n## Windows 命令纪律\n- 命令一律写 PowerShell 语法，禁止 bash/Linux 语法；含中文路径/输出的命令自动走 PowerShell（UTF-8）\n- 路径含空格用引号包裹；变量用 $env:VAR\n'
     '\n## Git 工作流\n- 改代码前 git status/diff，改完 git diff 验证，确认后 git commit；统一用 git 工具，不要用 exec_command 拼 git 命令\n'
@@ -66,6 +66,8 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
   const tokenDiscipline = '\n## 信息调度纪律（重要）\n' +
     '- 大文件/长输出被截断是采样而非错误: 先 ls/grep/read+offset 定位关键段再精读, 需要细节用 read offset/limit 或 grep 从源头取回, 严禁凭记忆编造内容\n' +
     '- 数字/代码/报错信息/用户约束必须逐字保真, 禁止约等于或转述\n' +
+    '- 破坏性操作(删除/覆盖/移动/清空/格式化)执行前先说明影响范围, 必要时先备份或利用快照\n' +
+    '- 不确定的事实标注置信度; 做假设时显式声明"假设: ...", 不自称确定\n' +
     '- 回复结论前置, 不重复用户原话, 修改只贴改动部分, 输出用标题/列表/表格/代码块\n' +
     '- 被截断的内容需要完整版时, 主动用工具按路径/行号/关键词取回\n'
   const skillsInstr = skills && skills.length

@@ -46,3 +46,24 @@ export function scanMemoryText(text: string): { ok: boolean; reason?: string } {
   }
   return { ok: true }
 }
+
+// ── 记忆容量归一化(自省整改 #2) —— 写入前封顶, 防止摘要/事实无限膨胀 ──
+export interface MemoryShape {
+  facts?: unknown[]
+  summaries?: { content?: unknown; timestamp?: unknown }[]
+  pinnedFacts?: unknown[]
+  lessons?: { content?: unknown; ts?: unknown }[]
+}
+
+export const MEMORY_CAPS = { facts: 500, summaries: 200, pinned: 10, lessons: 50 }
+
+export function normalizeMemory<T>(m: T, caps: typeof MEMORY_CAPS = MEMORY_CAPS): T {
+  if (!m || typeof m !== 'object') return m
+  const o = m as MemoryShape
+  if (Array.isArray(o.facts) && o.facts.length > caps.facts) o.facts = o.facts.slice(-caps.facts)
+  if (Array.isArray(o.summaries) && o.summaries.length > caps.summaries) o.summaries = o.summaries.slice(-caps.summaries)
+  if (Array.isArray(o.pinnedFacts) && o.pinnedFacts.length > caps.pinned) o.pinnedFacts = o.pinnedFacts.slice(-caps.pinned)
+  // lessons 为最新在前, 保留前 N 条
+  if (Array.isArray(o.lessons) && o.lessons.length > caps.lessons) o.lessons = o.lessons.slice(0, caps.lessons)
+  return m
+}

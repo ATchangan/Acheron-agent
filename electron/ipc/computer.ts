@@ -107,7 +107,13 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
     }
     // maxBuffer 从 10MB → 50MB; v0.3.0: cwd 跟随自定义工作目录(设置→引擎→工作目录)
     // v0.3.8: cmd 输出为本地代码页(中文系统 GBK), 直接 utf8 读会乱码 —— 去掉 encoding 拿 Buffer, cmd 分支按需 GBK 解码
-    const child = exec(finalCmd, { timeout: 300000, maxBuffer: 50 * 1024 * 1024, cwd: getEffectiveWorkDir() }, (err, stdout, stderr) => {
+    // 自省整改 #1: Python 子进程强制 UTF-8 —— 避免 GBK 输出被按 UTF-8 解码成乱码
+    const child = exec(finalCmd, {
+      timeout: 300000,
+      maxBuffer: 50 * 1024 * 1024,
+      cwd: getEffectiveWorkDir(),
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    }, (err, stdout, stderr) => {
       clearTimeout(timer)
       const raw = err ? (stderr || Buffer.from(err.message)) : (stdout || Buffer.from(''))
       const text = Buffer.isBuffer(raw)
@@ -246,7 +252,7 @@ ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
     const fp = join(tmpDir, 'codebox_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + ext)
     try { for (const f of fs.readdirSync(tmpDir)) { if (f.startsWith('codebox_') && Date.now() - fs.statSync(join(tmpDir, f)).mtimeMs > 60000) { try { fs.unlinkSync(join(tmpDir, f)) } catch (e) { console.debug('[swallow]', e) } } } } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     fs.writeFileSync(fp, code, 'utf-8')
-    const cmd = lang === 'python' ? `python "${fp}"` : lang === 'node' ? `node "${fp}"` : `echo "unsupported: ${lang}"`
+    const cmd = lang === 'python' ? `python -X utf8 -u "${fp}"` : lang === 'node' ? `node "${fp}"` : `echo "unsupported: ${lang}"`
     exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024, encoding: 'utf-8', env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' } }, (err, stdout, stderr) => {
       resolve(err ? (stderr || err.message) : stdout)
       try { fs.unlinkSync(fp) } catch (e) { console.debug('[swallow]', e) }
