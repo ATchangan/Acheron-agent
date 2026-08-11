@@ -43,6 +43,8 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
   }
   const think = thinkReq[thinkLevel] || ''
   const pinned = '## 固定规则\n- 所有产出保存到工作台目录，按任务创建独立文件夹\n- 代码需求同步配套接口文档、部署说明、测试用例\n- 批量重复任务优先自动化脚本\n- 输出完毕自行核查事实/逻辑/计算错误\n'
+    + '- 身份一致性: 任务身份(交接/分发后) > 人格 > 本体设定; 同一回复只用一种语气与格式风格, 禁止两种语气并存\n'
+    + '- 工具必要性: 能直接回答就不调工具; 每次调用前确认它服务于当前目标, 不为展示而调用\n'
   const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
   const multiAgent = '## 多角色编队\n你属于黄泉编队的一员。编队成员：\n' +
     Object.entries(agents).map(([n, ag]) => `- ${ag.icon} ${n} (${ag.role}): ${ag.tools.includes('*') ? '全工具权限' : '专业领域(' + (ag.capabilities || []).join('/') + ')'}`).join('\n') +
@@ -221,7 +223,8 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
     const ag = opts.agents[agentRole]
     if (ag) {
       sp += '\n\n## 当前身份\n' + ag.icon + ' ' + agentRole + ' — ' + ag.role + '\n' + ag.prompt +
-        '\n可用工具范围: ' + (ag.tools.includes('*') ? '全部' : '本专业领域工具集(详见工具列表)')
+        '\n可用工具范围: ' + (ag.tools.includes('*') ? '全部' : '本专业领域工具集(详见工具列表)') +
+        '\n（本次任务全程以该身份执行，风格统一，不混用本体人格；工具调用只为完成当前目标）'
       if (agentRole === '姬子') {
         sp += '\n\n【调度铁律】只有涉及多个专业领域的复杂任务（如代码+文档、设计+开发、分析+总结、开发+测试+审查）才调用 dispatch 分发；简单任务（单步问答、简短说明、单个文件操作、闲聊等）一律直接完成，绝对禁止 dispatch 或 handoff，不得小题大做。'
       }

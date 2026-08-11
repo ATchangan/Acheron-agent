@@ -191,6 +191,12 @@ export default function ChatInput() {
       />
 
       <div className="input-card">
+        {curBusy && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 2px 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)' }}>
+            <span>任务进行中：发送将作为补充指令插话；长任务可在新会话并行执行，互不阻塞。</span>
+            <button style={{ background: 'var(--border)', border: 'none', borderRadius: 4, color: 'var(--text-primary)', cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '2px 8px' }} onClick={() => useChatStore.getState().create()}>并行新任务</button>
+          </div>
+        )}
         {extraOpen && (
           <textarea className="context-extra" rows={2}
             placeholder="补充背景、需求细节或约束条件…（随消息一起发送）"

@@ -7,4 +7,5 @@ coverage/
 scripts/eval-history.jsonl
 scripts/eval/eval-history.jsonl
 _archive/userdata-20260811/
+.test-data/
 .DS_Store

@@ -4,6 +4,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import * as fs from 'fs'
 import { isAbsolute, join } from 'path'
+import { Notification } from 'electron'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult } from './context'
@@ -652,6 +653,11 @@ export class AgentEngine {
     if (task.planSteps.length && !finalText.includes('本次改进点')) {
       this.planAddSurprise(task, '交付未附「本次改进点」，复盘闭环未完成')
     }
+    // 自省整改 #15: 工具表演检测 —— 简短请求却大量调工具时记复盘缺口
+    const simpleReq = String(task.content || '').length <= 40 && !/工具|代码|文件|网页|搜索|命令|脚本|生成|创建|列出|读取/.test(String(task.content || ''))
+    if (simpleReq && task.toolLog.length >= 5) {
+      this.planAddSurprise(task, '工具表演检测: 简短请求但调用 ' + task.toolLog.length + ' 次工具, 后续先评估工具必要性')
+    }
     // v0.3.7: 计划复盘 —— 有工具步骤的任务自动附加结构化复盘
     if (task.planSteps.length) {
       const retro = this.planRetrospective(task)
@@ -753,6 +759,12 @@ export class AgentEngine {
     }
     this.emit({ type: 'task-done', sid: task.sid, taskId: task.taskId, status, error, failedStep, fileChanges })
     runHooks(task.g, 'task-end', { sid: task.sid, taskId: task.taskId, status })
+    // 自省整改 #13: 后台/并行任务完成通知(设置→引擎 开启 notifyTaskDone 后生效)
+    if (task.g.notifyTaskDone === true && status === 'done') {
+      try {
+        new Notification({ title: '黄泉Agent 任务完成', body: String(task.content || '').slice(0, 80) }).show()
+      } catch { /* 通知失败不影响任务 */ }
+    }
   }
 
   private checkpoint(task: TaskState, round: number): void {
