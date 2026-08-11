@@ -3,6 +3,7 @@
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
+const pkg = require('../package.json')
 
 const port = process.argv[2] || '9234'
 const outDir = process.argv[3] || process.cwd()
@@ -97,8 +98,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
     // 关于页版本
     await clickText('关于')
-    const about = await evalJs(`document.body.innerText.includes('0.3.5')`)
-    results.push({ name: 'about-version', ok: about === true, data: { version035: about } })
+    const about = await evalJs(`document.body.innerText.includes(${JSON.stringify(pkg.version)})`)
+    results.push({ name: 'about-version', ok: about === true, data: { versionOk: about, expected: pkg.version } })
   } catch (e) {
     results.push({ name: 'script-error', ok: false, data: { error: String(e && e.message || e).slice(0, 300) } })
   }
