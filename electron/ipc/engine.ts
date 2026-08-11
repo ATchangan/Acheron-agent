@@ -23,16 +23,24 @@ export function registerEngineIpc(deps: {
     try {
       const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
       const data = Object.assign(raw, decProviders(raw))
-      const providers: EngineProvider[] = Array.isArray(data.providers) ? data.providers.map((p: Record<string, unknown>) => ({
-        id: String(p.id || ''),
-        name: String(p.name || ''),
-        type: String(p.type || 'OpenAI Compatible'),
-        apiKey: String(p.apiKey || ''),
-        baseUrl: String(p.baseUrl || ''),
-        models: Array.isArray(p.models) ? p.models.map(String) : [],
-        selectedModel: p.selectedModel ? String(p.selectedModel) : undefined,
-        headers: p.headers ? String(p.headers) : undefined,
-      })) : []
+      const providers: EngineProvider[] = Array.isArray(data.providers) ? data.providers.map((p: Record<string, unknown>) => {
+        let apiKey = String(p.apiKey || '')
+        // 自省整改: 解密失败的 __ENC__ 密钥不发给 API —— 置空并在控制台提示重新填写
+        if (apiKey.startsWith('__ENC__')) {
+          console.warn('[settings] 密钥解密失败，已置空待重新填写: ' + String(p.name || p.id || ''))
+          apiKey = ''
+        }
+        return {
+          id: String(p.id || ''),
+          name: String(p.name || ''),
+          type: String(p.type || 'OpenAI Compatible'),
+          apiKey,
+          baseUrl: String(p.baseUrl || ''),
+          models: Array.isArray(p.models) ? p.models.map(String) : [],
+          selectedModel: p.selectedModel ? String(p.selectedModel) : undefined,
+          headers: p.headers ? String(p.headers) : undefined,
+        }
+      }) : []
       return { providers, general: (data.general || {}) as EngineSettings }
     } catch { return { providers: [], general: {} } }
   }

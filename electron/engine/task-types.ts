@@ -32,6 +32,7 @@ export interface TaskState {
   origModel: string
   modelFailCount: number
   modelFallbackUsed: boolean
+  triedModels?: string[]
   agent?: string
   agentManual?: boolean
   activeAgents: string[]

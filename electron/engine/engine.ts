@@ -807,9 +807,9 @@ export class AgentEngine {
             await new Promise(r => setTimeout(r, backoffDelay(i, 800, 10000)))
             continue
           }
-          // v0.3.8: 非可重试错误 → 降级备用模型重试一次(同供应商其他模型优先, 其次其他有 key 的供应商; 每任务最多降级一次)
+          // v0.3.8+: 非可重试错误 → 降级链(同供应商未试模型 → 其他有 key 的供应商), 最多尝试 4 次
           t.modelFailCount = (t.modelFailCount || 0) + 1
-          if (!t.modelFallbackUsed && this.switchFallbackModel(t)) {
+          if (t.modelFailCount <= 4 && this.switchFallbackModel(t)) {
             await new Promise(r => setTimeout(r, backoffDelay(i, 800, 10000)))
             continue
           }
@@ -822,22 +822,24 @@ export class AgentEngine {
   // v0.3.8: 切换到备用模型 —— 返回是否切换成功
   private switchFallbackModel(task: TaskState): boolean {
     const old = task.model
-    // 优先: 同供应商的其他模型
-    const sameProvModels = (task.curP.models || []).filter(m => m && m !== old)
+    const tried = task.triedModels || []
+    // 优先: 同供应商尚未试过的其他模型
+    const sameProvModels = (task.curP.models || []).filter(m => m && m !== old && !tried.includes(m))
     if (sameProvModels.length) {
+      task.triedModels = [...tried, sameProvModels[0]]
       task.model = sameProvModels[0]
-    task.modelFailCount = 0
-    task.modelFallbackUsed = true
-    this.planAddDecision(task, '主模型 ' + old + ' 失败，切换同供应商模型 ' + task.model)
-    this.trace('warn', 'model.fallback', old + ' → ' + task.model, task.sid, task.taskId)
-    runHooks(task.g, 'model-fallback', { sid: task.sid, taskId: task.taskId, from: old, to: task.model })
-    return true
+      task.modelFailCount = 0
+      this.planAddDecision(task, '主模型 ' + old + ' 失败，切换同供应商模型 ' + task.model)
+      this.trace('warn', 'model.fallback', old + ' → ' + task.model, task.sid, task.taskId)
+      runHooks(task.g, 'model-fallback', { sid: task.sid, taskId: task.taskId, from: old, to: task.model })
+      return true
     }
-    // 其次: 其他有 key 的供应商
+    // 其次: 其他有 key 且未试过的供应商
     const alt = task.providers.find(x => x.apiKey && x.baseUrl && x.id !== task.curP.id)
     if (!alt) return false
     task.curP = alt
     task.model = alt.selectedModel || (alt.models && alt.models[0]) || old
+    task.triedModels = [...tried, task.model]
     task.modelFailCount = 0
     task.modelFallbackUsed = true
     this.planAddDecision(task, '主模型 ' + old + ' 连续失败，降级到 ' + task.model)
