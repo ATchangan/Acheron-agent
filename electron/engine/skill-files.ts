@@ -4,6 +4,21 @@ import { join, resolve, sep } from 'path'
 
 export interface SkillMeta { name: string; description: string }
 
+// v0.3.9: 技能名净化 —— 防止路径穿越/非法字符
+export function safeSkillName(name: string): string {
+  const n = String(name || '').replace(/[\\/:*?"<>|]/g, '').replace(/^\.+|\.+$/g, '').trim()
+  return n && n !== '.' && n !== '..' ? n.slice(0, 40) : ''
+}
+
+// v0.3.9: 可写技能目录 —— 依次探测, 返回第一个可写目录(只读系统目录自动跳过)
+export function writableSkillDir(dirs: string[]): string | null {
+  for (const dir of dirs || []) {
+    if (!dir) continue
+    try { fs.accessSync(dir, fs.constants.W_OK); return dir } catch { /* 跳过只读目录 */ }
+  }
+  return null
+}
+
 // 从 SKILL.md frontmatter 提取 description(name 兼容 YAML 引号)
 export function parseSkillDescription(content: string, fallback: string): string {
   const m = content.match(/^---\s*[\s\S]*?description:\s*(.+)$/m)

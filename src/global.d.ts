@@ -96,6 +96,7 @@ declare global {
         log: (entry: TraceEntry) => Promise<boolean>
         list: (limit?: number) => Promise<TraceEntry[]>
         clear: () => Promise<boolean>
+        export: () => Promise<{ ok: boolean; path?: string; summaryPath?: string; error?: string; entries?: number }>
       }
       engine: {
         start: (p: { sid: string; taskId: string; content: string; images?: string[]; attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[]; history?: unknown[]; userMsgId: string; userMsgTimestamp: number; resumeTaskId?: string; agent?: string; agentManual?: boolean }) => Promise<boolean>

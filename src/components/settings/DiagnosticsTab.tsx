@@ -11,6 +11,7 @@ export default function DiagnosticsTab() {
   const [items, setItems] = useState<TraceEntry[]>([])
   const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState(false)
+  const [exportMsg, setExportMsg] = useState('')
   const [diag, setDiag] = useState<{ name: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }[] | null>(null)
   const [diagBusy, setDiagBusy] = useState(false)
 
@@ -77,8 +78,17 @@ export default function DiagnosticsTab() {
           <input style={{ ...S.inp, width: 220 }} placeholder="过滤：级别/事件/关键词" value={filter} onChange={e => setFilter(e.target.value)} />
           <button style={S.btn('ghost')} onClick={async () => { setBusy(true); await load(); setBusy(false) }}>{busy ? '刷新中…' : '刷新'}</button>
           <button style={S.btn('danger')} onClick={async () => { if (!confirm('清空全部诊断轨迹？')) return; await window.huangquan.trace.clear(); await load() }}>清空轨迹</button>
+          <button style={S.btn('ghost')} onClick={async () => {
+            setBusy(true); setExportMsg('')
+            try {
+              const r = await window.huangquan.trace.export()
+              setExportMsg(r.ok ? '已导出: ' + (r.path || '') : '导出失败: ' + (r.error || '已取消'))
+            } catch { setExportMsg('导出失败: 无法调用导出接口') }
+            finally { setBusy(false) }
+          }}>导出轨迹</button>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted }}>共 {items.length} 条{filter ? ' / 显示 ' + shown.length + ' 条' : ''}</span>
         </div>
+        {exportMsg && <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: exportMsg.startsWith('已导出') ? 'var(--success)' : 'var(--danger)', marginTop: 6, wordBreak: 'break-all' }}>{exportMsg}</div>}
       </div>
       <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
         {shown.length === 0 ? (

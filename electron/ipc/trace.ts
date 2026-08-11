@@ -1,8 +1,9 @@
 // electron/ipc/trace.ts — 本地可观测性(v0.3.3 诊断加固)
 // 按 requestId/会话 追加 JSONL 轨迹, 保留最近 ~2000 条, 设置页「诊断」Tab 可查/清。
-import { ipcMain } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import * as fs from 'fs'
 import { dirname, join } from 'path'
+import * as os from 'os'
 
 export interface TraceEntry {
   ts: number
@@ -85,5 +86,37 @@ export function registerTraceIpc(deps: { tracePath: string }): void {
   })
   ipcMain.handle('trace:clear', () => {
     try { fs.rmSync(tracePath, { force: true }); return true } catch { return false }
+  })
+  // v0.3.9: 导出轨迹 —— 保存对话框选路径, 写 JSONL 原文 + Markdown 摘要
+  ipcMain.handle('trace:export', async () => {
+    try {
+      flushTrace()
+      if (!fs.existsSync(tracePath)) return { ok: false, error: '轨迹文件不存在' }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const defaultPath = join(os.homedir(), 'Downloads', '黄泉Agent-轨迹-' + stamp + '.jsonl')
+      const r = await dialog.showSaveDialog({
+        title: '导出引擎轨迹',
+        defaultPath,
+        filters: [{ name: 'JSONL', extensions: ['jsonl'] }],
+      })
+      if (r.canceled || !r.filePath) return { ok: false, error: '已取消' }
+      const raw = fs.readFileSync(tracePath, 'utf-8')
+      fs.writeFileSync(r.filePath, raw, 'utf-8')
+      const entries: TraceEntry[] = []
+      for (const line of raw.split('\n').filter(Boolean)) {
+        try { const o = JSON.parse(line) as TraceEntry; if (o && typeof o === 'object') entries.push(o) } catch { /* 跳过坏行 */ }
+      }
+      const counts: Record<string, number> = {}
+      for (const e of entries) counts[e.event] = (counts[e.event] || 0) + 1
+      const summaryPath = r.filePath.replace(/\.jsonl$/i, '.md')
+      const md = '# 黄泉Agent 引擎轨迹导出\n\n' +
+        '- 导出时间: ' + new Date().toLocaleString('zh-CN') + '\n' +
+        '- 事件总数: ' + entries.length + '\n' +
+        '- 时间范围: ' + (entries[0]?.ts ? new Date(entries[0].ts).toLocaleString('zh-CN') : '-') + ' → ' + (entries[entries.length - 1]?.ts ? new Date(entries[entries.length - 1].ts).toLocaleString('zh-CN') : '-') + '\n\n' +
+        '## 事件统计\n\n' +
+        Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => '- ' + k + ': ' + v).join('\n') + '\n'
+      fs.writeFileSync(summaryPath, md, 'utf-8')
+      return { ok: true, path: r.filePath, summaryPath, entries: entries.length }
+    } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) } }
   })
 }

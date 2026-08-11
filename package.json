@@ -1,7 +1,7 @@
 {
   "name": "huangquan-agent",
   "productName": "黄泉Agent",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "黄泉Agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -14,7 +14,10 @@
     "package:win": "npm run build && electron-builder --win --config electron-builder.yml",
     "package:mac": "npm run build && electron-builder --mac --config electron-builder.yml",
     "package:linux": "npm run build && electron-builder --linux --config electron-builder.yml",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:unit": "tsx scripts/eval/benchmark.ts unit",
+    "eval:live": "tsx scripts/eval/benchmark.ts live",
+    "release:check": "node scripts/eval/release-check.mjs"
   },
   "dependencies": {
     "iconv-lite": "^0.7.3",

@@ -123,6 +123,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     log: (entry: unknown) => ipcRenderer.invoke('trace:log', entry),
     list: (limit?: number) => ipcRenderer.invoke('trace:list', limit),
     clear: () => ipcRenderer.invoke('trace:clear'),
+    export: () => ipcRenderer.invoke('trace:export'),
   },
   engine: {
     start: (p: unknown) => ipcRenderer.invoke('engine:start', p),

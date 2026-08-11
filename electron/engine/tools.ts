@@ -18,7 +18,7 @@ export type { ToolRunCtx }
 const CORE_TOOLS = new Set([
   'read', 'write', 'edit', 'apply_patch', 'mkdir', 'ls', 'grep', 'find',
   'exec_command', 'git', 'terminal_open', 'terminal_run', 'terminal_close',
-  'web_search', 'web_fetch', 'web_read', 'read_skill', 'init_project_docs', 'update_plan',
+  'web_search', 'web_fetch', 'web_read', 'read_skill', 'skill_manage', 'init_project_docs', 'update_plan',
   'system_info', 'session_search', 'save_memory', 'recall_memory',
   'list_agents', 'dispatch', 'handoff', 'list_workflows', 'run_workflow',
 ])

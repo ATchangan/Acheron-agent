@@ -11,7 +11,7 @@ import { errMsg } from './errmsg'
 import { applyPatchToContent } from '../shared/patch-utils'
 import { getMcpToolSpecs } from './tool-specs'
 import { checkFilePermission } from './tool-permission'
-import { resolveSkillFile } from './skill-files'
+import { resolveSkillFile, safeSkillName, writableSkillDir, listSkills } from './skill-files'
 import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
 
 const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer; decode: (b: Buffer, enc: string) => string }
@@ -72,8 +72,62 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (!p) return 'E:技能不存在或文件越权: ' + name + '/' + (A.file || 'SKILL.md')
     try {
       const content = fs.readFileSync(p, 'utf-8')
-      return content.length > 12000 ? content.slice(0, 12000) + '\n...[技能内容过长已截断, 共 ' + content.length + ' 字符]' : content
+      const scan = scanMemoryText(content)
+      const warn = scan.ok ? '' : '[安全扫描警告] ' + scan.reason + '\n\n'
+      return warn + (content.length > 12000 ? content.slice(0, 12000) + '\n...[技能内容过长已截断, 共 ' + content.length + ' 字符]' : content)
     } catch (e: unknown) { return 'E:技能读取失败: ' + errMsg(e) }
+  } },
+  { name: 'skill_manage', run: (A, ctx) => {
+    const action = String(A.action || '').trim()
+    const name = String(A.name || '').trim()
+    const dirs = ctx.skillsDirs || []
+    if (!dirs.length) return 'E:未配置技能目录'
+    if (action === 'list') {
+      const list = listSkills(dirs)
+      return list.length ? list.map(s => '- ' + s.name + ': ' + s.description).join('\n') : '(empty)'
+    }
+    if (!['create', 'patch', 'read'].includes(action)) return 'E:action 仅支持 create/patch/read/list'
+    const safeName = safeSkillName(name)
+    if (!safeName) return 'E:技能名非法(不能为空或包含路径分隔符)'
+    const p = resolveSkillFile(dirs, safeName, 'SKILL.md')
+    if (action === 'read') {
+      if (!p) return 'E:技能不存在: ' + safeName
+      try {
+        const content = fs.readFileSync(p, 'utf-8')
+        const scan = scanMemoryText(content)
+        const warn = scan.ok ? '' : '[安全扫描警告] ' + scan.reason + '\n\n'
+        return warn + (content.length > 12000 ? content.slice(0, 12000) + '\n...[技能内容过长已截断]' : content)
+      } catch (e: unknown) { return 'E:技能读取失败: ' + errMsg(e) }
+    }
+    if (action === 'create') {
+      if (p) return 'E:技能已存在: ' + safeName + '（请用 patch 局部修订，避免整文件重写）'
+      const content = String(A.content || '')
+      if (!content.trim()) return 'E:need content'
+      const scan = scanMemoryText(content)
+      if (!scan.ok) return 'E:' + scan.reason
+      const dir = writableSkillDir(dirs)
+      if (!dir) return 'E:技能目录不可写'
+      const target = join(dir, safeName, 'SKILL.md')
+      try {
+        fs.mkdirSync(join(dir, safeName), { recursive: true })
+        fs.writeFileSync(target, content, 'utf-8')
+        return 'ok:created ' + target
+      } catch (e: unknown) { return 'E:技能创建失败: ' + errMsg(e) }
+    }
+    // patch —— 只传变更文本, 省 token 且保留技能其余内容
+    if (!p) return 'E:技能不存在: ' + safeName
+    const oldText = String(A.oldText || '')
+    const newText = String(A.newText || '')
+    if (!oldText) return 'E:need oldText'
+    try {
+      const content = fs.readFileSync(p, 'utf-8')
+      if (!content.includes(oldText)) return 'E:oldText not found（请带上足够上下文）'
+      const next = content.replace(oldText, newText)
+      const scan = scanMemoryText(next)
+      if (!scan.ok) return 'E:' + scan.reason
+      fs.writeFileSync(p, next, 'utf-8')
+      return 'ok:patched ' + p + '（变更 ' + oldText.length + ' → ' + newText.length + ' 字符）'
+    } catch (e: unknown) { return 'E:技能修订失败: ' + errMsg(e) }
   } },
   { name: 'read', cacheable: true, run: async (A, ctx) => {
     if (!A.path) return 'E:need path'
