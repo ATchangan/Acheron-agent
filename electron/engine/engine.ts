@@ -9,94 +9,23 @@ import { getAgents, type AgentDef } from './agents'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, memoryPathFor, addLesson, scanMemoryText, type EngineMemory } from './memory'
-import { streamChat, chatOnce, abortLLM, visionOnce, normalizeUsage } from './llm-core'
+import { streamChat, chatOnce, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { buildSubSystemPrompt, parseSubResult, buildSubSummary } from './sub-result'
-import { classifyCacheSupport, cacheCapToSupported } from './cache-caps'
 import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, pickMicroFoldCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
-import { buildPlanDocContent, dedupePlanSteps, planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
-import { toolLabel as toolLabelOf, toolDetail as toolDetailOf, toolExpected as toolExpectedOf } from './tool-labels'
+import { planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
 import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills } from './skill-files'
 import { runHooks } from './hooks'
 import { isPlanReadonlyTool } from './plan-tools'
 import { chainDirs, collectSubdirInstructions, discoverProjectInstructions, type InstructionFile } from './project-instructions'
+import { PlanController } from './plan-controller'
+import { UsageTracker } from './usage-tracker'
+import type { TaskState, TokenStat, CallResult, TaskGoal } from './task-types'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
 import { invokeHandler } from './registry'
-
-interface TokenStat { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }
-interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }
-interface CallResult { text: string; reasoning?: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage; msgId?: string; truncated?: boolean }
-interface PlanGate { promise: Promise<void>; resolve: (v: boolean) => void }
-interface TaskGoal {
-  objective: string
-  status: 'active' | 'completed' | 'failed' | 'aborted'
-  startedAt: number
-  progress?: string
-}
-
-interface TaskState {
-  sid: string
-  taskId: string
-  myGen: number
-  content: string
-  images?: string[]
-  attachments?: EngineMessage['attachments']
-  userMsgId: string
-  userMsg: EngineMessage
-  messages: EngineMessage[]
-  g: EngineSettings
-  providers: EngineProvider[]
-  p: EngineProvider
-  curP: EngineProvider
-  model: string
-  origModel: string
-  modelFailCount: number
-  modelFallbackUsed: boolean
-  agent?: string
-  agentManual?: boolean
-  activeAgents: string[]
-  handoffStack: string[]
-  handoffCounts: Record<string, number>
-  handoffAt: number
-  toolLog: ToolLogEntry[]
-  tokBase: Record<string, TokenStat>
-  memoryText: string
-  projectCtx: { file: string; content: string; truncated?: boolean; dirs?: string[] } | null
-  instrVisited: Set<string>
-  fileSnapshots: Record<string, string | null>
-  memory: EngineMemory
-  lastMidSave: number
-  planSteps: PlanStep[]
-  planSummary: string
-  planGateChecked: boolean
-  planEmitTimer: NodeJS.Timeout | null
-  planLastSnapshot: string
-  planSurprises: string[]
-  planDecisions: string[]
-  planDocTimer: NodeJS.Timeout | null
-  goal: TaskGoal
-  planPending: PlanGate | null
-  planApproved: boolean
-  stopped: boolean
-  taskFinished: boolean
-  autoContinueCount?: number
-  running: boolean
-  lastMsgId?: string
-  roundNum: number
-  interjects: { text: string; kind: 'supplement' | 'retarget' }[]
-  withImages: boolean
-  switchedVision: boolean
-  earlySummary?: string
-  earlySummaryDone?: boolean
-  skillsCache?: { name: string; description: string }[]
-  lastCompactAt?: number
-  lastPromptTokens?: number
-  compactCount?: number
-  pendingText?: string
-}
 
 export interface EngineDeps {
   settingsPath: string
@@ -116,12 +45,20 @@ export class AgentEngine {
   private tasks = new Map<string, TaskState>()
   private gens = new Map<string, number>()
   private runningTasks = 0
-  private sessTokBySid = new Map<string, Record<string, TokenStat>>()
-  private costedReqs = new Set<string>()
+  private plans: PlanController
+  private usage: UsageTracker
   private traceOn = true
   private traceOnAt = 0
 
-  constructor(deps: EngineDeps) { this.deps = deps }
+  constructor(deps: EngineDeps) {
+    this.deps = deps
+    this.plans = new PlanController({
+      userDataPath: deps.userDataPath,
+      isCurrent: t => this.tasks.get(t.sid) === t,
+      emit: ev => this.emit(ev),
+    })
+    this.usage = new UsageTracker(ev => this.emit(ev))
+  }
 
   private nextGen(sid: string): number {
     const cur = this.gens.get(sid) || 0
@@ -386,263 +323,22 @@ export class AgentEngine {
     if (task?.planPending) { task.planApproved = false; task.planPending.resolve(false) }
   }
 
-  // v0.3.7: plan-update 节流合并(150ms) —— 长任务步骤多时避免每步一次全量 IPC
-  private emitPlan(task: TaskState, force = false): void {
-    const { steps, changedIds } = this.buildPlanEvent(task)
-    if (force) {
-      if (task.planEmitTimer) { clearTimeout(task.planEmitTimer); task.planEmitTimer = null }
-      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps, changedIds })
-      return
-    }
-    if (task.planEmitTimer) return
-    task.planEmitTimer = setTimeout(() => {
-      task.planEmitTimer = null
-      if (this.tasks.get(task.sid) !== task) return
-      const latest = this.buildPlanEvent(task)
-      this.emit({ type: 'plan-update', sid: task.sid, summary: task.planSummary || undefined, steps: latest.steps, changedIds: latest.changedIds })
-    }, 150)
-  }
-
-  // v0.3.8: 计划增量 —— 对比上次快照, 只标记变化的步骤 id, 渲染层按 id 局部 patch
-  private buildPlanEvent(task: TaskState): { steps: PlanStep[]; changedIds?: string[] } {
-    const steps = task.planSteps.map(s => ({ ...s }))
-    const snapshot = JSON.stringify(steps)
-    let changedIds: string[] | undefined
-    if (task.planLastSnapshot && task.planLastSnapshot !== snapshot) {
-      try {
-        const prev = JSON.parse(task.planLastSnapshot) as PlanStep[]
-        const prevById = new Map(prev.map(s => [s.id, s]))
-        const prevIds = new Set(prev.map(s => s.id))
-        changedIds = steps.filter(s => JSON.stringify(prevById.get(s.id)) !== JSON.stringify(s)).map(s => s.id)
-        for (const s of steps) if (!prevIds.has(s.id)) changedIds.push(s.id)
-        if (!changedIds.length) changedIds = undefined
-      } catch { changedIds = undefined }
-    }
-    task.planLastSnapshot = snapshot
-    return { steps, changedIds }
-  }
-
-  private flushPlan(task: TaskState): void {
-    this.emitPlan(task, true)
-  }
-
-  // 新批次工具调用 → 追加步骤。按 tc.id 去重: 同一工具调用只生成一次步骤(门禁前/恢复后重放安全)
-  private planAppend(task: TaskState, tcs: EngineToolCall[], summary?: string): void {
-    if (summary && !task.planSummary) task.planSummary = String(summary).slice(0, 500)
-    if (!tcs.length) return
-    for (const tc of tcs) {
-      if (tc.name === 'update_plan') continue
-      if (task.planSteps.some(s => s.toolCallId && s.toolCallId === tc.id)) continue
-      // v0.3.7: 优先认领模型 update_plan 声明的 pending 步骤(无 toolCallId), 避免声明与自动生成重复
-      const declared = task.planSteps.find(s => s.status === 'pending' && !s.toolCallId && (!s.tool || s.tool === tc.name))
-      if (declared) {
-        declared.toolCallId = tc.id
-        declared.tool = tc.name
-        if (!declared.detail) declared.detail = toolDetailOf(tc)
-        if (!declared.expected) declared.expected = toolExpectedOf(tc)
-        continue
-      }
-      const step: PlanStep = { id: uuidv4(), label: toolLabelOf(tc), status: 'pending', tool: tc.name, detail: toolDetailOf(tc), toolCallId: tc.id, expected: toolExpectedOf(tc) }
-      task.planSteps.push(step)
-    }
-    task.planSteps = dedupePlanSteps(task.planSteps)
-    this.emitPlan(task)
-  }
-
-  // 开始执行当前批次: 按 toolCallId 精确绑定步骤(缺失时回退到首个 pending), 返回按 res.tcs 顺序的 step id
-  private planStart(task: TaskState, tcs: EngineToolCall[], messageId?: string): string[] {
-    const ids: string[] = []
-    for (const tc of tcs) {
-      if (tc.name === 'update_plan') continue
-      let st = task.planSteps.find(s => s.toolCallId && s.toolCallId === tc.id)
-      if (!st) st = task.planSteps.find(s => s.status === 'pending' && !s.toolCallId && (!s.tool || s.tool === tc.name))
-      if (!st) {
-        st = { id: uuidv4(), label: toolLabelOf(tc), status: 'pending', tool: tc.name, detail: toolDetailOf(tc), toolCallId: tc.id, expected: toolExpectedOf(tc) }
-        task.planSteps.push(st)
-      }
-      st.status = 'running'
-      if (messageId) st.messageId = messageId
-      ids.push(st.id)
-    }
-    task.planSteps = dedupePlanSteps(task.planSteps)
-    this.emitPlan(task)
-    return ids
-  }
-
-  // 工具结果返回后: 按结果打勾/打叉, 记录耗时; 基础自检(E: 前缀 / 关键工具空结果)
-  private planFinish(task: TaskState, ids: string[], results: { r: string; ms: number }[]): void {
-    ids.forEach((id, i) => {
-      const st = task.planSteps.find(x => x.id === id)
-      if (!st) return
-      const res = results[i] || { r: '', ms: 0 }
-      const r = res.r || ''
-      st.ms = (st.ms || 0) + (res.ms || 0)
-      // 空目录/无匹配对 ls/find/grep 是正常结果, 只有 read/exec/web 空输出才算可疑失败
-      const emptyFail = !r.trim() && ['read', 'exec_command', 'web_search', 'web_fetch'].includes(st.tool || '')
-      if (r.startsWith('E:') || emptyFail) {
-        st.status = 'failed'
-        const reason = emptyFail ? '空结果' : r.slice(2, 50).replace(/\s+/g, ' ')
-        if (reason) st.detail = (st.detail ? st.detail + ' · ' : '') + reason
-        this.planAddSurprise(task, st.label + ' 失败：' + (reason || '未知原因'))
-      } else {
-        st.status = 'done'
-      }
-    })
-    this.emitPlan(task)
-  }
-
-  // 熔断/异常: 所有未开始的 pending 步骤直接标 failed(不再依赖队列)
-  private planFailPending(task: TaskState, reason: string): void {
-    let changed = false
-    for (const st of task.planSteps) {
-      if (st.status === 'pending') {
-        st.status = 'failed'
-        st.detail = (st.detail ? st.detail + ' · ' : '') + reason
-        changed = true
-      }
-    }
-    if (changed) this.emitPlan(task)
-  }
-
-  // 停止/拒绝/任务失败: 未完成步骤统一收尾(paused 也视为未完成)
-  private planCloseAll(task: TaskState, status: 'aborted' | 'failed', reason?: string): void {
-    let changed = false
-    for (const st of task.planSteps) {
-      if (st.status === 'pending' || st.status === 'running' || st.status === 'paused') {
-        st.status = status
-        if (reason) st.detail = (st.detail ? st.detail + ' · ' : '') + reason
-        changed = true
-      }
-    }
-    if (changed) this.emitPlan(task)
-  }
-
-  // v0.3.7: 计划复盘 —— 任务收尾时由代码生成结构化复盘(零额外 LLM 调用)
-  private planRetrospective(task: TaskState): string {
-    const steps = task.planSteps
-    if (!steps.length) return ''
-    const total = steps.length
-    const done = steps.filter(s => s.status === 'done').length
-    const failed = steps.filter(s => s.status === 'failed').length
-    const aborted = steps.filter(s => s.status === 'aborted').length
-    const lines: string[] = []
-    lines.push(`\n\n---\n\n**执行计划复盘**：${done}/${total} 完成` + (failed ? `，${failed} 失败` : '') + (aborted ? `，${aborted} 中止` : ''))
-    for (const s of steps) {
-      if (s.status === 'failed') lines.push(`- 失败：${s.label}${s.tool ? ' (' + s.tool + ')' : ''}${s.detail ? ' — ' + s.detail : ''}`)
-      else if (s.status === 'aborted') lines.push(`- 中止：${s.label}${s.detail ? ' — ' + s.detail : ''}`)
-    }
-    const unfinished = steps.filter(s => s.status === 'pending' || s.status === 'paused').map(s => s.label)
-    if (unfinished.length) lines.push(`- 未执行：${unfinished.join('、')}`)
-    // v0.3.7: 验证闭环 —— 改过文件但没有独立验证命令时给出提醒
-    const touchedFiles = steps.some(s => (s.tool === 'write' || s.tool === 'edit' || s.tool === 'apply_patch') && s.status === 'done')
-    if (touchedFiles && !this.planHasVerification(task)) lines.push('- [!] 修改过文件但未检测到独立验证命令，建议补充构建/测试/检查')
-    return lines.join('\n')
-  }
-
-  // ─── v0.3.7: PLANS.md 计划文档(计划式: Progress/Surprises/Decision Log/Outcomes) ───
-  private planDocDir(): string {
-    return join(this.deps.userDataPath, 'plans')
-  }
-
-  private planDocPath(task: TaskState): string {
-    return join(this.planDocDir(), task.taskId + '.md')
-  }
-
-  private planStamp(): string {
-    const d = new Date()
-    const p2 = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`
-  }
-
-  private planAddDecision(task: TaskState, text: string): void {
-    task.planDecisions.push('`' + this.planStamp() + '` ' + text)
-    if (task.planDecisions.length > 80) task.planDecisions = task.planDecisions.slice(-80)
-    this.schedulePlanDoc(task)
-  }
-
-  private planAddSurprise(task: TaskState, text: string): void {
-    task.planSurprises.push('`' + this.planStamp() + '` ' + text)
-    if (task.planSurprises.length > 40) task.planSurprises = task.planSurprises.slice(-40)
-    this.schedulePlanDoc(task)
-  }
-
-  private buildPlanDoc(task: TaskState): string {
-    const goalStatus = task.goal.status === 'completed' ? '已完成' : task.goal.status === 'failed' ? '失败' : task.goal.status === 'aborted' ? '已中止' : '进行中'
-    const retro = this.planRetrospective(task)
-    return buildPlanDocContent({
-      goalObjective: task.goal.objective,
-      goalStatus,
-      goalProgress: task.goal.progress,
-      taskStopped: task.stopped,
-      steps: task.planSteps as PlanStepData[],
-      surprises: task.planSurprises,
-      decisions: task.planDecisions,
-      retrospective: retro.replace(/^\n*---\s*\n\n?/, ''),
-    })
-  }
-
-  private writePlanDoc(task: TaskState): void {
-    try {
-      fs.mkdirSync(this.planDocDir(), { recursive: true })
-      // v0.3.7: 异步写盘, 避免长任务高频节流时阻塞主进程
-      const content = this.buildPlanDoc(task)
-      void fs.promises.writeFile(this.planDocPath(task), content, 'utf8').catch(() => {})
-    } catch { /* 计划文档写入失败不影响主流程 */ }
-  }
-
-  private schedulePlanDoc(task: TaskState): void {
-    if (task.planDocTimer) return
-    task.planDocTimer = setTimeout(() => {
-      task.planDocTimer = null
-      if (this.tasks.get(task.sid) !== task) return
-      this.writePlanDoc(task)
-    }, 2000)
-  }
-
-  private flushPlanDoc(task: TaskState): void {
-    if (task.planDocTimer) { clearTimeout(task.planDocTimer); task.planDocTimer = null }
-    this.writePlanDoc(task)
-  }
-
-  // v0.3.7: 模型自主计划工具(update_plan) —— 声明/更新计划步骤
-  private applyPlanUpdate(task: TaskState, steps: { label?: string; status?: string; expected?: string; id?: string; tool?: string }[]): string {
-    let added = 0
-    let updated = 0
-    for (const s of steps) {
-      const label = String(s.label || '').trim()
-      if (!label) continue
-      // 完成/失败状态只能由引擎按工具实际执行结果写入, 不信任模型在 update_plan 里自报的 done/failed
-      const status: PlanStep['status'] = String(s.status || '').trim() === 'paused' ? 'paused' : 'pending'
-      let target = s.id ? task.planSteps.find(x => x.id === s.id) : undefined
-      // 无 id 时按 label+tool 合并已存在的未认领 pending 步骤, 防止重复 update_plan 产生一模一样条目
-      if (!target) {
-        target = task.planSteps.find(x => !x.toolCallId && x.status === 'pending' && x.label === label && (s.tool === undefined || x.tool === s.tool))
-      }
-      if (target) {
-        target.label = label
-        if (s.expected !== undefined) target.expected = String(s.expected).slice(0, 200)
-        if (s.tool !== undefined) target.tool = String(s.tool)
-        if (status === 'paused') target.status = 'paused'
-        updated++
-      } else {
-        const step: PlanStep = { id: uuidv4(), label, status, tool: s.tool !== undefined ? String(s.tool) : undefined, expected: s.expected !== undefined ? String(s.expected).slice(0, 200) : undefined }
-        task.planSteps.push(step)
-        added++
-      }
-    }
-    task.planSteps = dedupePlanSteps(task.planSteps)
-    if (added || updated) {
-      this.planAddDecision(task, '模型 update_plan：新增 ' + added + ' 步，更新 ' + updated + ' 步（共 ' + task.planSteps.length + ' 步）')
-      this.emitPlan(task)
-      this.flushPlan(task)
-      this.schedulePlanDoc(task)
-    }
-    return 'ok:plan updated (added ' + added + ', updated ' + updated + '), total ' + task.planSteps.length
-  }
-
-  private snapshotTok(sid: string): Record<string, TokenStat> {
-    return JSON.parse(JSON.stringify(this.sessTokBySid.get(sid) || {})) as Record<string, TokenStat>
-  }
+  // 计划状态机/PLANS.md 已抽至 plan-controller(0.3.9 结构清理), 以下为薄委托
+  private emitPlan(task: TaskState, force = false): void { this.plans.emitPlan(task, force) }
+  private flushPlan(task: TaskState): void { this.plans.flushPlan(task) }
+  private planAppend(task: TaskState, tcs: EngineToolCall[], summary?: string): void { this.plans.planAppend(task, tcs, summary) }
+  private planStart(task: TaskState, tcs: EngineToolCall[], messageId?: string): string[] { return this.plans.planStart(task, tcs, messageId) }
+  private planFinish(task: TaskState, ids: string[], results: { r: string; ms: number }[]): void { this.plans.planFinish(task, ids, results) }
+  private planFailPending(task: TaskState, reason: string): void { this.plans.planFailPending(task, reason) }
+  private planCloseAll(task: TaskState, status: 'aborted' | 'failed', reason?: string): void { this.plans.planCloseAll(task, status, reason) }
+  private planRetrospective(task: TaskState): string { return this.plans.planRetrospective(task) }
+  private planAddDecision(task: TaskState, text: string): void { this.plans.planAddDecision(task, text) }
+  private planAddSurprise(task: TaskState, text: string): void { this.plans.planAddSurprise(task, text) }
+  private writePlanDoc(task: TaskState): void { this.plans.writePlanDoc(task) }
+  private schedulePlanDoc(task: TaskState): void { this.plans.schedulePlanDoc(task) }
+  private flushPlanDoc(task: TaskState): void { this.plans.flushPlanDoc(task) }
+  private applyPlanUpdate(task: TaskState, steps: { label?: string; status?: string; expected?: string; id?: string; tool?: string }[]): string { return this.plans.applyPlanUpdate(task, steps) }
+  private snapshotTok(sid: string): Record<string, TokenStat> { return this.usage.snapshotTok(sid) }
 
   private async runTask(task: TaskState): Promise<void> {
     const { sid } = task
@@ -1401,76 +1097,9 @@ export class AgentEngine {
     return 'E:视觉分析失败: ' + lastErr
   }
 
-  private recordUsage(task: TaskState, rid: string, u: EngineUsage, modelOverride?: string): void {
-    // 同一次请求 usage 可能多次到达(部分供应商流中+结束时各发一次), 按 requestId 去重防统计虚高
-    if (this.costedReqs.has(rid)) return
-    if (this.costedReqs.size > 500) {
-      const arr = [...this.costedReqs]
-      this.costedReqs.clear()
-      for (const x of arr.slice(-250)) this.costedReqs.add(x)
-    }
-    this.costedReqs.add(rid)
-    // v0.3.5: 多供应商缓存字段统一归一化(DeepSeek/SiliconFlow/Kimi/OpenAI/智谱/通义/Anthropic/Gemini)
-    const n = normalizeUsage(u)
-    const readT = n.readT
-    const missT = n.missT
-    const writeT = n.writeT
-    const inputT = n.inputT
-    const outT = n.outputT
-    // v0.3.6: 供应商缓存能力判定 —— 不支持的供应商界面直接标注"不支持", 不再显示虚假的 0% 命中率
-    const cap = classifyCacheSupport(task.curP, n.sawCache)
-    const mk = modelOverride || task.model
-    const cur = this.sessTokBySid.get(task.sid) || {}
-    const c = cur[mk] || { requests: 0, readTokens: 0, inputTokens: 0, writeTokens: 0, outputTokens: 0, hitReqs: 0 }
-    c.requests += 1
-    c.readTokens += readT
-    c.inputTokens += inputT
-    c.writeTokens += writeT
-    c.outputTokens += outT
-    c.hitReqs += readT > 0 ? 1 : 0
-    cur[mk] = c
-    this.sessTokBySid.set(task.sid, cur)
-    this.emit({ type: 'usage', sid: task.sid, model: mk, usage: { ...u, _readTokens: readT, _missTokens: missT, _inputTokens: inputT, _writeTokens: writeT } })
-    // v0.3.3: 上下文环数据源 —— 每次请求的真实 prompt 输入 + 模型上下文上限
-    const used = n.rawInputT
-    const limit = getModelContextLimit(mk)
-    if (used > 0) task.lastPromptTokens = used
-    if (used > 0) this.emit({ type: 'context', sid: task.sid, used, limit })
-    try {
-      // v0.3.6: 只有确认支持缓存统计的请求计入观测分母(命中率 = 命中请求 ÷ 有观测请求)
-      void invokeHandler('modelStats:recordRequest', [task.sid, mk, readT > 0, cacheCapToSupported(cap)], null)
-      if (readT > 0 || inputT > 0 || writeT > 0 || missT > 0) {
-        void invokeHandler('modelStats:recordTokens', [task.sid, mk, readT, inputT, writeT, missT, {
-          supported: cacheCapToSupported(cap),
-          provider: task.curP?.name,
-        }], null)
-        // v0.3.6: 逐请求明细(请求明细/按日期/按类别视图的数据源)
-        void invokeHandler('modelStats:recordEntry', [{
-          sid: task.sid,
-          model: mk,
-          provider: task.curP?.name,
-          readTokens: readT,
-          missTokens: missT,
-          writeTokens: writeT,
-          inputTokens: inputT,
-          outputTokens: outT,
-          hit: readT > 0,
-          supported: cacheCapToSupported(cap),
-        }], null)
-      }
-    } catch { /* 忽略 */ }
-  }
+  private recordUsage(task: TaskState, rid: string, u: EngineUsage, modelOverride?: string): void { this.usage.recordUsage(task, rid, u, modelOverride) }
 
-  private taskTokensUsed(task: TaskState): number {
-    const now = this.sessTokBySid.get(task.sid) || {}
-    const base = task.tokBase
-    let used = 0
-    for (const [mk, c] of Object.entries(now)) {
-      const b = base[mk] || {}
-      used += (c.inputTokens - (b.inputTokens || 0)) + (c.outputTokens - (b.outputTokens || 0)) + (c.writeTokens - (b.writeTokens || 0))
-    }
-    return Math.max(0, used)
-  }
+  private taskTokensUsed(task: TaskState): number { return this.usage.taskTokensUsed(task) }
 
   private async makeEarlySummary(task: TaskState): Promise<string> {
     try {

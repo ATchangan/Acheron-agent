@@ -12,6 +12,7 @@
 - **评估基准与发布门禁**：新增 `npm run eval:unit`（15 项纯函数回归，无需 API Key）、`npm run eval:live`（真实模型工具选择 BFCL-lite，可选）、`npm run release:check`（版本一致性 + CHANGELOG + HEAD tag + lint/typecheck/test/eval 全量门禁）；评估历史记入 `scripts/eval/eval-history.jsonl`
 - **品牌词扫描固化**：新增 `npm run brand:scan`（对外发布内容竞品品牌词 0 命中，排除第三方依赖/构建产物），并入 `release:check` 门禁，防止后续版本残留
 - **全仓去除 emoji**：源码/文档/脚本/发布说明中的 emoji 全部替换为中性文本标记（[OK]/[X]/[警告]）或自然文案（确定/已复制/主页/暂停等），UI 状态判断同步更新；共清理 53 个文件
+- **结构清理（屎山）**：engine.ts 从 1749 行拆至 1379 行——计划状态机/PLANS.md 抽为 `plan-controller.ts`、token 用量与预算抽为 `usage-tracker.ts`、任务状态类型抽为 `task-types.ts`，行为零变化（254 测试兜底）；Agent 角色定义收敛为 `shared/agents-data.ts` 单一声源（引擎与渲染层共用）；移除 `docs/refactor-backup` 死备份；根目录 13 个一次性脚本与 2 个发布前备份目录移入 `_archive/`；v0.3.5~v0.3.8 源码快照移除 node_modules 与 release 构建产物（省约 3.4GB）并补快照说明
 - **HITL 确认链路核对**：风险确认（L2/L3 执行命令/文件写入/删除 + 「本次任务都批准」+「以后都批准」+ 永久放行开关）经核对已完整生效，本轮无新增
 - **验证**：测试 41 文件 254 用例全绿（新增 15）；lint 0 error；typecheck/build 通过；eval:unit 15/15
 
