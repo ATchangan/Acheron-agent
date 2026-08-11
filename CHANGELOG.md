@@ -1,5 +1,18 @@
 # 更新日志
 
+## v0.3.9（2026-08-11）
+- **修复：记忆与上下文中文乱码**：`electron/engine/memory.ts` 记忆容量行/分区标题/检索提示与 `electron/engine/context.ts` 早期历史省略提示的中文全部损坏为 `?`（0.3.7/0.3.8 已发布版本受影响），模型实际收到的记忆块与截断提示是乱码。本轮重写为正常中文并新增 5 条记忆回归测试
+- **修复：子代理执行绕过错漏防护**：dispatch 子代理此前直接调 `runTool`，绕过主引擎统一执行管道，导致子代理写入的文件不进回滚快照、`tool-before/tool-after/file-write` 钩子不触发、工具调用不进审计日志、子目录项目指令不注入。本轮抽成 `runToolGuarded` 统一管道，主循环与子代理共用，并补实时 stage 事件、工具日志（带角色标记）与计划步骤
+- **修复：memoryScope 真正生效**：`private` 角色（三月七/银狼/艾丝妲/知更鸟/黑天鹅/螺丝咕姆）改用独立 `memory-<角色>.json`，私有记忆随子代理系统提示注入，`save_memory/recall_memory` 不再写全局共享库；`global` 角色（姬子）保持全局记忆
+- **子代理结果结构化**：子代理交付改为 JSON 硬性格式（目标/状态/产出物/未决问题），主控汇总与任务复盘可直接消费，解析失败自动回退原文
+- **上下文工程增强（GSSC）**：记忆注入改为「置顶全量 + 事实按相关度 Top5（有命中时不再混入零相关项）+ 摘要/教训按时效」并带容量头与预算护栏；微压缩从逐组折叠改为一次批量折叠 3 组问答，减少摘要调用次数
+- **失败教训自动沉淀**：任务失败自动写入「经验教训」（原因/场景/建议），按时效注入后续任务记忆块，去重 + 容量上限 50 条
+- **技能管理工具 `skill_manage`**：create / patch（局部修订，省 token）/ read / list；读取与写入前做安全扫描（密钥/提示注入），技能名净化与路径越权防护
+- **Trace 导出**：设置 → 诊断 → 运行轨迹新增「导出轨迹」按钮，保存对话框导出 JSONL 原文 + Markdown 事件统计摘要
+- **评估基准与发布门禁**：新增 `npm run eval:unit`（15 项纯函数回归，无需 API Key）、`npm run eval:live`（真实模型工具选择 BFCL-lite，可选）、`npm run release:check`（版本一致性 + CHANGELOG + HEAD tag + lint/typecheck/test/eval 全量门禁）；评估历史记入 `scripts/eval/eval-history.jsonl`
+- **HITL 确认链路核对**：风险确认（L2/L3 执行命令/文件写入/删除 + 「本次任务都批准」+「以后都批准」+ 永久放行开关）经核对已完整生效，本轮无新增
+- **验证**：测试 41 文件 254 用例全绿（新增 15）；lint 0 error；typecheck/build 通过；eval:unit 15/15
+
 ## v0.3.8（2026-08-09）
 - **Windows 命令执行修复**：cmd 在部分系统（OEM 437）会把中文输出成 `?`，现改为含非 ASCII 的命令自动走 PowerShell（UTF-8 输出），纯 ASCII 简单命令仍走 cmd；系统提示新增「Windows 命令纪律」（只写 PowerShell 语法、禁止 bash 语法、中文路径用 PowerShell）
 - exec_command 工具说明同步更新
