@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, net, Notification } from 'electron'
+import { app, net } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMemoryIpc } from './ipc/memory'
@@ -28,6 +28,7 @@ import { registerRiskConfirm } from './ipc/risk-confirm'
 import { getBrowserSession, getBrowserSessionIfExists, closeBrowserSession, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen, initBrowserViews } from './browser-session'
 import { safeClone, decKey, encProviders, decProviders, dirSize, fmtSize, startServer } from './main-utils'
 import { join } from 'path'
+import { AppShell } from './app-shell'
 import * as fs from 'fs'
 
 // 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
@@ -91,8 +92,6 @@ if (rendererMode === 'cpu') {
   app.commandLine.appendSwitch('enable-accelerated-video-decode') // 视频硬解(可用时)
 }
 
-let mainWindow: BrowserWindow | null = null
-let tray: Tray | null = null
 let isQuitting = false
 let serverPort = 0
 
@@ -103,7 +102,7 @@ if (!gotLock) {
   app.quit()
   process.exit(0)
 }
-app.on('second-instance', () => { if (mainWindow) { mainWindow.show(); mainWindow.focus() } })
+app.on('second-instance', () => { const w = appShell.getWindow(); if (w) { w.show(); w.focus() } })
 
 // ─── 路径 ───────────────────────────────────────────
 const ROOT = join(__dirname, '..')
@@ -119,6 +118,19 @@ try {
   const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
   if (String(s?.general?.rendererMode || '') === 'cpu') app.disableHardwareAcceleration()
 } catch { /* 设置不可读时保持默认 */ }
+const appShell = new AppShell({
+  settingsPath,
+  resourcesDir,
+  tracePath,
+  userDataPath,
+  rendererMode,
+  serverPort: () => serverPort,
+  isQuitting: () => isQuitting,
+  setQuitting: (v: boolean) => { isQuitting = v },
+  appendCrashLog,
+  initBrowserViews,
+  getBrowserWin: () => getBrowserSession(),
+})
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
 registerTaskIpc({ tasksPath })
 registerTraceIpc({ tracePath })
@@ -140,190 +152,13 @@ for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skill
 import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-vector.json')); m.startAutoSave() }).catch(() => {})
 // 启动定时任务
 import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
-  mainWindow?.webContents.send('cron:trigger', prompt)
+  appShell.getWindow()?.webContents.send('cron:trigger', prompt)
 })).catch(() => {})
 // 多角色体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
 import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})
 
-// ─── HTTP 服务器 ──────────────────────────────────
-function createAppMenu() {
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    {
-      label: '黄泉Agent', submenu: [
-        { label: '关于黄泉Agent', role: 'about' }, { type: 'separator' },
-        { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => { isQuitting = true; app.quit() } },
-      ],
-    },
-    {
-      label: '编辑', submenu: [
-        { label: '撤销', role: 'undo' }, { label: '重做', role: 'redo' }, { type: 'separator' },
-        { label: '剪切', role: 'cut' }, { label: '复制', role: 'copy' }, { label: '粘贴', role: 'paste' }, { label: '全选', role: 'selectAll' },
-      ],
-    },
-    {
-      label: '视图', submenu: [
-        { label: '重新加载', role: 'reload' }, { label: '开发者工具', role: 'toggleDevTools' },
-        { type: 'separator' }, { label: '放大', role: 'zoomIn' }, { label: '缩小', role: 'zoomOut' }, { label: '实际大小', role: 'resetZoom' },
-      ],
-    },
-    { label: '窗口', submenu: [{ label: '最小化', role: 'minimize' }, { label: '关闭', role: 'close' }] },
-  ]))
-}
-
-// ─── 窗口 / 托盘 ────────────────────────────────────
-// 读取"关闭缩至托盘"设置(最小化固定为常规最小化到任务栏)
-function trayEnabled(): boolean {
-  try {
-    if (fs.existsSync(settingsPath)) {
-      const d = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-      // 最小化/关闭缩至托盘默认开启(undefined 视为开启)
-      return d?.general?.trayEnabled !== false
-    }
-  } catch (e) { /* ignore */ console.debug('[swallow]', e) }
-  return false
-}
-// ─── 内嵌浏览器面板 + 使用中悬浮窗 ─────────────────
-let floatHideTimer: ReturnType<typeof setTimeout> | null = null
-
-function showBrowserPanel() {
-  // 若无头浏览器从未导航过, 先加载默认页, 避免面板一直空白/加载
-  try {
-    // 默认主页从设置读取（设置 → 工具 → 浏览器设置 → 默认主页）
-    let homeUrl = 'https://example.com'
-    try {
-      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-      const hu = s?.general?.browserHomeUrl
-      if (typeof hu === 'string' && hu.trim()) homeUrl = /^https?:\/\//i.test(hu.trim()) ? hu.trim() : 'https://' + hu.trim()
-    } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-    const bw = getBrowserWin()
-    const wc = bw.webContents
-    if (!wc.getURL() || wc.getURL() === 'about:blank' || wc.isLoading()) {
-      browserCurUrl = homeUrl
-      wc.loadURL(homeUrl).catch(() => {})
-    }
-  } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  // v0.3.4: 浏览器面板改为内嵌主窗口 WebContentsView 实时画面(替代独立窗口截图轮询)
-  try { mainWindow?.webContents.send('browser:embed', { show: true }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-}
-function hideBrowserFloat() {
-  if (floatHideTimer) { clearTimeout(floatHideTimer); floatHideTimer = null }
-  try { mainWindow?.webContents.send('browser:float', { show: false }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-}
-// 悬浮提示改为"主窗口内横幅" —— 通过事件推送到主窗口渲染, 不再创建系统悬浮窗
-function showBrowserFloat() {
-  // 提示时长从设置读取（browserFloatTimeout, 默认 30s）
-  let timeoutMs = 30000
-  try {
-    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-    const tv = parseInt(s?.general?.browserFloatTimeout)
-    if (!isNaN(tv) && tv > 0) timeoutMs = tv * 1000
-  } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  try { mainWindow?.webContents.send('browser:float', { show: true }) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
-  if (floatHideTimer) clearTimeout(floatHideTimer)
-  floatHideTimer = setTimeout(hideBrowserFloat, timeoutMs)
-}
-// 系统窗口按钮配色与主题匹配: 亮色主题用浅色底+深色图标, 深色主题反之
-function titleBarOverlayForTheme(theme?: string): { color: string; symbolColor: string; height: number } {
-  switch (theme) {
-    case 'light': return { color: '#f4f2ec', symbolColor: '#1a1a1f', height: 32 }
-    case 'black': return { color: '#0e0e0e', symbolColor: '#d0d0d8', height: 32 }
-    case 'huangquan': return { color: '#121014', symbolColor: '#e9d5ff', height: 32 }
-    case 'bloodmoon': return { color: '#171013', symbolColor: '#fecaca', height: 32 }
-    case 'dawn': return { color: '#f6f1e8', symbolColor: '#2b2b2b', height: 32 }
-    default: return { color: '#15171c', symbolColor: '#c8c8cc', height: 32 }
-  }
-}
-
-// v0.3.7: 渲染进程崩溃上下文 —— 环形缓冲最近的渲染层错误, 崩溃时连同引擎轨迹一起落盘定位
-const crashContext: string[] = []
-function pushCrashContext(line: string): void {
-  crashContext.push(new Date().toISOString() + ' [renderer] ' + line)
-  if (crashContext.length > 200) crashContext.splice(0, crashContext.length - 200)
-}
-
-function createWindow() {
-  let savedTheme: string | undefined
-  try {
-    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
-    savedTheme = s?.general?.theme || s?.general?.themePreset
-  } catch { /* ignore */ }
-  const win = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 900, minHeight: 600,
-    title: '黄泉Agent', icon: join(resourcesDir, 'icon.png'),
-    webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
-    backgroundColor: '#08080f', show: false, frame: false,
-    // v0.3.3: 原生标题栏控制按钮(最小化/最大化/关闭)由 OS 绘制与命中,
-    // 彻底避免自定义 HTML 按钮被拖拽区/命中层吞掉点击
-    titleBarStyle: 'hidden',
-    titleBarOverlay: titleBarOverlayForTheme(savedTheme),
-  })
-  mainWindow = win
-  // v0.3.6 修复: 聊天 Markdown 外链/任何 window.open 都不能让主窗口离开本地应用页,
-  // 否则整个窗口被外部网页占满且没有返回入口。一律交给系统默认浏览器打开。
-  win.webContents.on('will-navigate', (e, url) => {
-    const local = 'http://127.0.0.1:' + serverPort
-    if (url.startsWith(local)) return
-    e.preventDefault()
-    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
-  })
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
-    return { action: 'deny' }
-  })
-  // v0.3.7: 收集渲染层错误/警告, 崩溃时写入 crash.log 帮助定位根因
-  win.webContents.on('console-message' as never, ((...args: unknown[]) => {
-    const ev = args[0] as { details?: { level?: string | number; message?: string; lineNumber?: number; sourceId?: string } }
-    const d = ev?.details
-    const level = d?.level ?? args[1]
-    if (level === 'error' || level === 'warning' || level === 2 || level === 3) {
-      const msg = d?.message ?? args[2]
-      const src = d?.sourceId ?? args[4]
-      const line = d?.lineNumber ?? args[3]
-      pushCrashContext(String(msg || '').slice(0, 300) + (src ? ' (' + src + ':' + line + ')' : ''))
-    }
-  }) as never)
-  win.webContents.on('render-process-gone', (_e, details) => {
-    console.error('[FATAL] renderer crashed:', details.reason, details.exitCode)
-    try {
-      const lines: string[] = []
-      lines.push(new Date().toISOString() + ' renderer crashed: ' + details.reason + ' ' + details.exitCode)
-      if (crashContext.length) lines.push('--- renderer context (last ' + Math.min(crashContext.length, 40) + ') ---', ...crashContext.slice(-40))
-      try {
-        const traceTail = fs.readFileSync(tracePath, 'utf-8').trim().split('\n').slice(-8)
-        if (traceTail.length) lines.push('--- engine trace tail ---', ...traceTail)
-      } catch { /* 无轨迹文件 */ }
-      appendCrashLog(lines.join('\n') + '\n')
-    } catch (e) { console.debug('[swallow]', e) }
-    crashContext.length = 0
-    // v0.3.8: 崩溃观察 —— 近 7 天 >=3 次时提示切换 CPU 渲染
-    const recent = countRecentCrashes()
-    if (recent >= 3) {
-      try {
-        new Notification({ title: '黄泉Agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
-      } catch { /* 忽略 */ }
-    }
-    if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.loadURL('http://127.0.0.1:' + serverPort + '/index.html') }
-  })
-  win.loadURL('http://127.0.0.1:' + serverPort + '/index.html')
-  win.once('ready-to-show', () => mainWindow?.show())
-  win.on('closed', () => { mainWindow = null })
-  // 关闭 → 设置开启时缩至托盘，否则正常退出
-  win.on('close', (e: Electron.Event) => { if (trayEnabled() && !isQuitting) { e.preventDefault(); mainWindow?.hide() } })
-}
-
-function createTray() {
-  const icon = nativeImage.createFromPath(join(resourcesDir, 'icon.png'))
-  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-  tray.setToolTip('黄泉Agent')
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开主窗口', click: () => mainWindow?.show() },
-    { type: 'separator' },
-    { label: '退出', click: () => { isQuitting = true; app.quit() } },
-  ]))
-  tray.on('click', () => mainWindow?.show())
-}
 // ─── 设置/会话 ─────────────────────────────────────
 const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean }>()
 registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta })
@@ -354,7 +189,7 @@ registerEngineIpc({
   resourcesDir,
   netFetch,
   decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>,
-  getSender: () => mainWindow?.webContents || null,
+  getSender: () => appShell.getWindow()?.webContents || null,
 })
 registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir })
 registerModelStatsIpc()
@@ -365,13 +200,13 @@ registerModelsIpc({ netFetch })
 registerUpdateIpc({ netFetch })
 registerMediaIpc({ settingsPath, userDataPath, netFetch, getEffectiveWorkDir })
 registerWebIpc({ settingsPath, netFetch, decKey })
-registerWindowIpc({ getMainWindow: () => mainWindow, trayEnabled, setQuitting: (v) => { isQuitting = v } })
-registerRiskConfirm({ getMainWindow: () => mainWindow, settingsPath })
+registerWindowIpc({ getMainWindow: () => appShell.getWindow(), trayEnabled: () => appShell.trayEnabled(), setQuitting: (v) => { isQuitting = v } })
+registerRiskConfirm({ getMainWindow: () => appShell.getWindow(), settingsPath })
 registerCronIpc()
 registerBackupIpc({
   userDataPath,
   getWorkDir: () => getEffectiveWorkDir() || userDataPath,
-  getWindow: () => mainWindow,
+  getWindow: () => appShell.getWindow(),
 })
 registerRollbackIpc({ userDataPath })
 registerDiagnosticsIpc({
@@ -404,7 +239,6 @@ function assertInsideWorkDir(p: string): boolean {
 }
 // ─── 浏览器自动化 ───────────────────────────────
 // v0.3.4: agent 浏览器会话为 WebContentsView —— 同一 webContents 可内嵌主窗口实时显示, 零额外体积
-let browserCurUrl = 'about:blank'
 const getBrowserWin = (key?: string) => getBrowserSession(key)
 const getBrowserWinIfExists = (key?: string) => getBrowserSessionIfExists(key)
 const waitLoad = (wc: Electron.WebContents, ms = 15000): Promise<void> =>
@@ -416,7 +250,7 @@ const waitLoad = (wc: Electron.WebContents, ms = 15000): Promise<void> =>
     wc.once('did-finish-load', onLoad)
     wc.once('did-fail-load', onFail)
   })
-registerBrowserIpc({ getBrowserWin, getBrowserWinIfExists, closeBrowserSession, waitLoad, getCurUrl: () => browserCurUrl, setCurUrl: (u) => { browserCurUrl = u }, showBrowserPanel, showBrowserFloat, hideBrowserFloat, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen })
+registerBrowserIpc({ getBrowserWin, getBrowserWinIfExists, closeBrowserSession, waitLoad, getCurUrl: () => appShell.getBrowserCurUrl(), setCurUrl: (u) => { appShell.setBrowserCurUrl(u) }, showBrowserPanel: () => appShell.showBrowserPanel(), showBrowserFloat: () => appShell.showBrowserFloat(), hideBrowserFloat: () => appShell.hideBrowserFloat(), layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen })
 
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部
@@ -437,24 +271,6 @@ function cleanOldPlanDocs(): void {
   } catch { /* 忽略 */ }
 }
 
-// v0.3.8: 崩溃观察 —— 统计 crash.log(+轮转档)近 N 天渲染崩溃次数
-function countRecentCrashes(days = 7): number {
-  try {
-    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-    let count = 0
-    for (const f of [join(userDataPath, 'crash.log'), join(userDataPath, 'crash.log.old')]) {
-      try {
-        const raw = fs.readFileSync(f, 'utf-8')
-        count += raw.split('\n').filter(l => l.includes('renderer crashed')).filter(l => {
-          const m = l.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/)
-          return m ? new Date(m[1]).getTime() >= cutoff : false
-        }).length
-      } catch { /* 单个文件缺失/损坏跳过 */ }
-    }
-    return count
-  } catch { return 0 }
-}
-
 app.whenReady().then(async () => {
   // GPU 状态检测(仅日志/状态查询, 不做运行时禁用)。
   // auto 模式下 GPU 不可用时 Chromium 原生自动降级为软件渲染, 无需手动调用
@@ -469,7 +285,7 @@ app.whenReady().then(async () => {
     }, 3000)
   } catch (e: unknown) { safeError('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
   serverPort = await startServer(distDir)
-  createAppMenu()
+  appShell.createMenu()
   cleanOldPlanDocs()
   // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
   try {
@@ -480,10 +296,11 @@ app.whenReady().then(async () => {
       if (r.freedMb > 0) safeLog('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
     }
   } catch (e: unknown) { /* 设置缺失/损坏时跳过清理 */ console.debug('[swallow]', e) }
-  createWindow()
-  if (mainWindow) initBrowserViews(mainWindow, { live: rendererMode !== 'cpu' })
-  createTray()
-  app.on('activate', () => mainWindow?.show())
+  appShell.createWindow()
+  const win0 = appShell.getWindow()
+  if (win0) initBrowserViews(win0, { live: rendererMode !== 'cpu' })
+  appShell.createTray()
+  app.on('activate', () => appShell.getWindow()?.show())
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin' && !isQuitting) { isQuitting = true; app.quit() } })
 app.on('before-quit', () => { isQuitting = true })

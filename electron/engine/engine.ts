@@ -6,20 +6,20 @@ import * as fs from 'fs'
 import { isAbsolute, join } from 'path'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
-import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
+import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
-import { loadMemory, saveMemory, memoryBlockText, memoryPathFor, addLesson, scanMemoryText, type EngineMemory } from './memory'
-import { streamChat, chatOnce, abortLLM, visionOnce } from './llm-core'
+import { loadMemory, saveMemory, memoryBlockText, addLesson, scanMemoryText, type EngineMemory } from './memory'
+import { streamChat, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
-import { buildSubSystemPrompt, parseSubResult, buildSubSummary } from './sub-result'
-import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, pickMicroFoldCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
 import { planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
-import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
+import { pickAgentModel, pickInitialModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills } from './skill-files'
 import { runHooks } from './hooks'
 import { isPlanReadonlyTool } from './plan-tools'
 import { chainDirs, collectSubdirInstructions, discoverProjectInstructions, type InstructionFile } from './project-instructions'
 import { PlanController } from './plan-controller'
+import { CompactionRunner } from './compaction'
+import { runDispatch as runDispatchFn } from './dispatch-runner'
 import { UsageTracker } from './usage-tracker'
 import type { TaskState, TokenStat, CallResult, TaskGoal } from './task-types'
 import { logTraceFile } from '../ipc/trace'
@@ -47,6 +47,7 @@ export class AgentEngine {
   private runningTasks = 0
   private plans: PlanController
   private usage: UsageTracker
+  private compaction: CompactionRunner
   private traceOn = true
   private traceOnAt = 0
 
@@ -58,6 +59,13 @@ export class AgentEngine {
       emit: ev => this.emit(ev),
     })
     this.usage = new UsageTracker(ev => this.emit(ev))
+    this.compaction = new CompactionRunner({
+      netFetch: deps.netFetch,
+      emit: ev => this.emit(ev),
+      trace: (level, event, detail, sid, requestId) => this.trace(level, event, detail, sid, requestId),
+      checkpoint: (task, round) => this.checkpoint(task, round),
+      recordUsage: (task, rid, u, modelOverride) => this.recordUsage(task, rid, u, modelOverride),
+    })
   }
 
   private nextGen(sid: string): number {
@@ -1101,274 +1109,27 @@ export class AgentEngine {
 
   private taskTokensUsed(task: TaskState): number { return this.usage.taskTokensUsed(task) }
 
-  private async makeEarlySummary(task: TaskState): Promise<string> {
-    try {
-      const early = task.messages.slice(0, -30).filter(m => typeof m.content === 'string' && m.content).slice(0, 60)
-      if (!early.length) return ''
-      const text = early.map(m => `${m.role === 'user' ? '用户' : '助手'}: ${String(m.content).slice(0, 200)}`).join('\n')
-      const r = await chatOnce(this.deps.netFetch, {
-        provider: task.curP.type,
-        model: task.model,
-        apiKey: task.curP.apiKey,
-        baseUrl: task.curP.baseUrl,
-        messages: [
-          { role: 'system', content: '你是黄泉Agent。请把下面的早期对话压缩成 200 字以内的要点总结，保留事实、路径、结论。只输出总结。' },
-          { role: 'user', content: text.slice(0, 12000) },
-        ],
-      })
-      return r.startsWith('E:') ? '' : r
-    } catch { return '' }
-  }
+  private async makeEarlySummary(task: TaskState): Promise<string> { return this.compaction.makeEarlySummary(task) }
 
-  // v0.3.4 起: 微压缩 —— 每轮把最旧纯问答折进运行摘要, 分摊压缩成本
-  // v0.3.9: 批量折叠 —— 一次请求压缩最多 3 组最旧纯问答, 减少摘要调用次数
-  private async microCompact(task: TaskState): Promise<void> {
-    const msgs = task.messages
-    if (!msgs || msgs.length < 12) return
-    const cand = pickMicroFoldCandidates(msgs, 3)
-    if (!cand) return
-    const { start, end, pairs } = cand
-    try {
-      runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'micro' })
-      const rid = 'micro_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
-      const qaText = pairs.map((p, i) => '问' + (i + 1) + '：' + p.user + '\n答' + (i + 1) + '：' + p.assistant).join('\n\n')
-      const summary = await chatOnce(this.deps.netFetch, {
-        provider: task.curP.type,
-        model: task.model,
-        apiKey: task.curP.apiKey,
-        baseUrl: task.curP.baseUrl,
-        messages: [
-          { role: 'system', content: '把下面的多组问答压缩成 300 字以内的要点，保留事实、路径、结论，不编造。只输出摘要。' },
-          { role: 'user', content: qaText },
-        ],
-      }, u => this.recordUsage(task, rid, u as EngineUsage))
-      if (!summary || summary.startsWith('E:')) return
-      const folded = String(summary).slice(0, 500)
-      const foldedMsg: EngineMessage = { id: uuidv4(), role: 'user', content: '[早期对话摘要]\n' + folded, timestamp: Date.now() }
-      task.messages = [...msgs.slice(0, start), foldedMsg, ...msgs.slice(end)]
-      task.earlySummary = (task.earlySummary ? task.earlySummary + '\n' : '') + folded
-      this.emit({ type: 'compact', sid: task.sid, messages: task.messages })
-      this.trace('info', 'task.micro-compact', 'folded ' + pairs.length + ' 组问答(' + (end - start) + ' msgs)', task.sid, task.taskId)
-    } catch { /* 压缩失败不影响主流程 */ }
-  }
+  private async microCompact(task: TaskState): Promise<void> { return this.compaction.microCompact(task) }
 
-  // 窗口阈值压缩：用最近一次请求的真实输入 token 判断，接近模型窗口上限时
-  // 把最旧的完整轮次交给摘要请求压成一条摘要，保留最近 N 轮完整上下文。
-  // 与微压缩互补：微压缩持续小额折并，这里兜底防止窗口溢出。
-  private async maybeCompact(task: TaskState): Promise<void> {
-    try {
-      if (task.g.perf?.compactSummary === false || task.g.compactSummary === false) return
-      const limit = getModelContextLimit(task.model)
-      if (!limit) return
-      // 阈值解析：按模型覆盖 > 全局百分比；小窗口模型地板 0.75（仅无显式配置时生效）
-      const explicit = task.g.compactOverrides?.[task.model] || task.g.compactThreshold
-      let ratio = resolveCompactRatio(task.model, task.g.compactOverrides, task.g.compactThreshold)
-      if (!explicit && limit < COMPACT_SMALL_WINDOW) ratio = Math.max(ratio, COMPACT_SMALL_FLOOR)
-      const percentThreshold = Math.floor(limit * ratio)
-      // 绝对 token 上限（可选）：必压线，绝不晚于该值触发
-      const absCap = Number(task.g.compactTokenCap) || 0
-      const threshold = absCap > 0 ? Math.min(percentThreshold, absCap) : percentThreshold
-      // preflight：按当前消息估算预判（上一轮真实用量可能略滞后）
-      let est = 0
-      for (const m of task.messages) est += estimateTokens(typeof m.content === 'string' ? m.content : '', task.model)
-      est += 2000 // system/提示词/工具 schema 粗估
-      const promptTokens = task.lastPromptTokens || 0
-      const preflightHit = est > threshold * COMPACT_PREFLIGHT_MARGIN
-      if (!preflightHit && (promptTokens <= 0 || promptTokens < threshold)) return
-      const now = Date.now()
-      if (task.lastCompactAt && now - task.lastCompactAt < COMPACT_COOLDOWN_MS) return
-      const keepRounds = Math.max(2, Math.min(20, Number(task.g.compactKeepRounds) || COMPACT_DEFAULT_KEEP_ROUNDS))
-      const cands = pickCompactCandidates(task.messages, keepRounds)
-      if (cands.length < 3) return
-      this.emit({ type: 'stage', sid: task.sid, phase: 'thinking', label: '正在压缩历史', detail: cands.length + ' 条旧消息 → 摘要' })
-      runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'window' })
-      const { system, user } = buildCompactPrompt(cands)
-      const summary = await chatOnce(this.deps.netFetch, {
-        provider: task.curP.type,
-        model: task.model,
-        apiKey: task.curP.apiKey,
-        baseUrl: task.curP.baseUrl,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      })
-      if (!summary || summary.startsWith('E:')) return
-      task.compactCount = (task.compactCount || 0) + 1
-      const notice = buildCompactNotice(task.compactCount)
-      const next = applyCompact(task.messages, summary + notice, keepRounds)
-      if (next.length >= task.messages.length) return
-      task.messages = next
-      task.lastCompactAt = now
-      this.emit({ type: 'compact', sid: task.sid, messages: task.messages })
-      this.checkpoint(task, task.roundNum)
-      this.trace('info', 'context.window-compact', '压缩 ' + cands.length + ' 条历史 · 触发 ' + (preflightHit ? 'preflight ' + Math.round(est) : 'usage ' + promptTokens) + '/' + threshold, task.sid, task.taskId)
-    } catch { /* 压缩失败不影响主流程 */ }
-  }
+  private async maybeCompact(task: TaskState): Promise<void> { return this.compaction.maybeCompact(task) }
 
   // dispatch: 子任务在主进程并行执行(上下文隔离 + 工具白名单 + 并发上限)
   private async runDispatch(task: TaskState, tasks: { agent: string; task: string }[]): Promise<string> {
-    // 停止后不再启动新的分发执行
-    if (this.curGen(task.sid) !== task.myGen) return '已终止'
-    const agents = getAgents(task.g.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
-    if (!tasks.length) return 'E:dispatch 需要 tasks 数组 [{agent, task}]'
-    const disabledAgents = task.g.disabledAgents || []
-    const validAgents = tasks.map(t => t.agent).filter(n => agents[n] && !disabledAgents.includes(n))
-    if (validAgents.length) {
-      task.activeAgents = [...new Set([...task.activeAgents, ...validAgents])]
-      this.emit({ type: 'agent', sid: task.sid, agent: task.agent || '', activeAgents: task.activeAgents })
-    }
-    const out: string[] = []
-    const dispGen = this.curGen(task.sid)
-    // 并发上限: 按「最多同时活跃角色」分批执行, 默认 5
-    const maxConcurrent = Math.max(1, Number(task.g.maxAgents) || 5)
-    const results: { agent: string; task: string; result: string }[] = []
-    for (let i = 0; i < tasks.length; i += maxConcurrent) {
-      const chunk = tasks.slice(i, i + maxConcurrent)
-      results.push(...await Promise.all(chunk.map(async (t) => {
-        const ag = agents[t.agent]
-        if (!ag) return { agent: t.agent, task: t.task, result: 'E:未知角色' }
-        if (disabledAgents.includes(t.agent)) return { agent: t.agent, task: t.task, result: 'E:该角色已被禁用: ' + t.agent }
-      // v0.3.9: 私有记忆命名空间 —— memoryScope=private 的角色读写独立 memory-<角色>.json
-      const subMemPath = memoryPathFor(this.deps.memoryPath, ag.memoryScope, t.agent)
-      let subMem = loadMemory(subMemPath)
-      const sp = buildSubSystemPrompt(ag, t.agent, t.task, memoryBlockText(subMem, t.task))
-        const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
-        // 子任务用子角色构建工具上下文, 避免父角色白名单误伤子角色工具
-        const subCtx = {
-          ...this.buildToolCtx(task),
-          agent: t.agent,
-          isSubtask: true,
-          activeAgents: [...task.activeAgents, t.agent],
-          getMemory: () => subMem,
-          saveMemory: (m: EngineMemory) => { subMem = m; saveMemory(subMemPath, m) },
-        }
-        const agTools = filterToolsByAgent(getActiveTools(subCtx), t.agent, agents).filter(tt => !COLLAB_TOOLS.includes(tt.function.name))
-        // 子任务使用角色专属模型(如黑天鹅 vision), 未配置则继承当前模型
-        const subPick = pickSubModel(task.g, task.providers, task.curP, task.model, ag)
-        const subP = subPick.p
-        const subModel = subPick.model
-        const subMsgs: unknown[] = [
-          { role: 'system', content: sp },
-          { role: 'user', content: '[任务分派] ' + (t.task || '') + '\n[必要上下文] (仅任务所需, 无全局会话历史)' },
-        ]
-        let subText = ''
-        let subRounds = 0
-        let subRetried = false
-        const subCallCounts: Record<string, number> = {}
-        const subRun = () => new Promise<string>((resolveSub) => {
-        // 子任务轮次动态自动调节: 初始继承主任务上限, 仍在推进时自动顺延(上限 10000 仅作防挂死保险)
-        let subRoundLimit = Number(task.g.maxToolRounds) || 50
-        const toolTimeoutS = Number(task.g.toolTimeout) || 120
-        const meltLimit = Number(task.g.meltdownLimit) || 3
-        const stallMs = Math.max(90000, toolTimeoutS * 1000 + 30000)
-        let lastActivity = Date.now()
-        let finished = false
-        let watchdog: ReturnType<typeof setInterval> | null = null
-        const finish = (v: string) => { if (finished) return; finished = true; if (watchdog) clearInterval(watchdog); resolveSub(v) }
-        const touch = () => { lastActivity = Date.now() }
-        // 活动看门狗: 只在“长时间无任何数据/工具产出”时判超时, 不设总时长上限; 超时顺手中止在跑命令
-        watchdog = setInterval(() => {
-          if (Date.now() - lastActivity > stallMs) {
-            void invokeHandler('computer:abort', [task.sid], null)
-            finish(subText || '(子任务无进展超时)')
-          }
-        }, 15000)
-        const step = async () => {
-          subRounds++
-          if (subRounds > subRoundLimit) {
-            if (subRoundLimit >= 10000) { finish(subText || '(子任务轮次保险上限)'); return }
-            subRoundLimit = Math.min(subRoundLimit + 50, 10000)
-            this.trace('warn', 'subtask.rounds-extend', t.agent + ' 轮次 ' + subRounds + ' → 上限自动顺延至 ' + subRoundLimit, task.sid, task.taskId)
-          }
-          if (this.curGen(task.sid) !== dispGen) { finish('已终止'); return }
-          const clean: unknown[] = []
-          for (const mm of subMsgs) {
-            const m = mm as { role: string; tool_calls?: unknown }
-            if (m.role === 'tool') {
-              const prev = clean[clean.length - 1] as { role?: string; tool_calls?: unknown } | undefined
-              if (!prev || prev.role !== 'assistant' || !prev.tool_calls) continue
-            }
-            clean.push(mm)
-          }
-          if (clean.length !== subMsgs.length) { subMsgs.length = 0; subMsgs.push(...clean) }
-          let text = ''
-          const tcs: EngineToolCall[] = []
-          let err: unknown = null
-          const rid = 'sub' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
-          await new Promise<void>((resolveOnce) => {
-            streamChat(this.deps.netFetch, {
-              provider: subP.type,
-              model: subModel,
-              apiKey: subP.apiKey,
-              baseUrl: subP.baseUrl,
-              messages: subMsgs as unknown as LlmMsg[],
-              tools: agTools as unknown[],
-              thinkLevel: resolveThinkLevelOf(task.g, subModel),
-              requestId: rid,
-            }, {
-              onChunk: d => { touch(); if (d.content) text += d.content; if (d.done) { resolveOnce() } },
-              onToolCall: tc => { touch(); try { if (tc?.function?.name) tcs.push({ id: tc.id || ('c' + Date.now()), name: tc.function.name, args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {} }) } catch { /* 忽略 */ } },
-              onUsage: u => { touch(); this.recordUsage(task, rid, u, subModel) },
-              onError: e => { touch(); err = e; resolveOnce() },
-            }).catch(e => { touch(); err = e; resolveOnce() })
-          })
-          touch()
-          if (this.curGen(task.sid) !== dispGen) { finish('已终止'); return }
-          if (err && !subRetried) { subRetried = true; setTimeout(() => void step(), 400); return }
-          if (tcs.length) {
-            for (const tc of tcs) {
-              if (!ag.tools.includes('*') && !ag.tools.includes(tc.name) && !tc.name.startsWith('plugin_') && !tc.name.startsWith('mcp__')) {
-                subMsgs.push({ role: 'assistant', content: null, tool_calls: [{ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
-                subMsgs.push({ role: 'tool', content: 'E:权限不足，该 Agent 无权调用 ' + tc.name, tool_call_id: tc.id })
-                continue
-              }
-              const key = tc.name + '::' + JSON.stringify(tc.args || {})
-              subCallCounts[key] = (subCallCounts[key] || 0) + 1
-              if (subCallCounts[key] >= meltLimit) {
-                subMsgs.push({ role: 'assistant', content: null, tool_calls: [{ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
-                subMsgs.push({ role: 'tool', content: 'E:重复操作熔断: 同一工具同一参数已累计 ' + subCallCounts[key] + ' 次, 请停止重复并换一种方式完成', tool_call_id: tc.id })
-                continue
-              }
-              // v0.3.9: 子代理工具统一走 runToolGuarded —— 文件快照/事件钩子/子目录指令/审计与主循环一致
-              const t0 = Date.now()
-              this.emit({ type: 'stage', sid: task.sid, phase: 'tool', label: '[' + t.agent + '] 执行 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
-              const rr = await this.runToolGuarded(task, tc, subCtx, { subAgent: t.agent })
-              const subMs = Date.now() - t0
-              task.toolLog.push({ name: tc.name, args: tc.args, result: rr, error: rr.startsWith('E:'), ms: subMs, toolCallId: tc.id, agent: t.agent })
-              this.trace(rr.startsWith('E:') ? 'warn' : 'info', 'subtool', tc.name + ' ' + subMs + 'ms', task.sid, task.taskId)
-              // 子代理工具进入主计划, 便于界面可见与任务复盘
-              this.planAppend(task, [tc])
-              const subPlanIds = this.planStart(task, [tc])
-              for (const pid of subPlanIds) {
-                const st = task.planSteps.find(s => s.id === pid)
-                if (st && !String(st.label).startsWith('[')) st.label = '[' + t.agent + '] ' + st.label
-              }
-              this.planFinish(task, subPlanIds, [{ r: rr, ms: subMs }])
-              touch()
-              subMsgs.push({ role: 'assistant', content: null, tool_calls: [{ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
-              subMsgs.push({ role: 'tool', content: rr, tool_call_id: tc.id })
-            }
-            setTimeout(() => void step(), 50)
-            return
-          }
-          // v0.3.9: 子代理结果结构化 —— 提取 目标/状态/产出物/未决问题, 失败解析回退原文
-          const parsed = parseSubResult(text)
-          subText = buildSubSummary(t.agent, t.task, parsed, text)
-          finish(subText)
-        }
-        void step()
-        })
-        const r = await subRun()
-        return { agent: t.agent, task: t.task, result: r }
-      })))
-    }
-    for (const x of results) {
-      const xr = x as { error?: string; result?: string }
-      const err = xr.error ? '（未知角色）' : ''
-      out.push(`【${x.agent}${err}】${xr.error || ''}\n任务: ${x.task}\n结果: ${xr.result || '(empty)'}`)
-    }
-    return '[分发完成] 共 ' + tasks.length + ' 个子任务：\n\n' + out.join('\n\n---\n\n')
+    return runDispatchFn({
+      netFetch: this.deps.netFetch,
+      memoryPath: this.deps.memoryPath,
+      curGen: sid => this.curGen(sid),
+      emit: ev => this.emit(ev),
+      trace: (level, event, detail, sid, requestId) => this.trace(level, event, detail, sid, requestId),
+      buildToolCtx: t => this.buildToolCtx(t),
+      runToolGuarded: (t, tc, ctx, opts) => this.runToolGuarded(t, tc, ctx, opts),
+      planAppend: (t, tcs, summary) => this.planAppend(t, tcs, summary),
+      planStart: (t, tcs, messageId) => this.planStart(t, tcs, messageId),
+      planFinish: (t, ids, results) => this.planFinish(t, ids, results),
+      recordUsage: (t, rid, u, modelOverride) => this.recordUsage(t, rid, u, modelOverride),
+    }, task, tasks)
   }
 }
 

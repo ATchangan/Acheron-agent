@@ -1,9 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
-import type { SessionData, SettingsData, ProviderConfig, SkillMeta, SessionMeta } from '../global'
+import type { SessionData, SettingsData, ProviderConfig, SessionMeta } from '../global'
 import { useSettingsStore } from './settings'
-import { buildPrompt } from './context'
-import { refreshMemoryCache } from './memory'
 import { invalidateSid } from './session-state'
 import { clientSend, taskGenBySid, type PlanState } from './chat-send'
 import { clearInterjectForSid } from './interject'
@@ -42,8 +40,6 @@ const releaseRemoteSessions = (keepId: string): void => {
 // 安全序列化——防止 Proxy/循环引用导致 IPC 报错
 
 // ─── v0.2: 渲染进程内置模块 ────────────────────────────
-// 启动时预加载全局记忆
-if (typeof window !== 'undefined' && window.huangquan?.memory) refreshMemoryCache().catch(() => {})
 // v0.3.3: 启动时加载 MCP 工具清单(连接过的服务器 schema 直接并入 LLM 工具)
 if (typeof window !== 'undefined') refreshMcpTools().catch(() => {})
 
@@ -62,7 +58,7 @@ if (typeof window !== 'undefined') refreshMcpTools().catch(() => {})
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, sp: '', spIshiki: '', streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, streamText: '', streamId: '',
+  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, streamText: '', streamId: '',
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
 
@@ -72,17 +68,13 @@ export const useChatStore = create<S>((set, get) => ({
       bindEngineEvents()
     }
     refreshMcpTools().catch(() => {})
-    const [cfg, ishiki, metas, skills] = await Promise.all([
+    const [cfg, , metas] = await Promise.all([
       window.huangquan.settings.load().catch(() => ({ providers: [] as ProviderConfig[], general: { mode: 'work', theme: 'dark' } } as SettingsData)),
       window.huangquan.ishiki.load().catch(() => ''),
       window.huangquan.sessions.list().catch(() => []),
       window.huangquan.skills.list().catch(() => []),
     ])
     const mode = cfg.general?.mode || 'work'
-    const ss = skills.length ? '\n\n## 已装载技能\n' + skills.map((s: SkillMeta) => `- **${s.name}**: ${s.description}`).join('\n') : ''
-    const sp = buildPrompt(mode, ishiki) + ss
-    // 独立保存原始 ishiki(不再从 sp 反推, 避免动态内容污染身份段)
-    set({ spIshiki: ishiki })
     // 自动创建工作台目录（默认使用主进程 workspace 目录, 不再硬编码用户路径）
     let wd = (cfg.general)?.workDir || ''
     if (!wd) {
@@ -134,24 +126,22 @@ export const useChatStore = create<S>((set, get) => ({
         } catch { /* 忽略 */ }
         return { id: t.id, sid: t.sid, content: t.content, images: t.images, attachments: t.attachments, at: t.startedAt, planProgress }
       })
-    set({ sessions: list, cid: ns.id, sp, orphanTasks })
+    set({ sessions: list, cid: ns.id, orphanTasks })
   },
 
   setMode: async (m) => {
     const cfg = await window.huangquan.settings.load().catch(() => ({ providers: [] as ProviderConfig[], general: { mode: 'work', theme: 'dark' } } as SettingsData))
     cfg.general.mode = m; await window.huangquan.settings.save(cfg)
     useSettingsStore.getState().load()
-    const ishiki = await window.huangquan.ishiki.load().catch(() => '')
-    const sp = buildPrompt(m, ishiki)
     const sessions = [...get().sessions]
     const ms = sessions.filter(s => (s.mode || 'work') === m)
     if (ms.length === 0) {
       const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
       sessions.unshift(ns)
       window.huangquan.sessions.save(ns)
-      set({ sessions, cid: ns.id, sp, streamText: '', streamId: '' })
+      set({ sessions, cid: ns.id, streamText: '', streamId: '' })
     } else {
-      set({ sessions, cid: ms[0].id, sp, streamText: '', streamId: '' })
+      set({ sessions, cid: ms[0].id, streamText: '', streamId: '' })
     }
   },
 

@@ -14,7 +14,7 @@ export const taskGenBySid: Record<string, number> = {}
 export type { PlanStepView, PlanState }
 
 export interface S {
-  sessions: SessionData[]; cid: string | null; sp: string; spIshiki: string; streaming: boolean; executing: boolean; error: string | null
+  sessions: SessionData[]; cid: string | null; streaming: boolean; executing: boolean; error: string | null
   errorStep: { messageId?: string } | null
   fileChanges: number
   lastTaskId: string

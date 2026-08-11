@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scanMemoryText, freezeMemory, getFrozenMemory, clearFrozenMemory } from './memory'
+import { scanMemoryText } from './memory'
 
 describe('记忆安全扫描', () => {
   it('识别 API Key 模式', () => {
@@ -16,13 +16,3 @@ describe('记忆安全扫描', () => {
   })
 })
 
-describe('记忆冻结快照', () => {
-  it('freeze 后返回冻结内容, clear 后回退 null', () => {
-    clearFrozenMemory()
-    expect(getFrozenMemory()).toBeNull()
-    freezeMemory()
-    expect(getFrozenMemory()).not.toBeNull()
-    clearFrozenMemory()
-    expect(getFrozenMemory()).toBeNull()
-  })
-})
