@@ -10,7 +10,7 @@
 - **技能管理工具 `skill_manage`**：create / patch（局部修订，省 token）/ read / list；读取与写入前做安全扫描（密钥/提示注入），技能名净化与路径越权防护
 - **Trace 导出**：设置 → 诊断 → 运行轨迹新增「导出轨迹」按钮，保存对话框导出 JSONL 原文 + Markdown 事件统计摘要
 - **评估基准与发布门禁**：新增 `npm run eval:unit`（15 项纯函数回归，无需 API Key）、`npm run eval:live`（真实模型工具选择 BFCL-lite，可选）、`npm run release:check`（版本一致性 + CHANGELOG + HEAD tag + lint/typecheck/test/eval 全量门禁）；评估历史记入 `scripts/eval/eval-history.jsonl`
-- **品牌词扫描固化**：新增 `npm run brand:scan`（对外发布内容 hermes/codex 等品牌词 0 命中，排除第三方依赖/构建产物），并入 `release:check` 门禁，防止后续版本残留
+- **品牌词扫描固化**：新增 `npm run brand:scan`（对外发布内容竞品品牌词 0 命中，排除第三方依赖/构建产物），并入 `release:check` 门禁，防止后续版本残留
 - **HITL 确认链路核对**：风险确认（L2/L3 执行命令/文件写入/删除 + 「本次任务都批准」+「以后都批准」+ 永久放行开关）经核对已完整生效，本轮无新增
 - **验证**：测试 41 文件 254 用例全绿（新增 15）；lint 0 error；typecheck/build 通过；eval:unit 15/15
 
