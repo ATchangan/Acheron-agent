@@ -8,11 +8,12 @@ import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, Engine
 import { getAgents, type AgentDef } from './agents'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, filterToolsByAgent, slimToolResult, estimateTokens } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
-import { loadMemory, saveMemory, memoryBlockText, type EngineMemory } from './memory'
+import { loadMemory, saveMemory, memoryBlockText, memoryPathFor, addLesson, scanMemoryText, type EngineMemory } from './memory'
 import { streamChat, chatOnce, abortLLM, visionOnce, normalizeUsage } from './llm-core'
 import type { LlmMsg } from './llm-core'
+import { buildSubSystemPrompt, parseSubResult, buildSubSummary } from './sub-result'
 import { classifyCacheSupport, cacheCapToSupported } from './cache-caps'
-import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
+import { applyCompact, buildCompactNotice, buildCompactPrompt, pickCompactCandidates, pickMicroFoldCandidates, resolveCompactRatio, COMPACT_COOLDOWN_MS, COMPACT_DEFAULT_KEEP_ROUNDS, COMPACT_PREFLIGHT_MARGIN, COMPACT_SMALL_WINDOW, COMPACT_SMALL_FLOOR } from './compact'
 import { buildPlanDocContent, dedupePlanSteps, planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
 import { toolLabel as toolLabelOf, toolDetail as toolDetailOf, toolExpected as toolExpectedOf } from './tool-labels'
 import { pickAgentModel, pickInitialModel, pickSubModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
@@ -26,7 +27,7 @@ import { backoffDelay } from './reliability'
 import { invokeHandler } from './registry'
 
 interface TokenStat { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }
-interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }
+interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }
 interface CallResult { text: string; reasoning?: string; tcs: EngineToolCall[]; ttft?: number; duration?: number; usage?: EngineUsage; msgId?: string; truncated?: boolean }
 interface PlanGate { promise: Promise<void>; resolve: (v: boolean) => void }
 interface TaskGoal {
@@ -1007,6 +1008,16 @@ export class AgentEngine {
         }
       }
     }
+    // v0.3.9: 失败教训自动沉淀 —— 失败时写入(原因, 场景, 建议), 后续任务按时效注入
+    if (status === 'failed') {
+      const reason = String(error || '').slice(0, 160)
+      const scene = String(task.content || '').slice(0, 120)
+      const lesson = '失败复盘：' + reason + '。场景：' + scene + '。建议：先复现并定位第一个失败步骤，再决定重试或回滚文件改动。'
+      if (scanMemoryText(lesson).ok && addLesson(task.memory, lesson)) {
+        saveMemory(this.deps.memoryPath, task.memory)
+        this.trace('info', 'memory.lesson', '失败教训已沉淀', task.sid, task.taskId)
+      }
+    }
     this.flushPlan(task)
     this.flushPlanDoc(task)
     closeTerminalSessions(task.sid)
@@ -1301,8 +1312,10 @@ export class AgentEngine {
     }
   }
 
-  private async runToolFor(task: TaskState, tc: EngineToolCall): Promise<string> {
-    runHooks(task.g, 'tool-before', { tool: tc.name, sid: task.sid, taskId: task.taskId })
+  // v0.3.9: 统一执行管道 —— 主循环与子代理共用: 快照/Hooks/计划只读门/子目录指令注入
+  private async runToolGuarded(task: TaskState, tc: EngineToolCall, ctx: ToolRunCtx, opts: { subAgent?: string } = {}): Promise<string> {
+    const agentVar = opts.subAgent || task.agent || ''
+    runHooks(task.g, 'tool-before', { tool: tc.name, sid: task.sid, taskId: task.taskId, agent: agentVar })
     // v0.3.8: 文件快照 —— 写操作前记录原内容, 任务结束可一键回滚
     if (['write', 'edit', 'apply_patch'].includes(tc.name)) {
       const p = String((tc.args || {}).path || '')
@@ -1320,19 +1333,20 @@ export class AgentEngine {
     // v0.3.3: browser_vision 需要引擎的视觉模型队列(截图 + 视觉通道回答)
     let r: string
     if (tc.name === 'browser_vision') r = await this.runBrowserVision(task, tc)
-    else {
-      const ctx = this.buildToolCtx(task)
-      r = await runTool(tc.name, tc.args, ctx)
-    }
+    else r = await runTool(tc.name, tc.args, ctx)
     // v0.3.8: 子目录项目指令按需注入 —— 模型读取/操作某目录文件时, 自动把该目录(上溯 5 层)的规则附加到工具结果
     if (r.startsWith('E:')) { /* 工具失败不注入, 避免混淆错误信息 */ } else {
       r = this.attachSubdirInstructions(task, tc, r)
     }
-    runHooks(task.g, 'tool-after', { tool: tc.name, sid: task.sid, taskId: task.taskId, result: r.slice(0, 200) })
+    runHooks(task.g, 'tool-after', { tool: tc.name, sid: task.sid, taskId: task.taskId, result: r.slice(0, 200), agent: agentVar })
     if (['write', 'edit', 'apply_patch'].includes(tc.name) && !r.startsWith('E:')) {
-      runHooks(task.g, 'file-write', { tool: tc.name, sid: task.sid, taskId: task.taskId, path: String((tc.args || {}).path || '') })
+      runHooks(task.g, 'file-write', { tool: tc.name, sid: task.sid, taskId: task.taskId, path: String((tc.args || {}).path || ''), agent: agentVar })
     }
     return r
+  }
+
+  private runToolFor(task: TaskState, tc: EngineToolCall): Promise<string> {
+    return this.runToolGuarded(task, tc, this.buildToolCtx(task))
   }
 
   // 从工具参数里提取文件/目录路径(含 exec_command 中带引号的 Windows 路径)
@@ -1477,50 +1491,35 @@ export class AgentEngine {
     } catch { return '' }
   }
 
-  // v0.3.4: 微压缩 —— 每轮把最旧的一组纯问答折进运行摘要, 分摊压缩成本
+  // v0.3.4 起: 微压缩 —— 每轮把最旧纯问答折进运行摘要, 分摊压缩成本
+  // v0.3.9: 批量折叠 —— 一次请求压缩最多 3 组最旧纯问答, 减少摘要调用次数
   private async microCompact(task: TaskState): Promise<void> {
     const msgs = task.messages
     if (!msgs || msgs.length < 12) return
-    let lastUserIdx = -1
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === 'user') { lastUserIdx = i; break }
-    }
-    // 找最旧一组“用户→助手(无工具调用)”的完整问答
-    let foldStart = -1
-    let foldEnd = -1
-    for (let i = 0; i < msgs.length - 1 && (lastUserIdx < 0 || i < lastUserIdx); i++) {
-      if (msgs[i].role !== 'user') continue
-      const a = msgs[i + 1]
-      if (!a || a.role !== 'assistant' || a.tool_calls?.length || !a.content) continue
-      // 确保这段问答后不是挂在工具轮里
-      if (msgs[i + 2] && msgs[i + 2].role === 'tool') continue
-      foldStart = i
-      foldEnd = i + 2
-      break
-    }
-    if (foldStart < 0) return
-    const uText = String(msgs[foldStart].content || '').slice(0, 1200)
-    const aText = String(msgs[foldEnd - 1].content || '').slice(0, 1600)
+    const cand = pickMicroFoldCandidates(msgs, 3)
+    if (!cand) return
+    const { start, end, pairs } = cand
     try {
       runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'micro' })
       const rid = 'micro_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+      const qaText = pairs.map((p, i) => '问' + (i + 1) + '：' + p.user + '\n答' + (i + 1) + '：' + p.assistant).join('\n\n')
       const summary = await chatOnce(this.deps.netFetch, {
         provider: task.curP.type,
         model: task.model,
         apiKey: task.curP.apiKey,
         baseUrl: task.curP.baseUrl,
         messages: [
-          { role: 'system', content: '把下面的问答压缩成 200 字以内的要点，保留事实、路径、结论，不编造。只输出摘要。' },
-          { role: 'user', content: '问：' + uText + '\n答：' + aText },
+          { role: 'system', content: '把下面的多组问答压缩成 300 字以内的要点，保留事实、路径、结论，不编造。只输出摘要。' },
+          { role: 'user', content: qaText },
         ],
       }, u => this.recordUsage(task, rid, u as EngineUsage))
       if (!summary || summary.startsWith('E:')) return
       const folded = String(summary).slice(0, 500)
       const foldedMsg: EngineMessage = { id: uuidv4(), role: 'user', content: '[早期对话摘要]\n' + folded, timestamp: Date.now() }
-      task.messages = [...msgs.slice(0, foldStart), foldedMsg, ...msgs.slice(foldEnd)]
+      task.messages = [...msgs.slice(0, start), foldedMsg, ...msgs.slice(end)]
       task.earlySummary = (task.earlySummary ? task.earlySummary + '\n' : '') + folded
       this.emit({ type: 'compact', sid: task.sid, messages: task.messages })
-      this.trace('info', 'task.micro-compact', 'folded ' + (foldEnd - foldStart) + ' msgs', task.sid, task.taskId)
+      this.trace('info', 'task.micro-compact', 'folded ' + pairs.length + ' 组问答(' + (end - start) + ' msgs)', task.sid, task.taskId)
     } catch { /* 压缩失败不影响主流程 */ }
   }
 
@@ -1601,10 +1600,20 @@ export class AgentEngine {
         const ag = agents[t.agent]
         if (!ag) return { agent: t.agent, task: t.task, result: 'E:未知角色' }
         if (disabledAgents.includes(t.agent)) return { agent: t.agent, task: t.task, result: 'E:该角色已被禁用: ' + t.agent }
-      const sp = '## 当前身份\n' + ag.icon + ' ' + t.agent + ' — ' + ag.role + '\n' + ag.prompt + '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作，完成后给出结果摘要。不要询问。）'
+      // v0.3.9: 私有记忆命名空间 —— memoryScope=private 的角色读写独立 memory-<角色>.json
+      const subMemPath = memoryPathFor(this.deps.memoryPath, ag.memoryScope, t.agent)
+      let subMem = loadMemory(subMemPath)
+      const sp = buildSubSystemPrompt(ag, t.agent, t.task, memoryBlockText(subMem, t.task))
         const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
         // 子任务用子角色构建工具上下文, 避免父角色白名单误伤子角色工具
-        const subCtx = { ...this.buildToolCtx(task), agent: t.agent, isSubtask: true, activeAgents: [...task.activeAgents, t.agent] }
+        const subCtx = {
+          ...this.buildToolCtx(task),
+          agent: t.agent,
+          isSubtask: true,
+          activeAgents: [...task.activeAgents, t.agent],
+          getMemory: () => subMem,
+          saveMemory: (m: EngineMemory) => { subMem = m; saveMemory(subMemPath, m) },
+        }
         const agTools = filterToolsByAgent(getActiveTools(subCtx), t.agent, agents).filter(tt => !COLLAB_TOOLS.includes(tt.function.name))
         // 子任务使用角色专属模型(如黑天鹅 vision), 未配置则继承当前模型
         const subPick = pickSubModel(task.g, task.providers, task.curP, task.model, ag)
@@ -1692,8 +1701,21 @@ export class AgentEngine {
                 subMsgs.push({ role: 'tool', content: 'E:重复操作熔断: 同一工具同一参数已累计 ' + subCallCounts[key] + ' 次, 请停止重复并换一种方式完成', tool_call_id: tc.id })
                 continue
               }
-              // 子任务工具执行必须用子角色上下文(权限/白名单/目录一致)
-              const rr = await runTool(tc.name, tc.args, subCtx)
+              // v0.3.9: 子代理工具统一走 runToolGuarded —— 文件快照/事件钩子/子目录指令/审计与主循环一致
+              const t0 = Date.now()
+              this.emit({ type: 'stage', sid: task.sid, phase: 'tool', label: '[' + t.agent + '] 执行 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
+              const rr = await this.runToolGuarded(task, tc, subCtx, { subAgent: t.agent })
+              const subMs = Date.now() - t0
+              task.toolLog.push({ name: tc.name, args: tc.args, result: rr, error: rr.startsWith('E:'), ms: subMs, toolCallId: tc.id, agent: t.agent })
+              this.trace(rr.startsWith('E:') ? 'warn' : 'info', 'subtool', tc.name + ' ' + subMs + 'ms', task.sid, task.taskId)
+              // 子代理工具进入主计划, 便于界面可见与任务复盘
+              this.planAppend(task, [tc])
+              const subPlanIds = this.planStart(task, [tc])
+              for (const pid of subPlanIds) {
+                const st = task.planSteps.find(s => s.id === pid)
+                if (st && !String(st.label).startsWith('[')) st.label = '[' + t.agent + '] ' + st.label
+              }
+              this.planFinish(task, subPlanIds, [{ r: rr, ms: subMs }])
               touch()
               subMsgs.push({ role: 'assistant', content: null, tool_calls: [{ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } }] })
               subMsgs.push({ role: 'tool', content: rr, tool_call_id: tc.id })
@@ -1701,8 +1723,10 @@ export class AgentEngine {
             setTimeout(() => void step(), 50)
             return
           }
-          subText = text
-          finish(text)
+          // v0.3.9: 子代理结果结构化 —— 提取 目标/状态/产出物/未决问题, 失败解析回退原文
+          const parsed = parseSubResult(text)
+          subText = buildSubSummary(t.agent, t.task, parsed, text)
+          finish(subText)
         }
         void step()
         })

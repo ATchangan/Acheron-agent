@@ -78,3 +78,27 @@ export function applyCompact(msgs: EngineMessage[], summary: string, keepRounds:
   }
   return [head, ...keep]
 }
+
+// v0.3.9: 批量微压缩候选 —— 从最旧消息开始收集最多 maxPairs 组「用户→助手(无工具调用)」完整问答,
+// 一次性交给 LLM 摘要, 替代旧的"每组一次请求"
+export function pickMicroFoldCandidates(msgs: EngineMessage[], maxPairs = 3): { start: number; end: number; pairs: { user: string; assistant: string }[] } | null {
+  const pairs: { user: string; assistant: string }[] = []
+  let start = -1
+  let lastUserIdx = -1
+  for (let k = msgs.length - 1; k >= 0; k--) {
+    if (msgs[k].role === 'user') { lastUserIdx = k; break }
+  }
+  let i = 0
+  while (i < msgs.length - 1 && pairs.length < maxPairs) {
+    if (lastUserIdx >= 0 && i >= lastUserIdx) break
+    if (msgs[i].role !== 'user') { i++; continue }
+    const a = msgs[i + 1]
+    if (!a || a.role !== 'assistant' || a.tool_calls?.length || !a.content) { i++; continue }
+    if (msgs[i + 2] && msgs[i + 2].role === 'tool') { i++; continue }
+    if (start < 0) start = i
+    pairs.push({ user: String(msgs[i].content || '').slice(0, 1200), assistant: String(a.content).slice(0, 1600) })
+    i += 2
+  }
+  if (!pairs.length || start < 0) return null
+  return { start, end: start + pairs.length * 2, pairs }
+}

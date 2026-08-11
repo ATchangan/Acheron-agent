@@ -118,10 +118,10 @@ export type EngineEvent =
   | { type: 'assistant-usage'; sid: string; id: string; usage: EngineUsage }
   | { type: 'step'; sid: string; id: string; content: string | null; reasoning?: string; toolCalls: EngineToolCall[]; meta?: { ttft?: number; duration?: number } }
   | { type: 'tool-msg'; sid: string; msg: EngineMessage }
-  | { type: 'tool-log'; sid: string; stepId: string; log: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }[] }
+  | { type: 'tool-log'; sid: string; stepId: string; log: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }[] }
   | { type: 'stage'; sid: string; phase: 'thinking' | 'tool'; label: string; detail: string }
   | { type: 'stage-clear'; sid: string }
-  | { type: 'final'; sid: string; id: string; content: string; reasoning?: string; toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string }[]; taskTokens: number; taskMs: number }
+  | { type: 'final'; sid: string; id: string; content: string; reasoning?: string; toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }[]; taskTokens: number; taskMs: number }
   | { type: 'stream'; sid: string; streaming: boolean; executing: boolean }
   | { type: 'busy'; sid: string; busy: boolean }
   | { type: 'agent'; sid: string; agent: string; activeAgents: string[] }
