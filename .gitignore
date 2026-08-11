@@ -5,4 +5,5 @@ release/
 coverage/
 *.log
 scripts/eval-history.jsonl
+scripts/eval/eval-history.jsonl
 .DS_Store
