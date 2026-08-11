@@ -76,14 +76,14 @@ export default function FilesView() {
             style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: projectCtx.file ? 'var(--success)' : 'var(--text-muted)', cursor: projectCtx.file ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center' }}
             title={projectCtx.file ? `项目约定已加载，点击打开编辑\n\n${projectCtx.content.slice(0, 300)}` : '工作目录没有项目约定文件'}
             onClick={() => { if (projectCtx.path) { try { window.huangquan.computer.openFile(projectCtx.path) } catch { /* 忽略 */ } } }}
-          ><FileText size={12} />{projectCtx.file ? ' ✓' : ''}</span>
+          ><FileText size={12} /></span>
         </div>
         {creating && (
           <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
             <input autoFocus value={createName} placeholder={creating === 'dir' ? '文件夹名称' : '文件名.txt'} onChange={e => setCreateName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') doCreate(); if (e.key === 'Escape') setCreating(null) }}
               style={{ flex: 1, fontSize: 'calc(var(--ui-font-size) - 3px)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
-            <button onClick={doCreate} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: 'var(--border)', border: 'none', borderRadius: 4, color: 'var(--text-primary)' }}>✓</button>
+            <button onClick={doCreate} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: 'var(--border)', border: 'none', borderRadius: 4, color: 'var(--text-primary)' }}>确定</button>
           </div>
         )}
         <div style={{ maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', borderTop: '1px solid #1A1A30', paddingTop: 4 }}

@@ -17,14 +17,14 @@ try {
   const pat = 'her' + 'mes|co' + 'dex'
   const out = execSync('rg -n -i --hidden ' + EXCLUDES + ' -e "' + pat + '" .', { encoding: 'utf8' }).trim()
   if (out) {
-    console.error('❌ 品牌词命中:\n' + out)
+    console.error('[X] 品牌词命中:\n' + out)
     process.exit(1)
   }
 } catch (e) {
   // rg 无匹配时退出码为 1, 这是期望结果
-  if (e.status === 1 && !e.stdout) { console.log('✅ 品牌词扫描通过: 0 命中'); process.exit(0) }
-  console.error('❌ 品牌词扫描失败: ' + (e.message || String(e)))
+  if (e.status === 1 && !e.stdout) { console.log('[OK] 品牌词扫描通过: 0 命中'); process.exit(0) }
+  console.error('[X] 品牌词扫描失败: ' + (e.message || String(e)))
   process.exit(1)
 }
 
-console.log('✅ 品牌词扫描通过: 0 命中')
+console.log('[OK] 品牌词扫描通过: 0 命中')

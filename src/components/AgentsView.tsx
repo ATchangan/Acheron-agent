@@ -104,7 +104,7 @@ export default function AgentsView() {
                     const on = draftTools.includes('*') || draftTools.includes(t)
                     return (
                       <span key={t} onClick={() => toggleTool(t)} style={{ ...S.chip, cursor: 'pointer', background: on ? 'var(--accent)' : 'var(--bg-elevated)', color: on ? 'var(--on-accent)' : 'var(--text-secondary)' }}>
-                        {on ? '✓ ' : ''}{t}
+                        {t}
                       </span>
                     )
                   })}

@@ -1779,9 +1779,9 @@ ipcMain.handle('media:describe', async (_e, opts?: { local?: boolean; localUrl?:
   let g: Record<string, unknown> = {}
   try { g = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')).general || {} } catch (e) { console.debug('[swallow]', e) }
   out.push('媒体生成适配器:')
-  out.push(jimeng ? '  - 即梦 jimeng-cli ✓ ' + jimeng : '  - 即梦 jimeng-cli ✗ 未安装')
-  out.push(agnes ? '  - Agnes ✓ ' + agnes : '  - Agnes ✗ 未安装')
-  out.push(kling ? '  - 可灵 Kling ✓ ' + kling : '  - 可灵 Kling ✗ 未安装')
+  out.push(jimeng ? '  - 即梦 jimeng-cli [OK] ' + jimeng : '  - 即梦 jimeng-cli [X] 未安装')
+  out.push(agnes ? '  - Agnes [OK] ' + agnes : '  - Agnes [X] 未安装')
+  out.push(kling ? '  - 可灵 Kling [OK] ' + kling : '  - 可灵 Kling [X] 未安装')
   out.push('图片生成默认: ' + (g.mediaImgProvider || '自动探测') + ' / ' + (g.mediaImgMode || 'text2image') + ' / ' + (g.mediaImgRatio || '1:1'))
   out.push('视频生成默认: ' + (g.mediaVideoModel || '自动探测') + ' / ' + (g.mediaVideoMode || 'text2video') + ' / ' + (g.mediaVideoDuration || 5) + 's')
   return out.join('\n')

@@ -144,7 +144,7 @@ async function main(): Promise<void> {
     fs.appendFileSync(join(process.cwd(), 'scripts/eval/eval-history.jsonl'), JSON.stringify(report) + '\n', 'utf-8')
   } catch { /* 历史记录失败不影响评估 */ }
   console.log('\n评估结果[' + mode + ']: ' + passed + '/' + cases.length + ' 通过')
-  for (const c of cases) console.log((c.pass ? '  ✅' : '  ❌') + ' ' + c.id + ' ' + c.name + (c.detail && !c.pass ? ' — ' + c.detail : ''))
+  for (const c of cases) console.log((c.pass ? '  [OK]' : '  [X]') + ' ' + c.id + ' ' + c.name + (c.detail && !c.pass ? ' — ' + c.detail : ''))
   if (mode !== 'live' && failed > 0) process.exitCode = 1
 }
 

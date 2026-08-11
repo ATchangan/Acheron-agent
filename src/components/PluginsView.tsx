@@ -129,7 +129,7 @@ export default function PluginsView() {
       try {
         entries = await window.huangquan.computer.readDir(localPath)
       } catch {
-    setInstallMsg('✗ 指定的路径不存在')
+    setInstallMsg('[X] 指定的路径不存在')
         setInstalling(false)
         return
       }
@@ -180,11 +180,11 @@ export default function PluginsView() {
         )
       }
 
-    setInstallMsg('✓ 安装成功')
+    setInstallMsg('[OK] 安装成功')
       setLocalPath('')
       await scanPlugins()
     } catch (e: unknown) {
-    setInstallMsg(`✗ ${errMsg(e) || '安装失败'}`)
+    setInstallMsg(`[X] ${errMsg(e) || '安装失败'}`)
     } finally {
       setInstalling(false)
     }
@@ -210,14 +210,14 @@ export default function PluginsView() {
       )
 
       if (result.toLowerCase().includes('fatal') || result.toLowerCase().includes('error')) {
-    setInstallMsg(`✗ ${result.slice(0, 200)}`)
+    setInstallMsg(`[X] ${result.slice(0, 200)}`)
       } else {
-    setInstallMsg('✓ 克隆成功')
+    setInstallMsg('[OK] 克隆成功')
         setGitUrl('')
         await scanPlugins()
       }
     } catch (e: unknown) {
-    setInstallMsg(`✗ ${errMsg(e) || '克隆失败'}`)
+    setInstallMsg(`[X] ${errMsg(e) || '克隆失败'}`)
     } finally {
       setInstalling(false)
     }

@@ -192,7 +192,7 @@ export async function runSend(
             const fails = visionDesc.replace(/^E:ALL_VISION_FAILED:\s*/, '').split(' | ')
             why = '所有视觉辅助模型均无法连通：' + fails.join('；')
           } else why = (visionDesc || '').replace(/^E:/, '') || '视觉分析失败'
-          content = content + '\n\n[图片未能分析：' + why + '。可在 设置→策略→👁️视觉理解 中配置视觉辅助模型优先级（如通义 qwen-vl、智谱 glm-4v、Kimi vision 等）。]'
+          content = content + '\n\n[图片未能分析：' + why + '。可在 设置→策略→查看视觉理解 中配置视觉辅助模型优先级（如通义 qwen-vl、智谱 glm-4v、Kimi vision 等）。]'
         }
         set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, messages: x.messages.map(m => m.id === userMsgId ? { ...m, content } : m) } : x) }))
       }

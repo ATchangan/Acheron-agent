@@ -132,7 +132,7 @@ export default function FileTree({ root, depth = 0, onChanged, onNewDir, onNewFi
         onKeyDown={e => { if (e.key === 'Enter') doRename(path); if (e.key === 'Escape') setRenaming(null) }}
         onClick={e => e.stopPropagation()}
         style={{ flex: 1, fontSize: 'calc(var(--ui-font-size) - 2px)', background: 'var(--bg-elevated)', border: '1px solid ' + C.border, color: C.text, borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
-      <button onClick={() => doRename(path)} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: C.border, border: 'none', borderRadius: 4, color: C.text }}>✓</button>
+      <button onClick={() => doRename(path)} style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', cursor: 'pointer', background: C.border, border: 'none', borderRadius: 4, color: C.text }}>确定</button>
     </div>
   )
 

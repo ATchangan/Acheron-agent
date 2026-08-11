@@ -83,7 +83,7 @@ export const PluginInstallPanel: React.FC<{
     )}
 
     {installMsg && (
-  <p style={installMsg.startsWith('✓') ? s.msgSuccess : s.msgError}>
+  <p style={installMsg.startsWith('[OK]') ? s.msgSuccess : s.msgError}>
         {installMsg}
       </p>
     )}

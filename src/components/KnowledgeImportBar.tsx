@@ -30,9 +30,9 @@ export const KnowledgeImportBar: React.FC<{
       <div
         style={{
           ...S.importMsg,
-    color: importMsg.startsWith('✓')
+    color: importMsg.startsWith('[OK]')
     ? 'var(--accent-green)'
-    : importMsg.startsWith('✗') || importMsg.startsWith('△')
+    : importMsg.startsWith('[X]') || importMsg.startsWith('△')
     ? 'var(--danger)'
             : 'var(--accent)',
         }}

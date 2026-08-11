@@ -55,7 +55,7 @@ export default function KnowledgeView() {
     try {
       path = await window.huangquan.computer.selectFile()
     } catch {
-    setImportMsg('✗ 文件选择器不可用')
+    setImportMsg('[X] 文件选择器不可用')
       return
     }
     if (!path) return
@@ -73,7 +73,7 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.importFile !== 'function') {
-    setImportMsg('✗ 卷宗录入接口不可用（请确认后端已开启检索能力）')
+    setImportMsg('[X] 卷宗录入接口不可用（请确认后端已开启检索能力）')
         setImporting(false)
         return
       }
@@ -98,14 +98,14 @@ export default function KnowledgeView() {
         mem.facts.push(`${DOC_TAG}${JSON.stringify(doc)}`)
         await window.huangquan.memory.save(mem)
 
-    setImportMsg(`✓ ${name} 录入成功`)
+    setImportMsg(`[OK] ${name} 录入成功`)
         await loadDocs()
         setTimeout(() => setImportMsg(''), 3000)
       } else {
-    setImportMsg(`✗ ${name} 录入失败`)
+    setImportMsg(`[X] ${name} 录入失败`)
       }
     } catch (e: unknown) {
-    setImportMsg(`✗ 错误: ${errMsg(e)}`)
+    setImportMsg(`[X] 错误: ${errMsg(e)}`)
     } finally {
       setImporting(false)
     }
@@ -133,14 +133,14 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
-    setResults([{ content: '✗ memory.search 不可用', score: 0 }])
+    setResults([{ content: '[X] memory.search 不可用', score: 0 }])
         setSearching(false)
         return
       }
       const hits: SearchResult[] = await api.search(q)
       setResults(hits || [])
     } catch (e: unknown) {
-    setResults([{ content: `✗ 寻章出错: ${errMsg(e)}`, score: 0 }])
+    setResults([{ content: `[X] 寻章出错: ${errMsg(e)}`, score: 0 }])
     } finally {
       setSearching(false)
     }
@@ -155,7 +155,7 @@ export default function KnowledgeView() {
     try {
       const api = window.huangquan.memory
       if (typeof api.search !== 'function') {
-    setQaA('✗ 寻章检索不可用，无法组织回答。')
+    setQaA('[X] 寻章检索不可用，无法组织回答。')
         setQaLoading(false)
         return
       }
@@ -180,7 +180,7 @@ export default function KnowledgeView() {
           `\n\n---\n*提示：可将上述检索结果交给对话模型，获得更准确的回答*`
       )
     } catch (e: unknown) {
-    setQaA(`✗ 回答出错: ${errMsg(e)}`)
+    setQaA(`[X] 回答出错: ${errMsg(e)}`)
     } finally {
       setQaLoading(false)
     }

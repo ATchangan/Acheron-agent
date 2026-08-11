@@ -193,7 +193,7 @@ export default function MessageList(): JSX.Element {
       {lastReply && (
         <button className={`chat-fab chat-copy-last-btn${copiedLast ? ' copied' : ''}`}
           title={copiedLast ? '已复制最后回复' : '复制最后回复（原文 Markdown）'} onClick={copyLastReply}>
-          {copiedLast ? '✓' : '⧉'}
+          {copiedLast ? '已复制' : '复制'}
         </button>
       )}
     </div>
