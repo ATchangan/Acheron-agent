@@ -15,6 +15,7 @@
 - **结构清理（屎山）**：engine.ts 从 1749 行拆至 1379 行——计划状态机/PLANS.md 抽为 `plan-controller.ts`、token 用量与预算抽为 `usage-tracker.ts`、任务状态类型抽为 `task-types.ts`，行为零变化（254 测试兜底）；Agent 角色定义收敛为 `shared/agents-data.ts` 单一声源（引擎与渲染层共用）；移除 `docs/refactor-backup` 死备份；根目录 13 个一次性脚本与 2 个发布前备份目录移入 `_archive/`；v0.3.5~v0.3.8 源码快照移除 node_modules 与 release 构建产物（省约 3.4GB）并补快照说明
 - **结构清理（第二轮）**：engine.ts 再拆至 1139 行——上下文压缩（早期摘要/微压缩/窗口压缩）抽为 `compaction.ts`、子任务并行执行器抽为 `dispatch-runner.ts`；main.ts 489→307 行——窗口/托盘/菜单/浏览器面板/崩溃上下文抽为 `app-shell.ts`；渲染层死代码收敛——移除只写不读的 `sp/spIshiki` 状态、渲染侧 `buildPrompt/buildContextualMessages/assertAlternates`、记忆冻结快照与 `memoryBlock`、无消费方的 `refreshMemoryCache`，渲染侧 `context.ts` 收敛为共享纯函数 re-export；对应删除 2 个死代码测试文件（39 文件 241 用例全绿）
 - **自省整改落地（黄泉自评 18 条）**：P0 编码——`exec_command` 的 Python 子进程强制 `PYTHONUTF8=1/PYTHONIOENCODING=utf-8`，codebox 追加 `-X utf8 -u`，中文输出不再乱码；P0 记忆——新增 `normalizeMemory` 容量封顶（摘要 200/事实 500/置顶 10/教训 50），引擎与 IPC 双写入口执行，现库 330→200 条并归档超量摘要（`memory-summaries-archive-20260811.json`）；P1 技能——沉淀第一条 `web-game-delivery` 网页小游戏交付模板（内置 resources + 用户技能目录即时生效）；P1 协作纪律——系统提示强化“复杂任务必须 dispatch 并行、handoff 必须带 context 背景”，handoff 工具描述同步标注；P2 复盘——交付格式强制附“本次改进点”一行，信息纪律新增破坏性操作先声明、置信度/假设显式标注；新增 3 条容量封顶测试（40 文件 244 用例全绿）
+- **移除 `web-game-delivery` 技能**：用户删除用户目录副本后资源包（app.asar）内副本仍存在导致“删了还在”与重复显示，现从 `resources/skills` 彻底移除并重新打包
 - **HITL 确认链路核对**：风险确认（L2/L3 执行命令/文件写入/删除 + 「本次任务都批准」+「以后都批准」+ 永久放行开关）经核对已完整生效，本轮无新增
 - **验证**：测试 41 文件 254 用例全绿（新增 15）；lint 0 error；typecheck/build 通过；eval:unit 15/15
 
