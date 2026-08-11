@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Copy, Check } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 import { ConversationTurn, ThinkingRow } from './ConversationThread'
 import { isNearBottom, latestAssistantText } from '../store/chat-view-utils'
@@ -193,7 +194,7 @@ export default function MessageList(): JSX.Element {
       {lastReply && (
         <button className={`chat-fab chat-copy-last-btn${copiedLast ? ' copied' : ''}`}
           title={copiedLast ? '已复制最后回复' : '复制最后回复（原文 Markdown）'} onClick={copyLastReply}>
-          {copiedLast ? '已复制' : '复制'}
+          {copiedLast ? <Check size={15} /> : <Copy size={15} />}
         </button>
       )}
     </div>

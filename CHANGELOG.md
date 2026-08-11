@@ -1,27 +1,13 @@
 # 更新日志
 
 ## v0.3.9（2026-08-11）
-- **修复：记忆与上下文中文乱码**：`electron/engine/memory.ts` 记忆容量行/分区标题/检索提示与 `electron/engine/context.ts` 早期历史省略提示的中文全部损坏为 `?`（0.3.7/0.3.8 已发布版本受影响），模型实际收到的记忆块与截断提示是乱码。本轮重写为正常中文并新增 5 条记忆回归测试
-- **修复：子代理执行绕过错漏防护**：dispatch 子代理此前直接调 `runTool`，绕过主引擎统一执行管道，导致子代理写入的文件不进回滚快照、`tool-before/tool-after/file-write` 钩子不触发、工具调用不进审计日志、子目录项目指令不注入。本轮抽成 `runToolGuarded` 统一管道，主循环与子代理共用，并补实时 stage 事件、工具日志（带角色标记）与计划步骤
-- **修复：memoryScope 真正生效**：`private` 角色（三月七/银狼/艾丝妲/知更鸟/黑天鹅/螺丝咕姆）改用独立 `memory-<角色>.json`，私有记忆随子代理系统提示注入，`save_memory/recall_memory` 不再写全局共享库；`global` 角色（姬子）保持全局记忆
-- **子代理结果结构化**：子代理交付改为 JSON 硬性格式（目标/状态/产出物/未决问题），主控汇总与任务复盘可直接消费，解析失败自动回退原文
-- **上下文工程增强（GSSC）**：记忆注入改为「置顶全量 + 事实按相关度 Top5（有命中时不再混入零相关项）+ 摘要/教训按时效」并带容量头与预算护栏；微压缩从逐组折叠改为一次批量折叠 3 组问答，减少摘要调用次数
-- **失败教训自动沉淀**：任务失败自动写入「经验教训」（原因/场景/建议），按时效注入后续任务记忆块，去重 + 容量上限 50 条
-- **技能管理工具 `skill_manage`**：create / patch（局部修订，省 token）/ read / list；读取与写入前做安全扫描（密钥/提示注入），技能名净化与路径越权防护
-- **Trace 导出**：设置 → 诊断 → 运行轨迹新增「导出轨迹」按钮，保存对话框导出 JSONL 原文 + Markdown 事件统计摘要
-- **评估基准与发布门禁**：新增 `npm run eval:unit`（15 项纯函数回归，无需 API Key）、`npm run eval:live`（真实模型工具选择 BFCL-lite，可选）、`npm run release:check`（版本一致性 + CHANGELOG + HEAD tag + lint/typecheck/test/eval 全量门禁）；评估历史记入 `scripts/eval/eval-history.jsonl`
-- **品牌词扫描固化**：新增 `npm run brand:scan`（对外发布内容竞品品牌词 0 命中，排除第三方依赖/构建产物），并入 `release:check` 门禁，防止后续版本残留
-- **全仓去除 emoji**：源码/文档/脚本/发布说明中的 emoji 全部替换为中性文本标记（[OK]/[X]/[警告]）或自然文案（确定/已复制/主页/暂停等），UI 状态判断同步更新；共清理 53 个文件
-- **结构清理（屎山）**：engine.ts 从 1749 行拆至 1379 行——计划状态机/PLANS.md 抽为 `plan-controller.ts`、token 用量与预算抽为 `usage-tracker.ts`、任务状态类型抽为 `task-types.ts`，行为零变化（254 测试兜底）；Agent 角色定义收敛为 `shared/agents-data.ts` 单一声源（引擎与渲染层共用）；移除 `docs/refactor-backup` 死备份；根目录 13 个一次性脚本与 2 个发布前备份目录移入 `_archive/`；v0.3.5~v0.3.8 源码快照移除 node_modules 与 release 构建产物（省约 3.4GB）并补快照说明
-- **结构清理（第二轮）**：engine.ts 再拆至 1139 行——上下文压缩（早期摘要/微压缩/窗口压缩）抽为 `compaction.ts`、子任务并行执行器抽为 `dispatch-runner.ts`；main.ts 489→307 行——窗口/托盘/菜单/浏览器面板/崩溃上下文抽为 `app-shell.ts`；渲染层死代码收敛——移除只写不读的 `sp/spIshiki` 状态、渲染侧 `buildPrompt/buildContextualMessages/assertAlternates`、记忆冻结快照与 `memoryBlock`、无消费方的 `refreshMemoryCache`，渲染侧 `context.ts` 收敛为共享纯函数 re-export；对应删除 2 个死代码测试文件（39 文件 241 用例全绿）
-- **自省整改落地（黄泉自评 18 条）**：P0 编码——`exec_command` 的 Python 子进程强制 `PYTHONUTF8=1/PYTHONIOENCODING=utf-8`，codebox 追加 `-X utf8 -u`，中文输出不再乱码；P0 记忆——新增 `normalizeMemory` 容量封顶（摘要 200/事实 500/置顶 10/教训 50），引擎与 IPC 双写入口执行，现库 330→200 条并归档超量摘要（`memory-summaries-archive-20260811.json`）；P1 技能——沉淀第一条 `web-game-delivery` 网页小游戏交付模板（内置 resources + 用户技能目录即时生效）；P1 协作纪律——系统提示强化“复杂任务必须 dispatch 并行、handoff 必须带 context 背景”，handoff 工具描述同步标注；P2 复盘——交付格式强制附“本次改进点”一行，信息纪律新增破坏性操作先声明、置信度/假设显式标注；新增 3 条容量封顶测试（40 文件 244 用例全绿）
-- **移除 `web-game-delivery` 技能**：用户删除用户目录副本后资源包（app.asar）内副本仍存在导致“删了还在”与重复显示，现从 `resources/skills` 彻底移除并重新打包
-- **遗留问题批量修复（全部修复轮）**：技能——`skills:list` 去重并标记 `builtin`，用户目录同名技能覆盖内置；内置技能禁止删除（只能隐藏），SkillsTab 新增「内置」徽标与隐藏/恢复，引擎按 `hiddenSkills` 过滤注入；测试隔离——新增 `HQ_USER_DATA` 环境变量（main.ts 不再强制覆盖），`launch-verify.ps1` 自动使用隔离目录，测试数据不再污染真实 userData；验证闭环——强制验证 1→2 轮，两轮仍无验证命令时在决策日志记录「请人工复核」；复盘——多步骤未协作时输出 [协作提示]，交付未附「本次改进点」时记录复盘缺口；记忆——`save_memory` 对约定/规则/偏好类事实自动置顶；安全——MCP 确认统一走软件内风险确认卡片，危险命令黑名单支持 `dangerCommandExtra` 设置扩展；工程——评估历史只保留最近 200 条，`_archive/` 建立索引，此前测试产生的 userData 备份移入 `_archive/userdata-20260811`（gitignore 排除）；新增 plan-controller 协作提示测试（41 文件 247 用例全绿）
-- **#13 长任务异步 + #15/#16 工具表演与身份漂移**：输入区在任务进行中新增「并行新任务」入口与提示（长任务可在新会话并行，互不阻塞，实测双会话并发通过）；任务完成可选系统通知（`notifyTaskDone`）；系统提示新增「身份一致性」（任务身份 > 人格 > 本体，同回复单一语气）与「工具必要性」（能直接回答就不调工具）两条硬规则；交接身份段追加“全程统一不混用”约束；引擎新增工具表演检测（简短请求却调用 ≥5 次工具时记复盘缺口）
-- **查漏修复**：技能同名去重方向修正——用户目录技能优先于内置（此前内置在前会遮蔽用户定制版，引擎 `listSkills` 与 IPC `skills:list` 两处统一为“后扫描覆盖”并补优先级测试）；打包文档补充“应用运行时不能打包（win-unpacked 文件被锁导致 app-builder unpack 失败）”的已知坑
-- **查漏修复（二）**：模型降级链加深——同供应商所有模型都失败后继续尝试其他有 Key 的供应商（`triedModels` 去重，最多 4 次），不再被单个坏 Key 拖死整任务；`__ENC__` 密钥解密失败时置空并提示重新填写，不再把密文当 Key 发给 API；供应商 Key 重新落明文（应用保存时重新加密生成可解密 blob）
-- **HITL 确认链路核对**：风险确认（L2/L3 执行命令/文件写入/删除 + 「本次任务都批准」+「以后都批准」+ 永久放行开关）经核对已完整生效，本轮无新增
-- **验证**：测试 41 文件 254 用例全绿（新增 15）；lint 0 error；typecheck/build 通过；eval:unit 15/15
+- **正确性**：修复记忆/上下文中文乱码；子代理统一执行管道（回滚快照/钩子/审计/子目录指令）；memoryScope 私有记忆隔离；模型降级链 4 次全链；密钥解密失败安全兜底；危险命令黑名单支持动态扩展；MCP 确认统一走软件内风险卡片
+- **效率与结构**：engine.ts 1749→1139 行（plan-controller / usage-tracker / task-types / compaction / dispatch-runner）；main.ts 489→306（app-shell）；Agent 定义单源；渲染层死代码收敛；技能同名用户优先、内置技能可隐藏
+- **记忆与技能**：记忆容量封顶（摘要 200/事实 500/置顶 10/教训 50）自动归档；约定/规则类 save_memory 自动置顶
+- **协作与纪律**：复杂任务强制 dispatch、handoff 必须带 context；交付附「本次改进点」；工具表演检测；长任务可并行新会话 + 完成通知
+- **体验**：复制按钮图标化；输出 Markdown 排版优化（行高/标题/代码块/引用/表格）；全仓去 emoji、品牌词 0
+- **工程**：发布门禁 release:check；HQ_USER_DATA 测试隔离；评估历史限 200 条；README/发布说明同步
+- 验证：42 文件 248 用例全绿；CDP 全功能 35/35、UI 21/21、端到端 12/12
 
 ## v0.3.8（2026-08-09）
 - **Windows 命令执行修复**：cmd 在部分系统（OEM 437）会把中文输出成 `?`，现改为含非 ASCII 的命令自动走 PowerShell（UTF-8 输出），纯 ASCII 简单命令仍走 cmd；系统提示新增「Windows 命令纪律」（只写 PowerShell 语法、禁止 bash 语法、中文路径用 PowerShell）
