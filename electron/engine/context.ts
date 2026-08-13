@@ -103,6 +103,23 @@ export interface ContextBuildOpts {
   agents: Record<string, AgentDef>
   mode: string
   earlySummary?: string
+  keyInfo?: string
+  skillBodies?: { name: string; body: string }[]
+}
+
+// v0.4.0 M7: 四要素状态提炼(任务目标/已完成/产出物/未决问题), 常驻 system 尾部, 压缩后不丢关键状态
+export function extractKeyInfo(goal: string, steps: { label?: string; status?: string; id?: string }[], toolLog: { name: string; args: Record<string, unknown>; error: boolean }[]): string {
+  const done = steps.filter(s => s.status === 'done').map(s => s.label || s.id || '').filter(Boolean).slice(-8)
+  const pending = steps.filter(s => s.status === 'pending' || s.status === 'failed').map(s => s.label || s.id || '').filter(Boolean).slice(-8)
+  const outputs = toolLog.filter(t => ['write', 'edit', 'apply_patch', 'mkdir'].includes(t.name) && !t.error)
+    .map(t => String((t.args as { path?: unknown }).path || '')).filter(Boolean).slice(-8)
+  if (!goal && !done.length && !pending.length && !outputs.length) return ''
+  const parts: string[] = ['## 任务状态（四要素）']
+  if (goal) parts.push('目标: ' + String(goal).slice(0, 160))
+  if (done.length) parts.push('已完成: ' + done.join(' / ').slice(0, 240))
+  if (outputs.length) parts.push('产出物: ' + outputs.join(' / ').slice(0, 240))
+  if (pending.length) parts.push('未决: ' + pending.join(' / ').slice(0, 240))
+  return parts.join('\n').slice(0, 600)
 }
 
 export function buildContextualMessages(msgs: EngineMessage[], withImages: boolean, opts: ContextBuildOpts): EngineMessage[] {
@@ -197,6 +214,10 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   const currentMode = opts.g.mode || 'work'
   const ishiki = opts.spIshiki || opts.sp.replace(/\n##.+/s, '')
   let sp = buildPrompt(currentMode, ishiki, opts.g, opts.agents, opts.g.workDir || '') + earlySummary
+  if (opts.keyInfo) sp += '\n\n' + opts.keyInfo
+  if (opts.skillBodies && opts.skillBodies.length) {
+    sp += '\n\n' + opts.skillBodies.map(s => `【技能: ${s.name}】\n${s.body.slice(0, 800)}\n【技能结束】`).join('\n\n')
+  }
   const lastUserMsg = [...d].reverse().find(m => m.role === 'user' && typeof m.content === 'string')
   const lastUserText = (lastUserMsg && typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '')
   if (opts.projectCtx?.file && opts.projectCtx.content) {

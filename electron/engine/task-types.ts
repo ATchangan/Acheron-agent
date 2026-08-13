@@ -72,6 +72,7 @@ export interface TaskState {
   earlySummary?: string
   earlySummaryDone?: boolean
   skillsCache?: { name: string; description: string }[]
+  matchedSkills?: { name: string; body: string }[]
   lastCompactAt?: number
   lastPromptTokens?: number
   compactCount?: number

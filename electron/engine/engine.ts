@@ -7,14 +7,14 @@ import { isAbsolute, join } from 'path'
 import { Notification } from 'electron'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
-import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult } from './context'
+import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult, extractKeyInfo } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, addLesson, scanMemoryText, type EngineMemory } from './memory'
 import { streamChat, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
 import { pickInitialModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
-import { listSkills } from './skill-files'
+import { listSkills, matchSkills } from './skill-files'
 import { runHooks } from './hooks'
 import { isPlanReadonlyTool } from './plan-tools'
 import { chainDirs, collectSubdirInstructions, discoverProjectInstructions, type InstructionFile } from './project-instructions'
@@ -30,6 +30,7 @@ import { invokeHandler } from './registry'
 import { saveToolOutput, insertAudit } from '../db'
 import { detectTaskType, routeProfile } from '../llm/gateway'
 import { enqueueLocalVision } from '../llm/vision'
+import { recordSkillHit } from '../db'
 
 export interface EngineDeps {
   settingsPath: string
@@ -362,6 +363,14 @@ export class AgentEngine {
       // 自省整改: 内置技能隐藏名单 —— 隐藏的技能不注入系统提示, 但仍可 read_skill 读取
       const hiddenSkills = new Set((task.g.hiddenSkills || []).map(String))
       task.skillsCache = listSkills(this.deps.skillsDirs || []).filter(s => !hiddenSkills.has(s.name))
+      // v0.4.0 M8: 按用户消息匹配技能(triggers 正则 > description 关键词), top2 注入, 命中计数落库
+      if (task.g.perf?.skillInject !== false) {
+        const matched = matchSkills(this.deps.skillsDirs || [], task.content, 2).filter(s => !hiddenSkills.has(s.name))
+        task.matchedSkills = matched.map(s => ({ name: s.name, body: s.body }))
+        for (const s of matched) recordSkillHit(s.name)
+      } else {
+        task.matchedSkills = []
+      }
       const projectInstr = discoverProjectInstructions(g.workDir || '', (Number(g.projectDocMaxKb) || 32) * 1024)
       task.projectCtx = projectInstr ? { file: projectInstr.files[0].path, content: projectInstr.content, truncated: projectInstr.truncated, dirs: projectInstr.dirs } : null
       task.instrVisited = new Set(task.projectCtx?.dirs || chainDirs(g.workDir || ''))
@@ -998,6 +1007,8 @@ export class AgentEngine {
       agents,
       mode: task.g.mode || 'work',
       earlySummary: task.earlySummary,
+      keyInfo: task.g.mode !== 'chat' ? extractKeyInfo(task.goal.objective, task.planSteps, task.toolLog) : '',
+      skillBodies: task.matchedSkills,
     })
     return messages as unknown[]
   }

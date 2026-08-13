@@ -165,6 +165,7 @@ export interface GeneralSettings {
     interjectMerge?: boolean // 0.3.4 T3 插话合并
     compactSummary?: boolean // 窗口阈值压缩（真实用量触发 + LLM 批量摘要）
     toolCore?: boolean        // 0.3.8: 主控核心工具模式(默认开), 关闭后恢复全量工具
+    skillInject?: boolean     // v0.4.0 M8: 按需注入匹配技能正文(默认开, 关闭后技能列表仍可用)
   }
   mediaImgProvider?: string
   mediaImgModel?: string
