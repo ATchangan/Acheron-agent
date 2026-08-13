@@ -168,6 +168,17 @@ export class PetManager {
     try { this.win.webContents.send('pet:event', { event, payload: payload || {} }) } catch { /* 忽略 */ }
   }
 
+  getWindow(): BrowserWindow | null {
+    return this.win && !this.win.isDestroyed() ? this.win : null
+  }
+
+  persistPos(): void {
+    const win = this.getWindow()
+    if (!win) return
+    const [x, y] = win.getPosition()
+    this.writeSettings({ pos: { x, y } })
+  }
+
   openMain(): void {
     const main = this.opts.getMain()
     if (main) { main.show(); main.focus() }

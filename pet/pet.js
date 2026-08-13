@@ -9,6 +9,7 @@
   var idleTimer = null
   var bubbleTimer = null
   var dragging = false
+  var moved = false
   var dragStart = null
   var status = 'idle'
 
@@ -16,6 +17,7 @@
     if (!cfg.bubble || !text) return
     bubble.textContent = text
     bubble.classList.add('show')
+    if (window.pet3d) window.pet3d.setTalk()
     if (bubbleTimer) clearTimeout(bubbleTimer)
     bubbleTimer = setTimeout(function () { bubble.classList.remove('show') }, 4500)
   }
@@ -84,6 +86,7 @@
   })
 
   document.body.addEventListener('click', function () {
+    if (moved) { moved = false; return }
     var lines = cfg.lines && cfg.lines.length ? cfg.lines : ['主人，我在']
     say(lines[Math.floor(Math.random() * lines.length)])
   })
@@ -96,8 +99,11 @@
   })
 
   document.body.addEventListener('mousedown', function (ev) {
+    if (ev.button !== 0) return
     dragging = true
+    moved = false
     dragStart = { mx: ev.screenX, my: ev.screenY }
+    window.petIpc.invoke('pet:drag-start', dragStart)
   })
 
   window.addEventListener('mouseup', function (ev) {
@@ -105,6 +111,7 @@
     dragging = false
     var dx = ev.screenX - dragStart.mx
     var dy = ev.screenY - dragStart.my
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) window.petIpc.invoke('pet:moved', window.screenX + dx, window.screenY + dy)
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true
+    window.petIpc.invoke('pet:drag-end')
   })
 })()

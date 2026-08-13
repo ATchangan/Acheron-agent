@@ -1,9 +1,11 @@
 // electron/ipc/pet.ts — 桌宠 IPC 桥(v0.4.0 M9)
-import { ipcMain, Menu } from 'electron'
+import { ipcMain, Menu, screen } from 'electron'
 import type { PetManager } from '../pet'
 
 export function registerPetIpc(deps: { pet: PetManager }): void {
   const { pet } = deps
+  let dragTimer: ReturnType<typeof setInterval> | null = null
+  let dragSeq = 0
 
   ipcMain.handle('pet:toggle', (_e, enable?: boolean) => pet.toggle(enable === undefined ? undefined : Boolean(enable)))
   ipcMain.handle('pet:state', () => pet.isEnabled())
@@ -12,6 +14,32 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
   ipcMain.handle('pet:open-main', () => { pet.openMain(); return true })
   ipcMain.handle('pet:moved', (_e, x: number, y: number) => { pet.move(Number(x) || 0, Number(y) || 0); return true })
   ipcMain.handle('pet:reset-pos', () => { pet.resetPosition(); return true })
+  // 拖动: 主进程 16ms 轮询光标并实时跟随窗口, 鼠标移出窗口也能继续拖(窗口追着光标跑)
+  ipcMain.handle('pet:drag-start', (_e, p: { mx: number; my: number }) => {
+    const win = pet.getWindow()
+    if (!win || dragTimer) return false
+    const seq = ++dragSeq
+    const sx = Number(p?.mx) || 0
+    const sy = Number(p?.my) || 0
+    const [wx, wy] = win.getPosition()
+    dragTimer = setInterval(() => {
+      try {
+        const c = screen.getCursorScreenPoint()
+        win.setPosition(wx + c.x - sx, wy + c.y - sy)
+      } catch { /* 忽略 */ }
+    }, 16)
+    // 保险: 12s 强制结束, 防止 mouseup 在快速拖动中丢失导致拖拽僵住
+    setTimeout(() => {
+      if (dragSeq === seq && dragTimer) { clearInterval(dragTimer); dragTimer = null }
+    }, 12000)
+    return true
+  })
+  ipcMain.handle('pet:drag-end', () => {
+    dragSeq += 1
+    if (dragTimer) { clearInterval(dragTimer); dragTimer = null }
+    pet.persistPos()
+    return true
+  })
   ipcMain.handle('pet:menu', () => {
     const form = pet.getForm()
     const action = pet.getAction()

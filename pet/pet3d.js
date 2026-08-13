@@ -103,6 +103,8 @@ const clock = new THREE.Clock()
 const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
 let boneByName = new Map()
 const scratch = new Map() // 每帧骨骼偏移累加器
+let talkUntil = -1
+const look = { targetYaw: 0, targetPitch: 0, yaw: 0, pitch: 0 }
 
 // ---------- 随机张望(头部目标导向, 而非机械摆动) ----------
 const headMotion = { next: 0, t0: 0, dur: 1, hold: 1, sYaw: 0, sPitch: 0, tYaw: 0, tPitch: 0, cYaw: 0, cPitch: 0 }
@@ -205,7 +207,23 @@ function centerAndFrame() {
 
   root.rotation.y = BASE_YAW
   root.updateMatrixWorld(true)
+  // Q版化(骨骼缩放)后几何包围盒不含放大, 用骨骼位置做近似补偿:
+  // 头顶向上抬 + 头宽/深向外扩, 保证放大的头部不裁出画面
   const box = new THREE.Box3().setFromObject(root)
+  const neckBone = bone('首')
+  const headBone = bone('頭')
+  if (neckBone && headBone) {
+    const neckY = neckBone.getWorldPosition(new THREE.Vector3()).y
+    const headH = Math.max(box.max.y - neckY, 1)
+    const grow = 0.26
+    box.max.y = neckY + headH * (1 + grow)
+    const halfW = (box.max.x - box.min.x) / 2
+    box.max.x += halfW * grow * 0.45
+    box.min.x -= halfW * grow * 0.45
+    const halfD = (box.max.z - box.min.z) / 2
+    box.max.z += halfD * grow * 0.25
+    box.min.z -= halfD * grow * 0.25
+  }
   const size = box.getSize(new THREE.Vector3())
   const center = box.getCenter(new THREE.Vector3())
   const fov = THREE.MathUtils.degToRad(camera.fov)
@@ -213,7 +231,7 @@ function centerAndFrame() {
   const distH = size.y / (2 * Math.tan(fov / 2))
   const fovH = 2 * Math.atan(Math.tan(fov / 2) * aspect)
   const distW = size.x / (2 * Math.tan(fovH / 2))
-  const dist = Math.max(distH, distW) * 1.07
+  const dist = Math.max(distH, distW) * 1.14
   camera.position.set(0, center.y, dist + Math.max(size.z, 1) / 2)
   camera.lookAt(0, center.y, 0)
   camera.updateProjectionMatrix()
@@ -240,6 +258,16 @@ function resetPose() {
 
 function bone(name) {
   return boneByName.get(name) || null
+}
+
+// Q 版化: 头(含全部头发/发饰/眼睛, 均挂在「頭」下)整体放大, 躯干缩短(不动腿部 IK 链), 脖子稍加长衔接
+function applyChibi() {
+  const head = bone('頭')
+  if (head) head.scale.set(1.26, 1.26, 1.26)
+  const upper = bone('上半身')
+  if (upper) upper.scale.set(1, 0.88, 1)
+  const neck = bone('首')
+  if (neck) neck.scale.set(1, 1.18, 1)
 }
 
 function addRot(name, rx, ry, rz) {
@@ -301,18 +329,25 @@ function applyIdlePose(now, dt) {
   // 随机张望 + 随机小动作(手势期间暂停张望, 避免打架)
   if (!gesture) {
     updateHead(now)
-    addRot('首', 0, headMotion.cYaw, 0)
-    addRot('頭', headMotion.cPitch * 0.6, headMotion.cYaw * 0.4, 0)
+    addRot('首', 0, headMotion.cYaw + look.yaw, 0)
+    addRot('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
   }
   updateGesture(now)
 
   commitPose()
 
-  // 眨眼(morph)
+  // 眨眼 + 说话嘴型(morph)
   updateBlink(dt)
   const dict = bodyMesh.morphTargetDictionary
-  const idx = dict ? dict['まばたき'] : undefined
-  if (idx !== undefined && bodyMesh.morphTargetInfluences) bodyMesh.morphTargetInfluences[idx] = blinkWeight
+  if (dict && bodyMesh.morphTargetInfluences) {
+    const blinkIdx = dict['まばたき']
+    if (blinkIdx !== undefined) bodyMesh.morphTargetInfluences[blinkIdx] = blinkWeight
+    const mouthIdx = dict['あ']
+    if (mouthIdx !== undefined) {
+      const talk = now < talkUntil ? Math.abs(Math.sin(now * 14)) * 0.42 : 0
+      bodyMesh.morphTargetInfluences[mouthIdx] = talk
+    }
+  }
 
   // 脚下阴影随呼吸微缩
   if (shadowEl) {
@@ -320,6 +355,12 @@ function applyIdlePose(now, dt) {
     shadowEl.style.opacity = String(0.3 - breathe * 0.015)
     shadowEl.style.transform = `translateX(-50%) scale(${s.toFixed(3)})`
   }
+}
+
+// 目光跟随: 鼠标在桌宠窗口上时头部微微朝向光标, 移开后缓慢回正
+function updateLook() {
+  look.yaw = lerp(look.yaw, look.targetYaw, 0.12)
+  look.pitch = lerp(look.pitch, look.targetPitch, 0.12)
 }
 
 function helperPhysicsOnly() {
@@ -362,6 +403,10 @@ function setAction(name) {
   playDance(name)
 }
 
+function setTalk() {
+  talkUntil = clockT + 1.4
+}
+
 // 跳舞时把重心(センター)锁定在画面中心, 避免滑步/位移把角色带出窗口
 function centerDance() {
   if (state.action === 'idle' || !bodyMesh) return
@@ -386,6 +431,7 @@ function loadForm(form) {
       bodyMesh = mesh
       pivot.add(mesh)
       captureRestPose(mesh)
+      applyChibi()
       loadedForm = form
       loadingForm = null
       centerAndFrame()
@@ -410,6 +456,7 @@ function animate() {
   const status = state.status
   if (state.action === 'idle') {
     applyIdlePose(clockT, dt)
+    updateLook()
     // 站姿微摆: 慢速有机噪声, 而非固定正弦
     root.rotation.y = BASE_YAW + org(clockT, curParams.swayF, curParams.sway, curParams.swayF * 0.61, curParams.sway * 0.45, curParams.swayF * 1.7, curParams.sway * 0.22)
     root.position.y = 0
@@ -480,8 +527,9 @@ async function initAmmo() {
     // 工厂函数: 以 { wasmBinary } 注入内存态 wasm, 返回 b.ready 并把 window.Ammo 置为模块
     const ready = factory({ wasmBinary: bin })
     const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 8000))
-    await Promise.race([ready, timeout])
-    window.__ammoReady = !!window.Ammo && !!window.Ammo.btVector3
+    const ok = await Promise.race([ready.then(() => true), timeout])
+    // asm 是 wasm 实例导出挂载点: 只有真正编译成功才会存在(btVector3 之类的 JS stub 不算)
+    window.__ammoReady = ok === true && !!window.Ammo && !!window.Ammo.asm
   } catch (e) {
     console.warn('式神物理引擎初始化失败(降级为静态头发):', e && e.message ? e.message : e)
     window.__ammoReady = false
@@ -495,7 +543,27 @@ async function boot() {
 }
 
 window.addEventListener('resize', resize)
-window.pet3d = { setStatus, setForm, setAction, resize }
+window.pet3d = {
+  setStatus, setForm, setAction, setTalk, resize,
+  debug: () => {
+    const g = bodyMesh && bodyMesh.geometry
+    let nan = 0
+    if (g && g.attributes.position) {
+      const a = g.attributes.position.array
+      for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) nan++
+    }
+    return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z }
+  },
+}
+
+// 目光跟随鼠标(仅待机时生效)
+canvas.addEventListener('mousemove', (ev) => {
+  const w = canvas.clientWidth || 1
+  const h = canvas.clientHeight || 1
+  look.targetYaw = (ev.clientX / w - 0.5) * 2 * 0.1
+  look.targetPitch = -(ev.clientY / h - 0.5) * 2 * 0.07
+})
+canvas.addEventListener('mouseleave', () => { look.targetYaw = 0; look.targetPitch = 0 })
 
 resize()
 void boot()
