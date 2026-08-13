@@ -218,6 +218,8 @@ export interface GeneralSettings {
     breath?: 'light' | 'normal' | 'strong'
     gesture?: 'low' | 'normal' | 'high'
     chibi?: number
+    fps?: number        // 渲染帧率上限, 0=不限(默认 60)
+    transition?: number // 坐/站与状态动画过渡时长(ms, 默认 450)
     pos?: { x: number | null; y: number | null }
   }
   programMemory?: boolean

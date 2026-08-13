@@ -23,6 +23,8 @@ export interface PetSettings {
   breath?: 'light' | 'normal' | 'strong'
   gesture?: 'low' | 'normal' | 'high'
   chibi?: number
+  fps?: number
+  transition?: number
   pos?: { x: number | null; y: number | null }
 }
 
@@ -43,6 +45,7 @@ export const PET_LINES: Record<string, string[]> = {
 const SIT_FRAC = 0.42
 const FOLLOW_POLL_MS = 380
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+const numOr = (v: unknown, def: number) => (Number.isFinite(Number(v)) ? Number(v) : def)
 
 export class PetManager {
   private win: BrowserWindow | null = null
@@ -150,6 +153,8 @@ export class PetManager {
       breath: s.breath === 'light' || s.breath === 'strong' ? s.breath : 'normal',
       gesture: s.gesture === 'low' || s.gesture === 'high' ? s.gesture : 'normal',
       chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
+      fps: clamp(Math.round(numOr(s.fps, 60)), 0, 240),
+      transition: clamp(Math.round(numOr(s.transition, 450)), 100, 3000),
       topmost: s.topmost !== false,
     })
   }
@@ -224,6 +229,8 @@ export class PetManager {
           breath: s.breath === 'light' || s.breath === 'strong' ? s.breath : 'normal',
           gesture: s.gesture === 'low' || s.gesture === 'high' ? s.gesture : 'normal',
           chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
+          fps: clamp(Math.round(numOr(s.fps, 60)), 0, 240),
+          transition: clamp(Math.round(numOr(s.transition, 450)), 100, 3000),
           lines: PET_LINES[s.agent || '黄泉'] || PET_LINES['黄泉'],
         })
       }

@@ -14,7 +14,7 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
   ipcMain.handle('pet:set-anchor', (_e, anchor: string) => pet.setAnchor(anchor === 'window' || anchor === 'taskbar' ? anchor : 'float'))
   ipcMain.handle('pet:set-options', (_e, patch: Record<string, unknown>) => {
     const p: Partial<PetSettings> = {}
-    for (const k of ['scale', 'opacity', 'chibi']) {
+    for (const k of ['scale', 'opacity', 'chibi', 'fps', 'transition']) {
       const v = Number((patch || {})[k])
       if (Number.isFinite(v)) (p as Record<string, unknown>)[k] = v
     }

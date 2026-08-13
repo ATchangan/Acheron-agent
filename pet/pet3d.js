@@ -45,7 +45,7 @@ const BASE_YAW = 0.42 // 约 24°, 3/4 侧脸
 const ACTIONS = { idle: null, dance1: '1.vmd', dance2: '2.vmd', dance3: '3.vmd' }
 const state = { form: 'normal', status: 'idle', action: 'idle', anchor: 'float', dragging: false }
 // 可调参数(设置页自由调节, 默认与 v0.4.0 行为一致)
-const options = { look: true, physics: true, breath: 'normal', gesture: 'normal', chibi: 1 }
+const options = { look: true, physics: true, breath: 'normal', gesture: 'normal', chibi: 1, fps: 60, transition: 450 }
 const BREATH_MUL = { light: 0.55, normal: 1, strong: 1.5 }
 const GESTURE_MUL = { low: 2.2, normal: 1, high: 0.55 }
 
@@ -143,7 +143,8 @@ let hopUntil = 0
 let shakeUntil = 0
 let danceLoading = null
 let sitBlend = 0
-const clock = new THREE.Clock()
+let lastTickMs = performance.now()
+let frameAccumMs = 0
 
 const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
 let boneByName = new Map()
@@ -514,9 +515,11 @@ function commitPose() {
 let lastBreathe = 0
 function applyIdlePose(now, dt) {
   if (!bodyMesh) return
-  // 状态参数平滑过渡
+  // 状态参数平滑过渡; transition 是名义时长(ms), 默认 450 与既有手感一致, 数值越大越慢
+  const transition = Number.isFinite(Number(options.transition)) ? Math.max(100, Math.min(3000, Number(options.transition))) : 450
+  const transMul = 450 / transition
   const target = STATUS_PARAMS[state.status] || STATUS_PARAMS.idle
-  for (const k of Object.keys(curParams)) curParams[k] = lerp(curParams[k], target[k], Math.min(1, dt * 2.2))
+  for (const k of Object.keys(curParams)) curParams[k] = lerp(curParams[k], target[k], Math.min(1, dt * 2.2 * transMul))
   const tm = now * curParams.breathMul * (BREATH_MUL[options.breath] || 1)
 
   // 呼吸: 主频 + 两层微扰, 躯干带动肩与头
@@ -525,7 +528,7 @@ function applyIdlePose(now, dt) {
 
   // 坐/站平滑过渡(约 0.3s): 切换锚点时腿部/手臂逐渐折叠, 不再瞬间弹到坐姿
   const sitTarget = isSitting() ? 1 : 0
-  sitBlend = lerp(sitBlend, sitTarget, Math.min(1, dt * 3.4))
+  sitBlend = lerp(sitBlend, sitTarget, Math.min(1, dt * 3.4 * transMul))
   if (Math.abs(sitBlend - sitTarget) < 0.01) sitBlend = sitTarget
   if (sitBlend > 0.001) addSitPose(now, breathe, sitBlend)
   if (sitTarget === 1) gesture = null
@@ -719,7 +722,18 @@ function loadForm(form) {
 
 function animate() {
   requestAnimationFrame(animate)
-  const dt = Math.min(clock.getDelta(), 0.1)
+  // 限帧: 高刷新率屏幕(120/144Hz)下 rAF 会白跑大量帧, 这里按 options.fps 节流整个模拟+渲染循环。
+  // 时间片余量保留到下一帧, 既保证平均帧率精确, 又不会在后台卡顿恢复后连补十几帧。
+  const nowMs = performance.now()
+  let elapsed = nowMs - lastTickMs
+  lastTickMs = nowMs
+  if (elapsed > 250) elapsed = 250
+  const fps = Number.isFinite(Number(options.fps)) ? Math.max(0, Math.min(240, Number(options.fps))) : 60
+  const intervalMs = fps > 0 ? 1000 / fps : 0
+  frameAccumMs += elapsed
+  if (intervalMs > 0 && frameAccumMs < intervalMs) return
+  const dt = Math.min(intervalMs > 0 ? intervalMs / 1000 : elapsed / 1000, 0.1)
+  frameAccumMs = intervalMs > 0 ? frameAccumMs % intervalMs : 0
   clockT += dt
   helper.update(dt)
 
@@ -808,6 +822,8 @@ function setOptions(o) {
     options.chibi = Math.max(0, Math.min(1.5, Number(o.chibi)))
     reframeNeeded = true
   }
+  if (Number.isFinite(Number(o.fps))) options.fps = Math.max(0, Math.min(240, Number(o.fps)))
+  if (Number.isFinite(Number(o.transition))) options.transition = Math.max(100, Math.min(3000, Number(o.transition)))
   if (reframeNeeded && bodyMesh) {
     resetPose()
     applyChibi()
@@ -870,7 +886,7 @@ window.pet3d = {
       const a = g.attributes.position.array
       for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) nan++
     }
-    return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y }
+    return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition } }
   },
   materials: () => {
     if (!bodyMesh || !bodyMesh.geometry) return null

@@ -8,7 +8,6 @@ import { U } from './ui-styles'
 // 文件视图 —— 原右侧面板的工作目录/文件树/系统信息迁入左侧导航
 export default function FilesView() {
   const workDir = useSettingsStore(s => s.general.workDir)
-  const [perf, setPerf] = useState<{ cpuPct: number; memPct: number; memUsed: number; memTotal: number; gpuPct: number; gpuName: string } | null>(null)
 
   // 文件浏览器状态
   const [treeKey, setTreeKey] = useState(0)
@@ -37,31 +36,9 @@ export default function FilesView() {
     else { setCreating(null); setCreateName(''); setTreeKey(k => k + 1) }
   }
 
-  // CPU/RAM/GPU 实时占用 —— 2.5s 轮询
-  useEffect(() => {
-    let alive = true
-    const tick = async () => {
-      try { const p = await window.huangquan.computer.sysPerf(); if (alive) setPerf(p) } catch { /* 静默 */ }
-    }
-    tick()
-    const iv = setInterval(tick, 2500)
-    return () => { alive = false; clearInterval(iv) }
-  }, [])
-
-  const fmt = (b: number) => b < 1024 ? b + 'B' : b < 1048576 ? (b / 1024).toFixed(1) + 'K' : (b / 1048576).toFixed(1) + 'M'
-
   return (
     <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="right-top-name"><h3>文件</h3></div>
-
-      {/* 系统信息 */}
-      {perf && (
-        <div className="sys-bar">
-          <div className="sys-item"><span className="sys-label">处理器</span><span style={{ color: perf.cpuPct > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.cpuPct}%</span></div>
-          <div className="sys-item"><span className="sys-label">内存</span><span>{fmt(perf.memUsed)}/{fmt(perf.memTotal)} ({perf.memPct}%)</span></div>
-          <div className="sys-item" title={perf.gpuName ? '当前显卡：' + perf.gpuName : ''}><span className="sys-label">显卡</span><span style={{ color: (perf.gpuPct || 0) > 80 ? 'var(--danger)' : 'var(--text-primary)' }}>{perf.gpuPct == null ? '—' : perf.gpuPct + '%'}</span></div>
-        </div>
-      )}
 
       {/* 工作目录 + 文件树 */}
       {workDir && <div className="sys-bar" style={{ display: 'block', position: 'relative' }}>

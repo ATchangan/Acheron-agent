@@ -21,6 +21,8 @@ export default function PetTab() {
   const sel: React.CSSProperties = {
     ...S.sel, minWidth: 180,
   }
+  const fpsUnlimited = (pet.fps ?? 60) === 0
+  const fpsValue = fpsUnlimited ? 60 : Math.max(30, Math.min(144, pet.fps || 60))
 
   return (
     <div style={U.pageBody}>
@@ -73,6 +75,15 @@ export default function PetTab() {
           <div style={S.row}><div style={S.label}>小动作频率</div><select style={sel} value={pet.gesture || 'normal'} onChange={e => petPatch({ gesture: e.target.value })}><option value="low">少</option><option value="normal">标准</option><option value="high">多</option></select></div>
         </div>
         <div style={{ ...S.row, marginTop: 6 }}><div style={S.label}>透明度提示</div><div style={S.hint}>改动立即作用于桌宠窗口，不影响主界面</div></div>
+      </div>
+
+      <div style={S.card}>
+        <div style={S.section}>性能与动画</div>
+        <Toggle checked={fpsUnlimited} onChange={v => petPatch({ fps: v ? 0 : 60 })} label="不限帧率" hint="关闭后按上限渲染，降低 CPU/GPU 占用（高刷新率屏幕尤其明显）" />
+        {!fpsUnlimited && (
+          <StepSetting label="帧率上限" hint="30 ~ 144 FPS，默认 60" value={fpsValue} min={30} max={144} step={6} unit="fps" onChange={v => petPatch({ fps: v })} />
+        )}
+        <StepSetting label="动画过渡速度" hint="坐/站切换与状态动作的平滑时长，数值越小越快（默认 450ms）" value={Math.round(pet.transition ?? 450)} min={150} max={1500} step={50} unit="ms" onChange={v => petPatch({ transition: v })} />
       </div>
 
       <div style={S.card}>
