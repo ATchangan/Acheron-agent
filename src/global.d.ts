@@ -32,6 +32,7 @@ declare global {
         setForm: (form: 'normal' | 'ultimate') => Promise<'normal' | 'ultimate'>
         setAction: (action: 'idle' | 'dance1' | 'dance2' | 'dance3') => Promise<'idle' | 'dance1' | 'dance2' | 'dance3'>
         resetPos: () => Promise<boolean>
+        onChat: (cb: (content: string) => void) => () => void
       }
       sessions: {
         list: () => Promise<SessionMeta[]>

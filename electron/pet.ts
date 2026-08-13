@@ -31,6 +31,8 @@ export const PET_LINES: Record<string, string[]> = {
 
 export class PetManager {
   private win: BrowserWindow | null = null
+  private chatBuf = ''
+  private chatLastSend = 0
 
   constructor(private opts: { petDir: string; settingsPath: string; getMain: () => BrowserWindow | null }) {}
 
@@ -168,8 +170,32 @@ export class PetManager {
     try { this.win.webContents.send('pet:event', { event, payload: payload || {} }) } catch { /* 忽略 */ }
   }
 
+  // 聊天流走独立通道(与状态事件 pet:event 分开, 避免被状态机丢弃)
+  sendChat(payload: Record<string, unknown>): void {
+    if (!this.win || this.win.isDestroyed()) return
+    try { this.win.webContents.send('pet:chat', payload) } catch { /* 忽略 */ }
+  }
+
   getWindow(): BrowserWindow | null {
     return this.win && !this.win.isDestroyed() ? this.win : null
+  }
+
+  focusInput(): void {
+    const win = this.getWindow()
+    if (!win) return
+    try { win.setFocusable(true); win.show(); win.focus(); win.webContents.focus() } catch { /* 忽略 */ }
+  }
+
+  unfocusInput(): void {
+    try { this.win?.setFocusable(false) } catch { /* 忽略 */ }
+  }
+
+  // 桌宠输入的消息转发给主窗口渲染层, 复用现有会话/历史/人设管线
+  relayChat(content: string): void {
+    const main = this.opts.getMain()
+    if (main && !main.isDestroyed()) main.webContents.send('pet:chat', { content })
+    this.chatBuf = ''
+    this.sendChat({ thinking: true })
   }
 
   persistPos(): void {
@@ -194,17 +220,36 @@ export class PetManager {
   }
 
   // 引擎事件 → 桌宠状态机(只转发, 不新增语义)
-  onEngineEvent(ev: { type: string; sid?: string; busy?: boolean; content?: string | null; status?: string; error?: string }): void {
+  onEngineEvent(ev: { type: string; sid?: string; busy?: boolean; content?: string | null; delta?: string; status?: string; error?: string }): void {
     switch (ev.type) {
       case 'busy':
-        if (ev.busy) this.send('state', { state: 'working', text: '这就去办' })
-        else this.send('state', { state: 'done', text: '办妥了' })
+        if (ev.busy) { this.chatBuf = ''; this.send('state', { state: 'working', text: '这就去办' }) }
+        else {
+          if (this.chatBuf) this.sendChat({ text: this.chatBuf.slice(-220), streaming: false })
+          this.send('state', { state: 'done', text: this.chatBuf ? '' : '办妥了' })
+        }
+        break
+      case 'assistant-chunk': {
+        // 流式回复 → 桌宠气泡(节流 120ms), 只保留尾部 220 字避免气泡过高
+        if (typeof ev.delta === 'string') this.chatBuf += ev.delta
+        else if (typeof ev.content === 'string') this.chatBuf = ev.content
+        const now = Date.now()
+        if (now - this.chatLastSend >= 120) {
+          this.chatLastSend = now
+          this.sendChat({ text: this.chatBuf.slice(-220), streaming: true })
+        }
+        break
+      }
+      case 'final':
+        this.chatBuf = typeof ev.content === 'string' ? ev.content : this.chatBuf
+        this.sendChat({ text: this.chatBuf.slice(-220), streaming: false })
         break
       case 'step':
         this.send('state', { state: 'thinking', text: String(ev.content || '思考中…').slice(0, 40) })
         break
       case 'task-done':
-        this.send('state', { state: ev.status === 'done' ? 'done' : 'error', text: ev.status === 'done' ? '办妥了' : '出岔子了，看看诊断？' })
+        if (ev.status === 'done' && this.chatBuf) this.sendChat({ text: this.chatBuf.slice(-220), streaming: false })
+        this.send('state', { state: ev.status === 'done' ? 'done' : 'error', text: ev.status === 'done' ? (this.chatBuf ? '' : '办妥了') : '出岔子了，看看诊断？' })
         break
       case 'error':
         this.send('state', { state: 'error', text: '出岔子了，看看诊断？' })

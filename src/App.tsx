@@ -140,6 +140,16 @@ export default function App() {
     const off = window.huangquan?.web?.onEmbed?.((d) => { if (d?.show) setView('browser') })
     return () => { try { off?.() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
   }, [])
+  // 桌宠聊天: 桌宠窗口发来的消息走主窗口会话管线(历史/人设/保存全复用)
+  useEffect(() => {
+    const off = window.huangquan?.pet?.onChat?.((content) => {
+      if (!content) return
+      setView('chat')
+      try { void window.huangquan.window.show?.() } catch { /* 忽略 */ }
+      void useChatStore.getState().send(content)
+    })
+    return () => { try { off?.() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
+  }, [])
   // v0.3.6 修复: 聊天 Markdown 里的外链(如模型回复的 GitHub 地址)点击后
   // 不再让应用窗口跳走, 统一交给系统默认浏览器打开
   useEffect(() => {
