@@ -113,8 +113,27 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
       {/* 会话列表 */}
       {currentView === 'chat' && (
         <>
-          <div className="sidebar-section-label" style={U.mt6}>
-            {(mode === 'chat' ? '聊天会话' : '工作会话') + ' · ' + filtered.length}
+          {/* v0.4.0: 聊天/工作模式切换从顶部标签移到这里 */}
+          <div className="sidebar-section-label" style={{ ...U.mt6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {(['chat', 'work'] as const).map(m => (
+              <span
+                key={m}
+                onClick={() => { if (m !== mode) setMode(m) }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && m !== mode && setMode(m)}
+                style={{
+                  cursor: 'pointer', padding: '1px 8px', borderRadius: 8, fontSize: 'calc(var(--ui-font-size) - 3px)',
+                  color: mode === m ? 'var(--accent)' : 'var(--text-secondary)',
+                  background: mode === m ? 'rgba(var(--skin-accent),.12)' : 'transparent',
+                  border: '1px solid ' + (mode === m ? 'rgba(var(--skin-accent),.3)' : 'transparent'),
+                  fontWeight: mode === m ? 700 : 400,
+                }}
+              >
+                {m === 'chat' ? '聊天' : '工作'}
+              </span>
+            ))}
+            <span style={{ color: 'var(--text-muted)' }}>· {filtered.length}</span>
           </div>
           <div style={{ position: 'relative', margin: '4px 6px 6px' }}>
             <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>

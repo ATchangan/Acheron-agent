@@ -4,6 +4,7 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import ChatInput from './ChatInput'
 import MessageList from './MessageList'
+import PetToolbar from './PetToolbar'
 import { U } from './ui-styles'
 import { fmtDur } from './work-steps'
 
@@ -23,7 +24,6 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const sessionId = useChatStore(s => s.cur()?.id ?? null)
   const msgCount = useChatStore(s => s.cur()?.messages.length ?? 0)
   const plan = sessionId ? plansMap[sessionId] : undefined
-  const setMode = useChatStore(s => s.setMode)
   const providers = useSettingsStore(s => s.providers)
   const mode = useSettingsStore(s => s.general.mode || 'work')
   const workDir = useSettingsStore(s => s.general.workDir)
@@ -45,15 +45,14 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
     }
   }
 
-  const switchMode = (m: string) => { if (m !== mode) setMode(m) }
   const empty = !sessionId || msgCount === 0
 
   return (
     <>
+      {/* v0.4.0: 顶部改为黄泉桌宠控制条; 聊天/工作模式切换移至侧边栏会话区与设置 */}
       <div className="chat-header-tab">
-        <button className={`tab-btn ${mode === 'chat' ? 'active' : ''}`} onClick={() => switchMode('chat')}>聊天</button>
-        <button className={`tab-btn ${mode === 'work' ? 'active' : ''}`} onClick={() => switchMode('work')}>工作</button>
-        {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }} title={workDir}><Folder size={12} />{workDir.split(/[/\\]/).pop()}</span>}
+        <PetToolbar />
+        {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }} title={workDir}><Folder size={12} />{workDir.split(/[/\\]/).pop()}</span>}
         {(streaming || executing) && activeAgents.length > 0 && (
           <span style={{ display: 'inline-flex', gap: 4, marginLeft: 8, flexWrap: 'wrap' }}>
             {activeAgents.map(a => (

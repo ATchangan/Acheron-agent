@@ -90,6 +90,23 @@ scene.add(root)
 
 const loader = new MMDLoader()
 const helper = new MMDAnimationHelper()
+// 微风级物理: 默认 MMD 重力为 -98(单位/秒²), 太猛; 降到 1/3 左右让头发/衣摆缓慢轻柔地飘
+const BREEZE_GRAVITY = new THREE.Vector3(0, -36, 0)
+// three MMDPhysics 创建刚体时没有设置阻尼(PMX 里的阻尼被忽略), 头发会无衰减高频摆动;
+// 这里补上阻尼, 让摆动快速衰减、呈现"随微风轻摆"的效果
+function attachPhysics(mesh, animation) {
+  helper.add(mesh, animation
+    ? { animation, physics: true, gravity: BREEZE_GRAVITY, warmup: 120 }
+    : { physics: true, gravity: BREEZE_GRAVITY, warmup: 120 })
+  try {
+    const ph = helper.objects.get(mesh)?.physics
+    if (ph && Array.isArray(ph.bodies)) {
+      for (const body of ph.bodies) {
+        try { body.setDamping(0.78, 0.96) } catch (_) { /* 忽略 */ }
+      }
+    }
+  } catch (_) { /* 忽略 */ }
+}
 
 let loadedForm = null
 let loadingForm = null
@@ -112,10 +129,10 @@ function planHead(now) {
   headMotion.next = now + (4 + Math.random() * 7) / curParams.headRate
   headMotion.sYaw = headMotion.cYaw
   headMotion.sPitch = headMotion.cPitch
-  headMotion.tYaw = (Math.random() - 0.5) * 0.26
-  headMotion.tPitch = (Math.random() - 0.5) * 0.1 - 0.015
+  headMotion.tYaw = (Math.random() - 0.5) * 0.16
+  headMotion.tPitch = (Math.random() - 0.5) * 0.07 - 0.012
   headMotion.t0 = now
-  headMotion.dur = 0.9 + Math.random() * 1.3
+  headMotion.dur = 1.2 + Math.random() * 1.4
   headMotion.hold = 1.4 + Math.random() * 3.2
 }
 function updateHead(now) {
@@ -128,10 +145,10 @@ function updateHead(now) {
 
 // ---------- 随机小动作(抬头/歪头/左右看/理袖子) ----------
 const GESTURES = [
-  { d: 1.6, bones: [['首', 0, -0.17, 0], ['頭', 0, -0.07, 0]] },
-  { d: 2.1, bones: [['首', 0, 0, 0.15], ['頭', 0, 0, 0.06]] },
-  { d: 1.8, bones: [['首', 0, 0.36, 0], ['頭', 0, 0.12, 0]] },
-  { d: 1.8, bones: [['首', 0, -0.36, 0], ['頭', 0, -0.12, 0]] },
+  { d: 1.8, bones: [['首', 0, -0.13, 0], ['頭', 0, -0.05, 0]] },
+  { d: 2.3, bones: [['首', 0, 0, 0.11], ['頭', 0, 0, 0.04]] },
+  { d: 2.0, bones: [['首', 0, 0.2, 0], ['頭', 0, 0.07, 0]] },
+  { d: 2.0, bones: [['首', 0, -0.2, 0], ['頭', 0, -0.07, 0]] },
   { d: 2.3, bones: [['右腕', -0.5, 0, 0.05], ['右ひじ', -0.28, 0, 0], ['左腕', 0.09, 0, 0]] },
 ]
 let gesture = null
@@ -218,8 +235,8 @@ function centerAndFrame() {
     const grow = 0.26
     box.max.y = neckY + headH * (1 + grow)
     const halfW = (box.max.x - box.min.x) / 2
-    box.max.x += halfW * grow * 0.45
-    box.min.x -= halfW * grow * 0.45
+    box.max.x += halfW * grow * 0.6
+    box.min.x -= halfW * grow * 0.6
     const halfD = (box.max.z - box.min.z) / 2
     box.max.z += halfD * grow * 0.25
     box.min.z -= halfD * grow * 0.25
@@ -231,7 +248,7 @@ function centerAndFrame() {
   const distH = size.y / (2 * Math.tan(fov / 2))
   const fovH = 2 * Math.atan(Math.tan(fov / 2) * aspect)
   const distW = size.x / (2 * Math.tan(fovH / 2))
-  const dist = Math.max(distH, distW) * 1.14
+  const dist = Math.max(distH, distW) * 1.2
   camera.position.set(0, center.y, dist + Math.max(size.z, 1) / 2)
   camera.lookAt(0, center.y, 0)
   camera.updateProjectionMatrix()
@@ -323,8 +340,8 @@ function applyIdlePose(now, dt) {
   addRot('左ひじ', -0.085 - armL * 0.02, 0, 0)
 
   // 重心: 慢速随机游走(多层低频噪声)
-  addPos('センター', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.15, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.012, 0)
-  addPos('腰', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.09, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.008, 0)
+  addPos('センター', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.07, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.006, 0)
+  addPos('腰', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.04, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.004, 0)
 
   // 随机张望 + 随机小动作(手势期间暂停张望, 避免打架)
   if (!gesture) {
@@ -367,7 +384,7 @@ function helperPhysicsOnly() {
   if (!bodyMesh) return
   try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
   if (window.__ammoReady) {
-    try { helper.add(bodyMesh, { physics: true }) } catch (_) { /* 无物理骨架也照常渲染 */ }
+    try { attachPhysics(bodyMesh) } catch (_) { /* 无物理骨架也照常渲染 */ }
   }
 }
 
@@ -387,7 +404,7 @@ function playDance(name, force = false) {
       if (state.action !== next) return
       danceLoading = null
       try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
-      try { helper.add(bodyMesh, { animation: clip, physics: true }) } catch (_) { /* 忽略 */ }
+      try { attachPhysics(bodyMesh, clip) } catch (_) { /* 忽略 */ }
     },
     undefined,
     (err) => {

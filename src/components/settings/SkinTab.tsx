@@ -116,6 +116,8 @@ export default function SkinTab() {
       <div style={S.card}><div style={S.section}>排版</div>
         <div style={S.row}><div style={S.label}>界面字号</div><select style={S.sel} value={g.uiFontSize || 13} onChange={e => save({ uiFontSize: parseInt(e.target.value) })}>{[12, 13, 14, 15, 16, 18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
         <div style={S.row}><div style={S.label}>会话字号</div><select style={S.sel} value={g.codeFontSize || 0} onChange={e => { const v = e.target.value; save({ codeFontSize: v ? parseInt(v) : undefined }) }}><option value={0}>跟随界面</option>{[12, 13, 14, 15, 16, 18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
+        <div style={S.row}><div style={S.label}>会话模式</div><select style={S.sel} value={g.mode || 'work'} onChange={e => save({ mode: e.target.value })}><option value="chat">聊天</option><option value="work">工作</option></select></div>
+        <div style={S.hint}>聊天模式使用黄泉人设闲聊，工作模式使用高效执行人设；也可在左侧会话区顶部快速切换</div>
         <div style={S.hint}>控制交互会话（聊天正文、输入框、消息内代码与工具输出）的字号，默认跟随界面字号</div>
         <div style={S.row}><div style={S.label}>消息间距</div><select style={S.sel} value={g.messageSpacing || 'comfortable'} onChange={e => save({ messageSpacing: e.target.value })}><option value="compact">紧凑</option><option value="comfortable">舒适</option><option value="loose">宽松</option></select></div>
       </div>
@@ -124,7 +126,7 @@ export default function SkinTab() {
         <Toggle checked={g.showTimestamps !== 'hover'} onChange={v => save({ showTimestamps: v ? 'always' : 'hover' })} label="始终显示时间戳" hint="关闭后仅悬停显示" />
       </div>
       <div style={S.card}><div style={S.section}>桌宠（式神伴身）</div>
-        <div style={S.hint}>桌面常驻式神角色：任务状态动画联动、定时任务气泡提醒。开关关闭或退出应用后立即销毁，不留后台进程。</div>
+        <div style={S.hint}>桌面常驻式神角色：任务状态动画联动、定时任务气泡提醒。可在对话区顶部工具条、桌宠右键菜单或此处控制。开关关闭或退出应用后立即销毁，不留后台进程。</div>
         <Toggle checked={g.pet?.enabled === true} onChange={v => { save({ pet: { ...(g.pet || {}), enabled: v } }); void window.huangquan?.pet?.toggle?.(v) }} label="启用桌宠" hint="在桌面右下角显示式神小窗（透明置顶，不抢焦点）" />
         <div style={S.row}><div style={S.label}>角色形象</div><select style={S.sel} value={g.pet?.agent || '黄泉'} onChange={e => save({ pet: { ...(g.pet || {}), agent: e.target.value } })}>{['黄泉', '姬子', '三月七', '银狼', '艾丝妲', '知更鸟', '黑天鹅', '螺丝咕姆'].map(a => <option key={a} value={a}>{a}</option>)}</select></div>
         <div style={S.row}><div style={S.label}>黄泉形态</div><select style={S.sel} value={g.pet?.form || 'normal'} onChange={e => { const v = e.target.value as 'normal' | 'ultimate'; save({ pet: { ...(g.pet || {}), form: v } }); void window.huangquan?.pet?.setForm?.(v) }}><option value="normal">正常</option><option value="ultimate">大招（白发）</option></select></div>
