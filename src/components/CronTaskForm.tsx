@@ -15,7 +15,7 @@ interface CronFormState {
 
 export const CronTaskForm: React.FC<{
   state: CronFormState
-  nameRef: React.RefObject<HTMLInputElement>
+  nameRef: React.RefObject<HTMLInputElement | null>
   onChange: (patch: Partial<CronFormState>) => void
   onAdd: () => void
   onApplyTemplate: (tpl: (typeof TEMPLATES)[number]) => void

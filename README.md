@@ -2,6 +2,8 @@
 
 > 「即便万事终归于虚无，有些事，即便没有意义，也依然值得去做。」
 
+开源仓库：[ATchangan/Acheron-agent](https://github.com/ATchangan/Acheron-agent)
+
 一个以《崩坏：星穹铁道》角色「黄泉」为原型的 Windows 桌面 AI 助手：本地优先、能读写文件、执行命令、搜索网页、定时干活，并调度一支多角色 Agent 编队并行协作。
 
 ![主界面](docs/screenshot-home.png)

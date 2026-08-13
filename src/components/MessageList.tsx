@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { JSX } from 'react'
 import { Copy, Check } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 import { ConversationTurn, ThinkingRow } from './ConversationThread'

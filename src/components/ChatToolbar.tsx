@@ -28,8 +28,8 @@ export const ChatToolbar: React.FC<{
   perm: string
   supportsVision: boolean
   visionAssist: boolean
-  fileRef: React.RefObject<HTMLInputElement>
-  attFileRef: React.RefObject<HTMLInputElement>
+  fileRef: React.RefObject<HTMLInputElement | null>
+  attFileRef: React.RefObject<HTMLInputElement | null>
   onToggleExtra: () => void
   onToggleCmd: () => void
   onToggleMem: () => void
