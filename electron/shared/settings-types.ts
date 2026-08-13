@@ -207,6 +207,7 @@ export interface GeneralSettings {
     enabled?: boolean
     agent?: string
     form?: 'normal' | 'ultimate'
+    action?: 'idle' | 'dance1' | 'dance2' | 'dance3'
     scale?: number
     opacity?: number
     topmost?: boolean

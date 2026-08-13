@@ -8,6 +8,7 @@ export interface PetSettings {
   enabled?: boolean
   agent?: string
   form?: 'normal' | 'ultimate'
+  action?: 'idle' | 'dance1' | 'dance2' | 'dance3'
   scale?: number
   opacity?: number
   topmost?: boolean
@@ -80,6 +81,18 @@ export class PetManager {
     return next
   }
 
+  getAction(): 'idle' | 'dance1' | 'dance2' | 'dance3' {
+    const a = this.readSettings().action
+    return a === 'dance1' || a === 'dance2' || a === 'dance3' ? a : 'idle'
+  }
+
+  setAction(action: 'idle' | 'dance1' | 'dance2' | 'dance3'): 'idle' | 'dance1' | 'dance2' | 'dance3' {
+    const next = action === 'dance1' || action === 'dance2' || action === 'dance3' ? action : 'idle'
+    this.writeSettings({ action: next })
+    this.win?.webContents.send('pet:action', next)
+    return next
+  }
+
   create(): void {
     if (this.win) return
     const s = this.readSettings()
@@ -114,6 +127,7 @@ export class PetManager {
         win.webContents.send('pet:config', {
           agent: s.agent || '黄泉',
           form: s.form === 'ultimate' ? 'ultimate' : 'normal',
+          action: this.getAction(),
           scale,
           opacity: Math.max(0.3, Math.min(1, Number(s.opacity) || 0.9)),
           bubble: s.bubble !== false,

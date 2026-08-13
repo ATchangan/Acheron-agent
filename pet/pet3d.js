@@ -1,16 +1,16 @@
 /* global window, document, performance */
-/* 式神桌宠 3D 层 — v0.4.1
+/* 式神桌宠 3D 层 — v0.4.2
  * three.js(r158, 与 sr.ycl.cool 同版本链路) + MMDLoader 加载 PMX:
- *   正常形态  models/46/index.pmx          + 佩刀 models/46/1.pmx
- *   大招形态  models/46_iswhite/index.pmx  + 佩刀 models/46_iswhite/1.pmx
- * 展示: 固定 3/4 视角 + 呼吸起伏 + 轻微摆动(避免背上长刀随 360° 旋转横扫出框);
- *       物理(头发/衣摆)由 ammo 驱动, 加载失败自动降级为静态。
+ *   正常形态  models/46/index.pmx
+ *   大招形态  models/46_iswhite/index.pmx
+ * 待机: 程序化骨骼动画(呼吸/手臂微摆/张望/重心转移/眨眼) + ammo 物理头发
+ * 动作: 站内公开 VMD(极乐净土/彩虹节拍/Good Time), MMDAnimationHelper 播片 + 物理共存
  */
 import * as THREE from 'three'
 import { MMDLoader } from 'three/loaders/MMDLoader.js'
 import { MMDAnimationHelper } from 'three/animation/MMDAnimationHelper.js'
 
-// three r158 对 0 个 morphTarget 的网格(佩刀)会上传空数组, 触发 WebGL INVALID_VALUE 刷屏:
+// three r158 对 0 个 morphTarget 的网格会上传空数组, 触发 WebGL INVALID_VALUE 刷屏:
 // 空数组上传本身无意义, 静默跳过。WebGL1/WebGL2 各有自己的原型方法, 需分别包装(仅本页生效)
 {
   const patch = (proto) => {
@@ -28,7 +28,8 @@ import { MMDAnimationHelper } from 'three/animation/MMDAnimationHelper.js'
 
 const FOLDERS = { normal: '46', ultimate: '46_iswhite' }
 const BASE_YAW = 0.42 // 约 24°, 3/4 侧脸
-const state = { form: 'normal', status: 'idle' }
+const ACTIONS = { idle: null, dance1: '1.vmd', dance2: '2.vmd', dance3: '3.vmd' }
+const state = { form: 'normal', status: 'idle', action: 'idle' }
 
 const canvas = document.getElementById('stage')
 const glow = document.getElementById('glow')
@@ -57,7 +58,7 @@ rim.position.set(0, 12, 25) // 相机侧: 大招红气场打在可见面
 const ambient = new THREE.AmbientLight(0xffffff, 0.5)
 scene.add(key, fill, rim, ambient)
 
-const root = new THREE.Group() // 旋转 + 起伏
+const root = new THREE.Group() // 旋转 + 起伏 + 跳舞时居中补偿
 const pivot = new THREE.Group() // 平移居中
 root.add(pivot)
 scene.add(root)
@@ -68,11 +69,16 @@ const helper = new MMDAnimationHelper()
 let loadedForm = null
 let loadingForm = null
 let bodyMesh = null
-let weaponMesh = null
 let clockT = 0
 let hopUntil = 0
 let shakeUntil = 0
+let blinkTimer = 2 + Math.random() * 3
+let blinkUntil = -1
+let danceLoading = null
 const clock = new THREE.Clock()
+
+const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
+let boneByName = new Map()
 
 function disposeMesh(mesh) {
   if (!mesh) return
@@ -91,21 +97,20 @@ function disposeMesh(mesh) {
 
 function clearModel() {
   if (bodyMesh) { try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ } disposeMesh(bodyMesh); bodyMesh = null }
-  if (weaponMesh) { disposeMesh(weaponMesh); weaponMesh = null }
   while (pivot.children.length) pivot.remove(pivot.children[0])
   pivot.position.set(0, 0, 0)
+  restPose.clear()
+  boneByName = new Map()
 }
 
 function centerAndFrame() {
   if (!bodyMesh) return
-  // 1) 以未旋转的局部包围盒居中(刀与身体共用同一模型坐标, 无需额外偏移)
   root.rotation.y = 0
   root.updateMatrixWorld(true)
   const localBox = new THREE.Box3().setFromObject(root)
   const lc = localBox.getCenter(new THREE.Vector3())
   pivot.position.set(-lc.x, 0, -lc.z)
 
-  // 2) 按展示角度取景
   root.rotation.y = BASE_YAW
   root.updateMatrixWorld(true)
   const box = new THREE.Box3().setFromObject(root)
@@ -122,6 +127,127 @@ function centerAndFrame() {
   camera.updateProjectionMatrix()
 }
 
+function captureRestPose(mesh) {
+  restPose.clear()
+  boneByName = new Map()
+  mesh.traverse((o) => {
+    if (!o.isBone) return
+    restPose.set(o, { rx: o.rotation.x, ry: o.rotation.y, rz: o.rotation.z, px: o.position.x, py: o.position.y, pz: o.position.z })
+    boneByName.set(o.name, o)
+  })
+}
+
+function resetPose() {
+  if (!bodyMesh) return
+  for (const [bone, rest] of restPose) {
+    bone.rotation.set(rest.rx, rest.ry, rest.rz)
+    bone.position.set(rest.px, rest.py, rest.pz)
+  }
+  if (bodyMesh.morphTargetInfluences) bodyMesh.morphTargetInfluences.fill(0)
+}
+
+function bone(name) {
+  return boneByName.get(name) || null
+}
+
+// 待机: 在 rest 姿态上叠加小幅正弦, 呼吸/手臂/张望/重心
+function applyIdlePose(t) {
+  const breathe = Math.sin(t * Math.PI * 2 * 0.24)
+  const arms = Math.sin(t * Math.PI * 2 * 0.11)
+  const head = Math.sin(t * Math.PI * 2 * 0.09 + 1.2)
+  const look = Math.sin(t * Math.PI * 2 * 0.045)
+  const shift = Math.sin(t * Math.PI * 2 * 0.07)
+
+  const rot = (name, rx, ry, rz) => {
+    const b = bone(name)
+    if (!b || !restPose.has(b)) return
+    const r = restPose.get(b)
+    b.rotation.set(r.rx + rx, r.ry + ry, r.rz + rz)
+  }
+  const pos = (name, px, py, pz) => {
+    const b = bone(name)
+    if (!b || !restPose.has(b)) return
+    const r = restPose.get(b)
+    b.position.set(r.px + px, r.py + py, r.pz + pz)
+  }
+
+  rot('上半身', 0.018 * breathe, 0.012 * look, 0.004 * shift)
+  rot('首', 0.03 * head + 0.012 * breathe, 0.07 * look, 0.01 * shift)
+  rot('頭', 0.015 * breathe + 0.012 * head, 0.02 * look, 0)
+  rot('右腕', 0.05 * arms + 0.025, 0.012 * shift, 0.02 * arms)
+  rot('左腕', -0.05 * arms + 0.025, -0.012 * shift, -0.02 * arms)
+  rot('右ひじ', -0.09 - 0.03 * arms, 0, 0)
+  rot('左ひじ', -0.09 + 0.03 * arms, 0, 0)
+  pos('センター', 0.18 * shift, 0.02 * breathe, 0)
+  pos('腰', 0.1 * shift, 0.012 * breathe, 0)
+}
+
+// 待机眨眼(随机 2~6 秒一次), 仅待机时驱动 morph, 跳舞时表情交给 VMD
+function updateBlink(dt) {
+  if (state.action !== 'idle' || !bodyMesh) return
+  blinkTimer -= dt
+  if (blinkTimer <= 0) {
+    blinkTimer = 2.2 + Math.random() * 3.6
+    blinkUntil = clockT + 0.13
+  }
+  const dict = bodyMesh.morphTargetDictionary
+  if (!dict) return
+  const idx = dict['まばたき']
+  if (idx === undefined || !bodyMesh.morphTargetInfluences) return
+  bodyMesh.morphTargetInfluences[idx] = clockT < blinkUntil ? 1 : 0
+}
+
+function helperPhysicsOnly() {
+  if (!bodyMesh) return
+  try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
+  if (window.__ammoReady) {
+    try { helper.add(bodyMesh, { physics: true }) } catch (_) { /* 无物理骨架也照常渲染 */ }
+  }
+}
+
+function playDance(name, force = false) {
+  const next = ACTIONS[name] !== undefined ? name : 'idle'
+  if (next === state.action && !force) return
+  state.action = next
+  resetPose()
+  danceLoading = null
+  if (next === 'idle') { helperPhysicsOnly(); return }
+
+  danceLoading = next
+  loader.loadAnimation(
+    `actions/${ACTIONS[next]}`,
+    bodyMesh,
+    (clip) => {
+      if (state.action !== next) return
+      danceLoading = null
+      try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
+      try { helper.add(bodyMesh, { animation: clip, physics: true }) } catch (_) { /* 忽略 */ }
+    },
+    undefined,
+    (err) => {
+      danceLoading = null
+      console.warn('动作加载失败:', next, err)
+      if (state.action === next) playDance('idle')
+    },
+  )
+}
+
+function setAction(name) {
+  if (!bodyMesh) { state.action = ACTIONS[name] !== undefined ? name : 'idle'; return }
+  playDance(name)
+}
+
+// 跳舞时把重心(センター)锁定在画面中心, 避免滑步/位移把角色带出窗口
+function centerDance() {
+  if (state.action === 'idle' || !bodyMesh) return
+  const c = bone('センター')
+  if (!c) return
+  c.updateWorldMatrix(true, false)
+  const w = c.getWorldPosition(new THREE.Vector3())
+  root.position.x -= w.x
+  root.position.z -= w.z
+}
+
 function loadForm(form) {
   if (loadingForm === form || loadedForm === form) return
   loadingForm = form
@@ -134,12 +260,12 @@ function loadForm(form) {
       if (state.form !== form) { disposeMesh(mesh); return }
       bodyMesh = mesh
       pivot.add(mesh)
-      if (window.__ammoReady) {
-        try { helper.add(mesh, { physics: true }) } catch (_) { /* 无物理骨架也照常渲染 */ }
-      }
+      captureRestPose(mesh)
       loadedForm = form
       loadingForm = null
       centerAndFrame()
+      if (state.action === 'idle') helperPhysicsOnly()
+      else playDance(state.action, true)
     },
     undefined,
     (err) => {
@@ -147,19 +273,6 @@ function loadForm(form) {
       console.warn('式神模型加载失败:', err)
       document.dispatchEvent(new CustomEvent('pet3d-error'))
     },
-  )
-
-  // 佩刀: 与身体共用坐标系, 挂到原点即自动出现在背上
-  loader.load(
-    `models/${folder}/1.pmx`,
-    (weapon) => {
-      if (state.form !== form) { disposeMesh(weapon); return }
-      weaponMesh = weapon
-      pivot.add(weapon)
-      centerAndFrame()
-    },
-    undefined,
-    () => { /* 武器可选, 失败不阻塞 */ },
   )
 }
 
@@ -170,23 +283,28 @@ function animate() {
   helper.update(dt)
 
   const status = state.status
-  let swayFreq = 0.45
-  let swayAmp = 0.11
-  let bob = 0.14
-  if (status === 'thinking') { swayFreq = 1.05; swayAmp = 0.16; bob = 0.24 }
-  else if (status === 'working') { swayFreq = 1.75; swayAmp = 0.2; bob = 0.38 }
-  else if (status === 'error') { swayFreq = 0.2; swayAmp = 0.04; bob = 0.1 }
+  if (state.action === 'idle') {
+    applyIdlePose(clockT)
+    updateBlink(dt)
+    let swayFreq = 0.45
+    let swayAmp = 0.11
+    let bob = 0.14
+    if (status === 'thinking') { swayFreq = 1.05; swayAmp = 0.16; bob = 0.24 }
+    else if (status === 'working') { swayFreq = 1.75; swayAmp = 0.2; bob = 0.38 }
+    else if (status === 'error') { swayFreq = 0.2; swayAmp = 0.04; bob = 0.1 }
+    root.rotation.y = BASE_YAW + Math.sin(clockT * swayFreq * Math.PI * 2) * swayAmp
+    root.position.y = Math.sin(clockT * 0.8 * Math.PI * 2) * bob
+  } else {
+    root.rotation.y = BASE_YAW
+    root.position.y = 0
+    centerDance()
+  }
 
-  root.rotation.y = BASE_YAW + Math.sin(clockT * swayFreq * Math.PI * 2) * swayAmp
-
-  let y = Math.sin(clockT * 0.8 * Math.PI * 2) * bob
   const now = performance.now()
   if (now < hopUntil) {
     const p = (hopUntil - now) / 900
-    y += Math.abs(Math.sin((1 - p) * Math.PI * 2)) * 1.6 * p
+    root.position.y += Math.abs(Math.sin((1 - p) * Math.PI * 2)) * 1.6 * p
   }
-  root.position.y = y
-
   let zrot = 0
   if (now < shakeUntil) {
     const p = (shakeUntil - now) / 700
@@ -257,7 +375,7 @@ async function boot() {
 }
 
 window.addEventListener('resize', resize)
-window.pet3d = { setStatus, setForm, resize }
+window.pet3d = { setStatus, setForm, setAction, resize }
 
 resize()
 void boot()

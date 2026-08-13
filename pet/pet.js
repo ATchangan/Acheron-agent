@@ -1,7 +1,7 @@
 /* global window, document */
 /* 式神桌宠 UI 层: 气泡/名字/拖拽/菜单/状态转发; 3D 渲染在 pet3d.js */
 (function () {
-  var cfg = { agent: '黄泉', bubble: true, lines: [], form: 'normal' }
+  var cfg = { agent: '黄泉', bubble: true, lines: [], form: 'normal', action: 'idle' }
   var bubble = document.getElementById('bubble')
   var nameEl = document.getElementById('name')
   var stage = document.getElementById('stage')
@@ -38,6 +38,11 @@
     if (window.pet3d) window.pet3d.setForm(cfg.form)
   }
 
+  function applyAction(action) {
+    cfg.action = action || 'idle'
+    if (window.pet3d) window.pet3d.setAction(cfg.action)
+  }
+
   function applyAgent(agent) {
     var is3d = agent === '黄泉'
     nameEl.textContent = agent || '黄泉'
@@ -54,12 +59,17 @@
     cfg = c || cfg
     applyAgent(cfg.agent)
     applyForm(cfg.form)
+    applyAction(cfg.action)
     document.body.style.opacity = String(cfg.opacity != null ? cfg.opacity : 0.9)
     applyStatus(status)
   })
 
   window.petIpc.on('pet:form', function (form) {
     applyForm(form)
+  })
+
+  window.petIpc.on('pet:action', function (action) {
+    applyAction(action)
   })
 
   window.petIpc.on('pet:event', function (e) {
