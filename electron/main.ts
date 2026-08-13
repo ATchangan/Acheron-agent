@@ -34,6 +34,8 @@ import { importLegacyMemory } from './memory/migrate-legacy'
 import { refreshSessionIndex } from './memory/session-index'
 import { maybeRunDailyDecay } from './memory/decay'
 import * as fs from 'fs'
+import { PetManager } from './pet'
+import { registerPetIpc } from './ipc/pet'
 
 // 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
 // 不显式指回原目录会丢失全部配置/会话
@@ -136,6 +138,9 @@ const appShell = new AppShell({
   initBrowserViews,
   getBrowserWin: () => getBrowserSession(),
 })
+// v0.4.0 M9: 桌宠(式神伴身) —— 设置开关控制, 默认关闭
+const petManager = new PetManager({ petDir: join(ROOT, 'pet'), settingsPath, getMain: () => appShell.getWindow() })
+registerPetIpc({ pet: petManager })
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
 registerTaskIpc({ tasksPath })
 registerTraceIpc({ tracePath })
@@ -173,6 +178,7 @@ import('./memory/vector').then(m => { m.initMemory(join(userDataPath, 'memory-ve
 // 启动定时任务
 import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
   appShell.getWindow()?.webContents.send('cron:trigger', prompt)
+  petManager.cronFire(prompt)
 })).catch(() => {})
 // 多角色体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
@@ -210,6 +216,7 @@ registerEngineIpc({
   netFetch,
   decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>,
   getSender: () => appShell.getWindow()?.webContents || null,
+  onEngineEvent: ev => petManager.onEngineEvent(ev as { type: string; busy?: boolean }),
 })
 registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir })
 registerModelStatsIpc()
@@ -317,10 +324,11 @@ app.whenReady().then(async () => {
     }
   } catch (e: unknown) { /* 设置缺失/损坏时跳过清理 */ console.debug('[swallow]', e) }
   appShell.createWindow()
+  petManager.sync()
   const win0 = appShell.getWindow()
   if (win0) initBrowserViews(win0, { live: rendererMode !== 'cpu' })
   appShell.createTray()
   app.on('activate', () => appShell.getWindow()?.show())
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin' && !isQuitting) { isQuitting = true; app.quit() } })
-app.on('before-quit', () => { isQuitting = true })
+app.on('before-quit', () => { isQuitting = true; petManager.destroy() })

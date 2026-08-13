@@ -16,8 +16,9 @@ export function registerEngineIpc(deps: {
   netFetch: typeof fetch
   decProviders: (d: unknown) => Record<string, unknown>
   getSender: () => Electron.WebContents | null
+  onEngineEvent?: (ev: unknown) => void
 }): void {
-  const { settingsPath, userDataPath, memoryPath, tracePath, resourcesDir, netFetch, decProviders, getSender } = deps
+  const { settingsPath, userDataPath, memoryPath, tracePath, resourcesDir, netFetch, decProviders, getSender, onEngineEvent } = deps
 
   const loadSettings = (): { providers: EngineProvider[]; general: EngineSettings } => {
     try {
@@ -63,6 +64,7 @@ export function registerEngineIpc(deps: {
       } catch { return '' }
     },
     sendEvent: ev => {
+      try { onEngineEvent?.(ev) } catch { /* 忽略 */ }
       if (eventSubscribers.size > 0) {
         for (const wc of eventSubscribers) {
           try {

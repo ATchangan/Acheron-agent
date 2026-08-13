@@ -27,6 +27,10 @@ declare global {
         save: (data: unknown) => Promise<boolean>
         reset: () => Promise<boolean>
       },
+      pet: {
+        toggle: (enable: boolean) => Promise<boolean>
+        resetPos: () => Promise<boolean>
+      }
       sessions: {
         list: () => Promise<SessionMeta[]>
         load: (id: string) => Promise<SessionData>

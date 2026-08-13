@@ -123,6 +123,19 @@ export default function SkinTab() {
         <StepSetting label="会话区宽度" hint="消息区与输入框宽度（默认 780px）" value={g.chatMaxWidth || 780} min={480} max={1400} step={20} unit=" px" onChange={v => save({ chatMaxWidth: v })} />
         <Toggle checked={g.showTimestamps !== 'hover'} onChange={v => save({ showTimestamps: v ? 'always' : 'hover' })} label="始终显示时间戳" hint="关闭后仅悬停显示" />
       </div>
+      <div style={S.card}><div style={S.section}>桌宠（式神伴身）</div>
+        <div style={S.hint}>桌面常驻式神角色：任务状态动画联动、定时任务气泡提醒。开关关闭或退出应用后立即销毁，不留后台进程。</div>
+        <Toggle checked={g.pet?.enabled === true} onChange={v => { save({ pet: { ...(g.pet || {}), enabled: v } }); void window.huangquan?.pet?.toggle?.(v) }} label="启用桌宠" hint="在桌面右下角显示式神小窗（透明置顶，不抢焦点）" />
+        <div style={S.row}><div style={S.label}>角色形象</div><select style={S.sel} value={g.pet?.agent || '黄泉'} onChange={e => save({ pet: { ...(g.pet || {}), agent: e.target.value } })}>{['黄泉', '姬子', '三月七', '银狼', '艾丝妲', '知更鸟', '黑天鹅', '螺丝咕姆'].map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <StepSetting label="大小" hint="0.5 ~ 2.0 倍" value={Math.round((g.pet?.scale || 1) * 100)} min={50} max={200} step={10} unit="%" onChange={v => save({ pet: { ...(g.pet || {}), scale: v / 100 } })} />
+          <StepSetting label="透明度" hint="0.3 ~ 1.0" value={Math.round((g.pet?.opacity || 0.9) * 100)} min={30} max={100} step={5} unit="%" onChange={v => save({ pet: { ...(g.pet || {}), opacity: v / 100 } })} />
+        </div>
+        <Toggle checked={g.pet?.bubble !== false} onChange={v => save({ pet: { ...(g.pet || {}), bubble: v } })} label="气泡提醒" hint="任务状态与定时任务到点的文字气泡" />
+        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          <button style={S.btn('ghost')} onClick={() => void window.huangquan?.pet?.resetPos?.()}>重置位置</button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('huangquan', {
     save: (s: unknown) => ipcRenderer.invoke('settings:save', safeArg(s)),
     reset: () => ipcRenderer.invoke('settings:reset'),
   },
+  pet: {
+    toggle: (enable: boolean) => ipcRenderer.invoke('pet:toggle', enable),
+    resetPos: () => ipcRenderer.invoke('pet:reset-pos'),
+  },
   sessions: {
     list: () => ipcRenderer.invoke('sessions:list'),
     load: (id: string) => ipcRenderer.invoke('sessions:load', id),
