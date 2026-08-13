@@ -1,9 +1,9 @@
 /* global window, document, performance */
-/* 式神桌宠 3D 层 — v0.4.2
+/* 式神桌宠 3D 层 — v0.4.0
  * three.js(r158, 与 sr.ycl.cool 同版本链路) + MMDLoader 加载 PMX:
  *   正常形态  models/46/index.pmx
  *   大招形态  models/46_iswhite/index.pmx
- * 待机: 程序化骨骼动画(呼吸/手臂微摆/张望/重心转移/眨眼) + ammo 物理头发
+ * 待机: 程序化"自然"动画(多层噪声呼吸 / 随机张望 / 随机小动作 / 平滑眨眼) + ammo 头发物理
  * 动作: 站内公开 VMD(极乐净土/彩虹节拍/Good Time), MMDAnimationHelper 播片 + 物理共存
  */
 import * as THREE from 'three'
@@ -26,13 +26,38 @@ import { MMDAnimationHelper } from 'three/animation/MMDAnimationHelper.js'
   if (typeof WebGL2RenderingContext !== 'undefined') patch(WebGL2RenderingContext.prototype)
 }
 
+// ---------- 小工具 ----------
+const clamp01 = (v) => Math.min(1, Math.max(0, v))
+const lerp = (a, b, t) => a + (b - a) * t
+const smoothstep = (t) => t * t * (3 - 2 * t)
+// 多层互质频率正弦叠加 → 近似有机噪声, 避免单频机械感(相位随机, 每次启动都不同)
+const makeOrganic = () => {
+  const p = [0, 0, 0].map(() => Math.random() * Math.PI * 2)
+  return (t, f1, a1, f2, a2, f3, a3) =>
+    a1 * Math.sin(t * f1 * Math.PI * 2 + p[0]) +
+    a2 * Math.sin(t * f2 * Math.PI * 2 + p[1]) +
+    a3 * Math.sin(t * f3 * Math.PI * 2 + p[2])
+}
+const org = makeOrganic()
+
 const FOLDERS = { normal: '46', ultimate: '46_iswhite' }
 const BASE_YAW = 0.42 // 约 24°, 3/4 侧脸
 const ACTIONS = { idle: null, dance1: '1.vmd', dance2: '2.vmd', dance3: '3.vmd' }
 const state = { form: 'normal', status: 'idle', action: 'idle' }
 
+// 状态 → 摆动/呼吸节奏目标(逐帧平滑过渡, 避免参数跳变)
+const STATUS_PARAMS = {
+  idle: { sway: 0.032, swayF: 0.045, breathMul: 1, headRate: 1 },
+  thinking: { sway: 0.05, swayF: 0.16, breathMul: 1.3, headRate: 2.4 },
+  working: { sway: 0.025, swayF: 0.22, breathMul: 1.5, headRate: 3.2 },
+  done: { sway: 0.032, swayF: 0.045, breathMul: 1, headRate: 1 },
+  error: { sway: 0.018, swayF: 0.03, breathMul: 0.9, headRate: 1 },
+}
+const curParams = { ...STATUS_PARAMS.idle }
+
 const canvas = document.getElementById('stage')
 const glow = document.getElementById('glow')
+const shadowEl = document.getElementById('shadow')
 
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -58,7 +83,7 @@ rim.position.set(0, 12, 25) // 相机侧: 大招红气场打在可见面
 const ambient = new THREE.AmbientLight(0xffffff, 0.5)
 scene.add(key, fill, rim, ambient)
 
-const root = new THREE.Group() // 旋转 + 起伏 + 跳舞时居中补偿
+const root = new THREE.Group() // 站姿微摆 + 完成弹跳 + 出错抖动 + 跳舞居中补偿
 const pivot = new THREE.Group() // 平移居中
 root.add(pivot)
 scene.add(root)
@@ -72,13 +97,80 @@ let bodyMesh = null
 let clockT = 0
 let hopUntil = 0
 let shakeUntil = 0
-let blinkTimer = 2 + Math.random() * 3
-let blinkUntil = -1
 let danceLoading = null
 const clock = new THREE.Clock()
 
 const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
 let boneByName = new Map()
+const scratch = new Map() // 每帧骨骼偏移累加器
+
+// ---------- 随机张望(头部目标导向, 而非机械摆动) ----------
+const headMotion = { next: 0, t0: 0, dur: 1, hold: 1, sYaw: 0, sPitch: 0, tYaw: 0, tPitch: 0, cYaw: 0, cPitch: 0 }
+function planHead(now) {
+  headMotion.next = now + (4 + Math.random() * 7) / curParams.headRate
+  headMotion.sYaw = headMotion.cYaw
+  headMotion.sPitch = headMotion.cPitch
+  headMotion.tYaw = (Math.random() - 0.5) * 0.26
+  headMotion.tPitch = (Math.random() - 0.5) * 0.1 - 0.015
+  headMotion.t0 = now
+  headMotion.dur = 0.9 + Math.random() * 1.3
+  headMotion.hold = 1.4 + Math.random() * 3.2
+}
+function updateHead(now) {
+  if (now >= headMotion.next) planHead(now)
+  const move = clamp01((now - headMotion.t0) / headMotion.dur)
+  const eased = move >= 1 ? 1 : smoothstep(move)
+  headMotion.cYaw = lerp(headMotion.sYaw, headMotion.tYaw, eased)
+  headMotion.cPitch = lerp(headMotion.sPitch, headMotion.tPitch, eased)
+}
+
+// ---------- 随机小动作(抬头/歪头/左右看/理袖子) ----------
+const GESTURES = [
+  { d: 1.6, bones: [['首', 0, -0.17, 0], ['頭', 0, -0.07, 0]] },
+  { d: 2.1, bones: [['首', 0, 0, 0.15], ['頭', 0, 0, 0.06]] },
+  { d: 1.8, bones: [['首', 0, 0.36, 0], ['頭', 0, 0.12, 0]] },
+  { d: 1.8, bones: [['首', 0, -0.36, 0], ['頭', 0, -0.12, 0]] },
+  { d: 2.3, bones: [['右腕', -0.5, 0, 0.05], ['右ひじ', -0.28, 0, 0], ['左腕', 0.09, 0, 0]] },
+]
+let gesture = null
+let gestureNext = 8 + Math.random() * 10
+
+function updateGesture(now) {
+  if (!gesture && now >= gestureNext && state.action === 'idle') {
+    gesture = { def: GESTURES[Math.floor(Math.random() * GESTURES.length)], t0: now }
+    gestureNext = now + 13 + Math.random() * 18
+  }
+  if (!gesture) return
+  const p = (now - gesture.t0) / gesture.def.d
+  if (p >= 1) { gesture = null; return }
+  // 缓入-保持-缓出包络
+  const env = p < 0.3 ? smoothstep(p / 0.3) : p < 0.68 ? 1 : 1 - smoothstep((p - 0.68) / 0.32)
+  for (const [name, rx, ry, rz] of gesture.def.bones) addRot(name, rx * env, ry * env, rz * env)
+}
+
+// ---------- 平滑眨眼(闭合~40% 时长, 睁开更慢; 偶尔连续双眨) ----------
+let blinkTimer = 1.8 + Math.random() * 3
+let blinkPattern = [0.24]
+let blinkIdx = -1
+let blinkT0 = 0
+let blinkWeight = 0
+function updateBlink(dt) {
+  blinkTimer -= dt
+  if (blinkIdx < 0 && blinkTimer <= 0) {
+    blinkIdx = 0
+    blinkPattern = Math.random() < 0.16 ? [0.24, 0.3, 0.26] : [0.24]
+    blinkT0 = clockT
+    blinkTimer = 2.1 + Math.random() * 4.6 + (state.status === 'thinking' ? 0.8 : 0)
+  }
+  if (blinkIdx < 0) { blinkWeight = 0; return }
+  const p = (clockT - blinkT0) / blinkPattern[blinkIdx]
+  blinkWeight = p < 0.4 ? smoothstep(p / 0.4) : 1 - smoothstep(clamp01((p - 0.4) / 0.6))
+  if (p >= 1) {
+    blinkIdx += 1
+    blinkT0 = clockT
+    if (blinkIdx >= blinkPattern.length) blinkIdx = -1
+  }
+}
 
 function disposeMesh(mesh) {
   if (!mesh) return
@@ -150,51 +242,84 @@ function bone(name) {
   return boneByName.get(name) || null
 }
 
-// 待机: 在 rest 姿态上叠加小幅正弦, 呼吸/手臂/张望/重心
-function applyIdlePose(t) {
-  const breathe = Math.sin(t * Math.PI * 2 * 0.24)
-  const arms = Math.sin(t * Math.PI * 2 * 0.11)
-  const head = Math.sin(t * Math.PI * 2 * 0.09 + 1.2)
-  const look = Math.sin(t * Math.PI * 2 * 0.045)
-  const shift = Math.sin(t * Math.PI * 2 * 0.07)
-
-  const rot = (name, rx, ry, rz) => {
-    const b = bone(name)
-    if (!b || !restPose.has(b)) return
-    const r = restPose.get(b)
-    b.rotation.set(r.rx + rx, r.ry + ry, r.rz + rz)
-  }
-  const pos = (name, px, py, pz) => {
-    const b = bone(name)
-    if (!b || !restPose.has(b)) return
-    const r = restPose.get(b)
-    b.position.set(r.px + px, r.py + py, r.pz + pz)
-  }
-
-  rot('上半身', 0.018 * breathe, 0.012 * look, 0.004 * shift)
-  rot('首', 0.03 * head + 0.012 * breathe, 0.07 * look, 0.01 * shift)
-  rot('頭', 0.015 * breathe + 0.012 * head, 0.02 * look, 0)
-  rot('右腕', 0.05 * arms + 0.025, 0.012 * shift, 0.02 * arms)
-  rot('左腕', -0.05 * arms + 0.025, -0.012 * shift, -0.02 * arms)
-  rot('右ひじ', -0.09 - 0.03 * arms, 0, 0)
-  rot('左ひじ', -0.09 + 0.03 * arms, 0, 0)
-  pos('センター', 0.18 * shift, 0.02 * breathe, 0)
-  pos('腰', 0.1 * shift, 0.012 * breathe, 0)
+function addRot(name, rx, ry, rz) {
+  const b = bone(name)
+  if (!b || !restPose.has(b)) return
+  const o = scratch.get(b) || { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }
+  o.rx += rx; o.ry += ry; o.rz += rz
+  scratch.set(b, o)
 }
 
-// 待机眨眼(随机 2~6 秒一次), 仅待机时驱动 morph, 跳舞时表情交给 VMD
-function updateBlink(dt) {
-  if (state.action !== 'idle' || !bodyMesh) return
-  blinkTimer -= dt
-  if (blinkTimer <= 0) {
-    blinkTimer = 2.2 + Math.random() * 3.6
-    blinkUntil = clockT + 0.13
+function addPos(name, px, py, pz) {
+  const b = bone(name)
+  if (!b || !restPose.has(b)) return
+  const o = scratch.get(b) || { rx: 0, ry: 0, rz: 0, px: 0, py: 0, pz: 0 }
+  o.px += px; o.py += py; o.pz += pz
+  scratch.set(b, o)
+}
+
+function commitPose() {
+  for (const [b, o] of scratch) {
+    const r = restPose.get(b)
+    b.rotation.set(r.rx + o.rx, r.ry + o.ry, r.rz + o.rz)
+    b.position.set(r.px + o.px, r.py + o.py, r.pz + o.pz)
   }
+  scratch.clear()
+}
+
+// 待机主姿态: 呼吸(躯干/肩/头联动) + 手臂微摆 + 重心随机游走 + 张望 + 小动作 + 眨眼
+let lastBreathe = 0
+function applyIdlePose(now, dt) {
+  if (!bodyMesh) return
+  // 状态参数平滑过渡
+  const target = STATUS_PARAMS[state.status] || STATUS_PARAMS.idle
+  for (const k of Object.keys(curParams)) curParams[k] = lerp(curParams[k], target[k], Math.min(1, dt * 2.2))
+  const tm = now * curParams.breathMul
+
+  // 呼吸: 主频 + 两层微扰, 躯干带动肩与头
+  const breathe = org(tm, 0.24, 0.62, 0.09, 0.24, 0.37, 0.14)
+  lastBreathe = breathe
+  addRot('上半身', breathe * 0.017, org(tm, 0.05, 0.009, 0.03, 0.004, 0.11, 0.003), org(tm, 0.07, 0.003, 0.04, 0.002, 0.15, 0.002))
+  addRot('首', breathe * 0.008, 0, 0)
+  addRot('頭', breathe * 0.005, 0, 0)
+  addRot('右肩', breathe * 0.0045, 0, 0)
+  addRot('左肩', breathe * 0.0045, 0, 0)
+
+  // 手臂: 反相低频微摆 + 各自噪声, 不齐步才自然
+  const armBase = org(now, 0.105, 0.5, 0.046, 0.26, 0.18, 0.14)
+  const armR = armBase + org(now, 0.03, 0.18, 0.02, 0.12, 0.05, 0.08)
+  const armL = -armBase + org(now, 0.033, 0.18, 0.021, 0.12, 0.047, 0.08)
+  addRot('右腕', 0.028 + armR * 0.036, org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
+  addRot('左腕', 0.028 + armL * 0.036, -org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), -org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
+  addRot('右ひじ', -0.085 - armR * 0.02, 0, 0)
+  addRot('左ひじ', -0.085 - armL * 0.02, 0, 0)
+
+  // 重心: 慢速随机游走(多层低频噪声)
+  addPos('センター', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.15, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.012, 0)
+  addPos('腰', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.09, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.008, 0)
+
+  // 随机张望 + 随机小动作(手势期间暂停张望, 避免打架)
+  if (!gesture) {
+    updateHead(now)
+    addRot('首', 0, headMotion.cYaw, 0)
+    addRot('頭', headMotion.cPitch * 0.6, headMotion.cYaw * 0.4, 0)
+  }
+  updateGesture(now)
+
+  commitPose()
+
+  // 眨眼(morph)
+  updateBlink(dt)
   const dict = bodyMesh.morphTargetDictionary
-  if (!dict) return
-  const idx = dict['まばたき']
-  if (idx === undefined || !bodyMesh.morphTargetInfluences) return
-  bodyMesh.morphTargetInfluences[idx] = clockT < blinkUntil ? 1 : 0
+  const idx = dict ? dict['まばたき'] : undefined
+  if (idx !== undefined && bodyMesh.morphTargetInfluences) bodyMesh.morphTargetInfluences[idx] = blinkWeight
+
+  // 脚下阴影随呼吸微缩
+  if (shadowEl) {
+    const s = 1 + breathe * 0.018
+    shadowEl.style.opacity = String(0.3 - breathe * 0.015)
+    shadowEl.style.transform = `translateX(-50%) scale(${s.toFixed(3)})`
+  }
 }
 
 function helperPhysicsOnly() {
@@ -284,19 +409,14 @@ function animate() {
 
   const status = state.status
   if (state.action === 'idle') {
-    applyIdlePose(clockT)
-    updateBlink(dt)
-    let swayFreq = 0.45
-    let swayAmp = 0.11
-    let bob = 0.14
-    if (status === 'thinking') { swayFreq = 1.05; swayAmp = 0.16; bob = 0.24 }
-    else if (status === 'working') { swayFreq = 1.75; swayAmp = 0.2; bob = 0.38 }
-    else if (status === 'error') { swayFreq = 0.2; swayAmp = 0.04; bob = 0.1 }
-    root.rotation.y = BASE_YAW + Math.sin(clockT * swayFreq * Math.PI * 2) * swayAmp
-    root.position.y = Math.sin(clockT * 0.8 * Math.PI * 2) * bob
+    applyIdlePose(clockT, dt)
+    // 站姿微摆: 慢速有机噪声, 而非固定正弦
+    root.rotation.y = BASE_YAW + org(clockT, curParams.swayF, curParams.sway, curParams.swayF * 0.61, curParams.sway * 0.45, curParams.swayF * 1.7, curParams.sway * 0.22)
+    root.position.y = 0
   } else {
     root.rotation.y = BASE_YAW
     root.position.y = 0
+    if (shadowEl) { shadowEl.style.opacity = '0.3'; shadowEl.style.transform = 'translateX(-50%) scale(1)' }
     centerDance()
   }
 

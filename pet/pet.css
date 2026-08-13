@@ -38,6 +38,21 @@ body { position: relative; }
 }
 body.form-ultimate #glow { opacity: 0.62; }
 
+/* 脚下柔影: 让角色"站在桌面上"而不是悬浮 */
+#shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  width: 46%;
+  height: 12px;
+  transform: translateX(-50%);
+  transform-origin: center bottom;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.18) 55%, transparent 75%);
+  filter: blur(3px);
+  transition: opacity 0.2s ease;
+}
+
 #name {
   position: absolute;
   left: 50%;
