@@ -43,7 +43,7 @@ const org = makeOrganic()
 const FOLDERS = { normal: '46', ultimate: '46_iswhite' }
 const BASE_YAW = 0.42 // 约 24°, 3/4 侧脸
 const ACTIONS = { idle: null, dance1: '1.vmd', dance2: '2.vmd', dance3: '3.vmd' }
-const state = { form: 'normal', status: 'idle', action: 'idle' }
+const state = { form: 'normal', status: 'idle', action: 'idle', anchor: 'float', dragging: false }
 
 // 状态 → 摆动/呼吸节奏目标(逐帧平滑过渡, 避免参数跳变)
 const STATUS_PARAMS = {
@@ -122,6 +122,10 @@ let boneByName = new Map()
 const scratch = new Map() // 每帧骨骼偏移累加器
 let talkUntil = -1
 const look = { targetYaw: 0, targetPitch: 0, yaw: 0, pitch: 0 }
+let pokeUntil = -1
+let sitFrames = 0
+let lastShapeKey = ''
+let shapeFrameCount = 0
 
 // ---------- 随机张望(头部目标导向, 而非机械摆动) ----------
 const headMotion = { next: 0, t0: 0, dur: 1, hold: 1, sYaw: 0, sPitch: 0, tYaw: 0, tPitch: 0, cYaw: 0, cPitch: 0 }
@@ -241,6 +245,10 @@ function centerAndFrame() {
     box.max.z += halfD * grow * 0.25
     box.min.z -= halfD * grow * 0.25
   }
+  fitCameraToBox(box)
+}
+
+function fitCameraToBox(box) {
   const size = box.getSize(new THREE.Vector3())
   const center = box.getCenter(new THREE.Vector3())
   const fov = THREE.MathUtils.degToRad(camera.fov)
@@ -287,6 +295,161 @@ function applyChibi() {
   if (neck) neck.scale.set(1, 1.18, 1)
 }
 
+// ---------- 坐视窗/坐任务栏(参照 MateEngine 窗口坐立) ----------
+// PMX 骨骼链: 腰→(下半身→右足→右ひざ→右足首 / 左足→左ひざ→左足首)
+// 待机(无 VMD 动画)时 MMDAnimationHelper 不会跑 IK, 可直接旋转腿骨摆坐姿
+const SIT_FRAC = 0.42 // 臀部应落在桌宠窗口高度的 42% 处(主进程按此比例吸附视窗上沿)
+
+function isSitting() {
+  return state.anchor === 'window' || state.anchor === 'taskbar'
+}
+
+// 只往 scratch 累加坐姿偏移, 由 commitPose 统一应用
+function addSitPose(now, breathe) {
+  sitFrames += 1
+  // 骨盆微前倾 + 背稍后靠, 呼吸带动躯干
+  addRot('腰', -0.18 + breathe * 0.008, 0, 0)
+  addRot('下半身', 0.05 + breathe * 0.006, 0, 0)
+  addRot('上半身', -0.12 - breathe * 0.011, 0, 0)
+  addRot('上半身1', -0.03, 0, 0)
+
+  // 头: 保留张望与目光跟随, 幅度略收
+  if (!gesture) updateHead(now)
+  addRot('首', 0.06 + breathe * 0.004, headMotion.cYaw * 0.5 + look.yaw, 0)
+  addRot('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
+
+  // 大腿前伸、小腿自然垂下, 双腿交替极轻的晃动(像真的坐在边沿)
+  const legSway = org(now, 0.05, 0.045, 0.03, 0.02, 0.09, 0.012)
+  addRot('右足', -1.38 + legSway, 0, 0)
+  addRot('左足', -1.38 - legSway, 0, 0)
+  addRot('右ひざ', 1.48 - legSway * 0.6, 0, 0)
+  addRot('左ひざ', 1.48 + legSway * 0.6, 0, 0)
+  const ankleR = org(now, 0.06, 0.03, 0.04, 0.015, 0.11, 0.008)
+  addRot('右足首', -0.12 + ankleR, 0, 0)
+  addRot('左足首', -0.12 - ankleR, 0, 0)
+
+  // 手搭在膝上/窗沿, 微微呼吸
+  const handR = org(now, 0.04, 0.03, 0.03, 0.015, 0.08, 0.006)
+  addRot('右腕', -0.85 + handR, 0, 0.08)
+  addRot('左腕', -0.85 - handR, 0, -0.08)
+  addRot('右ひじ', -0.62, 0, 0)
+  addRot('左ひじ', -0.62, 0, 0)
+
+  // 被戳到: 缩一下头
+  if (clockT < pokeUntil) addRot('頭', -0.16, 0, 0)
+
+  // 被拖动: 手臂略抬, 像被轻轻拎起(坐姿保持到松手)
+  if (state.dragging) {
+    addRot('右腕', -1.15, 0, 0.18)
+    addRot('左腕', -1.15, 0, -0.18)
+    addRot('右ひじ', -0.4, 0, 0)
+    addRot('左ひじ', -0.4, 0, 0)
+  }
+}
+
+// 坐姿构图: 先摆好坐姿再量包围盒, 然后把臀部精确压到画布 42% 高度
+function frameSit() {
+  if (!bodyMesh) return
+  resetPose()
+  scratch.clear()
+  addSitPose(0, 0)
+  commitPose()
+  root.rotation.y = BASE_YAW
+  root.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(root)
+  const neckBone = bone('首')
+  const headBone = bone('頭')
+  if (neckBone && headBone) {
+    const neckY = neckBone.getWorldPosition(new THREE.Vector3()).y
+    const headH = Math.max(box.max.y - neckY, 1)
+    const grow = 0.26
+    box.max.y = neckY + headH * (1 + grow)
+  }
+  fitCameraToBox(box)
+
+  const hip = bone('下半身') || bone('腰')
+  if (hip) {
+    hip.updateWorldMatrix(true, false)
+    // Vector3.project 依赖 camera.matrixWorldInverse, 手动刷新(此时还没进渲染循环)
+    camera.updateMatrixWorld()
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
+    const v = hip.getWorldPosition(new THREE.Vector3())
+    const ndc = v.project(camera)
+    const H = Math.max(canvas.clientHeight, 1)
+    const screenY = (1 - ndc.y) / 2 * H
+    const desired = H * SIT_FRAC
+    const fov = THREE.MathUtils.degToRad(camera.fov)
+    const fpx = H / (2 * Math.max(camera.position.z, 1) * Math.tan(fov / 2))
+    pivot.position.y += (screenY - desired) / fpx
+  }
+  resetPose()
+  scratch.clear()
+}
+
+function reframe() {
+  if (!bodyMesh) return
+  if (isSitting()) frameSit()
+  else centerAndFrame()
+}
+
+// 坐视窗/坐任务栏: 把原生窗口命中区域收缩到角色轮廓内,
+// 其余透明区域鼠标点击穿透到下面的窗口(MateEngine 的窗口坐立体验关键)
+function updateShape() {
+  if (!isSitting() || !bodyMesh || !window.petIpc) return
+  root.updateMatrixWorld(true)
+  bodyMesh.updateMatrixWorld(true)
+  camera.updateMatrixWorld()
+  camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
+  const box = new THREE.Box3().setFromObject(root)
+  const corners = []
+  for (const x of [box.min.x, box.max.x]) {
+    for (const y of [box.min.y, box.max.y]) {
+      for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z))
+    }
+  }
+  let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity
+  for (const c of corners) {
+    const v = c.project(camera)
+    const sx = (v.x * 0.5 + 0.5) * canvas.clientWidth
+    const sy = (0.5 - v.y * 0.5) * canvas.clientHeight
+    minX = Math.min(minX, sx); minY = Math.min(minY, sy)
+    maxX = Math.max(maxX, sx); maxY = Math.max(maxY, sy)
+  }
+  const pad = 6
+  // 量化到 6px 网格: 呼吸/微风引起的包围盒抖动不触发频繁 IPC
+  const q = (v) => Math.round(v / 6) * 6
+  const x = Math.max(0, q(minX - pad))
+  const y = Math.max(0, q(minY - pad))
+  const w = Math.min(canvas.clientWidth - x, q(maxX - minX + pad * 2))
+  const h = Math.min(canvas.clientHeight - y, q(maxY - minY + pad * 2))
+  if (w < 8 || h < 8) return
+  const key = `${x},${y},${w},${h}`
+  if (key === lastShapeKey) return
+  lastShapeKey = key
+  void window.petIpc.invoke('pet:shape', { x, y, width: w, height: h })
+}
+
+// 点击射线: 命中头部(颈以上)返回 'head', 命中身体返回 'body'
+const raycaster = new THREE.Raycaster()
+const pointerNdc = new THREE.Vector2()
+function pokeAt(clientX, clientY) {
+  if (!bodyMesh) return null
+  const w = canvas.clientWidth || 1
+  const h = canvas.clientHeight || 1
+  pointerNdc.set((clientX / w) * 2 - 1, -(clientY / h) * 2 + 1)
+  raycaster.setFromCamera(pointerNdc, camera)
+  bodyMesh.updateMatrixWorld(true)
+  const hits = raycaster.intersectObject(bodyMesh, true)
+  if (!hits.length) return null
+  const neck = bone('首') || bone('上半身2')
+  if (neck) {
+    neck.updateWorldMatrix(true, false)
+    const neckY = neck.getWorldPosition(new THREE.Vector3()).y
+    return hits[0].point.y >= neckY - 0.25 ? 'head' : 'body'
+  }
+  return 'body'
+}
+
 function addRot(name, rx, ry, rz) {
   const b = bone(name)
   if (!b || !restPose.has(b)) return
@@ -324,6 +487,26 @@ function applyIdlePose(now, dt) {
   // 呼吸: 主频 + 两层微扰, 躯干带动肩与头
   const breathe = org(tm, 0.24, 0.62, 0.09, 0.24, 0.37, 0.14)
   lastBreathe = breathe
+
+  if (isSitting()) {
+    // 坐视窗/坐任务栏: 独立坐姿, 不用站立手臂摆动/重心游走
+    addSitPose(now, breathe)
+    commitPose()
+    updateBlink(dt)
+    const dict = bodyMesh.morphTargetDictionary
+    if (dict && bodyMesh.morphTargetInfluences) {
+      const blinkIdx = dict['まばたき']
+      if (blinkIdx !== undefined) bodyMesh.morphTargetInfluences[blinkIdx] = blinkWeight
+      const mouthIdx = dict['あ']
+      if (mouthIdx !== undefined) {
+        const talk = now < talkUntil ? Math.abs(Math.sin(now * 14)) * 0.42 : 0
+        bodyMesh.morphTargetInfluences[mouthIdx] = talk
+      }
+    }
+    if (shadowEl) shadowEl.style.opacity = '0'
+    return
+  }
+
   addRot('上半身', breathe * 0.017, org(tm, 0.05, 0.009, 0.03, 0.004, 0.11, 0.003), org(tm, 0.07, 0.003, 0.04, 0.002, 0.15, 0.002))
   addRot('首', breathe * 0.008, 0, 0)
   addRot('頭', breathe * 0.005, 0, 0)
@@ -338,6 +521,14 @@ function applyIdlePose(now, dt) {
   addRot('左腕', 0.028 + armL * 0.036, -org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), -org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
   addRot('右ひじ', -0.085 - armR * 0.02, 0, 0)
   addRot('左ひじ', -0.085 - armL * 0.02, 0, 0)
+
+  // 被拖动: 双臂张开像被拎起, 身体随主进程移动漂浮
+  if (state.dragging) {
+    addRot('右腕', -0.9, 0, 0.28)
+    addRot('左腕', -0.9, 0, -0.28)
+    addRot('右ひじ', -0.34, 0, 0)
+    addRot('左ひじ', -0.34, 0, 0)
+  }
 
   // 重心: 慢速随机游走(多层低频噪声)
   addPos('センター', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.07, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.006, 0)
@@ -451,7 +642,7 @@ function loadForm(form) {
       applyChibi()
       loadedForm = form
       loadingForm = null
-      centerAndFrame()
+      reframe()
       if (state.action === 'idle') helperPhysicsOnly()
       else playDance(state.action, true)
     },
@@ -476,11 +667,13 @@ function animate() {
     updateLook()
     // 站姿微摆: 慢速有机噪声, 而非固定正弦
     root.rotation.y = BASE_YAW + org(clockT, curParams.swayF, curParams.sway, curParams.swayF * 0.61, curParams.sway * 0.45, curParams.swayF * 1.7, curParams.sway * 0.22)
-    root.position.y = 0
+    root.position.y = state.dragging ? Math.sin(clockT * 5.2) * 0.42 : 0
+    root.rotation.z = state.dragging ? Math.sin(clockT * 3.1) * 0.035 : 0
   } else {
     root.rotation.y = BASE_YAW
     root.position.y = 0
-    if (shadowEl) { shadowEl.style.opacity = '0.3'; shadowEl.style.transform = 'translateX(-50%) scale(1)' }
+    root.rotation.z = 0
+    if (shadowEl) { shadowEl.style.opacity = isSitting() ? '0' : '0.3'; shadowEl.style.transform = 'translateX(-50%) scale(1)' }
     centerDance()
   }
 
@@ -494,13 +687,17 @@ function animate() {
     const p = (shakeUntil - now) / 700
     zrot = Math.sin(now * 0.09) * 0.08 * p
   }
-  root.rotation.z = zrot
+  root.rotation.z = zrot !== 0 ? zrot : (state.dragging ? Math.sin(clockT * 3.1) * 0.035 : 0)
 
   const rimTarget = state.form === 'ultimate' ? (status === 'working' ? 1.1 : 0.62) : 0
   rim.intensity += (rimTarget - rim.intensity) * 0.08
   glow.style.opacity = state.form === 'ultimate' ? String(Math.min(0.62, 0.3 + Math.abs(Math.sin(clockT * 1.8)) * 0.32)) : '0'
 
   renderer.render(scene, camera)
+  if (isSitting()) {
+    shapeFrameCount += 1
+    if (shapeFrameCount % 30 === 0) updateShape()
+  }
 }
 
 function setStatus(status) {
@@ -516,13 +713,34 @@ function setForm(form) {
   loadForm(next)
 }
 
+function setAnchor(anchor) {
+  const next = anchor === 'window' || anchor === 'taskbar' ? anchor : 'float'
+  if (next === state.anchor) return
+  state.anchor = next
+  document.body.classList.toggle('anchor-window', next === 'window')
+  document.body.classList.toggle('anchor-taskbar', next === 'taskbar')
+  resetPose()
+  reframe()
+  lastShapeKey = ''
+  updateShape()
+}
+
+function setDragging(v) {
+  state.dragging = v === true
+  if (!state.dragging && state.action === 'idle') resetPose()
+}
+
+function setPoke() {
+  pokeUntil = clockT + 1.15
+}
+
 function resize() {
   const w = Math.max(window.innerWidth, 1)
   const h = Math.max(window.innerHeight, 1)
   renderer.setSize(w, h, false)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
-  centerAndFrame()
+  reframe()
 }
 
 async function initAmmo() {
@@ -561,7 +779,7 @@ async function boot() {
 
 window.addEventListener('resize', resize)
 window.pet3d = {
-  setStatus, setForm, setAction, setTalk, resize,
+  setStatus, setForm, setAction, setTalk, setAnchor, setDragging, setPoke, pokeAt, resize,
   debug: () => {
     const g = bodyMesh && bodyMesh.geometry
     let nan = 0
@@ -569,7 +787,62 @@ window.pet3d = {
       const a = g.attributes.position.array
       for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) nan++
     }
-    return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z }
+    return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y }
+  },
+  // 数值构图探针(无需看图像即可验证坐姿是否压在窗口上沿)
+  layout: () => {
+    if (!bodyMesh) return null
+    root.updateMatrixWorld(true)
+    bodyMesh.updateMatrixWorld(true)
+    camera.updateMatrixWorld()
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
+    const project = (world) => {
+      const v = world.clone().project(camera)
+      return { x: (v.x * 0.5 + 0.5) * canvas.clientWidth, y: (0.5 - v.y * 0.5) * canvas.clientHeight }
+    }
+    const box = new THREE.Box3().setFromObject(root)
+    const top = project(new THREE.Vector3(0, box.max.y, 0))
+    const bottom = project(new THREE.Vector3(0, box.min.y, 0))
+    const hipB = bone('下半身')
+    const hip = hipB ? project(hipB.getWorldPosition(new THREE.Vector3())) : null
+    return {
+      canvasW: canvas.clientWidth, canvasH: canvas.clientHeight,
+      topY: Math.round(top.y), hipY: hip ? Math.round(hip.y) : null, bottomY: Math.round(bottom.y),
+      boxYmin: Number(box.min.y.toFixed(2)), boxYmax: Number(box.max.y.toFixed(2)),
+      pivotY: Number(pivot.position.y.toFixed(2)), camY: Number(camera.position.y.toFixed(2)), camZ: Number(camera.position.z.toFixed(2)),
+    }
+  },
+  skeleton: () => {
+    if (!bodyMesh) return null
+    root.updateMatrixWorld(true)
+    bodyMesh.updateMatrixWorld(true)
+    const out = {}
+    for (const name of ['腰', '下半身', '上半身', '首', '頭', '右足', '右ひざ', '右足首', '左足', '左ひざ', '左足首', '右腕', '右手首']) {
+      const b = bone(name)
+      if (!b) { out[name] = null; continue }
+      const p = b.getWorldPosition(new THREE.Vector3())
+      out[name] = { x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)), z: Number(p.z.toFixed(2)), rx: Number(b.rotation.x.toFixed(2)) }
+    }
+    return out
+  },
+  testPose: () => {
+    if (!bodyMesh) return null
+    resetPose()
+    scratch.clear()
+    addSitPose(0, 0)
+    commitPose()
+    root.rotation.y = BASE_YAW
+    root.updateMatrixWorld(true)
+    const knee = bone('右ひざ')
+    const thigh = bone('右足')
+    const out = { thighRx: thigh ? thigh.rotation.x : null, restRx: thigh ? restPose.get(thigh).rx : null }
+    if (knee) {
+      const p = knee.getWorldPosition(new THREE.Vector3())
+      out.knee = { x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)), z: Number(p.z.toFixed(2)) }
+    }
+    resetPose()
+    scratch.clear()
+    return out
   },
 }
 

@@ -208,6 +208,7 @@ export interface GeneralSettings {
     agent?: string
     form?: 'normal' | 'ultimate'
     action?: 'idle' | 'dance1' | 'dance2' | 'dance3'
+    anchor?: 'float' | 'window' | 'taskbar'
     scale?: number
     opacity?: number
     topmost?: boolean

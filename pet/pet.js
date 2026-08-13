@@ -1,7 +1,7 @@
 /* global window, document */
 /* 式神桌宠 UI 层: 气泡/名字/拖拽/菜单/状态转发; 3D 渲染在 pet3d.js */
 (function () {
-  var cfg = { agent: '黄泉', bubble: true, lines: [], form: 'normal', action: 'idle' }
+  var cfg = { agent: '黄泉', bubble: true, lines: [], form: 'normal', action: 'idle', anchor: 'float' }
   var bubble = document.getElementById('bubble')
   var chatBox = document.getElementById('chat-box')
   var chatInput = document.getElementById('chat-input')
@@ -12,6 +12,7 @@
   var idleTimer = null
   var bubbleTimer = null
   var dragging = false
+  var pendingAnchor = null
   var moved = false
   var dragStart = null
   var status = 'idle'
@@ -47,6 +48,14 @@
   function applyAction(action) {
     cfg.action = action || 'idle'
     if (window.pet3d) window.pet3d.setAction(cfg.action)
+  }
+
+  function applyAnchor(anchor) {
+    if (dragging) { pendingAnchor = anchor; return }
+    cfg.anchor = anchor === 'window' || anchor === 'taskbar' ? anchor : 'float'
+    document.body.classList.toggle('anchor-window', cfg.anchor === 'window')
+    document.body.classList.toggle('anchor-taskbar', cfg.anchor === 'taskbar')
+    if (window.pet3d) window.pet3d.setAnchor(cfg.anchor)
   }
 
   function openChat() {
@@ -97,6 +106,7 @@
     applyAgent(cfg.agent)
     applyForm(cfg.form)
     applyAction(cfg.action)
+    applyAnchor(cfg.anchor)
     document.body.style.opacity = String(cfg.opacity != null ? cfg.opacity : 0.9)
     applyStatus(status)
   })
@@ -107,6 +117,10 @@
 
   window.petIpc.on('pet:action', function (action) {
     applyAction(action)
+  })
+
+  window.petIpc.on('pet:anchor', function (anchor) {
+    applyAnchor(anchor)
   })
 
   window.petIpc.on('pet:chat', function (d) {
@@ -126,9 +140,17 @@
     fallback.classList.add('on')
   })
 
-  document.body.addEventListener('click', function () {
+  document.body.addEventListener('click', function (ev) {
     if (moved) { moved = false; return }
-    openChat()
+    var hit = window.pet3d ? window.pet3d.pokeAt(ev.clientX, ev.clientY) : null
+    if (hit === 'head') {
+      // 戳头 = 互动反馈(气泡 + 缩头小动作), 不打开输入框
+      if (window.pet3d) window.pet3d.setPoke()
+      var line = cfg.lines && cfg.lines.length ? cfg.lines[Math.floor(Math.random() * cfg.lines.length)] : '嗯？'
+      say(line)
+    } else {
+      openChat()
+    }
   })
 
   document.body.addEventListener('dblclick', function () { window.petIpc.invoke('pet:open-main') })
@@ -143,6 +165,7 @@
     dragging = true
     moved = false
     dragStart = { mx: ev.screenX, my: ev.screenY }
+    if (window.pet3d) window.pet3d.setDragging(true)
     window.petIpc.invoke('pet:drag-start', dragStart)
   })
 
@@ -152,7 +175,9 @@
     var dx = ev.screenX - dragStart.mx
     var dy = ev.screenY - dragStart.my
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true
+    if (window.pet3d) window.pet3d.setDragging(false)
     window.petIpc.invoke('pet:drag-end')
+    if (pendingAnchor) { var a = pendingAnchor; pendingAnchor = null; applyAnchor(a) }
   })
 
   chatInput.addEventListener('keydown', function (ev) {

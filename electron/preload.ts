@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     toggle: (enable: boolean) => ipcRenderer.invoke('pet:toggle', enable),
     setForm: (form: 'normal' | 'ultimate') => ipcRenderer.invoke('pet:set-form', form),
     setAction: (action: 'idle' | 'dance1' | 'dance2' | 'dance3') => ipcRenderer.invoke('pet:set-action', action),
+    setAnchor: (anchor: 'float' | 'window' | 'taskbar') => ipcRenderer.invoke('pet:set-anchor', anchor),
     resetPos: () => ipcRenderer.invoke('pet:reset-pos'),
     onChat: (cb: (content: string) => void) => {
       const h = (_e: unknown, d: { content?: string }) => { try { cb(String(d?.content || '')) } catch { /* 忽略 */ } }

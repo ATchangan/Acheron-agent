@@ -11,6 +11,8 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
   ipcMain.handle('pet:state', () => pet.isEnabled())
   ipcMain.handle('pet:set-form', (_e, form: string) => pet.setForm(form === 'ultimate' ? 'ultimate' : 'normal'))
   ipcMain.handle('pet:set-action', (_e, action: string) => pet.setAction(action === 'dance1' || action === 'dance2' || action === 'dance3' ? action : 'idle'))
+  ipcMain.handle('pet:set-anchor', (_e, anchor: string) => pet.setAnchor(anchor === 'window' || anchor === 'taskbar' ? anchor : 'float'))
+  ipcMain.handle('pet:shape', (_e, rect: { x: number; y: number; width: number; height: number }) => { pet.applyShape(rect || null); return true })
   ipcMain.handle('pet:open-main', () => { pet.openMain(); return true })
   ipcMain.handle('pet:focus', () => { pet.focusInput(); return true })
   ipcMain.handle('pet:unfocus', () => { pet.unfocusInput(); return true })
@@ -21,14 +23,17 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
   ipcMain.handle('pet:drag-start', (_e, p: { mx: number; my: number }) => {
     const win = pet.getWindow()
     if (!win || dragTimer) return false
+    pet.dragStart()
     const seq = ++dragSeq
     const sx = Number(p?.mx) || 0
     const sy = Number(p?.my) || 0
     const [wx, wy] = win.getPosition()
+    const [ww, wh] = win.getSize()
     dragTimer = setInterval(() => {
       try {
         const c = screen.getCursorScreenPoint()
-        win.setPosition(wx + c.x - sx, wy + c.y - sy)
+        // 透明无边框窗口在 150% DPI 下 setPosition 会 +1px, 拖动必须用带显式尺寸的 setBounds
+        win.setBounds({ x: wx + c.x - sx, y: wy + c.y - sy, width: ww, height: wh }, false)
       } catch { /* 忽略 */ }
     }, 16)
     // 保险: 12s 强制结束, 防止 mouseup 在快速拖动中丢失导致拖拽僵住
@@ -40,12 +45,13 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
   ipcMain.handle('pet:drag-end', () => {
     dragSeq += 1
     if (dragTimer) { clearInterval(dragTimer); dragTimer = null }
-    pet.persistPos()
+    pet.dragEnd()
     return true
   })
   ipcMain.handle('pet:menu', () => {
     const form = pet.getForm()
     const action = pet.getAction()
+    const anchor = pet.getAnchor()
     const actionItems = ([
       ['idle', '待机'], ['dance1', '极乐净土'], ['dance2', '彩虹节拍'], ['dance3', 'Good Time'],
     ] as const).map(([value, label]) => ({
@@ -55,6 +61,17 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
       click: () => pet.setAction(value),
     }))
     const menu = Menu.buildFromTemplate([
+      {
+        label: '位置',
+        submenu: ([
+          ['float', '自由漂浮'], ['window', '坐视窗（跟随活动窗口）'], ['taskbar', '坐任务栏'],
+        ] as const).map(([value, label]) => ({
+          label,
+          type: 'radio' as const,
+          checked: anchor === value,
+          click: () => pet.setAnchor(value),
+        })),
+      },
       {
         label: form === 'ultimate' ? '形态：大招（切回正常）' : '形态：正常（切换大招）',
         click: () => pet.toggleForm(),

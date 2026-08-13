@@ -1,14 +1,19 @@
 // electron/pet.ts — 桌宠(式神伴身)窗口生命周期 + 状态广播 + 位置持久化(v0.4.0 M9)
 // 只监听既有任务事件, 与其他模块零耦合; 设置关闭/应用退出即销毁窗口, 禁止常驻后台
+// v0.4.0 M10(参照 MateEngine): 锚定模式 anchor —— float 自由 / window 坐视窗 / taskbar 坐任务栏
 import { BrowserWindow, screen } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
+import { WinProbe, type WinRect } from './win32-windows'
+
+export type PetAnchor = 'float' | 'window' | 'taskbar'
 
 export interface PetSettings {
   enabled?: boolean
   agent?: string
   form?: 'normal' | 'ultimate'
   action?: 'idle' | 'dance1' | 'dance2' | 'dance3'
+  anchor?: PetAnchor
   scale?: number
   opacity?: number
   topmost?: boolean
@@ -29,10 +34,28 @@ export const PET_LINES: Record<string, string[]> = {
   螺丝咕姆: ['计算完成，误差为零', '按计划执行', '我来检修一下'],
 }
 
+// 坐视窗时, 臀部落在视窗上沿以下这个比例处(占桌宠窗口高度的比例, 自上而下)
+const SIT_FRAC = 0.42
+const FOLLOW_POLL_MS = 380
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
 export class PetManager {
   private win: BrowserWindow | null = null
   private chatBuf = ''
   private chatLastSend = 0
+  private probe = new WinProbe()
+  private followTimer: ReturnType<typeof setInterval> | null = null
+  private moveTimer: ReturnType<typeof setInterval> | null = null
+  private targetPos: { x: number; y: number } | null = null
+  private curPos: { x: number; y: number } | null = null
+  private lastWinRect: WinRect | null = null
+  private ownHwnd = 0
+  private dragging = false
+  // 窗口不可缩放, 基准尺寸只在创建时计算一次; 高频 setBounds 必须传这两个常量,
+  // 不能用 getSize()(每次 DWM 取整 +1 会不断放大窗口)
+  private winW = 200
+  private winH = 300
+  private shapeRect: Electron.Rectangle | null = null
 
   constructor(private opts: { petDir: string; settingsPath: string; getMain: () => BrowserWindow | null }) {}
 
@@ -95,13 +118,35 @@ export class PetManager {
     return next
   }
 
+  getAnchor(): PetAnchor {
+    const a = this.readSettings().anchor
+    return a === 'window' || a === 'taskbar' ? a : 'float'
+  }
+
+  setAnchor(anchor: PetAnchor): PetAnchor {
+    const next: PetAnchor = anchor === 'window' || anchor === 'taskbar' ? anchor : 'float'
+    this.writeSettings({ anchor: next })
+    this.win?.webContents.send('pet:anchor', next)
+    if (next === 'float') {
+      this.stopFollow()
+      this.clearShape()
+      this.persistPos()
+    } else if (this.win) {
+      this.startFollow()
+      this.applyShape(this.shapeRect)
+    }
+    return next
+  }
+
   create(): void {
     if (this.win) return
     const s = this.readSettings()
     const scale = Math.max(0.5, Math.min(2, Number(s.scale) || 1))
-    // v0.4.1: 3D 建模为竖版全身像, 基准窗改为 200×300
+    // v0.4.0: 3D 建模为竖版全身像, 基准窗改为 200×300
     const w = Math.round(200 * scale)
     const h = Math.round(300 * scale)
+    this.winW = w
+    this.winH = h
     const win = new BrowserWindow({
       width: w,
       height: h,
@@ -122,6 +167,10 @@ export class PetManager {
       },
     })
     win.setAlwaysOnTop(s.topmost !== false, 'floating')
+    try {
+      const raw = win.getNativeWindowHandle()
+      this.ownHwnd = raw.length >= 8 ? Number(raw.readBigUInt64LE(0)) : Number(raw.readUInt32LE(0))
+    } catch { this.ownHwnd = 0 }
     this.place(win, s)
     void win.loadFile(join(this.opts.petDir, 'index.html'))
     win.webContents.once('did-finish-load', () => {
@@ -130,6 +179,7 @@ export class PetManager {
           agent: s.agent || '黄泉',
           form: s.form === 'ultimate' ? 'ultimate' : 'normal',
           action: this.getAction(),
+          anchor: this.getAnchor(),
           scale,
           opacity: Math.max(0.3, Math.min(1, Number(s.opacity) || 0.9)),
           bubble: s.bubble !== false,
@@ -147,20 +197,53 @@ export class PetManager {
     }
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     win.on('closed', () => { if (this.win === win) this.win = null })
+    if (process.env.HQ_PET_DEBUG === '1') {
+      win.on('resize', () => { console.debug('[pet-win] resize ->', JSON.stringify(win.getBounds()), 'scaleFactor=', screen.getPrimaryDisplay().scaleFactor) })
+      win.on('moved', () => { console.debug('[pet-win] moved ->', JSON.stringify(win.getBounds())) })
+    }
     this.win = win
+    if (process.env.HQ_PET_DEBUG === '1') {
+      setTimeout(() => {
+        if (!win.isDestroyed()) console.debug('[pet-win] bounds=', JSON.stringify(win.getBounds()), 'size=', JSON.stringify(win.getSize()), 'content=', JSON.stringify(win.getContentBounds()))
+      }, 2500)
+    }
+    if (this.getAnchor() !== 'float') this.startFollow()
   }
 
   private place(win: BrowserWindow, s: PetSettings): void {
+    if (s.anchor === 'window' || s.anchor === 'taskbar') {
+      this.placeFollowFallback(win)
+      return
+    }
     const pos = s.pos
     if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-      win.setPosition(Math.round(pos.x), Math.round(pos.y))
+      this.setWinBounds(win, Math.round(pos.x), Math.round(pos.y))
       return
     }
     const area = screen.getPrimaryDisplay().workArea
-    win.setPosition(area.x + area.width - win.getBounds().width - 24, area.y + area.height - win.getBounds().height - 24)
+    this.setWinBounds(win, area.x + area.width - win.getBounds().width - 24, area.y + area.height - win.getBounds().height - 24)
+  }
+
+  private placeFollowFallback(win: BrowserWindow): void {
+    const [w, h] = win.getSize()
+    const work = screen.getPrimaryDisplay().workArea
+    const tray = this.probe.getLatest().tray
+    if (tray) {
+      this.setWinBounds(win, clamp(Math.round(tray.l + (tray.r - tray.l) / 2 - w / 2), work.x, work.x + work.width - w), clamp(tray.t - Math.round(h * SIT_FRAC), work.y, work.y + work.height - h))
+    } else {
+      this.setWinBounds(win, clamp(Math.round(work.x + work.width / 2 - w / 2), work.x, work.x + work.width - w), Math.round(work.y + work.height * 0.25))
+    }
+  }
+
+  // Windows 11 + 透明无边框窗口在 150% DPI 下, setPosition 每次调用会 +1px(DWM 取整 bug);
+  // 高频循环必须用带显式尺寸的 setBounds, 否则桌宠会肉眼可见地持续膨胀
+  private setWinBounds(win: BrowserWindow, x: number, y: number): void {
+    try { win.setBounds({ x: Math.round(x), y: Math.round(y), width: this.winW, height: this.winH }, false) } catch { /* 忽略 */ }
   }
 
   destroy(): void {
+    this.stopFollow()
+    this.probe.stop()
     try { this.win?.destroy() } catch { /* 忽略 */ }
     this.win = null
   }
@@ -183,11 +266,37 @@ export class PetManager {
   focusInput(): void {
     const win = this.getWindow()
     if (!win) return
+    // 输入框浮在角色上方, 命中区域要临时扩回整窗才能点中
+    try { win.setShape([]) } catch { /* 忽略 */ }
     try { win.setFocusable(true); win.show(); win.focus(); win.webContents.focus() } catch { /* 忽略 */ }
   }
 
   unfocusInput(): void {
     try { this.win?.setFocusable(false) } catch { /* 忽略 */ }
+    this.applyShape(this.shapeRect)
+  }
+
+  // 桌宠窗口命中区域收缩到角色轮廓(透明区域点击穿透到下层窗口)
+  applyShape(rect: { x: number; y: number; width: number; height: number } | null): void {
+    if (this.getAnchor() === 'float') { this.clearShape(); return }
+    if (rect && Number(rect.width) > 8 && Number(rect.height) > 8) {
+      this.shapeRect = {
+        x: Math.round(rect.x), y: Math.round(rect.y),
+        width: Math.round(rect.width), height: Math.round(rect.height),
+      }
+      try { this.win?.setShape([this.shapeRect]) } catch { /* 忽略 */ }
+      if (process.env.HQ_PET_DEBUG === '1') console.debug('[pet-shape]', JSON.stringify(this.shapeRect))
+    } else {
+      this.shapeRect = null
+      try { this.win?.setShape([]) } catch { /* 忽略 */ }
+      if (process.env.HQ_PET_DEBUG === '1') console.debug('[pet-shape] cleared')
+    }
+  }
+
+  clearShape(): void {
+    this.shapeRect = null
+    try { this.win?.setShape([]) } catch { /* 忽略 */ }
+    if (process.env.HQ_PET_DEBUG === '1') console.debug('[pet-shape] cleared')
   }
 
   // 桌宠输入的消息转发给主窗口渲染层, 复用现有会话/历史/人设管线
@@ -199,6 +308,7 @@ export class PetManager {
   }
 
   persistPos(): void {
+    if (this.getAnchor() !== 'float') return
     const win = this.getWindow()
     if (!win) return
     const [x, y] = win.getPosition()
@@ -215,8 +325,93 @@ export class PetManager {
   }
 
   resetPosition(): void {
-    this.writeSettings({ pos: { x: null, y: null } })
-    if (this.win) this.place(this.win, this.readSettings())
+    if (this.getAnchor() === 'float') {
+      this.writeSettings({ pos: { x: null, y: null } })
+      if (this.win) this.place(this.win, this.readSettings())
+      return
+    }
+    // 锚定模式: 清空上次窗口记忆, 立刻重新吸附
+    this.lastWinRect = null
+    if (this.win) this.placeFollowFallback(this.win)
+    void this.tickFollow()
+  }
+
+  // 拖动开始: 若正锚在视窗/任务栏上, 拖起即脱离锚定回到自由模式(MateEngine 交互习惯)
+  dragStart(): void {
+    this.dragging = true
+    if (this.getAnchor() !== 'float') this.setAnchor('float')
+    else this.stopFollow()
+  }
+
+  dragEnd(): void {
+    this.dragging = false
+    this.persistPos()
+  }
+
+  private startFollow(): void {
+    this.stopFollow()
+    this.probe.start()
+    const win = this.getWindow()
+    if (!win) return
+    const [x, y] = win.getPosition()
+    this.curPos = { x, y }
+    this.targetPos = { x, y }
+    this.moveTimer = setInterval(() => this.smoothStep(), 16)
+    this.followTimer = setInterval(() => { void this.tickFollow() }, FOLLOW_POLL_MS)
+    void this.tickFollow()
+  }
+
+  private stopFollow(): void {
+    if (this.followTimer) { clearInterval(this.followTimer); this.followTimer = null }
+    if (this.moveTimer) { clearInterval(this.moveTimer); this.moveTimer = null }
+    this.targetPos = null
+    this.curPos = null
+  }
+
+  private smoothStep(): void {
+    const win = this.getWindow()
+    if (!win || !this.targetPos || this.dragging) return
+    if (!this.curPos) this.curPos = { ...this.targetPos }
+    const c = this.curPos
+    const t = this.targetPos
+    c.x += (t.x - c.x) * 0.26
+    c.y += (t.y - c.y) * 0.26
+    if (Math.abs(t.x - c.x) < 0.6 && Math.abs(t.y - c.y) < 0.6) { c.x = t.x; c.y = t.y }
+    this.setWinBounds(win, c.x, c.y)
+  }
+
+  private async tickFollow(): Promise<void> {
+    if (this.dragging) return
+    const anchor = this.getAnchor()
+    const win = this.getWindow()
+    if (!win || anchor === 'float') return
+    const [w, h] = win.getSize()
+    const work = screen.getPrimaryDisplay().workArea
+    if (anchor === 'taskbar') {
+      const snap = await this.probe.poll()
+      if (snap.tray) {
+        const t = snap.tray
+        this.targetPos = {
+          x: clamp(Math.round(t.l + (t.r - t.l) / 2 - w / 2), work.x, work.x + work.width - w),
+          y: clamp(t.t - Math.round(h * SIT_FRAC), work.y, work.y + work.height - h),
+        }
+        if (process.env.HQ_PET_DEBUG === '1') console.debug('[pet-follow] taskbar', JSON.stringify(this.targetPos), 'tray=', JSON.stringify(t))
+      }
+      return
+    }
+    const snap = await this.probe.poll()
+    const fgWin = snap.wins.find(x => x.h === snap.fg)
+    // 前台窗口是桌宠自己(聊天输入时短暂获得焦点) → 保持上次锚点不动
+    if (fgWin && fgWin.h !== this.ownHwnd && fgWin.h !== 0) {
+      this.lastWinRect = { l: fgWin.l, t: fgWin.tp, r: fgWin.r, b: fgWin.b }
+    }
+    const r = this.lastWinRect
+    if (!r) return
+    this.targetPos = {
+      x: clamp(Math.round(r.l + (r.r - r.l) / 2 - w / 2), work.x, work.x + work.width - w),
+      y: clamp(r.t - Math.round(h * SIT_FRAC), work.y, work.y + work.height - h),
+    }
+    if (process.env.HQ_PET_DEBUG === '1') console.debug('[pet-follow] window', JSON.stringify(this.targetPos), 'fgWin=', fgWin ? JSON.stringify({ l: fgWin.l, tp: fgWin.tp, t: fgWin.t }) : 'none', 'last=', JSON.stringify(r))
   }
 
   // 引擎事件 → 桌宠状态机(只转发, 不新增语义)

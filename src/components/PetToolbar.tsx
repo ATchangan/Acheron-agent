@@ -42,6 +42,11 @@ export default function PetToolbar() {
         <option value="dance2">彩虹节拍</option>
         <option value="dance3">Good Time</option>
       </select>
+      <select style={sel} title="桌宠位置锚定" value={pet.anchor || 'float'} onChange={e => { const v = e.target.value as 'float' | 'window' | 'taskbar'; save({ anchor: v }); void window.huangquan?.pet?.setAnchor?.(v) }}>
+        <option value="float">自由</option>
+        <option value="window">坐视窗</option>
+        <option value="taskbar">坐任务栏</option>
+      </select>
       <button className="tab-btn" style={{ padding: '1px 10px', fontSize: 'calc(var(--ui-font-size) - 2px)' }} title="重置桌宠位置" onClick={() => void window.huangquan?.pet?.resetPos?.()}>回位</button>
     </div>
   )
