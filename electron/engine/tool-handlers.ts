@@ -366,7 +366,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
         content: fact.slice(0, 1000), subject: triple.subject, relation: triple.relation, object: triple.object,
         embedding: null, sourceId: l0 || null, ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
       }
-      const stored = triple.subject ? storeFact(l1, l0 || null) : { action: 'new' as const, id: insertMemory(l1) }
+      const stored = triple.subject ? storeFact(l1) : { action: 'new' as const, id: insertMemory(l1) }
       if ((A.pinned || autoPin) && stored.id > 0) {
         insertMemory({ ...l1, layer: 'L3', sourceId: stored.id, level: 'pinned' })
       }

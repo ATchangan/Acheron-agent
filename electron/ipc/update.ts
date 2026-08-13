@@ -1,5 +1,5 @@
 // electron/ipc/update.ts —— 自动更新域 IPC(0.3.1 块 G 迁移, 行为零变化)
-import { ipcMain, app } from 'electron'
+import { ipcMain, app, BrowserWindow } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 
@@ -74,5 +74,47 @@ export function registerUpdateIpc(deps: {
       fs.writeFileSync(dest, Buffer.concat(chunks))
       return { ok: true, path: dest, size: received }
     } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
+  })
+
+  // v0.4.0 E3: electron-updater 增量更新(GitHub Release, app-update.yml 由构建生成)
+  // 未打包/未配置时静默禁用; 手动下载通道保留为兜底
+  let autoUpdater: import('electron-updater').AppUpdater | null = null
+  try {
+    if (app.isPackaged) {
+      const updater = require('electron-updater') as typeof import('electron-updater')
+      autoUpdater = updater.autoUpdater
+      autoUpdater.autoDownload = false
+      autoUpdater.autoInstallOnAppQuit = false
+      const broadcast = (channel: string, payload: unknown): void => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          try { w.webContents.send(channel, payload) } catch { /* 忽略 */ }
+        }
+      }
+      autoUpdater.on('update-available', (info) => broadcast('update:auto-available', info))
+      autoUpdater.on('update-not-available', (info) => broadcast('update:auto-none', info))
+      autoUpdater.on('download-progress', (p) => broadcast('update:auto-progress', p))
+      autoUpdater.on('update-downloaded', (info) => broadcast('update:auto-downloaded', info))
+      autoUpdater.on('error', (e) => broadcast('update:auto-error', { message: e instanceof Error ? e.message : String(e) }))
+    }
+  } catch { autoUpdater = null }
+
+  ipcMain.handle('update:auto-check', async () => {
+    try {
+      if (!autoUpdater) return { ok: false, error: '自动更新不可用(未打包或未配置发布源)' }
+      const r = await autoUpdater.checkForUpdates()
+      return { ok: true, version: r?.updateInfo?.version || '', current: currentVersion() }
+    } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
+  })
+  ipcMain.handle('update:auto-download', async () => {
+    try {
+      if (!autoUpdater) return { ok: false, error: '自动更新不可用' }
+      await autoUpdater.downloadUpdate()
+      return { ok: true }
+    } catch (e: unknown) { return { ok: false, error: (e instanceof Error ? e.message : String(e)) } }
+  })
+  ipcMain.handle('update:auto-install', () => {
+    if (!autoUpdater) return { ok: false, error: '自动更新不可用' }
+    autoUpdater.quitAndInstall(false, true)
+    return { ok: true }
   })
 }

@@ -4,6 +4,10 @@ directories:
   output: release
   buildResources: resources
 artifactName: Acheron-agent-${version}.exe
+publish:
+  provider: github
+  owner: ATchangan
+  repo: Acheron-agent
 files:
   - dist/**/*
   - dist-electron/**/*
@@ -13,7 +17,7 @@ win:
   target:
     - nsis
   icon: resources/icon.ico
-  sign: null              # 无证书自动跳过签名; 绝不要写 signAndEditExecutable: false(会丢失图标/版本信息)
+  # 无证书自动跳过签名; 需要签名时配置 signtoolOptions/azureSignOptions(E4), 绝不要写 signAndEditExecutable: false(会丢失图标/版本信息)
 mac:
   target:
     - dmg

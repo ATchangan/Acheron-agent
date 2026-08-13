@@ -38,7 +38,7 @@ export type StoreFactResult =
   | { action: 'conflict'; id: number; supersededId: number }
 
 // 事实落库: 精确重复→置信度+1; 半重复(同三元组不同内容)→置信度+1并更新; 冲突(同主谓不同宾)→旧行淘汰
-export function storeFact(m: MemoryRow, sourceId: number | null): StoreFactResult {
+export function storeFact(m: MemoryRow): StoreFactResult {
   const triples = findFactRows(m.subject, m.relation)
   const exact = triples.find(t => t.content === m.content && t.object === m.object)
   if (exact) {

@@ -40,7 +40,7 @@ describe('storeFact 去重与冲突(M4)', () => {
         agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1',
         content: '项目使用 TypeScript 开发', subject: '项目', relation: '使用', object: 'TypeScript 开发',
         embedding: null, sourceId: null, ts: Date.now(), lastAccess: Date.now(), accessCount: 0, superseded: 0, confidence: 1,
-      }, null)
+      })
     }
     const rows = listMemories({ layer: 'L1' }).filter(m => m.subject === '项目')
     expect(rows).toHaveLength(1)
@@ -52,12 +52,12 @@ describe('storeFact 去重与冲突(M4)', () => {
       agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1',
       content: '项目技术栈是 Electron', subject: '项目技术栈', relation: '是', object: 'Electron',
       embedding: null, sourceId: null, ts: Date.now(), lastAccess: Date.now(), accessCount: 0, superseded: 0, confidence: 1,
-    }, null)
+    })
     storeFact({
       agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1',
       content: '项目技术栈是 Tauri', subject: '项目技术栈', relation: '是', object: 'Tauri',
       embedding: null, sourceId: null, ts: Date.now(), lastAccess: Date.now(), accessCount: 0, superseded: 0, confidence: 1,
-    }, null)
+    })
     const rows = listMemories({ layer: 'L1', includeSuperseded: true }).filter(m => m.subject === '项目技术栈')
     expect(rows).toHaveLength(2)
     expect(rows.filter(r => r.superseded === 1)).toHaveLength(1)
