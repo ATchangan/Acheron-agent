@@ -44,6 +44,10 @@ const FOLDERS = { normal: '46', ultimate: '46_iswhite' }
 const BASE_YAW = 0.42 // 约 24°, 3/4 侧脸
 const ACTIONS = { idle: null, dance1: '1.vmd', dance2: '2.vmd', dance3: '3.vmd' }
 const state = { form: 'normal', status: 'idle', action: 'idle', anchor: 'float', dragging: false }
+// 可调参数(设置页自由调节, 默认与 v0.4.0 行为一致)
+const options = { look: true, physics: true, breath: 'normal', gesture: 'normal', chibi: 1 }
+const BREATH_MUL = { light: 0.55, normal: 1, strong: 1.5 }
+const GESTURE_MUL = { low: 2.2, normal: 1, high: 0.55 }
 
 // 状态 → 摆动/呼吸节奏目标(逐帧平滑过渡, 避免参数跳变)
 const STATUS_PARAMS = {
@@ -96,8 +100,8 @@ const BREEZE_GRAVITY = new THREE.Vector3(0, -36, 0)
 // 这里补上阻尼, 让摆动快速衰减、呈现"随微风轻摆"的效果
 function attachPhysics(mesh, animation) {
   helper.add(mesh, animation
-    ? { animation, physics: true, gravity: BREEZE_GRAVITY, warmup: 120 }
-    : { physics: true, gravity: BREEZE_GRAVITY, warmup: 120 })
+    ? { animation, physics: options.physics, gravity: BREEZE_GRAVITY, warmup: 120 }
+    : { physics: options.physics, gravity: BREEZE_GRAVITY, warmup: 120 })
   try {
     const ph = helper.objects.get(mesh)?.physics
     if (ph && Array.isArray(ph.bodies)) {
@@ -161,7 +165,7 @@ let gestureNext = 8 + Math.random() * 10
 function updateGesture(now) {
   if (!gesture && now >= gestureNext && state.action === 'idle') {
     gesture = { def: GESTURES[Math.floor(Math.random() * GESTURES.length)], t0: now }
-    gestureNext = now + 13 + Math.random() * 18
+    gestureNext = now + (13 + Math.random() * 18) * (GESTURE_MUL[options.gesture] || 1)
   }
   if (!gesture) return
   const p = (now - gesture.t0) / gesture.def.d
@@ -236,7 +240,7 @@ function centerAndFrame() {
   if (neckBone && headBone) {
     const neckY = neckBone.getWorldPosition(new THREE.Vector3()).y
     const headH = Math.max(box.max.y - neckY, 1)
-    const grow = 0.26
+    const grow = headGrow()
     box.max.y = neckY + headH * (1 + grow)
     const halfW = (box.max.x - box.min.x) / 2
     box.max.x += halfW * grow * 0.6
@@ -288,11 +292,16 @@ function bone(name) {
 // Q 版化: 头(含全部头发/发饰/眼睛, 均挂在「頭」下)整体放大, 躯干缩短(不动腿部 IK 链), 脖子稍加长衔接
 function applyChibi() {
   const head = bone('頭')
-  if (head) head.scale.set(1.26, 1.26, 1.26)
+  const c = Math.max(0, Math.min(1.5, Number(options.chibi) || 0))
+  if (head) head.scale.set(1 + 0.26 * c, 1 + 0.26 * c, 1 + 0.26 * c)
   const upper = bone('上半身')
-  if (upper) upper.scale.set(1, 0.88, 1)
+  if (upper) upper.scale.set(1, 1 - 0.12 * c, 1)
   const neck = bone('首')
-  if (neck) neck.scale.set(1, 1.18, 1)
+  if (neck) neck.scale.set(1, 1 + 0.18 * c, 1)
+}
+
+function headGrow() {
+  return 0.26 * Math.max(0, Math.min(1.5, Number(options.chibi) || 0))
 }
 
 // ---------- 坐视窗/坐任务栏(参照 MateEngine 窗口坐立) ----------
@@ -322,8 +331,9 @@ function addSitPose(now, breathe) {
   const legSway = org(now, 0.05, 0.045, 0.03, 0.02, 0.09, 0.012)
   addRot('右足', -1.38 + legSway, 0, 0)
   addRot('左足', -1.38 - legSway, 0, 0)
-  addRot('右ひざ', 1.48 - legSway * 0.6, 0, 0)
-  addRot('左ひざ', 1.48 + legSway * 0.6, 0, 0)
+  // 小腿略向前倾而不是完全垂直, 摆动幅度稍大, 避免"笔直僵硬"
+  addRot('右ひざ', 1.33 - legSway * 1.1, 0, 0)
+  addRot('左ひざ', 1.33 + legSway * 1.1, 0, 0)
   const ankleR = org(now, 0.06, 0.03, 0.04, 0.015, 0.11, 0.008)
   addRot('右足首', -0.12 + ankleR, 0, 0)
   addRot('左足首', -0.12 - ankleR, 0, 0)
@@ -362,7 +372,7 @@ function frameSit() {
   if (neckBone && headBone) {
     const neckY = neckBone.getWorldPosition(new THREE.Vector3()).y
     const headH = Math.max(box.max.y - neckY, 1)
-    const grow = 0.26
+    const grow = headGrow()
     box.max.y = neckY + headH * (1 + grow)
   }
   fitCameraToBox(box)
@@ -482,7 +492,7 @@ function applyIdlePose(now, dt) {
   // 状态参数平滑过渡
   const target = STATUS_PARAMS[state.status] || STATUS_PARAMS.idle
   for (const k of Object.keys(curParams)) curParams[k] = lerp(curParams[k], target[k], Math.min(1, dt * 2.2))
-  const tm = now * curParams.breathMul
+  const tm = now * curParams.breathMul * (BREATH_MUL[options.breath] || 1)
 
   // 呼吸: 主频 + 两层微扰, 躯干带动肩与头
   const breathe = org(tm, 0.24, 0.62, 0.09, 0.24, 0.37, 0.14)
@@ -574,7 +584,7 @@ function updateLook() {
 function helperPhysicsOnly() {
   if (!bodyMesh) return
   try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
-  if (window.__ammoReady) {
+  if (options.physics && window.__ammoReady) {
     try { attachPhysics(bodyMesh) } catch (_) { /* 无物理骨架也照常渲染 */ }
   }
 }
@@ -664,7 +674,7 @@ function animate() {
   const status = state.status
   if (state.action === 'idle') {
     applyIdlePose(clockT, dt)
-    updateLook()
+    if (options.look) updateLook()
     // 站姿微摆: 慢速有机噪声, 而非固定正弦
     root.rotation.y = BASE_YAW + org(clockT, curParams.swayF, curParams.sway, curParams.swayF * 0.61, curParams.sway * 0.45, curParams.swayF * 1.7, curParams.sway * 0.22)
     root.position.y = state.dragging ? Math.sin(clockT * 5.2) * 0.42 : 0
@@ -734,6 +744,27 @@ function setPoke() {
   pokeUntil = clockT + 1.15
 }
 
+function setOptions(o) {
+  if (!o) return
+  let reframeNeeded = false
+  let physicsChanged = false
+  if (typeof o.look === 'boolean') options.look = o.look
+  if (typeof o.physics === 'boolean' && o.physics !== options.physics) { options.physics = o.physics; physicsChanged = true }
+  if (o.breath === 'light' || o.breath === 'normal' || o.breath === 'strong') options.breath = o.breath
+  if (o.gesture === 'low' || o.gesture === 'normal' || o.gesture === 'high') options.gesture = o.gesture
+  if (typeof o.chibi === 'number') {
+    options.chibi = Math.max(0, Math.min(1.5, Number(o.chibi)))
+    reframeNeeded = true
+  }
+  if (reframeNeeded && bodyMesh) {
+    resetPose()
+    applyChibi()
+    reframe()
+    lastShapeKey = ''
+  }
+  if (physicsChanged && bodyMesh && state.action === 'idle') helperPhysicsOnly()
+}
+
 function resize() {
   const w = Math.max(window.innerWidth, 1)
   const h = Math.max(window.innerHeight, 1)
@@ -779,7 +810,7 @@ async function boot() {
 
 window.addEventListener('resize', resize)
 window.pet3d = {
-  setStatus, setForm, setAction, setTalk, setAnchor, setDragging, setPoke, pokeAt, resize,
+  setStatus, setForm, setAction, setTalk, setAnchor, setDragging, setPoke, setOptions, pokeAt, resize,
   debug: () => {
     const g = bodyMesh && bodyMesh.geometry
     let nan = 0

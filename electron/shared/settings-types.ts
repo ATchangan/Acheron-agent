@@ -213,6 +213,11 @@ export interface GeneralSettings {
     opacity?: number
     topmost?: boolean
     bubble?: boolean
+    look?: boolean
+    physics?: boolean
+    breath?: 'light' | 'normal' | 'strong'
+    gesture?: 'low' | 'normal' | 'high'
+    chibi?: number
     pos?: { x: number | null; y: number | null }
   }
   programMemory?: boolean

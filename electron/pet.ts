@@ -18,6 +18,11 @@ export interface PetSettings {
   opacity?: number
   topmost?: boolean
   bubble?: boolean
+  look?: boolean
+  physics?: boolean
+  breath?: 'light' | 'normal' | 'strong'
+  gesture?: 'low' | 'normal' | 'high'
+  chibi?: number
   pos?: { x: number | null; y: number | null }
 }
 
@@ -118,6 +123,37 @@ export class PetManager {
     return next
   }
 
+  // 设置页自由调节(大小/透明度/置顶/气泡/目光/物理/呼吸/小动作/Q版程度), 实时生效
+  applyOptions(patch: Partial<PetSettings>): void {
+    this.writeSettings(patch)
+    const s = this.readSettings()
+    const scale = Math.max(0.3, Math.min(2.5, Number(s.scale) || 1))
+    if (typeof patch.scale === 'number') {
+      this.winW = Math.round(200 * scale)
+      this.winH = Math.round(300 * scale)
+      const win = this.getWindow()
+      if (win) {
+        const [x, y] = win.getPosition()
+        try { win.setBounds({ x, y, width: this.winW, height: this.winH }, false) } catch { /* 忽略 */ }
+      }
+    }
+    const win = this.getWindow()
+    if (typeof patch.topmost === 'boolean' && win) {
+      try { win.setAlwaysOnTop(patch.topmost, 'floating') } catch { /* 忽略 */ }
+    }
+    win?.webContents.send('pet:options', {
+      scale,
+      opacity: Math.max(0.2, Math.min(1, Number(s.opacity) || 0.9)),
+      bubble: s.bubble !== false,
+      look: s.look !== false,
+      physics: s.physics !== false,
+      breath: s.breath === 'light' || s.breath === 'strong' ? s.breath : 'normal',
+      gesture: s.gesture === 'low' || s.gesture === 'high' ? s.gesture : 'normal',
+      chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
+      topmost: s.topmost !== false,
+    })
+  }
+
   getAnchor(): PetAnchor {
     const a = this.readSettings().anchor
     return a === 'window' || a === 'taskbar' ? a : 'float'
@@ -141,7 +177,7 @@ export class PetManager {
   create(): void {
     if (this.win) return
     const s = this.readSettings()
-    const scale = Math.max(0.5, Math.min(2, Number(s.scale) || 1))
+    const scale = Math.max(0.3, Math.min(2.5, Number(s.scale) || 1))
     // v0.4.0: 3D 建模为竖版全身像, 基准窗改为 200×300
     const w = Math.round(200 * scale)
     const h = Math.round(300 * scale)
@@ -181,8 +217,13 @@ export class PetManager {
           action: this.getAction(),
           anchor: this.getAnchor(),
           scale,
-          opacity: Math.max(0.3, Math.min(1, Number(s.opacity) || 0.9)),
+          opacity: Math.max(0.2, Math.min(1, Number(s.opacity) || 0.9)),
           bubble: s.bubble !== false,
+          look: s.look !== false,
+          physics: s.physics !== false,
+          breath: s.breath === 'light' || s.breath === 'strong' ? s.breath : 'normal',
+          gesture: s.gesture === 'low' || s.gesture === 'high' ? s.gesture : 'normal',
+          chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
           lines: PET_LINES[s.agent || '黄泉'] || PET_LINES['黄泉'],
         })
       }

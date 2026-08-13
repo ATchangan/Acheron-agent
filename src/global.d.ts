@@ -32,6 +32,7 @@ declare global {
         setForm: (form: 'normal' | 'ultimate') => Promise<'normal' | 'ultimate'>
         setAction: (action: 'idle' | 'dance1' | 'dance2' | 'dance3') => Promise<'idle' | 'dance1' | 'dance2' | 'dance3'>
         setAnchor: (anchor: 'float' | 'window' | 'taskbar') => Promise<'float' | 'window' | 'taskbar'>
+        setOptions: (patch: Record<string, unknown>) => Promise<boolean>
         resetPos: () => Promise<boolean>
         onChat: (cb: (content: string) => void) => () => void
       }

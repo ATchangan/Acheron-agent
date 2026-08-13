@@ -125,24 +125,6 @@ export default function SkinTab() {
         <StepSetting label="会话区宽度" hint="消息区与输入框宽度（默认 780px）" value={g.chatMaxWidth || 780} min={480} max={1400} step={20} unit=" px" onChange={v => save({ chatMaxWidth: v })} />
         <Toggle checked={g.showTimestamps !== 'hover'} onChange={v => save({ showTimestamps: v ? 'always' : 'hover' })} label="始终显示时间戳" hint="关闭后仅悬停显示" />
       </div>
-      <div style={S.card}><div style={S.section}>桌宠（式神伴身）</div>
-        <div style={S.hint}>桌面常驻式神角色：任务状态动画联动、定时任务气泡提醒。可在对话区顶部工具条、桌宠右键菜单或此处控制。开关关闭或退出应用后立即销毁，不留后台进程。</div>
-        <Toggle checked={g.pet?.enabled === true} onChange={v => { save({ pet: { ...(g.pet || {}), enabled: v } }); void window.huangquan?.pet?.toggle?.(v) }} label="启用桌宠" hint="在桌面右下角显示式神小窗（透明置顶，不抢焦点）" />
-        <div style={S.row}><div style={S.label}>角色形象</div><select style={S.sel} value={g.pet?.agent || '黄泉'} onChange={e => save({ pet: { ...(g.pet || {}), agent: e.target.value } })}>{['黄泉', '姬子', '三月七', '银狼', '艾丝妲', '知更鸟', '黑天鹅', '螺丝咕姆'].map(a => <option key={a} value={a}>{a}</option>)}</select></div>
-        <div style={S.row}><div style={S.label}>黄泉形态</div><select style={S.sel} value={g.pet?.form || 'normal'} onChange={e => { const v = e.target.value as 'normal' | 'ultimate'; save({ pet: { ...(g.pet || {}), form: v } }); void window.huangquan?.pet?.setForm?.(v) }}><option value="normal">正常</option><option value="ultimate">大招（白发）</option></select></div>
-        <div style={S.row}><div style={S.label}>黄泉动作</div><select style={S.sel} value={g.pet?.action || 'idle'} onChange={e => { const v = e.target.value as 'idle' | 'dance1' | 'dance2' | 'dance3'; save({ pet: { ...(g.pet || {}), action: v } }); void window.huangquan?.pet?.setAction?.(v) }}><option value="idle">待机（呼吸/张望）</option><option value="dance1">极乐净土</option><option value="dance2">彩虹节拍</option><option value="dance3">Good Time</option></select></div>
-        <div style={S.row}><div style={S.label}>位置锚定</div><select style={S.sel} value={g.pet?.anchor || 'float'} onChange={e => { const v = e.target.value as 'float' | 'window' | 'taskbar'; save({ pet: { ...(g.pet || {}), anchor: v } }); void window.huangquan?.pet?.setAnchor?.(v) }}><option value="float">自由漂浮（可拖动）</option><option value="window">坐视窗（跟随活动窗口）</option><option value="taskbar">坐任务栏</option></select></div>
-        <div style={S.hint}>黄泉的 3D 桌宠建模支持正常 / 大招两套形态；待机为呼吸、张望、眨眼等程序化动画，也可切换舞蹈动作（动作素材来源见 pet/actions/NOTICE.md）</div>
-        <div style={S.hint}>「坐视窗」会自动骑坐在当前活动窗口的上沿，切窗口时平滑跟随；拖动桌宠即脱离锚定回到自由漂浮。参照 MateEngine 的窗口坐立交互。</div>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <StepSetting label="大小" hint="0.5 ~ 2.0 倍" value={Math.round((g.pet?.scale || 1) * 100)} min={50} max={200} step={10} unit="%" onChange={v => save({ pet: { ...(g.pet || {}), scale: v / 100 } })} />
-          <StepSetting label="透明度" hint="0.3 ~ 1.0" value={Math.round((g.pet?.opacity || 0.9) * 100)} min={30} max={100} step={5} unit="%" onChange={v => save({ pet: { ...(g.pet || {}), opacity: v / 100 } })} />
-        </div>
-        <Toggle checked={g.pet?.bubble !== false} onChange={v => save({ pet: { ...(g.pet || {}), bubble: v } })} label="气泡提醒" hint="任务状态与定时任务到点的文字气泡" />
-        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-          <button style={S.btn('ghost')} onClick={() => void window.huangquan?.pet?.resetPos?.()}>重置位置</button>
-        </div>
-      </div>
     </div>
   )
 }

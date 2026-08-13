@@ -101,6 +101,12 @@
     }
   }
 
+  function applyOptions(o) {
+    if (!o) return
+    if (o.opacity != null) document.body.style.opacity = String(Math.max(0.2, Math.min(1, Number(o.opacity))))
+    if (window.pet3d) window.pet3d.setOptions(o)
+  }
+
   window.petIpc.on('pet:config', function (c) {
     cfg = c || cfg
     applyAgent(cfg.agent)
@@ -108,6 +114,7 @@
     applyAction(cfg.action)
     applyAnchor(cfg.anchor)
     document.body.style.opacity = String(cfg.opacity != null ? cfg.opacity : 0.9)
+    if (window.pet3d) window.pet3d.setOptions(cfg)
     applyStatus(status)
   })
 
@@ -121,6 +128,10 @@
 
   window.petIpc.on('pet:anchor', function (anchor) {
     applyAnchor(anchor)
+  })
+
+  window.petIpc.on('pet:options', function (o) {
+    applyOptions(o)
   })
 
   window.petIpc.on('pet:chat', function (d) {

@@ -1,6 +1,6 @@
 // electron/ipc/pet.ts — 桌宠 IPC 桥(v0.4.0 M9)
 import { ipcMain, Menu, screen } from 'electron'
-import type { PetManager } from '../pet'
+import type { PetManager, PetSettings } from '../pet'
 
 export function registerPetIpc(deps: { pet: PetManager }): void {
   const { pet } = deps
@@ -12,6 +12,23 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
   ipcMain.handle('pet:set-form', (_e, form: string) => pet.setForm(form === 'ultimate' ? 'ultimate' : 'normal'))
   ipcMain.handle('pet:set-action', (_e, action: string) => pet.setAction(action === 'dance1' || action === 'dance2' || action === 'dance3' ? action : 'idle'))
   ipcMain.handle('pet:set-anchor', (_e, anchor: string) => pet.setAnchor(anchor === 'window' || anchor === 'taskbar' ? anchor : 'float'))
+  ipcMain.handle('pet:set-options', (_e, patch: Record<string, unknown>) => {
+    const p: Partial<PetSettings> = {}
+    for (const k of ['scale', 'opacity', 'chibi']) {
+      const v = Number((patch || {})[k])
+      if (Number.isFinite(v)) (p as Record<string, unknown>)[k] = v
+    }
+    for (const k of ['topmost', 'look', 'physics', 'bubble']) {
+      const v = (patch || {})[k]
+      if (v === true || v === false) (p as Record<string, unknown>)[k] = v
+    }
+    const breath = (patch || {}).breath
+    if (breath === 'light' || breath === 'normal' || breath === 'strong') p.breath = breath
+    const gesture = (patch || {}).gesture
+    if (gesture === 'low' || gesture === 'normal' || gesture === 'high') p.gesture = gesture
+    pet.applyOptions(p)
+    return true
+  })
   ipcMain.handle('pet:shape', (_e, rect: { x: number; y: number; width: number; height: number }) => { pet.applyShape(rect || null); return true })
   ipcMain.handle('pet:open-main', () => { pet.openMain(); return true })
   ipcMain.handle('pet:focus', () => { pet.focusInput(); return true })
