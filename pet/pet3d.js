@@ -53,7 +53,7 @@ const GESTURE_MUL = { low: 2.2, normal: 1, high: 0.55 }
 const STATUS_PARAMS = {
   idle: { sway: 0.032, swayF: 0.045, breathMul: 1, headRate: 1 },
   thinking: { sway: 0.05, swayF: 0.16, breathMul: 1.3, headRate: 2.4 },
-  working: { sway: 0.025, swayF: 0.22, breathMul: 1.5, headRate: 3.2 },
+  working: { sway: 0.022, swayF: 0.14, breathMul: 1.5, headRate: 2.4 },
   done: { sway: 0.032, swayF: 0.045, breathMul: 1, headRate: 1 },
   error: { sway: 0.018, swayF: 0.03, breathMul: 0.9, headRate: 1 },
 }
@@ -534,10 +534,11 @@ function applyIdlePose(now, dt) {
 
   // 被拖动: 双臂张开像被拎起, 身体随主进程移动漂浮
   if (state.dragging) {
-    addRot('右腕', -0.9, 0, 0.28)
-    addRot('左腕', -0.9, 0, -0.28)
-    addRot('右ひじ', -0.34, 0, 0)
-    addRot('左ひじ', -0.34, 0, 0)
+    addRot('右腕', -0.58, 0, 0.18)
+    addRot('左腕', -0.58, 0, -0.18)
+    addRot('右ひじ', -0.18, 0, 0)
+    addRot('左ひじ', -0.18, 0, 0)
+    addRot('首', 0.05, 0, 0)
   }
 
   // 重心: 慢速随机游走(多层低频噪声)
@@ -551,6 +552,22 @@ function applyIdlePose(now, dt) {
     addRot('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
   }
   updateGesture(now)
+
+  // 被戳头: 短促缩脖 + 轻微低头(站立待机也要有反馈, 与坐姿一致)
+  if (clockT < pokeUntil) {
+    const p = 1 - clamp01((pokeUntil - clockT) / 1.15)
+    const dip = Math.sin(p * Math.PI) * 0.2
+    addRot('首', -dip * 0.2, 0, 0)
+    addRot('頭', dip, 0, 0)
+  }
+
+  // 出错: 身体短促后仰 + 抬头缩肩, 配合窗口级抖动
+  const nowMs = performance.now()
+  if (nowMs < shakeUntil) {
+    const p = (shakeUntil - nowMs) / 700
+    addRot('上半身', -p * 0.12, 0, 0)
+    addRot('首', p * 0.12, 0, 0)
+  }
 
   commitPose()
 
@@ -677,7 +694,7 @@ function animate() {
     if (options.look) updateLook()
     // 站姿微摆: 慢速有机噪声, 而非固定正弦
     root.rotation.y = BASE_YAW + org(clockT, curParams.swayF, curParams.sway, curParams.swayF * 0.61, curParams.sway * 0.45, curParams.swayF * 1.7, curParams.sway * 0.22)
-    root.position.y = state.dragging ? Math.sin(clockT * 5.2) * 0.42 : 0
+    root.position.y = state.dragging ? Math.sin(clockT * 4.4) * 0.3 : 0
     root.rotation.z = state.dragging ? Math.sin(clockT * 3.1) * 0.035 : 0
   } else {
     root.rotation.y = BASE_YAW

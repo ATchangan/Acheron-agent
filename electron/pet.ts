@@ -279,7 +279,11 @@ export class PetManager {
   // Windows 11 + 透明无边框窗口在 150% DPI 下, setPosition 每次调用会 +1px(DWM 取整 bug);
   // 高频循环必须用带显式尺寸的 setBounds, 否则桌宠会肉眼可见地持续膨胀
   private setWinBounds(win: BrowserWindow, x: number, y: number): void {
-    try { win.setBounds({ x: Math.round(x), y: Math.round(y), width: this.winW, height: this.winH }, false) } catch { /* 忽略 */ }
+    const px = Math.round(x)
+    const py = Math.round(y)
+    // 坐标/尺寸一旦被 NaN 污染, 透明窗口会在 Windows 上被 DWM 收敛成异常小窗口且无法恢复
+    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(this.winW) || !Number.isFinite(this.winH)) return
+    try { win.setBounds({ x: px, y: py, width: this.winW, height: this.winH }, false) } catch { /* 忽略 */ }
   }
 
   destroy(): void {

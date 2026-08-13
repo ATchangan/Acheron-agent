@@ -65,7 +65,7 @@ while ($true) {
   $trayH = [HQWinProbe]::FindWindow('Shell_TrayWnd', $null)
   if ($trayH -ne [IntPtr]::Zero) {
     $tr = New-Object HQWinProbe+RECT
-    if ([HQWinProbe]::GetWindowRect($trayH, [ref]$tr)) { $tray = @{ l = $tr.Left; tp = $tr.Top; r = $tr.Right; b = $tr.Bottom } }
+    if ([HQWinProbe]::GetWindowRect($trayH, [ref]$tr)) { $tray = @{ l = $tr.Left; t = $tr.Top; r = $tr.Right; b = $tr.Bottom } }
   }
   $o = @{ fg = $fg.ToInt64(); tray = $tray; wins = @($rows) }
   $json = ConvertTo-Json -InputObject $o -Compress -Depth 4
