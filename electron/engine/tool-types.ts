@@ -16,6 +16,7 @@ export interface ToolRunCtx {
   userDataPath: string
   skillsDirs?: string[]
   sender?: Electron.WebContents | null
+  latestUserText?: string
   getMemory: () => EngineMemory
   saveMemory: (m: EngineMemory) => void
   onAgentChange: (agent: string) => void

@@ -13,6 +13,10 @@ import { getMcpToolSpecs } from './tool-specs'
 import { checkFilePermission } from './tool-permission'
 import { resolveSkillFile, safeSkillName, writableSkillDir, listSkills } from './skill-files'
 import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
+import { insertMemory, getToolOutput, queryAudit } from '../db'
+import { parseFact, storeFact } from '../memory/facts'
+import { rrfFuse, ftsHits, formatFusedHits } from '../memory/searcher'
+import { searchSessions } from '../memory/session-index'
 
 const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer; decode: (b: Buffer, enc: string) => string }
 
@@ -49,6 +53,8 @@ export function closeTerminalSessions(sid?: string): void {
 }
 
 const watchState: Record<string, string> = {}
+// M7: 会话内 recall_tool_output 取回次数上限(防止反复取回刷爆窗口)
+const recallOutputCounts = new Map<string, number>()
 
 function parseDispatchTasks(raw: unknown): { agent: string; task: string }[] {
   try {
@@ -342,6 +348,29 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       m.facts = [...m.facts, fact]
     }
     ctx.saveMemory(m)
+    // v0.4.0 M4: 四层金字塔落库(L0 原始来源 → L1 原子事实 → L3 核心结论), 带溯源与去重
+    try {
+      const now = Date.now()
+      const agent = ctx.agent || '黄泉'
+      const agentScope = ctx.agent && ctx.agents[ctx.agent] ? ctx.agents[ctx.agent].memoryScope : 'global'
+      const scope: 'global' | 'private' = agentScope === 'private' ? 'private' : 'global'
+      const l0 = insertMemory({
+        agent, scope, level: 'normal', layer: 'L0',
+        content: String(ctx.latestUserText || fact).slice(0, 2000),
+        subject: null, relation: null, object: null, embedding: null, sourceId: null,
+        ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
+      })
+      const triple = parseFact(fact)
+      const l1: Parameters<typeof insertMemory>[0] = {
+        agent, scope, level: (A.pinned || autoPin) ? 'pinned' : 'normal', layer: 'L1',
+        content: fact.slice(0, 1000), subject: triple.subject, relation: triple.relation, object: triple.object,
+        embedding: null, sourceId: l0 || null, ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
+      }
+      const stored = triple.subject ? storeFact(l1, l0 || null) : { action: 'new' as const, id: insertMemory(l1) }
+      if ((A.pinned || autoPin) && stored.id > 0) {
+        insertMemory({ ...l1, layer: 'L3', sourceId: stored.id, level: 'pinned' })
+      }
+    } catch { /* 记忆落库失败不阻塞任务, 仍保留 JSON 通道 */ }
     return 'ok:saved' + (autoPin ? '（已自动置顶：约定/规则类）' : '')
   } },
   { name: 'recall_memory', run: async (A, ctx) => {
@@ -351,13 +380,51 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       const v = await invokeHandler('memory:search', [query], ctx.sender)
       if (Array.isArray(v)) vecHits = v.map((x: { content?: string }) => ({ content: String(x.content || ''), score: 0.5 }))
     } catch { /* 忽略 */ }
-    return recallFromMemory(ctx.getMemory(), query, vecHits)
+    const legacy = recallFromMemory(ctx.getMemory(), query, vecHits)
+    // v0.4.0 M2: FTS5 + 向量 RRF 融合检索(带溯源层与置信度)
+    try {
+      const fused = rrfFuse(ftsHits(query, 20), vecHits, { limit: 5 })
+      if (fused.length) {
+        const dbText = formatFusedHits(fused)
+        return legacy && legacy !== '(empty)' ? dbText + '\n---\n[历史记忆]\n' + legacy : dbText
+      }
+    } catch { /* 检索失败回退 JSON 通道 */ }
+    return legacy
   } },
   { name: 'session_search', run: async (A, ctx) => {
     const q = String(A.query || '').trim()
     if (!q) return 'E:need query'
+    // v0.4.0 M2: FTS5 后端(跨会话全文检索), 失败/未命中回退旧实现
+    try {
+      if (ctx.userDataPath) {
+        const hits = searchSessions(join(ctx.userDataPath, 'sessions'), q, A.limit ? Number(A.limit) : 5)
+        if (hits.length) {
+          return hits.map((x, i) => `${i + 1}. [${x.sid}](${x.role}) ${new Date(x.ts).toLocaleDateString('zh-CN')} ${x.snippet.slice(0, 160)}`).join('\n---\n')
+        }
+      }
+    } catch { /* 回退旧实现 */ }
     const r = await invokeHandler('sessions:search', [q, A.limit ? Number(A.limit) : 5], ctx.sender) as { title: string; role: string; snippet: string; ts: number }[]
     return Array.isArray(r) && r.length ? r.map((x, i) => `${i + 1}. [${x.title}](${x.role}) ${new Date(x.ts).toLocaleDateString('zh-CN')} ${x.snippet}`).join('\n---\n') : '(no matches)'
+  } },
+  { name: 'recall_events', run: (A, ctx) => {
+    // v0.4.0 M3: 情景记忆时间线(从审计表按 Agent + 时间范围取回)
+    const range = String(A.timeRange || 'week')
+    const days = range === 'day' ? 1 : range === 'month' ? 30 : 7
+    const from = Date.now() - days * 86400000
+    const rows = queryAudit({ agent: ctx.agent || undefined, from, limit: 50 })
+    if (!rows.length) return '(该时间段无操作记录)'
+    return rows.map((r, i) => `${i + 1}. [${new Date(r.ts).toLocaleString('zh-CN')}] ${r.agent || '黄泉'} ${r.tool || ''} → ${r.resultSummary || r.argsSummary || ''}`.slice(0, 200)).join('\n')
+  } },
+  { name: 'recall_tool_output', run: (A, ctx) => {
+    // v0.4.0 M7: side-channel 取回(每次会话最多 5 次, 返回截断 1.5KB)
+    const id = Number(A.id)
+    if (!id) return 'E:need id'
+    const used = recallOutputCounts.get(ctx.sid) || 0
+    if (used >= 5) return 'E:本次会话取回次数已达上限(5 次), 请基于已有摘要继续, 或改用原始工具重新获取'
+    const content = getToolOutput(id)
+    if (!content) return 'E:存档不存在或已过期: ' + id
+    recallOutputCounts.set(ctx.sid, used + 1)
+    return content.slice(0, 1500) + (content.length > 1500 ? '\n...[取回内容已截断]' : '')
   } },
   { name: 'codebox', run: async (A, ctx) => {
     if (!A.lang || !A.code) return 'E:need lang+code'

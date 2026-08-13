@@ -29,6 +29,10 @@ import { getBrowserSession, getBrowserSessionIfExists, closeBrowserSession, layo
 import { safeClone, decKey, encProviders, decProviders, dirSize, fmtSize, startServer } from './main-utils'
 import { join } from 'path'
 import { AppShell } from './app-shell'
+import { initDb, closeDb } from './db'
+import { importLegacyMemory } from './memory/migrate-legacy'
+import { refreshSessionIndex } from './memory/session-index'
+import { maybeRunDailyDecay } from './memory/decay'
 import * as fs from 'fs'
 
 // 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
@@ -45,7 +49,7 @@ if (process.platform === 'win32') {
 function safeLog(...args: unknown[]): void { try { console.log(...args) } catch { /* 管道已关闭 */ } }
 function safeError(...args: unknown[]): void { try { console.error(...args) } catch { /* 管道已关闭 */ } }
 // 退出前把缓冲中的诊断轨迹写盘(否则最后 ~500ms 的轨迹可能丢失)
-app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
+app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } try { closeDb() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
 
 // 使用 Electron net.fetch（Chromium 网络栈，自动跟随 Windows 系统代理）——
 // Node 全局 fetch(undici) 不读系统代理，导致浏览器能访问的 API 在应用内超时
@@ -136,6 +140,14 @@ registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as 
 registerTaskIpc({ tasksPath })
 registerTraceIpc({ tracePath })
 const memoryPath = join(userDataPath, 'memory.json')
+// v0.4.0 M1: SQLite 存储基座(记忆/审计/会话索引/工具输出), 启动即初始化 + 旧 JSON 一次性迁移
+const dbInit = initDb(join(userDataPath, 'agent.db'))
+if (dbInit.ok) {
+  try {
+    const imported = importLegacyMemory({ vectorPath: join(userDataPath, 'memory-vector.json'), jsonPath: memoryPath })
+    if (imported.imported > 0) safeLog('[db] 旧记忆已迁移 ' + imported.imported + ' 条' + (dbInit.inMemory ? '（内存模式, 不持久化）' : ''))
+  } catch (e) { console.debug('[swallow]', e) }
+}
 registerMemoryIpc({ memoryPath, settingsPath, userDataPath, safeClone, decKey })
 const workspaceDir = join(userDataPath, 'workspace')
 // v0.3.8: 自定义子代理目录(用户放 *.json 即注册自定义角色)
@@ -147,6 +159,13 @@ registerSkillsIpc({ skillsDir, resourcesDir })
 // mkdir 循环全部 try-catch —— resources/skills 在 asar 内只读, 失败不能崩溃
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
   try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }) } catch (e) { /* 只读目录(asar 内)或权限受限: 跳过 */ console.debug('[swallow]', e) }
+}
+// v0.4.0 M2: 会话全文索引(FTS5 后端, 供 session_search 跨会话检索)
+if (dbInit.ok) {
+  try { refreshSessionIndex(sessionsDir, true) } catch (e) { console.debug('[swallow]', e) }
+  // v0.4.0 M3: 每日 04:00 记忆衰减(启动检查 + 每小时轮询)
+  try { maybeRunDailyDecay() } catch (e) { console.debug('[swallow]', e) }
+  setInterval(() => { try { maybeRunDailyDecay() } catch { /* 忽略 */ } }, 3600 * 1000)
 }
 
 // 启动时初始向量记忆

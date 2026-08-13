@@ -27,6 +27,7 @@ import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
 import { invokeHandler } from './registry'
+import { saveToolOutput, insertAudit } from '../db'
 
 export interface EngineDeps {
   settingsPath: string
@@ -1010,6 +1011,7 @@ export class AgentEngine {
       userDataPath: this.deps.userDataPath,
       skillsDirs: this.deps.skillsDirs,
       sender: this.deps.getSender(),
+      latestUserText: String(task.userMsg?.content || ''),
       getMemory: () => task.memory,
       saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m) },
       onAgentChange: (agent: string) => {
@@ -1043,6 +1045,7 @@ export class AgentEngine {
   // v0.3.9: 统一执行管道 —— 主循环与子代理共用: 快照/Hooks/计划只读门/子目录指令注入
   private async runToolGuarded(task: TaskState, tc: EngineToolCall, ctx: ToolRunCtx, opts: { subAgent?: string } = {}): Promise<string> {
     const agentVar = opts.subAgent || task.agent || ''
+    const t0 = Date.now()
     runHooks(task.g, 'tool-before', { tool: tc.name, sid: task.sid, taskId: task.taskId, agent: agentVar })
     // v0.3.8: 文件快照 —— 写操作前记录原内容, 任务结束可一键回滚
     if (['write', 'edit', 'apply_patch'].includes(tc.name)) {
@@ -1066,6 +1069,27 @@ export class AgentEngine {
     if (r.startsWith('E:')) { /* 工具失败不注入, 避免混淆错误信息 */ } else {
       r = this.attachSubdirInstructions(task, tc, r)
     }
+    // v0.4.0 M7: 工具结果 >2KB 存档 side-channel, 上下文只保留取回指针(大结果不占窗口)
+    const NON_ARCHIVE_TOOLS = new Set(['browser_vision', 'read_image', 'media_img', 'media_video', 'recall_tool_output'])
+    if (r.length > 2048 && !r.startsWith('E:') && !NON_ARCHIVE_TOOLS.has(tc.name)) {
+      const outId = saveToolOutput(task.sid, tc.name, r)
+      if (outId > 0) {
+        this.trace('info', 'tool.side-channel', tc.name + ' 存档 #' + outId + ' (' + r.length + ' 字符)', task.sid, task.taskId)
+        r = '[工具结果 #' + outId + ' 已存档(' + r.length + ' 字符)。如需细节调用 recall_tool_output(' + outId + ')]'
+      }
+    }
+    // v0.4.0 M3: 工具审计落 SQLite(情景时间线 recall_events 的数据源)
+    try {
+      insertAudit({
+        ts: t0,
+        agent: agentVar || null,
+        tool: tc.name,
+        argsSummary: JSON.stringify(tc.args || {}).slice(0, 200),
+        resultSummary: (r.startsWith('E:') ? 'ERR ' : '') + r.slice(0, 200),
+        durationMs: Date.now() - t0,
+        tokens: null,
+      })
+    } catch { /* 审计失败不影响任务 */ }
     runHooks(task.g, 'tool-after', { tool: tc.name, sid: task.sid, taskId: task.taskId, result: r.slice(0, 200), agent: agentVar })
     if (['write', 'edit', 'apply_patch'].includes(tc.name) && !r.startsWith('E:')) {
       runHooks(task.g, 'file-write', { tool: tc.name, sid: task.sid, taskId: task.taskId, path: String((tc.args || {}).path || ''), agent: agentVar })
