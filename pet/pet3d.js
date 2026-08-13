@@ -112,6 +112,29 @@ function attachPhysics(mesh, animation) {
   } catch (_) { /* 忽略 */ }
 }
 
+// sr.ycl.cool 建模常见问题的渲染修正:
+// 1) "X+"内衬与正面完全共面(顶点逐字节重合) → polygonOffset 把内衬压深, 消除 Z-Fighting 闪烁/条纹
+// 2) 纹理含 alpha 通道但材质不透明 → alphaTest 裁掉全透明像素, 消除裙摆/袖口半透边缘的杂色与重影
+// 3) 透明材质(眼影/脸叠加层)不再写深度, 避免深度空洞与前后串层
+function sanitizeMaterials(mesh) {
+  const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
+  for (const m of mats) {
+    if (!m) continue
+    if (m.transparent) {
+      m.depthWrite = false
+      m.needsUpdate = true
+      continue
+    }
+    if (m.map && m.map.transparent) m.alphaTest = 0.1
+    if (/\+$/.test(String(m.name || ''))) {
+      m.polygonOffset = true
+      m.polygonOffsetFactor = 1
+      m.polygonOffsetUnits = 1
+    }
+    m.needsUpdate = true
+  }
+}
+
 let loadedForm = null
 let loadingForm = null
 let bodyMesh = null
@@ -119,6 +142,7 @@ let clockT = 0
 let hopUntil = 0
 let shakeUntil = 0
 let danceLoading = null
+let sitBlend = 0
 const clock = new THREE.Clock()
 
 const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
@@ -157,7 +181,7 @@ const GESTURES = [
   { d: 2.3, bones: [['首', 0, 0, 0.11], ['頭', 0, 0, 0.04]] },
   { d: 2.0, bones: [['首', 0, 0.2, 0], ['頭', 0, 0.07, 0]] },
   { d: 2.0, bones: [['首', 0, -0.2, 0], ['頭', 0, -0.07, 0]] },
-  { d: 2.3, bones: [['右腕', -0.5, 0, 0.05], ['右ひじ', -0.28, 0, 0], ['左腕', 0.09, 0, 0]] },
+  { d: 2.3, bones: [['右肩', -0.1, 0, 0], ['右腕', -0.5, 0, 0.05], ['右ひじ', -0.28, 0, 0], ['左腕', 0.09, 0, 0]] },
 ]
 let gesture = null
 let gestureNext = 8 + Math.random() * 10
@@ -313,47 +337,48 @@ function isSitting() {
   return state.anchor === 'window' || state.anchor === 'taskbar'
 }
 
-// 只往 scratch 累加坐姿偏移, 由 commitPose 统一应用
-function addSitPose(now, breathe) {
+// 只往 scratch 累加坐姿偏移, 由 commitPose 统一应用; k 用于坐/站平滑过渡缩放
+function addSitPose(now, breathe, k = 1) {
   sitFrames += 1
+  const add = (name, rx, ry, rz) => addRot(name, rx * k, ry * k, rz * k)
   // 骨盆微前倾 + 背稍后靠, 呼吸带动躯干
-  addRot('腰', -0.18 + breathe * 0.008, 0, 0)
-  addRot('下半身', 0.05 + breathe * 0.006, 0, 0)
-  addRot('上半身', -0.12 - breathe * 0.011, 0, 0)
-  addRot('上半身1', -0.03, 0, 0)
+  add('腰', -0.18 + breathe * 0.008, 0, 0)
+  add('下半身', 0.05 + breathe * 0.006, 0, 0)
+  add('上半身', -0.12 - breathe * 0.011, 0, 0)
+  add('上半身1', -0.03, 0, 0)
 
   // 头: 保留张望与目光跟随, 幅度略收
   if (!gesture) updateHead(now)
-  addRot('首', 0.06 + breathe * 0.004, headMotion.cYaw * 0.5 + look.yaw, 0)
-  addRot('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
+  add('首', 0.06 + breathe * 0.004, headMotion.cYaw * 0.5 + look.yaw, 0)
+  add('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
 
   // 大腿前伸、小腿自然垂下, 双腿交替极轻的晃动(像真的坐在边沿)
   const legSway = org(now, 0.05, 0.045, 0.03, 0.02, 0.09, 0.012)
-  addRot('右足', -1.38 + legSway, 0, 0)
-  addRot('左足', -1.38 - legSway, 0, 0)
+  add('右足', -1.38 + legSway, 0, 0)
+  add('左足', -1.38 - legSway, 0, 0)
   // 小腿略向前倾而不是完全垂直, 摆动幅度稍大, 避免"笔直僵硬"
-  addRot('右ひざ', 1.33 - legSway * 1.1, 0, 0)
-  addRot('左ひざ', 1.33 + legSway * 1.1, 0, 0)
+  add('右ひざ', 1.33 - legSway * 1.1, 0, 0)
+  add('左ひざ', 1.33 + legSway * 1.1, 0, 0)
   const ankleR = org(now, 0.06, 0.03, 0.04, 0.015, 0.11, 0.008)
-  addRot('右足首', -0.12 + ankleR, 0, 0)
-  addRot('左足首', -0.12 - ankleR, 0, 0)
+  add('右足首', -0.12 + ankleR, 0, 0)
+  add('左足首', -0.12 - ankleR, 0, 0)
 
   // 手搭在膝上/窗沿, 微微呼吸
   const handR = org(now, 0.04, 0.03, 0.03, 0.015, 0.08, 0.006)
-  addRot('右腕', -0.85 + handR, 0, 0.08)
-  addRot('左腕', -0.85 - handR, 0, -0.08)
-  addRot('右ひじ', -0.62, 0, 0)
-  addRot('左ひじ', -0.62, 0, 0)
+  add('右腕', -0.85 + handR, 0, 0.08)
+  add('左腕', -0.85 - handR, 0, -0.08)
+  add('右ひじ', -0.62, 0, 0)
+  add('左ひじ', -0.62, 0, 0)
 
   // 被戳到: 缩一下头
-  if (clockT < pokeUntil) addRot('頭', -0.16, 0, 0)
+  if (clockT < pokeUntil) add('頭', -0.16, 0, 0)
 
   // 被拖动: 手臂略抬, 像被轻轻拎起(坐姿保持到松手)
   if (state.dragging) {
-    addRot('右腕', -1.15, 0, 0.18)
-    addRot('左腕', -1.15, 0, -0.18)
-    addRot('右ひじ', -0.4, 0, 0)
-    addRot('左ひじ', -0.4, 0, 0)
+    add('右腕', -1.15, 0, 0.18)
+    add('左腕', -1.15, 0, -0.18)
+    add('右ひじ', -0.4, 0, 0)
+    add('左ひじ', -0.4, 0, 0)
   }
 }
 
@@ -498,75 +523,66 @@ function applyIdlePose(now, dt) {
   const breathe = org(tm, 0.24, 0.62, 0.09, 0.24, 0.37, 0.14)
   lastBreathe = breathe
 
-  if (isSitting()) {
-    // 坐视窗/坐任务栏: 独立坐姿, 不用站立手臂摆动/重心游走
-    addSitPose(now, breathe)
-    commitPose()
-    updateBlink(dt)
-    const dict = bodyMesh.morphTargetDictionary
-    if (dict && bodyMesh.morphTargetInfluences) {
-      const blinkIdx = dict['まばたき']
-      if (blinkIdx !== undefined) bodyMesh.morphTargetInfluences[blinkIdx] = blinkWeight
-      const mouthIdx = dict['あ']
-      if (mouthIdx !== undefined) {
-        const talk = now < talkUntil ? Math.abs(Math.sin(now * 14)) * 0.42 : 0
-        bodyMesh.morphTargetInfluences[mouthIdx] = talk
-      }
+  // 坐/站平滑过渡(约 0.3s): 切换锚点时腿部/手臂逐渐折叠, 不再瞬间弹到坐姿
+  const sitTarget = isSitting() ? 1 : 0
+  sitBlend = lerp(sitBlend, sitTarget, Math.min(1, dt * 3.4))
+  if (Math.abs(sitBlend - sitTarget) < 0.01) sitBlend = sitTarget
+  if (sitBlend > 0.001) addSitPose(now, breathe, sitBlend)
+  if (sitTarget === 1) gesture = null
+
+  if (sitBlend < 0.999) {
+    addRot('上半身', breathe * 0.017, org(tm, 0.05, 0.009, 0.03, 0.004, 0.11, 0.003), org(tm, 0.07, 0.003, 0.04, 0.002, 0.15, 0.002))
+    addRot('首', breathe * 0.008, 0, 0)
+    addRot('頭', breathe * 0.005, 0, 0)
+
+    // 手臂: 反相低频微摆 + 各自噪声, 不齐步才自然
+    const armBase = org(now, 0.105, 0.5, 0.046, 0.26, 0.18, 0.14)
+    const armR = armBase + org(now, 0.03, 0.18, 0.02, 0.12, 0.05, 0.08)
+    const armL = -armBase + org(now, 0.033, 0.18, 0.021, 0.12, 0.047, 0.08)
+    // 肩部跟着手臂小幅联动, 让腋下/肩关节的动作由肩+肘+腕分摊, 连接处不再僵硬
+    addRot('右肩', breathe * 0.0045 + armR * 0.05, 0, 0)
+    addRot('左肩', breathe * 0.0045 - armR * 0.05, 0, 0)
+    addRot('右腕', 0.028 + armR * 0.036, org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
+    addRot('左腕', 0.028 + armL * 0.036, -org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), -org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
+    addRot('右ひじ', -0.085 - armR * 0.02, 0, 0)
+    addRot('左ひじ', -0.085 - armL * 0.02, 0, 0)
+
+    // 被拖动: 双臂张开像被拎起, 身体随主进程移动漂浮
+    if (state.dragging) {
+      addRot('右腕', -0.58, 0, 0.18)
+      addRot('左腕', -0.58, 0, -0.18)
+      addRot('右ひじ', -0.18, 0, 0)
+      addRot('左ひじ', -0.18, 0, 0)
+      addRot('首', 0.05, 0, 0)
     }
-    if (shadowEl) shadowEl.style.opacity = '0'
-    return
-  }
 
-  addRot('上半身', breathe * 0.017, org(tm, 0.05, 0.009, 0.03, 0.004, 0.11, 0.003), org(tm, 0.07, 0.003, 0.04, 0.002, 0.15, 0.002))
-  addRot('首', breathe * 0.008, 0, 0)
-  addRot('頭', breathe * 0.005, 0, 0)
-  addRot('右肩', breathe * 0.0045, 0, 0)
-  addRot('左肩', breathe * 0.0045, 0, 0)
+    // 重心: 慢速随机游走(多层低频噪声)
+    addPos('センター', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.07, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.006, 0)
+    addPos('腰', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.04, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.004, 0)
 
-  // 手臂: 反相低频微摆 + 各自噪声, 不齐步才自然
-  const armBase = org(now, 0.105, 0.5, 0.046, 0.26, 0.18, 0.14)
-  const armR = armBase + org(now, 0.03, 0.18, 0.02, 0.12, 0.05, 0.08)
-  const armL = -armBase + org(now, 0.033, 0.18, 0.021, 0.12, 0.047, 0.08)
-  addRot('右腕', 0.028 + armR * 0.036, org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
-  addRot('左腕', 0.028 + armL * 0.036, -org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), -org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
-  addRot('右ひじ', -0.085 - armR * 0.02, 0, 0)
-  addRot('左ひじ', -0.085 - armL * 0.02, 0, 0)
+    // 随机张望 + 随机小动作(手势期间暂停张望, 避免打架)
+    if (!gesture) {
+      updateHead(now)
+      addRot('首', 0, headMotion.cYaw + look.yaw, 0)
+      addRot('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
+    }
+    updateGesture(now)
 
-  // 被拖动: 双臂张开像被拎起, 身体随主进程移动漂浮
-  if (state.dragging) {
-    addRot('右腕', -0.58, 0, 0.18)
-    addRot('左腕', -0.58, 0, -0.18)
-    addRot('右ひじ', -0.18, 0, 0)
-    addRot('左ひじ', -0.18, 0, 0)
-    addRot('首', 0.05, 0, 0)
-  }
+    // 被戳头: 短促缩脖 + 轻微低头(站立待机也要有反馈, 与坐姿一致)
+    if (clockT < pokeUntil) {
+      const p = 1 - clamp01((pokeUntil - clockT) / 1.15)
+      const dip = Math.sin(p * Math.PI) * 0.2
+      addRot('首', -dip * 0.2, 0, 0)
+      addRot('頭', dip, 0, 0)
+    }
 
-  // 重心: 慢速随机游走(多层低频噪声)
-  addPos('センター', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.07, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.006, 0)
-  addPos('腰', org(now, 0.07, 0.6, 0.03, 0.26, 0.13, 0.14) * 0.04, org(now, 0.12, 0.45, 0.05, 0.22, 0.21, 0.1) * 0.004, 0)
-
-  // 随机张望 + 随机小动作(手势期间暂停张望, 避免打架)
-  if (!gesture) {
-    updateHead(now)
-    addRot('首', 0, headMotion.cYaw + look.yaw, 0)
-    addRot('頭', headMotion.cPitch * 0.6 + look.pitch, headMotion.cYaw * 0.4, 0)
-  }
-  updateGesture(now)
-
-  // 被戳头: 短促缩脖 + 轻微低头(站立待机也要有反馈, 与坐姿一致)
-  if (clockT < pokeUntil) {
-    const p = 1 - clamp01((pokeUntil - clockT) / 1.15)
-    const dip = Math.sin(p * Math.PI) * 0.2
-    addRot('首', -dip * 0.2, 0, 0)
-    addRot('頭', dip, 0, 0)
-  }
-
-  // 出错: 身体短促后仰 + 抬头缩肩, 配合窗口级抖动
-  const nowMs = performance.now()
-  if (nowMs < shakeUntil) {
-    const p = (shakeUntil - nowMs) / 700
-    addRot('上半身', -p * 0.12, 0, 0)
-    addRot('首', p * 0.12, 0, 0)
+    // 出错: 身体短促后仰 + 抬头缩肩, 配合窗口级抖动
+    const nowMs = performance.now()
+    if (nowMs < shakeUntil) {
+      const p = (shakeUntil - nowMs) / 700
+      addRot('上半身', -p * 0.12, 0, 0)
+      addRot('首', p * 0.12, 0, 0)
+    }
   }
 
   commitPose()
@@ -584,11 +600,15 @@ function applyIdlePose(now, dt) {
     }
   }
 
-  // 脚下阴影随呼吸微缩
+  // 坐姿没有脚下阴影; 站立阴影随呼吸微缩
   if (shadowEl) {
-    const s = 1 + breathe * 0.018
-    shadowEl.style.opacity = String(0.3 - breathe * 0.015)
-    shadowEl.style.transform = `translateX(-50%) scale(${s.toFixed(3)})`
+    if (isSitting()) {
+      shadowEl.style.opacity = '0'
+    } else {
+      const s = 1 + breathe * 0.018
+      shadowEl.style.opacity = String(0.3 - breathe * 0.015)
+      shadowEl.style.transform = `translateX(-50%) scale(${s.toFixed(3)})`
+    }
   }
 }
 
@@ -666,10 +686,25 @@ function loadForm(form) {
       bodyMesh = mesh
       pivot.add(mesh)
       captureRestPose(mesh)
+      sanitizeMaterials(mesh)
       applyChibi()
       loadedForm = form
       loadingForm = null
       reframe()
+      // MMDLoader 的网格回调早于纹理解码; 等所有贴图 complete 后再跑一遍, 才能读到 map.transparent 并补上 alphaTest
+      let sanitizeTries = 0
+      const sanitizeWhenReady = () => {
+        sanitizeMaterials(mesh)
+        const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
+        const pending = mats.some(m => {
+          if (!m.map) return false
+          const img = m.map.image
+          if (!img) return true
+          return typeof img.complete === 'boolean' && !img.complete
+        })
+        if (pending && sanitizeTries++ < 100 && bodyMesh === mesh) setTimeout(sanitizeWhenReady, 50)
+      }
+      sanitizeWhenReady()
       if (state.action === 'idle') helperPhysicsOnly()
       else playDance(state.action, true)
     },
@@ -836,6 +871,63 @@ window.pet3d = {
       for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) nan++
     }
     return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y }
+  },
+  materials: () => {
+    if (!bodyMesh || !bodyMesh.geometry) return null
+    const mats = Array.isArray(bodyMesh.material) ? bodyMesh.material : [bodyMesh.material]
+    const geo = bodyMesh.geometry
+    return mats.map((m, i) => {
+      const groups = (geo.groups || []).filter(x => x.materialIndex === i)
+      const tris = groups.reduce((s, x) => s + (x.count / 3), 0)
+      let mapName = ''
+      if (m.map) {
+        mapName = m.map.name || ''
+        if (!mapName && m.map.image && typeof m.map.image.src === 'string') mapName = m.map.image.src.split('/').pop()
+      }
+      return {
+        i,
+        name: m.name || '',
+        transparent: !!m.transparent,
+        opacity: Number(m.opacity),
+        side: m.side,
+        depthWrite: !!m.depthWrite,
+        depthTest: !!m.depthTest,
+        alphaTest: Number(m.alphaTest || 0),
+        blending: m.blending,
+        map: mapName,
+        mapTransparent: !!m.map && !!m.map.transparent,
+        polygonOffset: !!m.polygonOffset,
+        verts: geo.attributes.position ? geo.attributes.position.count : 0,
+        tris: Math.round(tris),
+      }
+    })
+  },
+  groups: () => {
+    if (!bodyMesh || !bodyMesh.geometry) return null
+    const geo = bodyMesh.geometry
+    const pos = geo.attributes.position
+    const idx = geo.index
+    if (!pos || !idx) return null
+    const out = []
+    for (const g of geo.groups || []) {
+      let min = [Infinity, Infinity, Infinity]
+      let max = [-Infinity, -Infinity, -Infinity]
+      for (let j = g.start; j < g.start + g.count; j++) {
+        const vi = idx.getX(j)
+        for (let k = 0; k < 3; k++) {
+          const v = pos.getComponent(vi, k)
+          if (v < min[k]) min[k] = v
+          if (v > max[k]) max[k] = v
+        }
+      }
+      out.push({
+        group: g.materialIndex,
+        min: min.map(v => Number(v.toFixed(4))),
+        max: max.map(v => Number(v.toFixed(4))),
+        center: min.map((v, k) => Number(((v + max[k]) / 2).toFixed(4))),
+      })
+    }
+    return out
   },
   // 数值构图探针(无需看图像即可验证坐姿是否压在窗口上沿)
   layout: () => {
