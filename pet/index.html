@@ -2,22 +2,32 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' file: data: blob:; connect-src 'self' file: data: blob:" />
   <title>式神</title>
   <link rel="stylesheet" href="pet.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.min.js",
+        "three/": "./vendor/"
+      }
+    }
+  </script>
 </head>
-<body>
+<body class="form-normal idle">
   <div id="bubble" class="bubble"></div>
-  <div id="figure" class="figure idle">
-    <div class="halo"></div>
+  <div id="glow" class="glow"></div>
+  <canvas id="stage"></canvas>
+  <div id="fallback" class="fallback idle">
     <svg viewBox="0 0 120 150" width="120" height="150" aria-hidden="true">
       <circle class="head" cx="60" cy="28" r="16" />
       <path class="body" d="M60 48 C45 48 38 60 36 76 L34 108 L50 112 L48 146 L72 146 L70 112 L86 108 L84 76 C82 60 75 48 60 48 Z" />
       <path class="accent" d="M60 12 L60 22 M48 20 L54 25 M72 20 L66 25" />
       <rect class="blade" x="94" y="52" width="6" height="52" rx="3" transform="rotate(18 97 78)" />
     </svg>
-    <div id="name" class="name">黄泉</div>
   </div>
+  <div id="name" class="name">黄泉</div>
   <script src="pet.js"></script>
+  <script type="module" src="pet3d.js"></script>
 </body>
 </html>

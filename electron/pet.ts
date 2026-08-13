@@ -7,6 +7,7 @@ import { join } from 'path'
 export interface PetSettings {
   enabled?: boolean
   agent?: string
+  form?: 'normal' | 'ultimate'
   scale?: number
   opacity?: number
   topmost?: boolean
@@ -63,12 +64,29 @@ export class PetManager {
     if (!this.isEnabled() && this.win) this.destroy()
   }
 
+  getForm(): 'normal' | 'ultimate' {
+    const f = this.readSettings().form
+    return f === 'ultimate' ? 'ultimate' : 'normal'
+  }
+
+  toggleForm(): 'normal' | 'ultimate' {
+    return this.setForm(this.getForm() === 'ultimate' ? 'normal' : 'ultimate')
+  }
+
+  setForm(form: 'normal' | 'ultimate'): 'normal' | 'ultimate' {
+    const next: 'normal' | 'ultimate' = form === 'ultimate' ? 'ultimate' : 'normal'
+    this.writeSettings({ form: next })
+    this.win?.webContents.send('pet:form', next)
+    return next
+  }
+
   create(): void {
     if (this.win) return
     const s = this.readSettings()
     const scale = Math.max(0.5, Math.min(2, Number(s.scale) || 1))
-    const w = Math.round(180 * scale)
-    const h = Math.round(220 * scale)
+    // v0.4.1: 3D 建模为竖版全身像, 基准窗改为 200×300
+    const w = Math.round(200 * scale)
+    const h = Math.round(300 * scale)
     const win = new BrowserWindow({
       width: w,
       height: h,
@@ -82,6 +100,9 @@ export class PetManager {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        // 纯本地静态页(无远程内容): 允许 FileLoader fetch(file://) 读取 PMX/贴图/wasm;
+        // contextIsolation/nodeIntegration 防护保持不变
+        webSecurity: false,
         preload: join(this.opts.petDir, 'preload.js'),
       },
     })
@@ -92,6 +113,7 @@ export class PetManager {
       if (!win.isDestroyed()) {
         win.webContents.send('pet:config', {
           agent: s.agent || '黄泉',
+          form: s.form === 'ultimate' ? 'ultimate' : 'normal',
           scale,
           opacity: Math.max(0.3, Math.min(1, Number(s.opacity) || 0.9)),
           bubble: s.bubble !== false,
@@ -99,6 +121,14 @@ export class PetManager {
         })
       }
     })
+    if (process.env.HQ_PET_DEBUG === '1') {
+      win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+        console.debug(`[pet-renderer:${level}] ${message} (${sourceId}:${line})`)
+      })
+      win.webContents.on('did-fail-load', (_e, code, desc) => {
+        console.debug(`[pet-renderer] did-fail-load ${code} ${desc}`)
+      })
+    }
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     win.on('closed', () => { if (this.win === win) this.win = null })
     this.win = win

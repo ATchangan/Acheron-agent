@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('huangquan', {
   },
   pet: {
     toggle: (enable: boolean) => ipcRenderer.invoke('pet:toggle', enable),
+    setForm: (form: 'normal' | 'ultimate') => ipcRenderer.invoke('pet:set-form', form),
     resetPos: () => ipcRenderer.invoke('pet:reset-pos'),
   },
   sessions: {

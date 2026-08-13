@@ -206,6 +206,7 @@ export interface GeneralSettings {
   pet?: {
     enabled?: boolean
     agent?: string
+    form?: 'normal' | 'ultimate'
     scale?: number
     opacity?: number
     topmost?: boolean

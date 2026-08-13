@@ -7,11 +7,17 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
 
   ipcMain.handle('pet:toggle', (_e, enable?: boolean) => pet.toggle(enable === undefined ? undefined : Boolean(enable)))
   ipcMain.handle('pet:state', () => pet.isEnabled())
+  ipcMain.handle('pet:set-form', (_e, form: string) => pet.setForm(form === 'ultimate' ? 'ultimate' : 'normal'))
   ipcMain.handle('pet:open-main', () => { pet.openMain(); return true })
   ipcMain.handle('pet:moved', (_e, x: number, y: number) => { pet.move(Number(x) || 0, Number(y) || 0); return true })
   ipcMain.handle('pet:reset-pos', () => { pet.resetPosition(); return true })
   ipcMain.handle('pet:menu', () => {
+    const form = pet.getForm()
     const menu = Menu.buildFromTemplate([
+      {
+        label: form === 'ultimate' ? '形态：大招（切回正常）' : '形态：正常（切换大招）',
+        click: () => pet.toggleForm(),
+      },
       { label: '隐藏气泡', click: () => { pet.send('config', { bubble: false }) } },
       { label: '重置位置', click: () => pet.resetPosition() },
       { label: '打开设置', click: () => pet.openMain() },

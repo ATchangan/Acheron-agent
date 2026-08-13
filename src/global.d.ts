@@ -29,6 +29,7 @@ declare global {
       },
       pet: {
         toggle: (enable: boolean) => Promise<boolean>
+        setForm: (form: 'normal' | 'ultimate') => Promise<'normal' | 'ultimate'>
         resetPos: () => Promise<boolean>
       }
       sessions: {

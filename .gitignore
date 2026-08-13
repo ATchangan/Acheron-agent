@@ -9,3 +9,7 @@ scripts/eval/eval-history.jsonl
 _archive/userdata-20260811/
 .test-data/
 .DS_Store
+.playwright-cli/
+# 米哈游官方素材衍生模型(PMX/贴图): 仅本机个人使用, 不进开源仓库
+pet/models/*
+!pet/models/NOTICE.md
