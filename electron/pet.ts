@@ -25,6 +25,7 @@ export interface PetSettings {
   chibi?: number
   fps?: number
   transition?: number
+  modelFormat?: 'vrm' | 'pmx'
   pos?: { x: number | null; y: number | null }
 }
 
@@ -155,6 +156,7 @@ export class PetManager {
       chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
       fps: clamp(Math.round(numOr(s.fps, 60)), 0, 240),
       transition: clamp(Math.round(numOr(s.transition, 450)), 100, 3000),
+      modelFormat: s.modelFormat === 'pmx' ? 'pmx' : 'vrm',
       topmost: s.topmost !== false,
     })
   }
@@ -182,6 +184,10 @@ export class PetManager {
   create(): void {
     if (this.win) return
     const s = this.readSettings()
+    const vrmFiles = {
+      normal: fs.existsSync(join(this.opts.petDir, 'models', 'vrm', 'index.vrm')),
+      ultimate: fs.existsSync(join(this.opts.petDir, 'models', 'vrm', 'ultimate.vrm')),
+    }
     const scale = Math.max(0.3, Math.min(2.5, Number(s.scale) || 1))
     // v0.4.0: 3D 建模为竖版全身像, 基准窗改为 200×300
     const w = Math.round(200 * scale)
@@ -231,6 +237,8 @@ export class PetManager {
           chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
           fps: clamp(Math.round(numOr(s.fps, 60)), 0, 240),
           transition: clamp(Math.round(numOr(s.transition, 450)), 100, 3000),
+          modelFormat: s.modelFormat === 'pmx' ? 'pmx' : 'vrm',
+          vrm: vrmFiles,
           lines: PET_LINES[s.agent || '黄泉'] || PET_LINES['黄泉'],
         })
       }

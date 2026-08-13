@@ -9,6 +9,7 @@
 import * as THREE from 'three'
 import { MMDLoader } from 'three/loaders/MMDLoader.js'
 import { MMDAnimationHelper } from 'three/animation/MMDAnimationHelper.js'
+import { GLTFLoader } from 'three/loaders/GLTFLoader.js'
 
 // three r158 对 0 个 morphTarget 的网格会上传空数组, 触发 WebGL INVALID_VALUE 刷屏:
 // 空数组上传本身无意义, 静默跳过。WebGL1/WebGL2 各有自己的原型方法, 需分别包装(仅本页生效)
@@ -41,13 +42,40 @@ const makeOrganic = () => {
 const org = makeOrganic()
 
 const FOLDERS = { normal: '46', ultimate: '46_iswhite' }
+const VRM_FILES = { normal: 'models/vrm/index.vrm', ultimate: 'models/vrm/ultimate.vrm' }
 const BASE_YAW = 0.42 // 约 24°, 3/4 侧脸
 const ACTIONS = { idle: null, dance1: '1.vmd', dance2: '2.vmd', dance3: '3.vmd' }
 const state = { form: 'normal', status: 'idle', action: 'idle', anchor: 'float', dragging: false }
 // 可调参数(设置页自由调节, 默认与 v0.4.0 行为一致)
-const options = { look: true, physics: true, breath: 'normal', gesture: 'normal', chibi: 1, fps: 60, transition: 450 }
+const options = { look: true, physics: true, breath: 'normal', gesture: 'normal', chibi: 1, fps: 60, transition: 450, modelFormat: 'vrm', vrm: {} }
 const BREATH_MUL = { light: 0.55, normal: 1, strong: 1.5 }
 const GESTURE_MUL = { low: 2.2, normal: 1, high: 0.55 }
+// VRM 人形骨骼标准名 → 本项目 PMX 日语骨骼名; VRM 通过 VRMC_vrm.humanoid.humanBones 映射到节点
+const VRM_BONE_ALIASES = {
+  'センター': ['hips'],
+  '腰': ['hips', 'spine'],
+  '下半身': ['hips'],
+  '上半身': ['spine'],
+  '上半身1': ['chest', 'upperChest'],
+  '首': ['neck'],
+  '頭': ['head'],
+  '右肩': ['rightShoulder'],
+  '右腕': ['rightUpperArm'],
+  '右ひじ': ['rightLowerArm'],
+  '右手首': ['rightHand'],
+  '左肩': ['leftShoulder'],
+  '左腕': ['leftUpperArm'],
+  '左ひじ': ['leftLowerArm'],
+  '左手首': ['leftHand'],
+  '右足': ['rightUpperLeg'],
+  '右ひざ': ['rightLowerLeg'],
+  '右足首': ['rightFoot'],
+  '左足': ['leftUpperLeg'],
+  '左ひざ': ['leftLowerLeg'],
+  '左足首': ['leftFoot'],
+}
+const BLINK_MORPH_NAMES = ['blink', 'Blink', 'BLINK', 'まばたき', 'eyeBlink']
+const MOUTH_MORPH_NAMES = ['aa', 'a', 'Aa', 'A', 'あ', 'ああ', 'mouth']
 
 // 状态 → 摆动/呼吸节奏目标(逐帧平滑过渡, 避免参数跳变)
 const STATUS_PARAMS = {
@@ -93,6 +121,7 @@ root.add(pivot)
 scene.add(root)
 
 const loader = new MMDLoader()
+const gltfLoader = new GLTFLoader()
 const helper = new MMDAnimationHelper()
 // 微风级物理: 默认 MMD 重力为 -98(单位/秒²), 太猛; 降到 1/3 左右让头发/衣摆缓慢轻柔地飘
 const BREEZE_GRAVITY = new THREE.Vector3(0, -36, 0)
@@ -138,6 +167,11 @@ function sanitizeMaterials(mesh) {
 let loadedForm = null
 let loadingForm = null
 let bodyMesh = null
+let modelRoot = null
+let vrmLoaded = false
+let vrmSpringChains = []
+let blinkMorphIdx = undefined
+let mouthMorphIdx = undefined
 let clockT = 0
 let hopUntil = 0
 let shakeUntil = 0
@@ -240,7 +274,12 @@ function disposeMesh(mesh) {
 }
 
 function clearModel() {
-  if (bodyMesh) { try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ } disposeMesh(bodyMesh); bodyMesh = null }
+  if (modelRoot) { try { helper.remove(modelRoot) } catch (_) { /* 忽略 */ } disposeMesh(modelRoot); modelRoot = null }
+  bodyMesh = null
+  vrmLoaded = false
+  vrmSpringChains = []
+  blinkMorphIdx = undefined
+  mouthMorphIdx = undefined
   while (pivot.children.length) pivot.remove(pivot.children[0])
   pivot.position.set(0, 0, 0)
   restPose.clear()
@@ -294,11 +333,84 @@ function fitCameraToBox(box) {
 function captureRestPose(mesh) {
   restPose.clear()
   boneByName = new Map()
+  const addBone = (o) => {
+    if (!o || !o.isBone) return
+    if (!restPose.has(o)) {
+      restPose.set(o, { rx: o.rotation.x, ry: o.rotation.y, rz: o.rotation.z, px: o.position.x, py: o.position.y, pz: o.position.z })
+    }
+    if (!boneByName.has(o.name)) boneByName.set(o.name, o)
+  }
   mesh.traverse((o) => {
-    if (!o.isBone) return
-    restPose.set(o, { rx: o.rotation.x, ry: o.rotation.y, rz: o.rotation.z, px: o.position.x, py: o.position.y, pz: o.position.z })
-    boneByName.set(o.name, o)
+    if (o.isBone) addBone(o)
+    // VRM/glTF: 骨骼位于各 SkinnedMesh 的 skeleton.bones, 不在场景子节点里
+    if (o.isSkinnedMesh && o.skeleton && Array.isArray(o.skeleton.bones)) {
+      for (const b of o.skeleton.bones) addBone(b)
+    }
   })
+  applyNameAliases()
+}
+
+// glTF/VRM 若直接以标准人形骨名命名, 先按名字把日语别名指过去
+function applyNameAliases() {
+  for (const [jp, candidates] of Object.entries(VRM_BONE_ALIASES)) {
+    if (boneByName.has(jp)) continue
+    for (const name of candidates) {
+      const b = boneByName.get(name)
+      if (b) { boneByName.set(jp, b); break }
+    }
+  }
+}
+
+// VRM1: 从 VRMC_vrm.humanoid.humanBones 的节点索引解析骨骼对象
+function applyVrmHumanoidMap(parser) {
+  if (!parser || !parser.json || !parser.associations) return
+  const extensions = parser.json.extensions || {}
+  const vrm = extensions.VRMC_vrm
+  const humanBones = vrm && vrm.humanoid && vrm.humanoid.humanBones
+  const nodes = parser.json.nodes || []
+  const nodeName = (idx) => (nodes[idx] && nodes[idx].name) || null
+  if (humanBones) {
+    for (const [jp, candidates] of Object.entries(VRM_BONE_ALIASES)) {
+      if (boneByName.has(jp)) continue
+      for (const type of candidates) {
+        const h = humanBones[type]
+        const name = h && typeof h.node === 'number' ? nodeName(h.node) : null
+        const obj = name ? boneByName.get(name) : null
+        if (obj) { boneByName.set(jp, obj); break }
+      }
+    }
+  }
+  // VRMC_springBone: 记录发丝/裙摆/袖子的弹簧链, 供程序化微风摆动使用
+  const springBone = extensions.VRMC_springBone
+  vrmSpringChains = []
+  if (springBone && Array.isArray(springBone.springs)) {
+    for (const spring of springBone.springs) {
+      const chain = []
+      for (const joint of spring.joints || []) {
+        const name = joint && typeof joint.node === 'number' ? nodeName(joint.node) : null
+        const obj = name ? boneByName.get(name) : null
+        if (obj && obj.isBone) chain.push(obj)
+      }
+      if (chain.length) vrmSpringChains.push(chain)
+    }
+  }
+}
+
+// VRM 弹簧骨的程序化微风摆动(近似实现, 幅度沿链向末梢增大)
+function applyVrmSway(now) {
+  if (!vrmLoaded || !vrmSpringChains.length) return
+  for (let ci = 0; ci < vrmSpringChains.length; ci++) {
+    const chain = vrmSpringChains[ci]
+    const phase = ci * 0.73
+    for (let j = 0; j < chain.length; j++) {
+      const depth = (j + 0.5) / Math.max(chain.length, 1)
+      const amp = 0.055 * depth * depth
+      const t = now * (0.42 + (ci % 5) * 0.045) + phase
+      const ry = org(t, 0.05, amp, 0.03, amp * 0.45, 0.11, amp * 0.22)
+      const rx = org(t + 1.7, 0.06, amp * 0.32, 0.04, amp * 0.18, 0.13, amp * 0.1)
+      addRot(chain[j].name, rx, ry, 0)
+    }
+  }
 }
 
 function resetPose() {
@@ -588,18 +700,19 @@ function applyIdlePose(now, dt) {
     }
   }
 
+  applyVrmSway(now)
+
   commitPose()
 
   // 眨眼 + 说话嘴型(morph)
   updateBlink(dt)
-  const dict = bodyMesh.morphTargetDictionary
-  if (dict && bodyMesh.morphTargetInfluences) {
-    const blinkIdx = dict['まばたき']
-    if (blinkIdx !== undefined) bodyMesh.morphTargetInfluences[blinkIdx] = blinkWeight
-    const mouthIdx = dict['あ']
-    if (mouthIdx !== undefined) {
+  if (bodyMesh.morphTargetInfluences) {
+    if (blinkMorphIdx !== undefined && blinkMorphIdx < bodyMesh.morphTargetInfluences.length) {
+      bodyMesh.morphTargetInfluences[blinkMorphIdx] = blinkWeight
+    }
+    if (mouthMorphIdx !== undefined && mouthMorphIdx < bodyMesh.morphTargetInfluences.length) {
       const talk = now < talkUntil ? Math.abs(Math.sin(now * 14)) * 0.42 : 0
-      bodyMesh.morphTargetInfluences[mouthIdx] = talk
+      bodyMesh.morphTargetInfluences[mouthMorphIdx] = talk
     }
   }
 
@@ -622,7 +735,7 @@ function updateLook() {
 }
 
 function helperPhysicsOnly() {
-  if (!bodyMesh) return
+  if (!bodyMesh || vrmLoaded) return
   try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
   if (options.physics && window.__ammoReady) {
     try { attachPhysics(bodyMesh) } catch (_) { /* 无物理骨架也照常渲染 */ }
@@ -632,6 +745,11 @@ function helperPhysicsOnly() {
 function playDance(name, force = false) {
   const next = ACTIONS[name] !== undefined ? name : 'idle'
   if (next === state.action && !force) return
+  if (vrmLoaded && next !== 'idle') {
+    console.warn('VRM 模型暂不支持 MMD 舞蹈动作, 保持待机')
+    state.action = 'idle'
+    return
+  }
   state.action = next
   resetPose()
   danceLoading = null
@@ -676,41 +794,61 @@ function centerDance() {
   root.position.z -= w.z
 }
 
-function loadForm(form) {
-  if (loadingForm === form || loadedForm === form) return
-  loadingForm = form
-  clearModel()
-  const folder = FOLDERS[form] || FOLDERS.normal
+function resolveMorphIndices(mesh) {
+  blinkMorphIdx = undefined
+  mouthMorphIdx = undefined
+  const dict = mesh && mesh.morphTargetDictionary
+  if (!dict) return
+  for (const n of BLINK_MORPH_NAMES) {
+    if (dict[n] !== undefined) { blinkMorphIdx = dict[n]; break }
+  }
+  for (const n of MOUTH_MORPH_NAMES) {
+    if (dict[n] !== undefined) { mouthMorphIdx = dict[n]; break }
+  }
+}
 
+function findSkinnedMesh(root) {
+  let found = null
+  root.traverse((o) => { if (!found && o.isSkinnedMesh) found = o })
+  return found
+}
+
+function finishPmxLoad(form, mesh) {
+  if (state.form !== form) { disposeMesh(mesh); return }
+  bodyMesh = mesh
+  modelRoot = mesh
+  vrmLoaded = false
+  pivot.add(mesh)
+  captureRestPose(mesh)
+  sanitizeMaterials(mesh)
+  applyChibi()
+  resolveMorphIndices(mesh)
+  loadedForm = form
+  loadingForm = null
+  reframe()
+  // MMDLoader 的网格回调早于纹理解码; 等所有贴图 complete 后再跑一遍, 才能读到 map.transparent 并补上 alphaTest
+  let sanitizeTries = 0
+  const sanitizeWhenReady = () => {
+    sanitizeMaterials(mesh)
+    const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
+    const pending = mats.some(m => {
+      if (!m.map) return false
+      const img = m.map.image
+      if (!img) return true
+      return typeof img.complete === 'boolean' && !img.complete
+    })
+    if (pending && sanitizeTries++ < 100 && bodyMesh === mesh) setTimeout(sanitizeWhenReady, 50)
+  }
+  sanitizeWhenReady()
+  if (state.action === 'idle') helperPhysicsOnly()
+  else playDance(state.action, true)
+}
+
+function loadPmxForm(form) {
+  const folder = FOLDERS[form] || FOLDERS.normal
   loader.load(
     `models/${folder}/index.pmx`,
-    (mesh) => {
-      if (state.form !== form) { disposeMesh(mesh); return }
-      bodyMesh = mesh
-      pivot.add(mesh)
-      captureRestPose(mesh)
-      sanitizeMaterials(mesh)
-      applyChibi()
-      loadedForm = form
-      loadingForm = null
-      reframe()
-      // MMDLoader 的网格回调早于纹理解码; 等所有贴图 complete 后再跑一遍, 才能读到 map.transparent 并补上 alphaTest
-      let sanitizeTries = 0
-      const sanitizeWhenReady = () => {
-        sanitizeMaterials(mesh)
-        const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
-        const pending = mats.some(m => {
-          if (!m.map) return false
-          const img = m.map.image
-          if (!img) return true
-          return typeof img.complete === 'boolean' && !img.complete
-        })
-        if (pending && sanitizeTries++ < 100 && bodyMesh === mesh) setTimeout(sanitizeWhenReady, 50)
-      }
-      sanitizeWhenReady()
-      if (state.action === 'idle') helperPhysicsOnly()
-      else playDance(state.action, true)
-    },
+    (mesh) => finishPmxLoad(form, mesh),
     undefined,
     (err) => {
       loadingForm = null
@@ -718,6 +856,51 @@ function loadForm(form) {
       document.dispatchEvent(new CustomEvent('pet3d-error'))
     },
   )
+}
+
+function loadVrmForm(form) {
+  gltfLoader.load(
+    VRM_FILES[form] || VRM_FILES.normal,
+    (gltf) => {
+      if (state.form !== form) { disposeMesh(gltf.scene); return }
+      const scene = gltf.scene
+      const mesh = findSkinnedMesh(scene)
+      if (!mesh) {
+        disposeMesh(scene)
+        console.warn('VRM 缺少 SkinnedMesh, 回退 PMX')
+        loadPmxForm(form)
+        return
+      }
+      bodyMesh = mesh
+      modelRoot = scene
+      vrmLoaded = true
+      pivot.add(scene)
+      captureRestPose(scene)
+      applyVrmHumanoidMap(gltfLoader.parser)
+      scene.traverse((o) => { if (o.isMesh) sanitizeMaterials(o) })
+      applyChibi()
+      resolveMorphIndices(mesh)
+      loadedForm = form
+      loadingForm = null
+      if (state.action !== 'idle') state.action = 'idle'
+      reframe()
+      lastShapeKey = ''
+    },
+    undefined,
+    (err) => {
+      console.warn('VRM 加载失败, 回退 PMX:', err)
+      if (state.form === form) loadPmxForm(form)
+    },
+  )
+}
+
+function loadForm(form) {
+  if (loadingForm === form || loadedForm === form) return
+  loadingForm = form
+  clearModel()
+  const useVrm = options.modelFormat !== 'pmx' && !!(options.vrm && options.vrm[form])
+  if (useVrm) loadVrmForm(form)
+  else loadPmxForm(form)
 }
 
 function animate() {
@@ -824,6 +1007,16 @@ function setOptions(o) {
   }
   if (Number.isFinite(Number(o.fps))) options.fps = Math.max(0, Math.min(240, Number(o.fps)))
   if (Number.isFinite(Number(o.transition))) options.transition = Math.max(100, Math.min(3000, Number(o.transition)))
+  if (o.vrm && typeof o.vrm === 'object') options.vrm = { ...options.vrm, ...o.vrm }
+  if ((o.modelFormat === 'vrm' || o.modelFormat === 'pmx') && o.modelFormat !== options.modelFormat) {
+    options.modelFormat = o.modelFormat
+    if (bodyMesh) {
+      clearModel()
+      loadedForm = null
+      loadingForm = null
+      loadForm(state.form)
+    }
+  }
   if (reframeNeeded && bodyMesh) {
     resetPose()
     applyChibi()
@@ -886,7 +1079,8 @@ window.pet3d = {
       const a = g.attributes.position.array
       for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) nan++
     }
-    return { bodyMesh: !!bodyMesh, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition } }
+    const swayBone = vrmSpringChains[0] && vrmSpringChains[0][vrmSpringChains[0].length - 1]
+    return { bodyMesh: !!bodyMesh, vrmLoaded, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null }
   },
   materials: () => {
     if (!bodyMesh || !bodyMesh.geometry) return null

@@ -26,6 +26,8 @@ export function registerPetIpc(deps: { pet: PetManager }): void {
     if (breath === 'light' || breath === 'normal' || breath === 'strong') p.breath = breath
     const gesture = (patch || {}).gesture
     if (gesture === 'low' || gesture === 'normal' || gesture === 'high') p.gesture = gesture
+    const modelFormat = (patch || {}).modelFormat
+    if (modelFormat === 'vrm' || modelFormat === 'pmx') p.modelFormat = modelFormat
     pet.applyOptions(p)
     return true
   })
