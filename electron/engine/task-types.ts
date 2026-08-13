@@ -2,6 +2,7 @@
 import type { EngineMessage, EngineProvider, EngineSettings, EngineToolCall, EngineUsage, PlanStep } from './types'
 import type { EngineMemory } from './memory'
 import type { InstructionFile } from './project-instructions'
+import type { TaskType } from '../llm/gateway'
 
 export interface TokenStat { requests: number; readTokens: number; inputTokens: number; writeTokens: number; outputTokens: number; hitReqs: number }
 export interface ToolLogEntry { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }
@@ -30,6 +31,7 @@ export interface TaskState {
   curP: EngineProvider
   model: string
   origModel: string
+  taskType?: TaskType
   modelFailCount: number
   modelFallbackUsed: boolean
   triedModels?: string[]

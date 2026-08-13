@@ -13,7 +13,7 @@ import { loadMemory, saveMemory, memoryBlockText, addLesson, scanMemoryText, typ
 import { streamChat, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
-import { pickAgentModel, pickInitialModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
+import { pickInitialModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills } from './skill-files'
 import { runHooks } from './hooks'
 import { isPlanReadonlyTool } from './plan-tools'
@@ -28,6 +28,8 @@ import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
 import { backoffDelay } from './reliability'
 import { invokeHandler } from './registry'
 import { saveToolOutput, insertAudit } from '../db'
+import { detectTaskType, routeProfile } from '../llm/gateway'
+import { enqueueLocalVision } from '../llm/vision'
 
 export interface EngineDeps {
   settingsPath: string
@@ -128,9 +130,10 @@ export class AgentEngine {
     this.runningTasks++
     const agentsMap = getAgents(general.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
     const initialPick = pickInitialModel(general, providers, p, params.content, params.images)
-    const model = params.agent && !params.agentManual
-      ? (pickAgentModel(general, providers, p, params.agent, agentsMap) || initialPick.model)
-      : initialPick.model
+    // v0.4.0 M5: 网关统一选路 —— 角色覆盖 > 任务类型(code/vision/long) > 全局默认
+    const taskType = detectTaskType(params.content, params.images)
+    const routed = routeProfile(general, providers, initialPick.p, { agent: params.agent, agentManual: params.agentManual, taskType, agents: agentsMap })
+    const model = routed.model || initialPick.model
     const userMsg: EngineMessage = params.history?.find(m => m.id === params.userMsgId)
       || { id: params.userMsgId, role: 'user', content: params.content, timestamp: params.userMsgTimestamp || Date.now(), images: params.images, attachments: params.attachments }
     // 历史消息已含本条用户消息(渲染层 buildUserMessage 已上屏), 引擎直接继承完整会话
@@ -148,9 +151,10 @@ export class AgentEngine {
       g: general,
       providers,
       p,
-      curP: initialPick.p,
+      curP: routed.p,
       model,
       origModel: model,
+      taskType,
       modelFailCount: 0,
       modelFallbackUsed: false,
       agent: params.agent,
@@ -1132,6 +1136,16 @@ export class AgentEngine {
     const q = String((tc.args as { question?: unknown })?.question || '').trim() || '描述这张网页截图'
     const img = String(await invokeHandler('browser:screenshot', [undefined, task.sid + '::' + task.taskId], this.deps.getSender()))
     if (!img || img.startsWith('E:') || img.length < 100) return 'E:页面截图失败: ' + (img || '空')
+    // v0.4.0 M6: 本地视觉服务优先(可配置), 失败/未启用自动回云候选
+    if (task.g.localVision?.enabled) {
+      try {
+        const local = await enqueueLocalVision(this.deps.netFetch, task.g.localVision, img, q)
+        if (local) {
+          this.trace('info', 'model.local-vision', '本地视觉服务命中', task.sid, task.taskId)
+          return local
+        }
+      } catch (e) { this.trace('warn', 'model.local-vision-fail', e instanceof Error ? e.message : String(e), task.sid, task.taskId) }
+    }
     const cands = visionCandidates(task.g, task.providers, task.curP)
     if (!cands.length) return 'E:未配置视觉理解模型(设置→策略→视觉理解)'
     let lastErr = ''

@@ -81,6 +81,15 @@ export default function StrategyTab() {
         <Toggle checked={g.visionAutoSwitch !== false} onChange={v => save({ visionAutoSwitch: v })} label="自动切换" hint="视觉任务时自动切到视觉模型，完成后恢复原模型" />
       </div>
       <div style={S.card}>
+        <div style={S.section}>本地视觉服务（OpenAI 兼容）</div>
+        <div style={S.hint}>配置本地视觉推理服务：传图后自动「加载模型 → 启动服务 → 健康检查 → 分析」，失败自动回退到上方云视觉候选。所有命令/模型/端口均可配置。</div>
+        <Toggle checked={g.localVision?.enabled === true} onChange={v => save({ localVision: { ...(g.localVision || {}), enabled: v } })} label="启用本地视觉服务" hint="关闭时视觉任务直接走云视觉候选" />
+        <div style={S.row}><div style={S.label}>模型名</div><input style={S.inp} placeholder="服务内模型名（如 qwen-vl）" value={g.localVision?.model || ''} onChange={e => save({ localVision: { ...(g.localVision || {}), model: e.target.value } })} /></div>
+        <div style={S.row}><div style={S.label}>端口</div><input type="number" style={S.num} min={1} max={65535} value={g.localVision?.port || 11434} onChange={e => save({ localVision: { ...(g.localVision || {}), port: parseInt(e.target.value) || 11434 } })} /><span style={S.hint}>OpenAI 兼容服务端口（默认 11434）</span></div>
+        <div style={S.row}><div style={S.label}>加载命令</div><input style={S.inp} placeholder="如 lms load qwen-vl（可留空）" value={g.localVision?.loadCommand || ''} onChange={e => save({ localVision: { ...(g.localVision || {}), loadCommand: e.target.value } })} /></div>
+        <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>启动服务命令</div><input style={S.inp} placeholder="如 lms server start（可留空）" value={g.localVision?.serverCommand || ''} onChange={e => save({ localVision: { ...(g.localVision || {}), serverCommand: e.target.value } })} /></div>
+      </div>
+      <div style={S.card}>
         <div style={S.section}>图片生成（联动供应商）</div>
         <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaImgProvider || ''} onChange={e => save({ mediaImgProvider: e.target.value })}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.imgModels || []).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select><div style={S.hint}>选择供应商中的图片生成平台</div></div>
         <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaImgModel || ''} onChange={e => save({ mediaImgModel: e.target.value })}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.imgModels || []).length).flatMap(mp2 => (mp2.imgModels || []).map(m => ({ id: mp2.id + '::' + m, label: mp2.name + ' · ' + m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>

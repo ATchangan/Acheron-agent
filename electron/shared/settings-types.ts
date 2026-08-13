@@ -193,6 +193,24 @@ export interface GeneralSettings {
   embeddingApiKey?: string
   embeddingBaseUrl?: string
   embeddingModel?: string
+  // v0.4.0 M6: 本地视觉推理服务(OpenAI 兼容, 全部可配置; enabled=false 走云视觉)
+  localVision?: {
+    enabled?: boolean
+    loadCommand?: string
+    serverCommand?: string
+    port?: number
+    model?: string
+  }
+  // v0.4.0 M9: 桌宠(式神伴身, 默认关闭)
+  pet?: {
+    enabled?: boolean
+    agent?: string
+    scale?: number
+    opacity?: number
+    topmost?: boolean
+    bubble?: boolean
+    pos?: { x: number | null; y: number | null }
+  }
   programMemory?: boolean
   shortTermMemory?: boolean
   episodicRetention?: string
