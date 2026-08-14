@@ -56,10 +56,10 @@ export default function PetTab() {
           <div style={S.label}>模型格式</div>
           <select style={sel} value={pet.modelFormat || 'vrm'} onChange={e => petPatch({ modelFormat: e.target.value as 'vrm' | 'pmx' })}>
             <option value="vrm">VRM（弹簧骨自然摆动）</option>
-            <option value="pmx">PMX（支持 MMD 舞蹈）</option>
+            <option value="pmx">PMX（舞蹈带头发物理）</option>
           </select>
         </div>
-        <div style={S.hint}>VRM 不支持 MMD 舞蹈动作；想跳舞时切回 PMX，其余功能两者一致。</div>
+        <div style={S.hint}>两种格式都能播放舞蹈；PMX 跳舞时头发衣摆有物理，VRM 跳舞时头发保持静止。</div>
         <div style={S.row}>
           <div style={S.label}>位置锚定</div>
           <select style={sel} value={pet.anchor || 'float'} onChange={e => { const v = e.target.value as 'float' | 'window' | 'taskbar'; save({ anchor: v }); void window.huangquan?.pet?.setAnchor?.(v) }}>

@@ -76,6 +76,13 @@ const VRM_BONE_ALIASES = {
 }
 const BLINK_MORPH_NAMES = ['blink', 'Blink', 'BLINK', 'まばたき', 'eyeBlink']
 const MOUTH_MORPH_NAMES = ['aa', 'a', 'Aa', 'A', 'あ', 'ああ', 'mouth']
+const VOWEL_MORPHS = [
+  ['あ', 'aa', 'a', 'A'],
+  ['い', 'ih', 'i', 'I'],
+  ['う', 'ou', 'u', 'U'],
+  ['え', 'ee', 'e', 'E'],
+  ['お', 'oh', 'o', 'O'],
+]
 
 // 状态 → 摆动/呼吸节奏目标(逐帧平滑过渡, 避免参数跳变)
 const STATUS_PARAMS = {
@@ -235,8 +242,8 @@ let modelRoot = null
 let vrmLoaded = false
 let vrmSpringChains = []
 let vrmSprings = []
-let blinkMorphIdx = undefined
-let mouthMorphIdx = undefined
+let blinkMorphSlots = []
+let vowelMorphSlots = []
 let clockT = 0
 let heldRot = null
 let hopUntil = 0
@@ -250,6 +257,8 @@ const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
 let boneByName = new Map()
 const scratch = new Map() // 每帧骨骼偏移累加器
 let talkUntil = -1
+let talkText = ''
+let talkStart = 0
 const look = { targetYaw: 0, targetPitch: 0, yaw: 0, pitch: 0 }
 let pokeUntil = -1
 let sitFrames = 0
@@ -345,8 +354,8 @@ function clearModel() {
   vrmLoaded = false
   vrmSpringChains = []
   vrmSprings = []
-  blinkMorphIdx = undefined
-  mouthMorphIdx = undefined
+  blinkMorphSlots = []
+  vowelMorphSlots = []
   while (pivot.children.length) pivot.remove(pivot.children[0])
   pivot.position.set(0, 0, 0)
   restPose.clear()
@@ -829,14 +838,26 @@ function applyIdlePose(now, dt) {
 
   // 眨眼 + 说话嘴型(morph)
   updateBlink(dt)
-  if (bodyMesh.morphTargetInfluences) {
-    if (blinkMorphIdx !== undefined && blinkMorphIdx < bodyMesh.morphTargetInfluences.length) {
-      bodyMesh.morphTargetInfluences[blinkMorphIdx] = blinkWeight
+  // 眨眼 + 按文字驱动的多元音口型(morph 可能分布在多个网格上)
+  const setMorph = (slot, value) => {
+    if (!slot || !slot.mesh || !slot.mesh.morphTargetInfluences) return
+    const morphLen = slot.mesh.morphTargetInfluences.length
+    if (slot.idx >= 0 && slot.idx < morphLen) slot.mesh.morphTargetInfluences[slot.idx] = value
+  }
+  const setSlots = (slots, value) => {
+    for (const slot of slots || []) setMorph(slot, value)
+  }
+  setSlots(blinkMorphSlots, blinkWeight)
+  for (const slots of vowelMorphSlots) setSlots(slots, 0)
+  if (now < talkUntil) {
+    let target = 0
+    if (talkText) {
+      const t = now - talkStart
+      const seg = Math.max(0, Math.min(Math.floor(t / 0.11), talkText.length - 1))
+      target = talkText.charCodeAt(seg) % 5
     }
-    if (mouthMorphIdx !== undefined && mouthMorphIdx < bodyMesh.morphTargetInfluences.length) {
-      const talk = now < talkUntil ? Math.abs(Math.sin(now * 14)) * 0.42 : 0
-      bodyMesh.morphTargetInfluences[mouthMorphIdx] = talk
-    }
+    const open = 0.3 + 0.45 * Math.abs(Math.sin(now * 13))
+    setSlots(vowelMorphSlots[target] && vowelMorphSlots[target].length ? vowelMorphSlots[target] : vowelMorphSlots[0], open)
   }
 
   // 坐姿没有脚下阴影; 站立阴影随呼吸微缩
@@ -868,15 +889,10 @@ function helperPhysicsOnly() {
 function playDance(name, force = false) {
   const next = ACTIONS[name] !== undefined ? name : 'idle'
   if (next === state.action && !force) return
-  if (vrmLoaded && next !== 'idle') {
-    console.warn('VRM 模型暂不支持 MMD 舞蹈动作, 保持待机')
-    state.action = 'idle'
-    return
-  }
   state.action = next
   resetPose()
   danceLoading = null
-  if (next === 'idle') { helperPhysicsOnly(); return }
+  if (next === 'idle') { if (!vrmLoaded) helperPhysicsOnly(); return }
 
   danceLoading = next
   loader.loadAnimation(
@@ -886,7 +902,11 @@ function playDance(name, force = false) {
       if (state.action !== next) return
       danceLoading = null
       try { helper.remove(bodyMesh) } catch (_) { /* 忽略 */ }
-      try { attachPhysics(bodyMesh, clip) } catch (_) { /* 忽略 */ }
+      // VRM 与 PMX 骨架同名, 可直接复用 VMD; VRM 没有 ammo 刚体, 跳舞时关闭物理
+      try {
+        if (vrmLoaded) helper.add(bodyMesh, { animation: clip, ik: false, grant: false, physics: false })
+        else attachPhysics(bodyMesh, clip)
+      } catch (e) { console.warn('动作接入失败:', e) }
     },
     undefined,
     (err) => {
@@ -903,7 +923,13 @@ function setAction(name) {
 }
 
 function setTalk() {
-  talkUntil = clockT + 1.4
+  setTalkText('')
+}
+
+function setTalkText(text) {
+  talkText = String(text || '').replace(/\s+/g, '')
+  talkStart = clockT
+  talkUntil = clockT + (talkText ? Math.min(7, 0.8 + talkText.length * 0.11) : 1.2)
 }
 
 // 跳舞时把重心(センター)锁定在画面中心, 避免滑步/位移把角色带出窗口
@@ -917,16 +943,38 @@ function centerDance() {
   root.position.z -= w.z
 }
 
-function resolveMorphIndices(mesh) {
-  blinkMorphIdx = undefined
-  mouthMorphIdx = undefined
-  const dict = mesh && mesh.morphTargetDictionary
-  if (!dict) return
-  for (const n of BLINK_MORPH_NAMES) {
-    if (dict[n] !== undefined) { blinkMorphIdx = dict[n]; break }
+function resolveMorphSlots() {
+  blinkMorphSlots = []
+  vowelMorphSlots = Array.from({ length: 5 }, () => [])
+  const findIdx = (names, mesh) => {
+    const dict = mesh && mesh.morphTargetDictionary
+    if (!dict) return -1
+    for (const n of names) {
+      if (dict[n] !== undefined) return dict[n]
+    }
+    return -1
   }
-  for (const n of MOUTH_MORPH_NAMES) {
-    if (dict[n] !== undefined) { mouthMorphIdx = dict[n]; break }
+  const visit = (mesh) => {
+    const blinkIdx = findIdx(BLINK_MORPH_NAMES, mesh)
+    if (blinkIdx >= 0) blinkMorphSlots.push({ mesh, idx: blinkIdx })
+    for (let i = 0; i < 5; i++) {
+      const idx = findIdx(VOWEL_MORPHS[i], mesh)
+      if (idx >= 0) {
+        vowelMorphSlots[i].push({ mesh, idx })
+      } else if (i === 0) {
+        const fallback = findIdx(MOUTH_MORPH_NAMES, mesh)
+        if (fallback >= 0) vowelMorphSlots[0].push({ mesh, idx: fallback })
+      }
+    }
+  }
+  if (vrmLoaded && modelRoot) {
+    modelRoot.traverse((o) => { if (o.isSkinnedMesh) visit(o) })
+  } else {
+    visit(bodyMesh)
+  }
+  // 缺元音口型时回退到第一个口型(PMX 通常只有 あ)
+  for (let i = 0; i < 5; i++) {
+    if (!vowelMorphSlots[i].length) vowelMorphSlots[i] = vowelMorphSlots[0]
   }
 }
 
@@ -945,7 +993,7 @@ function finishPmxLoad(form, mesh) {
   captureRestPose(mesh)
   sanitizeMaterials(mesh)
   applyChibi()
-  resolveMorphIndices(mesh)
+  resolveMorphSlots()
   loadedForm = form
   loadingForm = null
   reframe()
@@ -1003,7 +1051,7 @@ function loadVrmForm(form) {
       sanitizeVrmMaterials(scene)
       applyToonMaterials(scene)
       applyChibi()
-      resolveMorphIndices(mesh)
+      resolveMorphSlots()
       loadedForm = form
       loadingForm = null
       if (state.action !== 'idle') state.action = 'idle'
@@ -1195,7 +1243,7 @@ async function boot() {
 
 window.addEventListener('resize', resize)
 window.pet3d = {
-  setStatus, setForm, setAction, setTalk, setAnchor, setDragging, setPoke, setOptions, pokeAt, resize,
+  setStatus, setForm, setAction, setTalk, setTalkText, setAnchor, setDragging, setPoke, setOptions, pokeAt, resize,
   holdRot: (name, rx = 0, ry = 0, rz = 0) => { heldRot = { name, rx, ry, rz } },
   clearHold: () => { heldRot = null },
   twistMeshBone: (meshName, boneName, rx = 0, ry = 0, rz = 0) => {
@@ -1227,9 +1275,14 @@ window.pet3d = {
     const hairChain = vrmSpringChains.find(c => c.some(b => /发|髪|hair/i.test(String(b.name || ''))))
     const hairSwayBone = hairChain ? hairChain[hairChain.length - 1] : null
     const meshMats = []
+    const morphInfo = []
     if (modelRoot) {
       modelRoot.traverse((o) => {
         if (!o.isMesh) return
+        if (o.morphTargetDictionary) {
+          const names = Object.keys(o.morphTargetDictionary)
+          if (names.length) morphInfo.push({ mesh: o.name, n: names.length, sample: names.slice(0, 30) })
+        }
         const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
         for (const m of mats) {
           if (!m) continue
@@ -1255,7 +1308,7 @@ window.pet3d = {
         }
       })
     }
-    return { bodyMesh: !!bodyMesh, vrmLoaded, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, springFirst: vrmSpringChains.slice(0, 24).map(c => c[0] ? c[0].name : null), hairBones: hairBones.slice(0, 80), headInfo, meshMats: meshMats.slice(0, 60), loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null, hairSway: hairSwayBone ? { name: hairSwayBone.name, rx: Number(hairSwayBone.rotation.x.toFixed(4)), ry: Number(hairSwayBone.rotation.y.toFixed(4)) } : null }
+    return { bodyMesh: !!bodyMesh, vrmLoaded, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, springFirst: vrmSpringChains.slice(0, 24).map(c => c[0] ? c[0].name : null), hairBones: hairBones.slice(0, 80), headInfo, morphInfo, meshMats: meshMats.slice(0, 60), loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null, hairSway: hairSwayBone ? { name: hairSwayBone.name, rx: Number(hairSwayBone.rotation.x.toFixed(4)), ry: Number(hairSwayBone.rotation.y.toFixed(4)) } : null }
   },
   materials: () => {
     if (!bodyMesh || !bodyMesh.geometry) return null

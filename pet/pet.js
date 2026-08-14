@@ -22,7 +22,7 @@
     if (!cfg.bubble || !text) return
     bubble.textContent = text
     bubble.classList.add('show')
-    if (window.pet3d) window.pet3d.setTalk()
+    if (window.pet3d) window.pet3d.setTalkText(text)
     if (bubbleTimer) clearTimeout(bubbleTimer)
     bubbleTimer = setTimeout(function () { bubble.classList.remove('show') }, 4500)
   }
@@ -85,6 +85,7 @@
     var shown = text.length > 220 ? text.slice(-220) : text
     bubble.textContent = shown
     bubble.classList.add('show')
+    if (window.pet3d) window.pet3d.setTalkText(text)
     if (replyTimer) clearTimeout(replyTimer)
     if (!streaming) replyTimer = setTimeout(function () { bubble.classList.remove('show') }, 7000)
   }

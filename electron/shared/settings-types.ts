@@ -220,7 +220,7 @@ export interface GeneralSettings {
     chibi?: number
     fps?: number        // 渲染帧率上限, 0=不限(默认 60)
     transition?: number // 坐/站与状态动画过渡时长(ms, 默认 450)
-    modelFormat?: 'vrm' | 'pmx' // 桌宠模型格式(vrm 默认, 有 VRM 文件时; pmx 支持 MMD 舞蹈)
+    modelFormat?: 'vrm' | 'pmx' // 桌宠模型格式(vrm 默认; pmx 跳舞时带 MMD 头发物理)
     pos?: { x: number | null; y: number | null }
   }
   programMemory?: boolean
