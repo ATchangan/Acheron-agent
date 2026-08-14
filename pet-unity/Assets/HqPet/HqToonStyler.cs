@@ -184,10 +184,10 @@ namespace HqPet
                 m.SetFloat(PID_SpecIntensity, 0f);
                 m.SetFloat(PID_RimMix, 0f);
                 outlineWidth = 0.0024f;
-                // 红瞳辉光: 让眼睛有神采
+                // 眼瞳辉光: 只提亮、不改色相, 瞳色交给贴图决定(普通形态=紫瞳, 大招形态=红瞳)
                 if (lower.Trim() == "目")
                 {
-                    m.SetColor(PID_EmissionColor, new Color(0.34f, 0.03f, 0.06f, 1f));
+                    m.SetColor(PID_EmissionColor, new Color(0.20f, 0.17f, 0.24f, 1f));
                 }
             }
             else if (IsHair(lower))
