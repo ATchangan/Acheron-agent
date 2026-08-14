@@ -87,6 +87,8 @@ namespace HqPet
         {
 #if UNITY_STANDALONE_WIN && !UNITY_EDITOR
             Apply();
+            // 强制窗口到 450x675 物理像素, 避免被系统缩到 300x450 以下显得粗糙
+            SetSize(450, 675);
 #endif
         }
 

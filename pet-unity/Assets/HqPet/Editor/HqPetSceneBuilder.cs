@@ -28,12 +28,13 @@ namespace HqPet.EditorTools
             cam.clearFlags = CameraClearFlags.SolidColor;
             // 颜色键透明: 纯品红由 SetLayeredWindowAttributes 挖空(alpha 通道不可靠)
             cam.backgroundColor = new Color(1f, 0f, 1f, 1f);
-            cam.fieldOfView = 30f;
+            cam.fieldOfView = 26f;
             cam.nearClipPlane = 0.01f;
             cam.farClipPlane = 100f;
             cam.allowHDR = false;
             camGo.transform.position = new Vector3(0f, 1.05f, -4.3f);
             camGo.transform.LookAt(new Vector3(0f, 0.95f, 0f));
+            camGo.AddComponent<HqSsa>();
 
             // 主光 + 补光
             var keyGo = new GameObject("Key Light");
@@ -75,6 +76,7 @@ namespace HqPet.EditorTools
             ConfigurePlayerSettings();
             EnsureShaderAlwaysIncluded(HqToonStyler.ShaderName);
             EnsureShaderAlwaysIncluded("UniGLTF/UniUnlit");
+            EnsureShaderAlwaysIncluded("HqPet/HqSsaBlit");
             Debug.Log("[HqPetScene] 已生成 " + scenePath);
         }
 
@@ -82,8 +84,8 @@ namespace HqPet.EditorTools
         {
             PlayerSettings.companyName = "ATchangan";
             PlayerSettings.productName = "HuangquanPet";
-            PlayerSettings.defaultScreenWidth = 220;
-            PlayerSettings.defaultScreenHeight = 330;
+            PlayerSettings.defaultScreenWidth = 300;
+            PlayerSettings.defaultScreenHeight = 450;
             PlayerSettings.resizableWindow = false;
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
             PlayerSettings.runInBackground = true;

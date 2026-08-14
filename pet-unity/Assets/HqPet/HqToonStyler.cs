@@ -157,7 +157,7 @@ namespace HqPet
             // 全局: 伪主光从左上打下来, 环境光兜底避免发黑
             m.SetVector(PID_FakeLightDir, new Vector4(0.45f, 0.82f, 0.55f, 0f));
             m.SetColor(PID_FakeLightColor, new Color(1.0f, 1.0f, 1.02f, 1f));
-            m.SetColor(PID_AmbientColor, new Color(0.45f, 0.47f, 0.54f, 1f));
+            m.SetColor(PID_AmbientColor, new Color(0.55f, 0.57f, 0.64f, 1f));
             m.SetColor(PID_EmissionColor, Color.black);
 
             var outlineWidth = 0.0032f;
@@ -172,7 +172,7 @@ namespace HqPet
                 m.SetFloat(PID_SpecIntensity, 0f);
                 m.SetColor(PID_RimColor, new Color(0.34f, 0.34f, 0.42f, 1f));
                 m.SetFloat(PID_RimPower, 6f);
-                m.SetFloat(PID_RimMix, 0.12f);
+                m.SetFloat(PID_RimMix, 0.20f);
                 outlineWidth = 0.0026f;
             }
             else if (IsFaceOverlay(lower))
@@ -184,6 +184,11 @@ namespace HqPet
                 m.SetFloat(PID_SpecIntensity, 0f);
                 m.SetFloat(PID_RimMix, 0f);
                 outlineWidth = 0.0024f;
+                // 红瞳辉光: 让眼睛有神采
+                if (lower.Trim() == "目")
+                {
+                    m.SetColor(PID_EmissionColor, new Color(0.34f, 0.03f, 0.06f, 1f));
+                }
             }
             else if (IsHair(lower))
             {
@@ -195,9 +200,9 @@ namespace HqPet
                 m.SetColor(PID_SpecColor, new Color(0.90f, 0.93f, 1.0f, 1f));
                 m.SetFloat(PID_SpecPower, 38f);
                 m.SetFloat(PID_SpecIntensity, 0.45f);
-                m.SetColor(PID_RimColor, new Color(0.58f, 0.54f, 0.78f, 1f));
+                m.SetColor(PID_RimColor, new Color(0.62f, 0.58f, 0.82f, 1f));
                 m.SetFloat(PID_RimPower, 5f);
-                m.SetFloat(PID_RimMix, 0.45f);
+                m.SetFloat(PID_RimMix, 0.58f);
                 outlineWidth = 0.0036f;
             }
             else if (IsCloth(lower))
@@ -211,7 +216,7 @@ namespace HqPet
                 m.SetFloat(PID_SpecIntensity, 0.08f);
                 m.SetColor(PID_RimColor, new Color(0.28f, 0.32f, 0.46f, 1f));
                 m.SetFloat(PID_RimPower, 6f);
-                m.SetFloat(PID_RimMix, 0.25f);
+                m.SetFloat(PID_RimMix, 0.38f);
             }
             else
             {
@@ -224,7 +229,7 @@ namespace HqPet
                 m.SetFloat(PID_SpecIntensity, 0.28f);
                 m.SetColor(PID_RimColor, new Color(0.36f, 0.40f, 0.55f, 1f));
                 m.SetFloat(PID_RimPower, 5f);
-                m.SetFloat(PID_RimMix, 0.30f);
+                m.SetFloat(PID_RimMix, 0.42f);
             }
 
             m.SetColor(PID_OutlineColor, outlineColor);
