@@ -7,7 +7,7 @@
  * 动作: 站内公开 VMD(极乐净土/彩虹节拍/Good Time), MMDAnimationHelper 播片 + 物理共存
  */
 import * as THREE from 'three'
-import { MMDLoader } from 'three/loaders/MMDLoader.js'
+import { MMDLoader, MMDToonMaterial } from 'three/loaders/MMDLoader.js'
 import { MMDAnimationHelper } from 'three/animation/MMDAnimationHelper.js'
 import { GLTFLoader } from 'three/loaders/GLTFLoader.js'
 
@@ -125,6 +125,17 @@ const gltfLoader = new GLTFLoader()
 const helper = new MMDAnimationHelper()
 // 微风级物理: 默认 MMD 重力为 -98(单位/秒²), 太猛; 降到 1/3 左右让头发/衣摆缓慢轻柔地飘
 const BREEZE_GRAVITY = new THREE.Vector3(0, -36, 0)
+
+// MToon 渐变贴图: 暗部→亮部分 5 档, 硬切过渡出漫画感
+const TOON_GRADIENT = (() => {
+  const bands = [24, 22, 26, 70, 72, 86, 140, 142, 160, 225, 226, 245, 255, 255, 255, 255]
+  const tex = new THREE.DataTexture(new Uint8Array(bands), 4, 1, THREE.RGBAFormat)
+  tex.minFilter = THREE.NearestFilter
+  tex.magFilter = THREE.NearestFilter
+  tex.generateMipmaps = false
+  tex.needsUpdate = true
+  return tex
+})()
 // three MMDPhysics 创建刚体时没有设置阻尼(PMX 里的阻尼被忽略), 头发会无衰减高频摆动;
 // 这里补上阻尼, 让摆动快速衰减、呈现"随微风轻摆"的效果
 function attachPhysics(mesh, animation) {
@@ -192,14 +203,38 @@ function sanitizeVrmMaterials(root) {
   })
 }
 
+// VRM 材质 → MToon: 渐变硬切 + BlinnPhong 高光, 与 PMX 桌宠保持同一种漫画质感
+function applyToonMaterials(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
+    const converted = mats.map((src) => {
+      if (!src || src.isMMDToonMaterial) return src
+      const toon = new MMDToonMaterial({
+        map: src.map || null,
+        color: src.color ? src.color.clone() : new THREE.Color(1, 1, 1),
+        gradientMap: TOON_GRADIENT,
+        opacity: typeof src.opacity === 'number' ? src.opacity : 1,
+        transparent: !!src.transparent,
+        alphaTest: Number(src.alphaTest || 0),
+        side: src.side,
+        shininess: 8,
+      })
+      toon.needsUpdate = true
+      return toon
+    })
+    if (Array.isArray(o.material)) o.material = converted
+    else if (o.material) o.material = converted[0]
+  })
+}
+
 let loadedForm = null
 let loadingForm = null
 let bodyMesh = null
 let modelRoot = null
 let vrmLoaded = false
 let vrmSpringChains = []
-let vrmSwayBones = []
-let vrmMaxDepth = 1
+let vrmSprings = []
 let blinkMorphIdx = undefined
 let mouthMorphIdx = undefined
 let clockT = 0
@@ -309,8 +344,7 @@ function clearModel() {
   bodyMesh = null
   vrmLoaded = false
   vrmSpringChains = []
-  vrmSwayBones = []
-  vrmMaxDepth = 1
+  vrmSprings = []
   blinkMorphIdx = undefined
   mouthMorphIdx = undefined
   while (pivot.children.length) pivot.remove(pivot.children[0])
@@ -413,67 +447,73 @@ function applyVrmHumanoidMap(parser) {
       }
     }
   }
-  // VRMC_springBone: 记录发丝/裙摆/袖子的弹簧链, 供程序化微风摆动使用
+  // VRMC_springBone: 建立带刚度/重力/阻尼的阻尼弹簧状态(真正积分, 而非正弦噪声)
   const springBone = extensions.VRMC_springBone
   vrmSpringChains = []
+  vrmSprings = []
+  const inChain = new Set()
   if (springBone && Array.isArray(springBone.springs)) {
     for (const spring of springBone.springs) {
-      const chain = []
+      const joints = []
       for (const joint of spring.joints || []) {
         const name = joint && typeof joint.node === 'number' ? nodeName(joint.node) : null
-        const obj = name ? boneByName.get(name) : null
-        if (obj && obj.isBone) chain.push(obj)
+        const boneObj = name ? boneByName.get(name) : null
+        if (!boneObj || !boneObj.isBone) continue
+        inChain.add(boneObj.name)
+        joints.push({
+          bone: boneObj,
+          rx: 0, ry: 0, rz: 0, vx: 0, vy: 0, vz: 0,
+          stiffness: typeof joint.stiffness === 'number' && joint.stiffness > 0 ? joint.stiffness : 2,
+          gravityPower: typeof joint.gravityPower === 'number' ? joint.gravityPower : 0.1,
+          gravityDir: Array.isArray(joint.gravityDir) ? joint.gravityDir : [0, -1, 0],
+          dragForce: typeof joint.dragForce === 'number' ? joint.dragForce : 0.5,
+        })
       }
-      if (chain.length) vrmSpringChains.push(chain)
+      if (joints.length) {
+        vrmSprings.push({ joints })
+        vrmSpringChains.push(joints.map(j => j.bone))
+      }
     }
   }
-  // 摆幅按骨骼真实父子链深度计算(弹簧链被去重切割后长度不可靠)
-  const swaySet = new Set()
-  for (const chain of vrmSpringChains) {
-    for (const b of chain) swaySet.add(b.name)
-  }
-  const depthOf = (bone) => {
-    let depth = 0
-    let p = bone.parent
-    while (p && p.isBone && swaySet.has(p.name)) {
-      depth += 1
-      p = p.parent
-    }
-    return depth
-  }
-  vrmSwayBones = []
-  vrmMaxDepth = 1
-  for (const chain of vrmSpringChains) {
-    for (const b of chain) {
-      const depth = depthOf(b)
-      vrmSwayBones.push({ bone: b, depth })
-      if (depth > vrmMaxDepth) vrmMaxDepth = depth
-    }
-  }
-  // 刘海/前发等没有物理链的头发骨骼也纳入微风摆动(挂在头上, 深度从 0 起)
+  // 刘海/前发等没有物理链的头发骨骼补一条轻弹簧
   const hairName = /髪|发|hair|刘海|前髪|前发|側髪|侧发/i
   for (const [name, boneObj] of boneByName) {
-    if (swaySet.has(name) || !hairName.test(name)) continue
-    vrmSwayBones.push({ bone: boneObj, depth: 0 })
+    if (inChain.has(name) || !hairName.test(name)) continue
+    inChain.add(name)
+    vrmSprings.push({ joints: [{ bone: boneObj, rx: 0, ry: 0, rz: 0, vx: 0, vy: 0, vz: 0, stiffness: 2.5, gravityPower: 0, gravityDir: [0, -1, 0], dragForce: 0.75 }] })
+    vrmSpringChains.push([boneObj])
   }
 }
 
-// VRM 弹簧骨的程序化微风摆动(近似实现, 幅度沿链向末梢增大)
-function applyVrmSway(now) {
-  if (!vrmLoaded || !vrmSwayBones.length) return
-  const denom = Math.max(vrmMaxDepth, 1)
-  for (let i = 0; i < vrmSwayBones.length; i++) {
-    const { bone, depth } = vrmSwayBones[i]
-    const name = String(bone.name || '')
-    const frac = depth / denom
-    let amp = 0.16 + 0.24 * Math.pow(frac, 1.5)
-    if (/胸|腰|下半身|上半身/i.test(name)) amp = 0.04 * frac
-    if (/耳|飾|饰|リボン/i.test(name)) amp = 0.08 + 0.06 * frac
-    const phase = i * 0.31
-    const t = now * (0.9 + (i % 5) * 0.05) + phase
-    const ry = org(t, 0.8, amp, 0.5, amp * 0.4, 1.45, amp * 0.18)
-    const rx = org(t + 1.7, 0.7, amp * 0.3, 0.42, amp * 0.16, 1.2, amp * 0.08)
-    addRot(name, rx, ry, 0)
+// VRM 弹簧骨求解器: 恢复力(刚度) + 重力 + 空气阻尼 + 缓变风场, 逐帧积分
+function applyVrmSprings(now, dt) {
+  if (!vrmLoaded || !vrmSprings.length) return
+  const wx = Math.sin(now * 0.35) * 0.5 + Math.sin(now * 0.17) * 0.28
+  const wz = Math.cos(now * 0.28) * 0.5 + Math.sin(now * 0.13) * 0.24
+  for (let si = 0; si < vrmSprings.length; si++) {
+    const spring = vrmSprings[si]
+    const n = Math.max(spring.joints.length - 1, 1)
+    const breeze = 0.55 + 0.25 * (si % 3)
+    for (let ji = 0; ji < spring.joints.length; ji++) {
+      const j = spring.joints[ji]
+      const depth = ji / n
+      const windAmp = (0.22 + 0.6 * depth) * breeze
+      j.vx += (-j.rx * j.stiffness + wx * windAmp) * dt
+      j.vy += (-j.ry * j.stiffness) * dt
+      j.vz += (-j.rz * j.stiffness + wz * windAmp) * dt
+      const g = j.gravityDir
+      j.vx += g[0] * j.gravityPower * 2 * dt
+      j.vy += g[1] * j.gravityPower * 2 * dt
+      j.vz += g[2] * j.gravityPower * 2 * dt
+      const damp = Math.max(0, 1 - j.dragForce * 3 * dt)
+      j.vx *= damp
+      j.vy *= damp
+      j.vz *= damp
+      j.rx += j.vx * dt
+      j.ry += j.vy * dt
+      j.rz += j.vz * dt
+      addRot(j.bone.name, j.rx, j.ry, j.rz)
+    }
   }
 }
 
@@ -781,7 +821,7 @@ function applyIdlePose(now, dt) {
     }
   }
 
-  applyVrmSway(now)
+  applyVrmSprings(now, dt)
   applyVrmIdleMotion(now, breathe)
   applyHeldRot()
 
@@ -961,6 +1001,7 @@ function loadVrmForm(form) {
       captureRestPose(scene)
       applyVrmHumanoidMap(gltfLoader.parser)
       sanitizeVrmMaterials(scene)
+      applyToonMaterials(scene)
       applyChibi()
       resolveMorphIndices(mesh)
       loadedForm = form

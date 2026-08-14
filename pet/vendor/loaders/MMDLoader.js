@@ -2273,4 +2273,4 @@ class MMDToonMaterial extends ShaderMaterial {
 
 }
 
-export { MMDLoader };
+export { MMDLoader, MMDToonMaterial };
