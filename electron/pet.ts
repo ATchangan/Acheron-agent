@@ -278,7 +278,7 @@ export class PetManager {
   // Unity 桌宠: 不建 BrowserWindow, 拉起独立进程 + WS 桥接
   private createUnity(s: PetSettings): void {
     if (this.unity) return
-    const exe = join(this.opts.petDir, '..', 'pet-unity', 'HuangquanPet.exe')
+    const exe = join(this.opts.petDir, '..', 'pet-unity', 'HuangquanPet', 'HuangquanPet.exe')
     if (!fs.existsSync(exe)) {
       // Unity 桌宠尚未构建: 静默回退旧 web 桌宠, 不打断主流程
       this.createWeb(s)

@@ -22,8 +22,9 @@ namespace HqPet
         private const int GWL_STYLE = -16;
         private const int GWL_EXSTYLE = -20;
         private const int GWLP_WNDPROC = -4;
-        private const uint WM_NCHITTEST = 0x0084;
-        private static readonly IntPtr HTCAPTION = new IntPtr(2);
+        private const uint WM_LBUTTONDOWN = 0x0201;
+        private const uint WM_LBUTTONUP = 0x0202;
+        private const uint WM_MOUSEMOVE = 0x0200;
         private const long WS_POPUP = 0x80000000L;
         private const long WS_CAPTION = 0x00C00000L;
         private const long WS_THICKFRAME = 0x00040000L;
@@ -51,11 +52,25 @@ namespace HqPet
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")] private static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
         [DllImport("user32.dll")] private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+        [DllImport("user32.dll")] private static extern IntPtr SetCapture(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int x; public int y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int left, top, right, bottom; }
 
         private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
         // 静态引用防止委托被 GC 回收后回调崩溃
         private static WndProcDelegate _wndProcDelegate;
         private IntPtr _originalWndProc = IntPtr.Zero;
+        private bool _dragging;
+        private POINT _dragStartCursor;
+        private RECT _dragStartWindow;
+        private bool _noColorKey;
 
         private void Awake()
         {
@@ -65,6 +80,7 @@ namespace HqPet
                 return;
             }
             Instance = this;
+            _noColorKey = HasArg("-no-colorkey");
         }
 
         private void Start()
@@ -106,9 +122,13 @@ namespace HqPet
             SetWindowLongPtr(_hwnd, GWL_EXSTYLE, new IntPtr(ex));
 
             // 3) 颜色键挖空 + 不透明(alpha=255)
-            SetLayeredWindowAttributes(_hwnd, COLOR_KEY, 255, LWA_COLORKEY | LWA_ALPHA);
+            //    调试模式只设 alpha=255、不挖色, 否则 WS_EX_LAYERED 未配置会被 DWM 当作全透明
+            if (_noColorKey)
+                SetLayeredWindowAttributes(_hwnd, 0, 255, LWA_ALPHA);
+            else
+                SetLayeredWindowAttributes(_hwnd, COLOR_KEY, 255, LWA_COLORKEY | LWA_ALPHA);
 
-            // 4) 子类化窗口: 整窗视为标题栏, 左键拖动即移动
+            // 4) 子类化窗口: 手动处理 左键按下→拖动窗口; 点击事件仍送达 Unity 用于戳头等交互
             _wndProcDelegate = WndProc;
             _originalWndProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProcDelegate));
 
@@ -119,8 +139,26 @@ namespace HqPet
 
         private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
-            // 整个窗口可拖动; 后续做区域命中测试时再按角色轮廓区分 点击/拖动
-            if (msg == WM_NCHITTEST) return HTCAPTION;
+            if (msg == WM_LBUTTONDOWN)
+            {
+                GetCursorPos(out _dragStartCursor);
+                GetWindowRect(hWnd, out _dragStartWindow);
+                _dragging = true;
+                SetCapture(hWnd);
+                // 继续把消息交给原窗口过程, Unity 也能收到这次点击(戳头反应)
+            }
+            else if (msg == WM_MOUSEMOVE && _dragging)
+            {
+                GetCursorPos(out var cursor);
+                var nx = _dragStartWindow.left + (cursor.x - _dragStartCursor.x);
+                var ny = _dragStartWindow.top + (cursor.y - _dragStartCursor.y);
+                SetWindowPos(hWnd, HWND_TOPMOST, nx, ny, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+            else if (msg == WM_LBUTTONUP && _dragging)
+            {
+                _dragging = false;
+                ReleaseCapture();
+            }
             return CallWindowProc(_originalWndProc, hWnd, msg, wParam, lParam);
         }
 
@@ -150,6 +188,16 @@ namespace HqPet
         {
             if (!_applied) return;
             SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, width, height, SWP_NOMOVE | SWP_NOACTIVATE);
+        }
+
+        private static bool HasArg(string name)
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            foreach (var a in args)
+            {
+                if (string.Equals(a, name, System.StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
         }
     }
 }

@@ -16,6 +16,7 @@ namespace HqPet.EditorTools
         {
             var args = System.Environment.GetCommandLineArgs();
             var outDir = ReadArg(args, "-out") ?? "Builds/HuangquanPet";
+            var development = HasArg(args, "-dev");
             Directory.CreateDirectory(outDir);
 
             var options = new BuildPlayerOptions
@@ -23,7 +24,7 @@ namespace HqPet.EditorTools
                 scenes = new[] { "Assets/HqPet/HqPet.unity" },
                 locationPathName = Path.Combine(outDir, "HuangquanPet.exe"),
                 target = BuildTarget.StandaloneWindows64,
-                options = BuildOptions.None,
+                options = development ? BuildOptions.Development : BuildOptions.None,
             };
 
             var report = BuildPipeline.BuildPlayer(options);
@@ -47,6 +48,15 @@ namespace HqPet.EditorTools
                     return args[i + 1];
             }
             return null;
+        }
+
+        private static bool HasArg(string[] args, string name)
+        {
+            foreach (var a in args)
+            {
+                if (string.Equals(a, name, System.StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
         }
     }
 }

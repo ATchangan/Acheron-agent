@@ -97,6 +97,7 @@ namespace HqPet
 
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true)) r.enabled = true;
 
+                HqToonStyler.Apply(root);
                 NormalizeFeet(root);
                 CurrentModel = root;
                 Debug.Log($"[HqPet] 已载入 {CurrentForm}: {path}");
