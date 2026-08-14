@@ -63,5 +63,10 @@ three.js 侧逐项打磨能追平的（历史多轮已反复卡在头发、权�
 - [x] 调研 Mate-Engine License、功能清单、脚本面
 - [x] 诊断 Unity 安装状态：Hub 已开、编辑器未装、地域 CDN 缺 Unity 6.2+ 系列
 - [x] 确认本机 WireGuard 隧道（UmiTun，美国出口）可用，全球 CDN 返回 200
-- [ ] 下载并安装 Unity 6000.2.6f2 + Windows IL2CPP（下载进行中）
-- [ ] 打开工程、载入黄泉 VRM，M1 起逐模块实现
+- [x] 下载并安装 Unity 6000.2.6f2 + Windows IL2CPP，注册进 Hub
+- [x] Mate-Engine 工程完整导入并通过编译（去掉了 Linux 交叉编译 toolchain 依赖）
+- [x] 诊断"主场景看不到黄泉"根因：模型挂在 inactive 父节点链 + 示例角色 URP shader 不兼容内置管线
+- [x] M1 底座：生成黄泉专属场景 `pet-unity/Assets/HqPet/HqPet.unity`（相机+灯光+模型宿主），
+      黄泉 normal VRM 载入渲染验证通过（视觉模型确认无缺面/错位/材质异常）
+- [ ] 窗口透明置顶/点击穿透，运行态接线
+- [ ] M2 起逐模块实现（动作/追踪/音舞/互动/AI 桥接）
