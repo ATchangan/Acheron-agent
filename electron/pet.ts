@@ -5,11 +5,13 @@ import { BrowserWindow, screen } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { WinProbe, type WinRect } from './win32-windows'
+import { PetUnityManager } from './pet-unity'
 
 export type PetAnchor = 'float' | 'window' | 'taskbar'
 
 export interface PetSettings {
   enabled?: boolean
+  engine?: 'web' | 'unity'
   agent?: string
   form?: 'normal' | 'ultimate'
   action?: 'idle' | 'dance1' | 'dance2' | 'dance3'
@@ -50,6 +52,7 @@ const numOr = (v: unknown, def: number) => (Number.isFinite(Number(v)) ? Number(
 
 export class PetManager {
   private win: BrowserWindow | null = null
+  private unity: PetUnityManager | null = null
   private chatBuf = ''
   private chatLastSend = 0
   private probe = new WinProbe()
@@ -184,6 +187,11 @@ export class PetManager {
   create(): void {
     if (this.win) return
     const s = this.readSettings()
+    const engine: 'web' | 'unity' = s.engine === 'web' ? 'web' : 'unity'
+    if (engine === 'unity') {
+      this.createUnity(s)
+      return
+    }
     const vrmFiles = {
       normal: fs.existsSync(join(this.opts.petDir, 'models', 'vrm', 'index.vrm')),
       ultimate: fs.existsSync(join(this.opts.petDir, 'models', 'vrm', 'ultimate.vrm')),
@@ -221,6 +229,131 @@ export class PetManager {
     this.place(win, s)
     void win.loadFile(join(this.opts.petDir, 'index.html'))
     // 首次加载与渲染页 reload 都重新下发配置(热迭代依赖这一行为)
+    win.webContents.on('did-finish-load', () => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('pet:config', {
+          agent: s.agent || '黄泉',
+          form: s.form === 'ultimate' ? 'ultimate' : 'normal',
+          action: this.getAction(),
+          anchor: this.getAnchor(),
+          scale,
+          opacity: Math.max(0.2, Math.min(1, Number(s.opacity) || 0.9)),
+          bubble: s.bubble !== false,
+          look: s.look !== false,
+          physics: s.physics !== false,
+          breath: s.breath === 'light' || s.breath === 'strong' ? s.breath : 'normal',
+          gesture: s.gesture === 'low' || s.gesture === 'high' ? s.gesture : 'normal',
+          chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
+          fps: clamp(Math.round(numOr(s.fps, 60)), 0, 240),
+          transition: clamp(Math.round(numOr(s.transition, 450)), 100, 3000),
+          modelFormat: s.modelFormat === 'pmx' ? 'pmx' : 'vrm',
+          vrm: vrmFiles,
+          lines: PET_LINES[s.agent || '黄泉'] || PET_LINES['黄泉'],
+        })
+      }
+    })
+    if (process.env.HQ_PET_DEBUG === '1') {
+      win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+        console.debug(`[pet-renderer:${level}] ${message} (${sourceId}:${line})`)
+      })
+      win.webContents.on('did-fail-load', (_e, code, desc) => {
+        console.debug(`[pet-renderer] did-fail-load ${code} ${desc}`)
+      })
+    }
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    win.on('closed', () => { if (this.win === win) this.win = null })
+    if (process.env.HQ_PET_DEBUG === '1') {
+      win.on('resize', () => { console.debug('[pet-win] resize ->', JSON.stringify(win.getBounds()), 'scaleFactor=', screen.getPrimaryDisplay().scaleFactor) })
+      win.on('moved', () => { console.debug('[pet-win] moved ->', JSON.stringify(win.getBounds())) })
+    }
+    this.win = win
+    if (process.env.HQ_PET_DEBUG === '1') {
+      setTimeout(() => {
+        if (!win.isDestroyed()) console.debug('[pet-win] bounds=', JSON.stringify(win.getBounds()), 'size=', JSON.stringify(win.getSize()), 'content=', JSON.stringify(win.getContentBounds()))
+      }, 2500)
+    }
+    if (this.getAnchor() !== 'float') this.startFollow()
+  }
+
+  // Unity 桌宠: 不建 BrowserWindow, 拉起独立进程 + WS 桥接
+  private createUnity(s: PetSettings): void {
+    if (this.unity) return
+    const exe = join(this.opts.petDir, '..', 'pet-unity', 'HuangquanPet.exe')
+    if (!fs.existsSync(exe)) {
+      // Unity 桌宠尚未构建: 静默回退旧 web 桌宠, 不打断主流程
+      this.createWeb(s)
+      return
+    }
+    this.unity = new PetUnityManager(
+      exe,
+      {
+        dataDir: join(this.opts.petDir, 'unity-data'),
+        vrmNormal: join(this.opts.petDir, 'models', 'vrm', 'index.vrm'),
+        vrmUltimate: join(this.opts.petDir, 'models', 'vrm', 'ultimate.vrm'),
+      },
+      {
+        onEvent: (evt, payload) => {
+          if (evt === 'chat-input' && typeof payload.text === 'string') this.relayChat(payload.text)
+          else if (evt === 'dragend' && typeof payload.x === 'number' && typeof payload.y === 'number') {
+            this.writeSettings({ pos: { x: payload.x, y: payload.y } })
+          }
+        },
+        onExit: () => {
+          this.unity = null
+        },
+      },
+    )
+    this.unity.start()
+    this.unity.sendConfig({
+      form: s.form === 'ultimate' ? 'ultimate' : 'normal',
+      action: this.getAction(),
+      anchor: this.getAnchor(),
+      scale: Math.max(0.3, Math.min(2.5, Number(s.scale) || 1)),
+      opacity: Math.max(0.2, Math.min(1, Number(s.opacity) || 0.9)),
+      topmost: s.topmost !== false,
+      chibi: Math.max(0, Math.min(1.5, Number(s.chibi ?? 1))),
+      physics: s.physics !== false,
+      breath: s.breath === 'light' || s.breath === 'strong' ? s.breath : 'normal',
+      fps: clamp(Math.round(numOr(s.fps, 60)), 0, 240),
+    })
+  }
+
+  // 旧 three.js 桌宠路径(原 create 的窗口逻辑)
+  private createWeb(s: PetSettings): void {
+    if (this.win) return
+    const vrmFiles = {
+      normal: fs.existsSync(join(this.opts.petDir, 'models', 'vrm', 'index.vrm')),
+      ultimate: fs.existsSync(join(this.opts.petDir, 'models', 'vrm', 'ultimate.vrm')),
+    }
+    const scale = Math.max(0.3, Math.min(2.5, Number(s.scale) || 1))
+    const w = Math.round(200 * scale)
+    const h = Math.round(300 * scale)
+    this.winW = w
+    this.winH = h
+    const win = new BrowserWindow({
+      width: w,
+      height: h,
+      transparent: true,
+      frame: false,
+      alwaysOnTop: s.topmost !== false,
+      skipTaskbar: true,
+      resizable: false,
+      hasShadow: false,
+      focusable: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        webSecurity: false,
+        preload: join(this.opts.petDir, 'preload.js'),
+      },
+    })
+    win.setAlwaysOnTop(s.topmost !== false, 'floating')
+    try {
+      const raw = win.getNativeWindowHandle()
+      this.ownHwnd = raw.length >= 8 ? Number(raw.readBigUInt64LE(0)) : Number(raw.readUInt32LE(0))
+    } catch { this.ownHwnd = 0 }
+    this.place(win, s)
+    void win.loadFile(join(this.opts.petDir, 'index.html'))
     win.webContents.on('did-finish-load', () => {
       if (!win.isDestroyed()) {
         win.webContents.send('pet:config', {

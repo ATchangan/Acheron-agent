@@ -1,0 +1,8 @@
+# 本地工作产物，不进仓库
+Library/
+Temp/
+Logs/
+obj/
+UserSettings/
+*.csproj
+*.sln
