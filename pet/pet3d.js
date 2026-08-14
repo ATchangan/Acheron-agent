@@ -164,15 +164,46 @@ function sanitizeMaterials(mesh) {
   }
 }
 
+// VRM/glTF 的头发/裙摆/袖子材质修正:
+// 导出器把带 alpha 通道的贴图做成 BLEND 透明并关闭深度写入, 多层叠加会随排序闪烁(头发忽有忽无)。
+// 改为 alphaTest 裁剪 + 写深度, 发丝/布料改为双面, 消除"秃发/透空"。
+function sanitizeVrmMaterials(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
+    for (const m of mats) {
+      if (!m) continue
+      const label = String(m.name || '') + '|' + String(o.name || '')
+      const isHair = /发|髪|hair/i.test(label)
+      const isCloth = isHair || /裙|袖|摆|裾|cloth/i.test(label)
+      if (m.transparent && m.map) {
+        m.transparent = false
+        m.alphaTest = isHair ? 0.4 : 0.25
+        m.depthWrite = true
+        if (isCloth) m.side = THREE.DoubleSide
+        m.needsUpdate = true
+        continue
+      }
+      if (m.transparent) {
+        m.depthWrite = true
+        m.needsUpdate = true
+      }
+    }
+  })
+}
+
 let loadedForm = null
 let loadingForm = null
 let bodyMesh = null
 let modelRoot = null
 let vrmLoaded = false
 let vrmSpringChains = []
+let vrmSwayBones = []
+let vrmMaxDepth = 1
 let blinkMorphIdx = undefined
 let mouthMorphIdx = undefined
 let clockT = 0
+let heldRot = null
 let hopUntil = 0
 let shakeUntil = 0
 let danceLoading = null
@@ -278,6 +309,8 @@ function clearModel() {
   bodyMesh = null
   vrmLoaded = false
   vrmSpringChains = []
+  vrmSwayBones = []
+  vrmMaxDepth = 1
   blinkMorphIdx = undefined
   mouthMorphIdx = undefined
   while (pivot.children.length) pivot.remove(pivot.children[0])
@@ -394,23 +427,71 @@ function applyVrmHumanoidMap(parser) {
       if (chain.length) vrmSpringChains.push(chain)
     }
   }
+  // 摆幅按骨骼真实父子链深度计算(弹簧链被去重切割后长度不可靠)
+  const swaySet = new Set()
+  for (const chain of vrmSpringChains) {
+    for (const b of chain) swaySet.add(b.name)
+  }
+  const depthOf = (bone) => {
+    let depth = 0
+    let p = bone.parent
+    while (p && p.isBone && swaySet.has(p.name)) {
+      depth += 1
+      p = p.parent
+    }
+    return depth
+  }
+  vrmSwayBones = []
+  vrmMaxDepth = 1
+  for (const chain of vrmSpringChains) {
+    for (const b of chain) {
+      const depth = depthOf(b)
+      vrmSwayBones.push({ bone: b, depth })
+      if (depth > vrmMaxDepth) vrmMaxDepth = depth
+    }
+  }
+  // 刘海/前发等没有物理链的头发骨骼也纳入微风摆动(挂在头上, 深度从 0 起)
+  const hairName = /髪|发|hair|刘海|前髪|前发|側髪|侧发/i
+  for (const [name, boneObj] of boneByName) {
+    if (swaySet.has(name) || !hairName.test(name)) continue
+    vrmSwayBones.push({ bone: boneObj, depth: 0 })
+  }
 }
 
 // VRM 弹簧骨的程序化微风摆动(近似实现, 幅度沿链向末梢增大)
 function applyVrmSway(now) {
-  if (!vrmLoaded || !vrmSpringChains.length) return
-  for (let ci = 0; ci < vrmSpringChains.length; ci++) {
-    const chain = vrmSpringChains[ci]
-    const phase = ci * 0.73
-    for (let j = 0; j < chain.length; j++) {
-      const depth = (j + 0.5) / Math.max(chain.length, 1)
-      const amp = 0.055 * depth * depth
-      const t = now * (0.42 + (ci % 5) * 0.045) + phase
-      const ry = org(t, 0.05, amp, 0.03, amp * 0.45, 0.11, amp * 0.22)
-      const rx = org(t + 1.7, 0.06, amp * 0.32, 0.04, amp * 0.18, 0.13, amp * 0.1)
-      addRot(chain[j].name, rx, ry, 0)
-    }
+  if (!vrmLoaded || !vrmSwayBones.length) return
+  const denom = Math.max(vrmMaxDepth, 1)
+  for (let i = 0; i < vrmSwayBones.length; i++) {
+    const { bone, depth } = vrmSwayBones[i]
+    const name = String(bone.name || '')
+    const frac = depth / denom
+    let amp = 0.16 + 0.24 * Math.pow(frac, 1.5)
+    if (/胸|腰|下半身|上半身/i.test(name)) amp = 0.04 * frac
+    if (/耳|飾|饰|リボン/i.test(name)) amp = 0.08 + 0.06 * frac
+    const phase = i * 0.31
+    const t = now * (0.9 + (i % 5) * 0.05) + phase
+    const ry = org(t, 0.8, amp, 0.5, amp * 0.4, 1.45, amp * 0.18)
+    const rx = org(t + 1.7, 0.7, amp * 0.3, 0.42, amp * 0.16, 1.2, amp * 0.08)
+    addRot(name, rx, ry, 0)
   }
+}
+
+// VRM 没有 ammo 物理, 单独补一套肉眼可见但轻柔的呼吸 + 手臂摆动
+function applyVrmIdleMotion(now, breathe) {
+  if (!vrmLoaded) return
+  addRot('上半身', breathe * 0.035, 0, 0)
+  addRot('右肩', breathe * 0.012, 0, 0)
+  addRot('左肩', breathe * 0.012, 0, 0)
+  const armR = org(now, 0.34, 0.09, 0.19, 0.045, 0.55, 0.024)
+  addRot('右腕', armR * 0.55, 0, armR * 0.22)
+  addRot('左腕', -armR * 0.55, 0, -armR * 0.22)
+  addPos('センター', org(now, 0.15, 0.02, 0.08, 0.01, 0.28, 0.005), 0, 0)
+}
+
+function applyHeldRot() {
+  if (!heldRot) return
+  addRot(heldRot.name, heldRot.rx, heldRot.ry, heldRot.rz)
 }
 
 function resetPose() {
@@ -701,6 +782,8 @@ function applyIdlePose(now, dt) {
   }
 
   applyVrmSway(now)
+  applyVrmIdleMotion(now, breathe)
+  applyHeldRot()
 
   commitPose()
 
@@ -877,7 +960,7 @@ function loadVrmForm(form) {
       pivot.add(scene)
       captureRestPose(scene)
       applyVrmHumanoidMap(gltfLoader.parser)
-      scene.traverse((o) => { if (o.isMesh) sanitizeMaterials(o) })
+      sanitizeVrmMaterials(scene)
       applyChibi()
       resolveMorphIndices(mesh)
       loadedForm = form
@@ -1072,6 +1155,26 @@ async function boot() {
 window.addEventListener('resize', resize)
 window.pet3d = {
   setStatus, setForm, setAction, setTalk, setAnchor, setDragging, setPoke, setOptions, pokeAt, resize,
+  holdRot: (name, rx = 0, ry = 0, rz = 0) => { heldRot = { name, rx, ry, rz } },
+  clearHold: () => { heldRot = null },
+  twistMeshBone: (meshName, boneName, rx = 0, ry = 0, rz = 0) => {
+    if (!modelRoot) return null
+    let m = null
+    modelRoot.traverse((o) => { if (o.isSkinnedMesh && o.name === meshName) m = o })
+    if (!m || !m.skeleton) return null
+    const b = m.skeleton.bones.find(x => x && x.name === boneName)
+    if (!b) return null
+    b.rotation.x += rx
+    b.rotation.y += ry
+    b.rotation.z += rz
+    return { mesh: meshName, bone: b.name, sameAsMap: b === bone(boneName) }
+  },
+  hideMesh: (meshName) => {
+    if (!modelRoot) return false
+    let done = false
+    modelRoot.traverse((o) => { if (o.isMesh && o.name === meshName) { o.visible = false; done = true } })
+    return done
+  },
   debug: () => {
     const g = bodyMesh && bodyMesh.geometry
     let nan = 0
@@ -1080,7 +1183,38 @@ window.pet3d = {
       for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) nan++
     }
     const swayBone = vrmSpringChains[0] && vrmSpringChains[0][vrmSpringChains[0].length - 1]
-    return { bodyMesh: !!bodyMesh, vrmLoaded, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null }
+    const hairChain = vrmSpringChains.find(c => c.some(b => /发|髪|hair/i.test(String(b.name || ''))))
+    const hairSwayBone = hairChain ? hairChain[hairChain.length - 1] : null
+    const meshMats = []
+    if (modelRoot) {
+      modelRoot.traverse((o) => {
+        if (!o.isMesh) return
+        const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
+        for (const m of mats) {
+          if (!m) continue
+          let mapName = ''
+          if (m.map) mapName = m.map.name || (m.map.image && m.map.image.src ? String(m.map.image.src).split('/').pop() : '')
+          if (/发|髪|hair|裙|袖|摆/i.test(String(o.name || '')) || /发|髪|hair|裙|袖|摆/i.test(mapName)) {
+            meshMats.push({ mesh: o.name, mat: m.name, transparent: !!m.transparent, alphaTest: Number(m.alphaTest || 0), depthWrite: !!m.depthWrite, side: m.side, map: mapName })
+          }
+        }
+      })
+    }
+    const hairBones = [...boneByName.keys()].filter(n => /发|髪|hair|刘海/i.test(String(n)))
+    const headInfo = {}
+    const headBoneObj = bone('頭')
+    headInfo.head = headBoneObj ? { name: headBoneObj.name, parent: headBoneObj.parent ? headBoneObj.parent.name : null, children: headBoneObj.children.map(c => c.name) } : null
+    if (modelRoot) {
+      modelRoot.traverse((o) => {
+        if (!o.isSkinnedMesh) return
+        const matName = Array.isArray(o.material) ? (o.material[0] && o.material[0].name || '') : (o.material && o.material.name || '')
+        if (/发|頭|头|颜|顔|face/i.test(String(o.name || '') + '|' + String(matName || ''))) {
+          const names = o.skeleton && Array.isArray(o.skeleton.bones) ? o.skeleton.bones.map(x => x.name) : []
+          headInfo[o.name] = { parent: o.parent ? o.parent.name : null, parentType: o.parent ? o.parent.type : null, bones: names.filter(n => /頭|头|首|髪|发|刘海|顔|颜/i.test(n)).slice(0, 24) }
+        }
+      })
+    }
+    return { bodyMesh: !!bodyMesh, vrmLoaded, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, springFirst: vrmSpringChains.slice(0, 24).map(c => c[0] ? c[0].name : null), hairBones: hairBones.slice(0, 80), headInfo, meshMats: meshMats.slice(0, 60), loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null, hairSway: hairSwayBone ? { name: hairSwayBone.name, rx: Number(hairSwayBone.rotation.x.toFixed(4)), ry: Number(hairSwayBone.rotation.y.toFixed(4)) } : null }
   },
   materials: () => {
     if (!bodyMesh || !bodyMesh.geometry) return null
@@ -1173,6 +1307,37 @@ window.pet3d = {
       const p = b.getWorldPosition(new THREE.Vector3())
       out[name] = { x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)), z: Number(p.z.toFixed(2)), rx: Number(b.rotation.x.toFixed(2)) }
     }
+    return out
+  },
+  skinWeights: (meshName) => {
+    if (!modelRoot) return null
+    let target = null
+    modelRoot.traverse((o) => { if (o.isSkinnedMesh && o.name === meshName) target = o })
+    if (!target || !target.geometry) return null
+    const g = target.geometry
+    const skinIndex = g.attributes.skinIndex
+    const skinWeight = g.attributes.skinWeight
+    if (!skinIndex || !skinWeight || !target.skeleton) return { mesh: meshName, noSkin: true }
+    const counts = new Map()
+    for (let i = 0; i < skinIndex.count; i++) {
+      for (let k = 0; k < 4; k++) {
+        const j = skinIndex.getX(i * 4 + k)
+        const w = skinWeight.getComponent(i * 4 + k, 0)
+        if (w > 0.001) counts.set(j, (counts.get(j) || 0) + w)
+      }
+    }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)
+      .map(([j, w]) => ({ bone: target.skeleton.bones[j] ? target.skeleton.bones[j].name : `joint${j}`, weight: Number(w.toFixed(1)) }))
+    return { mesh: meshName, verts: skinIndex.count, top }
+  },
+  meshes: () => {
+    if (!modelRoot) return []
+    const out = []
+    modelRoot.traverse((o) => {
+      if (!o.isMesh) return
+      const matName = Array.isArray(o.material) ? (o.material[0] && o.material[0].name || '') : (o.material && o.material.name || '')
+      out.push({ name: o.name, verts: o.geometry && o.geometry.attributes.position ? o.geometry.attributes.position.count : 0, mat: matName, visible: o.visible })
+    })
     return out
   },
   testPose: () => {

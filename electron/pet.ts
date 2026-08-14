@@ -220,7 +220,8 @@ export class PetManager {
     } catch { this.ownHwnd = 0 }
     this.place(win, s)
     void win.loadFile(join(this.opts.petDir, 'index.html'))
-    win.webContents.once('did-finish-load', () => {
+    // 首次加载与渲染页 reload 都重新下发配置(热迭代依赖这一行为)
+    win.webContents.on('did-finish-load', () => {
       if (!win.isDestroyed()) {
         win.webContents.send('pet:config', {
           agent: s.agent || '黄泉',
