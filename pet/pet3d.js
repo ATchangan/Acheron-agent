@@ -258,6 +258,10 @@ let frameAccumMs = 0
 const restPose = new Map() // Bone -> {rx,ry,rz,px,py,pz}
 let boneByName = new Map()
 const scratch = new Map() // 每帧骨骼偏移累加器
+const commitE = new THREE.Euler()
+const commitEo = new THREE.Euler()
+const commitQr = new THREE.Quaternion()
+const commitQo = new THREE.Quaternion()
 let talkUntil = -1
 let talkText = ''
 let talkStart = 0
@@ -529,16 +533,18 @@ function applyVrmSprings(now, dt) {
   }
 }
 
-// VRM 没有 ammo 物理, 单独补一套肉眼可见但轻柔的呼吸 + 手臂摆动
-function applyVrmIdleMotion(now, breathe) {
-  if (!vrmLoaded) return
-  addRot('上半身', breathe * 0.035, 0, 0)
-  addRot('右肩', breathe * 0.012, 0, 0)
-  addRot('左肩', breathe * 0.012, 0, 0)
-  addPos('センター', org(now, 0.15, 0.02, 0.08, 0.01, 0.28, 0.005), 0, 0)
+function applyHeldRot() {
+  if (heldSet) {
+    for (const [name, v] of Object.entries(heldSet)) {
+      const b = bone(name)
+      if (b) b.rotation.set(v.rx, v.ry, v.rz)
+    }
+    return
+  }
+  if (heldRot) addRot(heldRot.name, heldRot.rx, heldRot.ry, heldRot.rz)
 }
 
-// VRM 绑定姿势双臂前伸: 记录绑定方向, 算好到"垂臂/搭膝"的旋转差, 运行时直接覆盖
+// VRM 手臂: 按骨骼实际绑定方向做「方向差旋转」, 站立垂臂/坐姿搭膝, 坐站平滑插值
 function computeVrmArmDeltas() {
   vrmArmDeltas = null
   if (!vrmLoaded) return
@@ -563,26 +569,44 @@ function computeVrmArmDeltas() {
     leftUpper: new THREE.Vector3(-0.12, -0.95, 0.05),
     leftLower: new THREE.Vector3(-0.04, -0.98, 0.05),
   }
-  const sit = {
-    rightUpper: new THREE.Vector3(0.16, -0.5, 0.85),
-    rightLower: new THREE.Vector3(0.02, -0.48, 0.88),
-    leftUpper: new THREE.Vector3(-0.16, -0.5, 0.85),
-    leftLower: new THREE.Vector3(-0.02, -0.48, 0.88),
-  }
   const build = (pose) => ({
     rightUpper: qFromTo(dir(bones.rightUpper[0], bones.rightUpper[1]), pose.rightUpper),
     rightLower: qFromTo(dir(bones.rightLower[0], bones.rightLower[1]), pose.rightLower),
     leftUpper: qFromTo(dir(bones.leftUpper[0], bones.leftUpper[1]), pose.leftUpper),
     leftLower: qFromTo(dir(bones.leftLower[0], bones.leftLower[1]), pose.leftLower),
   })
-  vrmArmDeltas = { stand: build(stand), sit: build(sit) }
+  const restDirs = {
+    rightUpper: dir(bones.rightUpper[0], bones.rightUpper[1]).clone(),
+    rightLower: dir(bones.rightLower[0], bones.rightLower[1]).clone(),
+    leftUpper: dir(bones.leftUpper[0], bones.leftUpper[1]).clone(),
+    leftLower: dir(bones.leftLower[0], bones.leftLower[1]).clone(),
+  }
+  vrmArmDeltas = { stand: build(stand), restDirs }
   resetPose()
 }
 
 function applyVrmArmPose(now) {
   if (!vrmLoaded || !vrmArmDeltas) return
   const k = clamp01(sitBlend)
-  const sway = 0.03
+  const sway = 0.02
+  // 坐姿: 按当前膝盖/肩/肘的位置现算方向(朝膝盖), 不依赖固定方向猜测
+  const kneeDelta = (kneeName, shoulderName, elbowName, restDir) => {
+    const kneeB = bone(kneeName)
+    const shoulderB = bone(shoulderName)
+    const elbowB = bone(elbowName)
+    if (!kneeB || !shoulderB || !elbowB) return null
+    const knee = kneeB.getWorldPosition(new THREE.Vector3())
+    const shoulder = shoulderB.getWorldPosition(new THREE.Vector3())
+    const elbow = elbowB.getWorldPosition(new THREE.Vector3())
+    return {
+      upper: new THREE.Quaternion().setFromUnitVectors(restDir.upper, knee.clone().sub(shoulder).normalize()),
+      lower: new THREE.Quaternion().setFromUnitVectors(restDir.lower, knee.clone().sub(elbow).normalize()),
+    }
+  }
+  const sitD = {
+    right: kneeDelta('右ひざ', '右腕', '右ひじ', { upper: vrmArmDeltas.restDirs.rightUpper, lower: vrmArmDeltas.restDirs.rightLower }),
+    left: kneeDelta('左ひざ', '左腕', '左ひじ', { upper: vrmArmDeltas.restDirs.leftUpper, lower: vrmArmDeltas.restDirs.leftLower }),
+  }
   const apply = (name, standDelta, sitDelta, side) => {
     const b = bone(name)
     if (!b) return
@@ -591,27 +615,29 @@ function applyVrmArmPose(now) {
     const qStand = restQ.clone().multiply(standDelta)
     const qSit = restQ.clone().multiply(sitDelta)
     const swayQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      org(now, 0.32, sway, 0.18, sway * 0.5, 0.5, sway * 0.3),
+      org(now, 0.3, sway, 0.16, sway * 0.5, 0.42, sway * 0.3),
       org(now + side, 0.26, sway, 0.14, sway * 0.4, 0.44, sway * 0.2),
       0,
     ))
     b.quaternion.copy(qStand).slerp(qSit, k).multiply(swayQ)
   }
-  apply('右腕', vrmArmDeltas.stand.rightUpper, vrmArmDeltas.sit.rightUpper, 0)
-  apply('右ひじ', vrmArmDeltas.stand.rightLower, vrmArmDeltas.sit.rightLower, 0)
-  apply('左腕', vrmArmDeltas.stand.leftUpper, vrmArmDeltas.sit.leftUpper, 2.1)
-  apply('左ひじ', vrmArmDeltas.stand.leftLower, vrmArmDeltas.sit.leftLower, 2.1)
+  apply('右腕', vrmArmDeltas.stand.rightUpper, sitD.right ? sitD.right.upper : vrmArmDeltas.stand.rightUpper, 0)
+  apply('右ひじ', vrmArmDeltas.stand.rightLower, sitD.right ? sitD.right.lower : vrmArmDeltas.stand.rightLower, 0)
+  apply('左腕', vrmArmDeltas.stand.leftUpper, sitD.left ? sitD.left.upper : vrmArmDeltas.stand.leftUpper, 2.1)
+  apply('左ひじ', vrmArmDeltas.stand.leftLower, sitD.left ? sitD.left.lower : vrmArmDeltas.stand.leftLower, 2.1)
 }
 
-function applyHeldRot() {
-  if (heldSet) {
-    for (const [name, v] of Object.entries(heldSet)) {
-      const b = bone(name)
-      if (b) b.rotation.set(v.rx, v.ry, v.rz)
-    }
-    return
+// VRM 跳舞时, MMDAnimationHelper 写入的是 PMX 坐标系的绝对旋转;
+// 这里乘回 VRM 绑定姿态, 让 VMD 动作落在与 PMX 相同的最终姿态上
+function applyVrmDanceSpace() {
+  const e = new THREE.Euler()
+  const qr = new THREE.Quaternion()
+  for (const [b, rest] of restPose) {
+    const cur = b.quaternion.clone()
+    e.set(rest.rx, rest.ry, rest.rz, b.rotation.order)
+    qr.setFromEuler(e)
+    b.quaternion.copy(qr).multiply(cur)
   }
-  if (heldRot) addRot(heldRot.name, heldRot.rx, heldRot.ry, heldRot.rz)
 }
 
 function resetPose() {
@@ -822,7 +848,16 @@ function addPos(name, px, py, pz) {
 function commitPose() {
   for (const [b, o] of scratch) {
     const r = restPose.get(b)
-    b.rotation.set(r.rx + o.rx, r.ry + o.ry, r.rz + o.rz)
+    if (vrmLoaded) {
+      // VRM 绑定姿态带非零四元数: 用「绑定 × 偏移」叠加, 与 PMX 的欧拉偏移语义一致
+      commitE.set(r.rx, r.ry, r.rz, b.rotation.order)
+      commitQr.setFromEuler(commitE)
+      commitEo.set(o.rx, o.ry, o.rz, b.rotation.order)
+      commitQo.setFromEuler(commitEo)
+      b.quaternion.copy(commitQr).multiply(commitQo)
+    } else {
+      b.rotation.set(r.rx + o.rx, r.ry + o.ry, r.rz + o.rz)
+    }
     b.position.set(r.px + o.px, r.py + o.py, r.pz + o.pz)
   }
   scratch.clear()
@@ -867,8 +902,10 @@ function applyIdlePose(now, dt) {
       addRot('左腕', 0.028 + armL * 0.036, -org(now, 0.04, 0.012, 0.02, 0.006, 0.07, 0.004), -org(now, 0.05, 0.018, 0.025, 0.009, 0.08, 0.005))
       addRot('右ひじ', -0.085 - armR * 0.02, 0, 0)
       addRot('左ひじ', -0.085 - armL * 0.02, 0, 0)
-      // 被拖动: 双臂张开像被拎起, 身体随主进程移动漂浮
-      if (state.dragging) {
+    }
+    // 被拖动: 双臂张开像被拎起, 身体随主进程移动漂浮
+    if (state.dragging) {
+      if (!vrmLoaded) {
         addRot('右腕', -0.58, 0, 0.18)
         addRot('左腕', -0.58, 0, -0.18)
         addRot('右ひじ', -0.18, 0, 0)
@@ -907,7 +944,6 @@ function applyIdlePose(now, dt) {
   }
 
   applyVrmSprings(now, dt)
-  applyVrmIdleMotion(now, breathe)
   applyHeldRot()
 
   commitPose()
@@ -1169,6 +1205,7 @@ function animate() {
   frameAccumMs = intervalMs > 0 ? frameAccumMs % intervalMs : 0
   clockT += dt
   helper.update(dt)
+  if (vrmLoaded && state.action !== 'idle') applyVrmDanceSpace()
 
   const status = state.status
   if (state.action === 'idle') {
@@ -1349,6 +1386,13 @@ window.pet3d = {
     const r = restPose.get(b)
     return { rx: Number(r.rx.toFixed(3)), ry: Number(r.ry.toFixed(3)), rz: Number(r.rz.toFixed(3)) }
   },
+  dumpRest: () => {
+    const out = {}
+    for (const [b, r] of restPose) {
+      out[b.name] = { rx: Number(r.rx.toFixed(6)), ry: Number(r.ry.toFixed(6)), rz: Number(r.rz.toFixed(6)) }
+    }
+    return out
+  },
   debug: () => {
     const g = bodyMesh && bodyMesh.geometry
     let nan = 0
@@ -1380,7 +1424,6 @@ window.pet3d = {
       })
     }
     const hairBones = [...boneByName.keys()].filter(n => /发|髪|hair|刘海/i.test(String(n)))
-    const rightArmBone = bone('右腕')
     const headInfo = {}
     const headBoneObj = bone('頭')
     headInfo.head = headBoneObj ? { name: headBoneObj.name, parent: headBoneObj.parent ? headBoneObj.parent.name : null, children: headBoneObj.children.map(c => c.name) } : null
@@ -1394,7 +1437,7 @@ window.pet3d = {
         }
       })
     }
-    return { bodyMesh: !!bodyMesh, vrmLoaded, armDelta: !!vrmArmDeltas, rightArmQ: rightArmBone ? rightArmBone.quaternion.toArray().map(v => Number(v.toFixed(3))) : null, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, springFirst: vrmSpringChains.slice(0, 24).map(c => c[0] ? c[0].name : null), hairBones: hairBones.slice(0, 80), headInfo, morphInfo, meshMats: meshMats.slice(0, 60), loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null, hairSway: hairSwayBone ? { name: hairSwayBone.name, rx: Number(hairSwayBone.rotation.x.toFixed(4)), ry: Number(hairSwayBone.rotation.y.toFixed(4)) } : null }
+    return { bodyMesh: !!bodyMesh, vrmLoaded, bones: boneByName.size, vrmExt: gltfLoader.parser && gltfLoader.parser.json ? Object.keys(gltfLoader.parser.json.extensions || {}) : null, springChains: vrmSpringChains.length, springFirst: vrmSpringChains.slice(0, 24).map(c => c[0] ? c[0].name : null), hairBones: hairBones.slice(0, 80), headInfo, morphInfo, meshMats: meshMats.slice(0, 60), loadedForm, loadingForm, pivotChildren: pivot.children.length, posNaN: nan, camZ: camera.position.z, anchor: state.anchor, action: state.action, sitFrames, pivotY: pivot.position.y, renderFrames: renderer.info.render.frame, options: { fps: options.fps, transition: options.transition, vrm: options.vrm }, sway: swayBone ? { name: swayBone.name, rx: Number(swayBone.rotation.x.toFixed(4)), ry: Number(swayBone.rotation.y.toFixed(4)) } : null, hairSway: hairSwayBone ? { name: hairSwayBone.name, rx: Number(hairSwayBone.rotation.x.toFixed(4)), ry: Number(hairSwayBone.rotation.y.toFixed(4)) } : null }
   },
   materials: () => {
     if (!bodyMesh || !bodyMesh.geometry) return null
