@@ -19,6 +19,9 @@ namespace HqPet
 
         [SerializeField] private string vrmNormalPath;
         [SerializeField] private string vrmUltimatePath;
+        // 自动面向相机后的手动微调偏移(0 表示完全自动)
+        [SerializeField] private float facingYawNormalDeg = 0f;
+        [SerializeField] private float facingYawUltimateDeg = 0f;
 
         private void Awake()
         {
@@ -97,6 +100,7 @@ namespace HqPet
 
                 foreach (var r in root.GetComponentsInChildren<Renderer>(true)) r.enabled = true;
 
+                AutoFaceCamera(root);
                 HqToonStyler.Apply(root);
                 NormalizeFeet(root);
                 CurrentModel = root;
@@ -136,6 +140,49 @@ namespace HqPet
                 Destroy(CurrentModel);
                 CurrentModel = null;
             }
+        }
+
+        /// <summary>
+        /// 烘焙蒙皮网格, 取脸部(材质槽0)平均法线, 把根节点转到脸正对相机(-Z)。
+        /// 这样不依赖源模型朝向约定, normal/ultimate 都能自动正面。
+        /// </summary>
+        private void AutoFaceCamera(GameObject root)
+        {
+            var smr = root.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (smr == null || smr.sharedMesh == null) return;
+
+            var baked = new Mesh();
+            smr.BakeMesh(baked);
+            var faceNormal = ComputeFaceNormal(smr.sharedMesh, baked, 0);
+            if (Application.isPlaying) Destroy(baked);
+            else DestroyImmediate(baked);
+            if (faceNormal.sqrMagnitude < 1e-6f) return;
+
+            // 法线从 renderer 局部空间转到 root 空间
+            faceNormal = smr.transform.localRotation * faceNormal;
+            faceNormal.y = 0f;
+            var target = new Vector3(0f, 0f, -1f);
+            if (faceNormal.sqrMagnitude < 1e-6f) return;
+
+            var yaw = Vector3.SignedAngle(faceNormal, target, Vector3.up);
+            var manual = CurrentForm == "ultimate" ? facingYawUltimateDeg : facingYawNormalDeg;
+            root.transform.localRotation = Quaternion.Euler(0f, yaw + manual, 0f);
+            Debug.Log($"[HqPet] 自动面向相机 faceNormal={faceNormal} yaw={yaw:F1} + manual={manual}");
+        }
+
+        private static Vector3 ComputeFaceNormal(Mesh shared, Mesh baked, int submesh)
+        {
+            var indices = shared.GetIndices(submesh);
+            var verts = baked.vertices;
+            var sum = Vector3.zero;
+            for (var i = 0; i + 2 < indices.Length; i += 3)
+            {
+                var a = verts[indices[i]];
+                var b = verts[indices[i + 1]];
+                var c = verts[indices[i + 2]];
+                sum += Vector3.Cross(b - a, c - a);
+            }
+            return sum.sqrMagnitude > 1e-12f ? sum.normalized : Vector3.zero;
         }
 
         private static string ReadArg(string name)
