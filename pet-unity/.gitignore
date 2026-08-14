@@ -6,3 +6,6 @@ obj/
 UserSettings/
 *.csproj
 *.sln
+# 构建产物
+HuangquanPet/
+Builds/
