@@ -315,7 +315,7 @@ app.whenReady().then(async () => {
   const win0 = appShell.getWindow()
   if (win0) initBrowserViews(win0, { live: rendererMode !== 'cpu' })
   appShell.createTray()
-  // v0.4.x: 设置文件热重载韧性(对齐 deepseek-harness config-hot-reload)——
+  // v0.4.x: 设置文件热重载韧性——
   // 外部有效修改即时传导渲染层; 无效修改保留最后可用配置并记录, 绝不拖垮/重启应用
   try {
     let settingsWatchContent = ''

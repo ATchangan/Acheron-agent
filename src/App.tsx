@@ -134,7 +134,7 @@ function applyAppearance(g: GeneralSettings) {
     } catch { /* 忽略: 非 Electron/早期调用 */ }
   }
   applyOverlay()
-  // 解析后主题色同步(对齐 deepseek-harness resolved-theme-color-metadata):
+  // 解析后主题色同步:
   // color-scheme 与 <meta name=theme-color> 跟随渲染结果, 浏览器/系统界面与应用一致
   const resolvedTheme = resolveTheme(g)
   document.documentElement.style.colorScheme = (resolvedTheme === 'light' || resolvedTheme === 'dawn') ? 'light' : 'dark'

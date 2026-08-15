@@ -19,7 +19,7 @@ export function writeFileAtomic(file: string, content: string): void {
   }
 }
 
-// 内容未变化时不写(与 deepseek-harness 的 write-path integrity 对齐): 抑制自写触发的 watcher/热重载环路
+// 内容未变化时不写: 抑制自写触发的 watcher/热重载环路
 export function writeFileAtomicIfChanged(file: string, content: string): boolean {
   try {
     if (fs.existsSync(file) && fs.readFileSync(file, 'utf-8') === content) return false

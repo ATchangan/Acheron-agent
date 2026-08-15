@@ -24,7 +24,7 @@ export interface ResolvedDisplay {
 
 export const CUSTOM_CSS_MAX = 64 * 1024
 
-// 状态行模板: ${name} 插值, 不可用/未知值连同相邻多余空白一起消失(对齐 deepseek-harness 的可组合提示符)
+// 状态行模板: ${name} 插值, 不可用/未知值连同相邻多余空白一起消失
 export interface StatusLineValues {
   workDir?: string
   model?: string
