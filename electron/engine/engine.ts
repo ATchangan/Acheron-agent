@@ -1,4 +1,4 @@
-// electron/engine/engine.ts — 黄泉Agent 独立内核(v0.3.3)
+// electron/engine/engine.ts — 桌面智能助手 独立内核(v0.3.3)
 // Agent 主循环完全运行在主进程: LLM 直连(不经渲染层)、工具直接分发、任务可落盘断点恢复。
 // 渲染层只负责: 发送启动请求、消费事件流、展示结果。
 import { v4 as uuidv4 } from 'uuid'
@@ -7,6 +7,7 @@ import { isAbsolute, join } from 'path'
 import { Notification } from 'electron'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
+import { normalizeAgentName } from '../shared/agents-data'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult, extractKeyInfo } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, addLesson, scanMemoryText, type EngineMemory } from './memory'
@@ -136,10 +137,11 @@ export class AgentEngine {
     }
     this.runningTasks++
     const agentsMap = getAgents(general.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
+    const reqAgent = normalizeAgentName(params.agent)
     const initialPick = pickInitialModel(general, providers, p, params.content, params.images)
     // v0.4.0 M5: 网关统一选路 —— 角色覆盖 > 任务类型(code/vision/long) > 全局默认
     const taskType = detectTaskType(params.content, params.images)
-    const routed = routeProfile(general, providers, initialPick.p, { agent: params.agent, agentManual: params.agentManual, taskType, agents: agentsMap })
+    const routed = routeProfile(general, providers, initialPick.p, { agent: reqAgent, agentManual: params.agentManual, taskType, agents: agentsMap })
     const model = routed.model || initialPick.model
     const userMsg: EngineMessage = params.history?.find(m => m.id === params.userMsgId)
       || { id: params.userMsgId, role: 'user', content: params.content, timestamp: params.userMsgTimestamp || Date.now(), images: params.images, attachments: params.attachments }
@@ -164,9 +166,9 @@ export class AgentEngine {
       taskType,
       modelFailCount: 0,
       modelFallbackUsed: false,
-      agent: params.agent,
+      agent: reqAgent,
       agentManual: params.agentManual,
-      activeAgents: params.agent ? [params.agent] : [],
+      activeAgents: reqAgent ? [reqAgent] : [],
       handoffStack: [],
       handoffCounts: {},
       handoffAt: -1,
@@ -176,7 +178,7 @@ export class AgentEngine {
       projectCtx: null,
       instrVisited: new Set<string>(),
       fileSnapshots: {},
-      memory: loadMemory(this.deps.memoryPath, { agent: params.agent ?? '黄泉', scope: agentMemoryScope(general, params.agent) }),
+      memory: loadMemory(this.deps.memoryPath, { agent: reqAgent, scope: agentMemoryScope(general, reqAgent) }),
       lastMidSave: 0,
       planSteps: [],
       planSummary: '',
@@ -235,6 +237,7 @@ export class AgentEngine {
     }
     this.runningTasks++
     const myGen = this.nextGen(rec.sid)
+    const resAgent = normalizeAgentName(cp.agent)
     const lastUser = [...cp.messages].reverse().find(m => m.role === 'user')
     const restoredSteps: PlanStep[] = Array.isArray(cp.planSteps) ? cp.planSteps : []
     const hasPendingSteps = restoredSteps.some(s => s.status === 'pending' || s.status === 'paused')
@@ -258,8 +261,8 @@ export class AgentEngine {
       origModel: cp.model || p.selectedModel || p.models[0] || '',
       modelFailCount: 0,
       modelFallbackUsed: false,
-      agent: cp.agent,
-      activeAgents: cp.activeAgents || [],
+      agent: resAgent,
+      activeAgents: (cp.activeAgents || []).map(normalizeAgentName),
       handoffStack: cp.handoffStack || [],
       handoffCounts: cp.handoffCounts || {},
       handoffAt: typeof cp.handoffAt === 'number' ? cp.handoffAt : -1,
@@ -269,7 +272,7 @@ export class AgentEngine {
       projectCtx: null,
       instrVisited: new Set<string>(),
       fileSnapshots: {},
-      memory: loadMemory(this.deps.memoryPath, { agent: cp.agent ?? '黄泉', scope: agentMemoryScope(general, cp.agent) }),
+      memory: loadMemory(this.deps.memoryPath, { agent: resAgent, scope: agentMemoryScope(general, resAgent) }),
       lastMidSave: 0,
       planSteps: restoredSteps,
       planSummary: String(cp.planSummary || ''),
@@ -754,7 +757,7 @@ export class AgentEngine {
       const scene = String(task.content || '').slice(0, 120)
       const lesson = '失败复盘：' + reason + '。场景：' + scene + '。建议：先复现并定位第一个失败步骤，再决定重试或回滚文件改动。'
       if (scanMemoryText(lesson).ok && addLesson(task.memory, lesson)) {
-        saveMemory(this.deps.memoryPath, task.memory, { agent: task.agent ?? '黄泉', scope: agentMemoryScope(task.g, task.agent) })
+        saveMemory(this.deps.memoryPath, task.memory, { agent: task.agent ?? '助手', scope: agentMemoryScope(task.g, task.agent) })
         this.trace('info', 'memory.lesson', '失败教训已沉淀', task.sid, task.taskId)
       }
     }
@@ -782,7 +785,7 @@ export class AgentEngine {
     // 自省整改 #13: 后台/并行任务完成通知(设置→引擎 开启 notifyTaskDone 后生效)
     if (task.g.notifyTaskDone === true && status === 'done') {
       try {
-        new Notification({ title: '黄泉Agent 任务完成', body: String(task.content || '').slice(0, 80) }).show()
+        new Notification({ title: '桌面智能助手 任务完成', body: String(task.content || '').slice(0, 80) }).show()
       } catch { /* 通知失败不影响任务 */ }
     }
   }
@@ -1034,7 +1037,7 @@ export class AgentEngine {
       sender: this.deps.getSender(),
       latestUserText: String(task.userMsg?.content || ''),
       getMemory: () => task.memory,
-      saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m, { agent: task.agent ?? '黄泉', scope: agentMemoryScope(task.g, task.agent) }) },
+      saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m, { agent: task.agent ?? '助手', scope: agentMemoryScope(task.g, task.agent) }) },
       onAgentChange: (agent: string) => {
         task.agent = agent
         if (!task.activeAgents.includes(agent)) task.activeAgents = [...task.activeAgents, agent]
@@ -1046,6 +1049,10 @@ export class AgentEngine {
       },
       onThemeChange: (theme: string) => {
         this.emit({ type: 'ui', sid: task.sid, theme })
+      },
+      onUiDisplayChange: (d) => {
+        task.g.uiDisplay = d
+        this.emit({ type: 'ui', sid: task.sid, uiDisplay: d })
       },
       onPlanUpdate: (steps) => this.applyPlanUpdate(task, steps),
       onGoalUpdate: (goalText) => {

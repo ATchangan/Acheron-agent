@@ -1,5 +1,5 @@
-/* ─── 黄泉Agent · 产品级 UI 优化 v2 ───────────────────── */
-/* 黄泉主题强化 */
+/* ─── 桌面智能助手 · 产品级 UI 优化 v2 ───────────────────── */
+/* 经典紫主题强化 */
 
 /* === 全局过渡与动效 === */
 :root { --anim-duration: 0.2s; }
@@ -332,7 +332,7 @@ html[data-bg] .app-shell::before { background: none; }
   border-color: var(--accent-dim);
 }
 
-/* === 滚动条黄泉化 === */
+/* === 滚动条主题化 === */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { 
@@ -342,7 +342,7 @@ html[data-bg] .app-shell::before { background: none; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-/* === 空状态增强（黄泉主题） === */
+/* === 空状态增强（经典紫主题） === */
 .avatar-hex { 
   animation: float 3s ease-in-out infinite; 
 }

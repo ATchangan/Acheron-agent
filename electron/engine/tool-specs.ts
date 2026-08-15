@@ -1,5 +1,6 @@
 // electron/engine/tool-specs.ts — 工具 schema 声明式集中定义(与执行器分离, 可单测)
 import type { EngineToolSpec } from './types'
+import { sanitizeMcpPart } from '../shared/mcp-utils'
 
 export const TOOLS: EngineToolSpec[] = [
   { type: 'function', function: { name: 'read', description: 'read(path, offset?, limit?) 读取文件(UTF-8); 大文件用 offset/limit 分段续读', parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' } }, required: ['path'] } } },
@@ -47,7 +48,7 @@ export const TOOLS: EngineToolSpec[] = [
   { type: 'function', function: { name: 'list_schedules', description: 'list_schedules() 列出全部定时任务', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'mcp_connect', description: 'mcp_connect(name, command, args) 连接 MCP 服务器(args 为字符串数组)', parameters: { type: 'object', properties: { name: { type: 'string' }, command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['name', 'command'] } } },
   { type: 'function', function: { name: 'mcp_call', description: 'mcp_call(server, tool, args) 调用 MCP 工具', parameters: { type: 'object', properties: { server: { type: 'string' }, tool: { type: 'string' }, args: { type: 'object' } }, required: ['server', 'tool'] } } },
-  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason, context) 将任务交接给另一角色并切换身份执行; context 必填: 任务背景/已完成/未决问题(禁止只传结论)', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['姬子', '三月七', '银狼', '艾丝妲', '知更鸟', '黑天鹅', '螺丝咕姆'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
+  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason, context) 将任务交接给另一角色并切换身份执行; context 必填: 任务背景/已完成/未决问题(禁止只传结论)', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['主控', '文档', '安全', '通知', '陪伴', '设计', '开发'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
   { type: 'function', function: { name: 'dispatch', description: 'dispatch(tasks) 并行分发子任务给多个角色独立执行并汇总; tasks=[{agent, task}]', parameters: { type: 'object', properties: { tasks: { type: 'array', items: { type: 'object', properties: { agent: { type: 'string' }, task: { type: 'string' } }, required: ['agent', 'task'] } }, reason: { type: 'string' } }, required: ['tasks'] } } },
   { type: 'function', function: { name: 'list_agents', description: 'list_agents() 列出全部角色', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'list_workflows', description: 'list_workflows() 列出工作流模板', parameters: { type: 'object', properties: {} } } },
@@ -57,6 +58,10 @@ export const TOOLS: EngineToolSpec[] = [
   { type: 'function', function: { name: 'media_video', description: 'media_video(prompt, duration?) 生成视频(用户需求涉及 生成/制作 视频时自动调用)', parameters: { type: 'object', properties: { prompt: { type: 'string', description: '视频内容描述' }, duration: { type: 'number', description: '可选: 时长秒数(默认5)' } }, required: ['prompt'] } } },
   { type: 'function', function: { name: 'set_workdir', description: 'set_workdir(path) 切换工作目录(本次会话)', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'set_theme', description: 'set_theme(theme) 切换主题', parameters: { type: 'object', properties: { theme: { type: 'string' } }, required: ['theme'] } } },
+  { type: 'function', function: { name: 'set_ui_display', description: 'set_ui_display(patches) 按用户自然语言要求调节界面显示。patches 为 JSON 对象, 可选字段: hiddenNav(["agents","browser","files"] 的数组, chat/settings 不可隐藏); hideSessionSearch/hideSessionList/hidePlanCards/hideChatToolbar/hideAttachmentBar/hideModelPicker/hideThinkSelector/hideTokenUsage/hideTimestamps/hideToolCalls/hideTokenMeta/hideCopyButtons/hideRegenerate(布尔); statusLine(模板字符串, 插值 ${workDir}/${model}/${context}/${tokens}/${agents}, 传空串恢复默认); density("compact"|"comfortable"|"spacious"); customCss(字符串, 传空串清除)。未传字段保持不变, 只传要改的字段', parameters: { type: 'object', properties: { patches: { type: 'object', description: '要修改的界面字段(键值对)' } }, required: ['patches'] } } },
+  { type: 'function', function: { name: 'get_ui_display', description: 'get_ui_display() 查看当前界面显示配置(用于向用户确认或回答当前显示状态)', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'get_settings', description: 'get_settings(section?) 读取当前设置。section 取 general(默认)/providers/mediaProviders/all; 密钥与凭证已脱敏显示为 ***, 不进入上下文', parameters: { type: 'object', properties: { section: { type: 'string', enum: ['general', 'providers', 'mediaProviders', 'all'] } } } } },
+  { type: 'function', function: { name: 'set_settings', description: 'set_settings(patch, section?) 按用户自然语言要求修改设置(立即生效并保存)。section 默认 general; patch 为对象, 支持: theme/mode/agentName/language/region/workDir/uiFontSize/codeFontSize/messageSpacing/chatMaxWidth/opacity/animation/showTimestamps/ttsEnabled/ttsRate/autoCopy/useTables/useLists/useEmoji/expressUncertainty/askWhenMissing/showConfidence/explainRefusal/neutralOnControversial/noClosingPhrase/briefClosing/customSystemPrompt/promptInjectPos/thinkLevel/thinkOverrides/sp/ishiki/mainModel/fastModel/longTextModel/codeModel/autoFastModel/autoMediaImg/autoMediaVideo/mediaImgProvider/mediaVideoProvider/mcpTimeout/mcpAutoConnectOnStart/mcpAutoReconnect/toolPerms/perf/customColors/customTheme/skinColors/skinSecondary/uiDisplay/notifyTaskDone/notifyError/keepUserGoals/keepPendingTasks/keepDecisions/keepRecentRaw/browserHomeUrl/compactStrategy/compactMsgCount/compactTokenLimit/compactStrength/taskArchive/ragChunkSize/ragThreshold。providers/mediaProviders 传数组[{id,...}] 只改非密钥字段。密钥/风险放行/命令黑名单等安全项拒绝经对话修改', parameters: { type: 'object', properties: { patch: { type: 'object', description: '要修改的字段(键值对)' }, section: { type: 'string', enum: ['general', 'providers', 'mediaProviders'] } }, required: ['patch'] } } },
   { type: 'function', function: { name: 'show_card', description: 'show_card(html, title?) 渲染交互卡片(SVG/图表/示意图)', parameters: { type: 'object', properties: { html: { type: 'string' }, title: { type: 'string' } }, required: ['html'] } } },
   { type: 'function', function: { name: 'bridge_notify', description: 'bridge_notify(title, body?) 发送桌面通知', parameters: { type: 'object', properties: { title: { type: 'string' }, body: { type: 'string' } }, required: ['title'] } } },
   { type: 'function', function: { name: 'workflow', description: 'workflow(script) 执行 JS 工作流脚本(ctx.log/ctx.tools.run/ctx.done)', parameters: { type: 'object', properties: { script: { type: 'string' } }, required: ['script'] } } },
@@ -64,6 +69,11 @@ export const TOOLS: EngineToolSpec[] = [
   { type: 'function', function: { name: 'watch_file', description: 'watch_file(path) 监测文件变化(返回自上次检查以来的变更)', parameters: { type: 'object', properties: { path: { type: 'string' }, interval: { type: 'number', description: '轮询间隔 ms(默认5000)' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'save_goal', description: 'save_goal(goal, steps?) 持久化长期目标(重启后可恢复)', parameters: { type: 'object', properties: { goal: { type: 'string' }, steps: { type: 'string', description: '步骤描述的 JSON 数组' } }, required: ['goal'] } } },
   { type: 'function', function: { name: 'list_goals', description: 'list_goals() 查看全部持久化目标及进度', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'install_plugin', description: 'install_plugin(name, description, code, overwrite?, settings?) 给自己写插件并安装: 校验通过自动生成 manifest 并热加载, 无需重启, 下一轮即可按 plugin_<name>__<tool> 调用。code 为 CommonJS 源码, 协议 module.exports={tools:[{name,description,params:{参数:类型},run(args,ctx){return "结果"}}]}; run 内可用 ctx.tools.run("read"/"write"/"exec_command",args)、ctx.log(text) 与 ctx.settings(用户可配置项)。settings 可选数组 [{key,label,type:"string"|"number"|"boolean"|"select",default?,options?,hint?}], 会在插件页自动生成设置卡片。写插件前建议先 read_skill("plugin-authoring") 读完整规范', parameters: { type: 'object', properties: { name: { type: 'string', description: '插件目录名, 小写字母数字开头, 1-80 位 [a-z0-9_-]' }, description: { type: 'string', description: '插件一句话说明(≤500 字)' }, code: { type: 'string', description: 'index.js 完整源码' }, overwrite: { type: 'boolean', description: '已存在时是否覆盖更新(版本号自动 +1)' }, settings: { type: 'array', description: '插件设置 schema(可选)', items: { type: 'object', properties: { key: { type: 'string' }, label: { type: 'string' }, type: { type: 'string', enum: ['string', 'number', 'boolean', 'select'] }, default: { type: ['string', 'number', 'boolean'] }, options: { type: 'array', items: { type: 'string' } }, hint: { type: 'string' } }, required: ['key', 'label'] } } }, required: ['name', 'description', 'code'] } } },
+  { type: 'function', function: { name: 'list_plugins', description: 'list_plugins() 列出已安装插件、来源(自写/外部)与可用工具', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'read_plugin', description: 'read_plugin(name) 读取插件 manifest.json 与 index.js 源码(用于修订后再 install_plugin 覆盖)', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'remove_plugin', description: 'remove_plugin(name) 删除插件(需用户确认, 删除后立即失效)', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'reload_plugins', description: 'reload_plugins() 重新扫描插件目录并刷新工具列表(手动修改插件文件后调用)', parameters: { type: 'object', properties: {} } } },
 ]
 
 // ─── MCP schema 自动注入(主进程侧直读, 15s 缓存) ───
@@ -77,7 +87,7 @@ export function getMcpToolSpecs(force = false): EngineToolSpec[] {
     const { listServers } = require('../mcp/client')
     for (const s of listServers() || []) {
       for (const t of s.tools || []) {
-        const name = 'mcp__' + String(s.name).replace(/[^a-zA-Z0-9_-]/g, '_') + '__' + String(t.name).replace(/[^a-zA-Z0-9_-]/g, '_')
+        const name = 'mcp__' + sanitizeMcpPart(s.name) + '__' + sanitizeMcpPart(t.name)
         if (seen.has(name)) continue
         seen.add(name)
         const props: Record<string, { type: string; description?: string }> = {}
@@ -97,7 +107,7 @@ export function getMcpToolSpecs(force = false): EngineToolSpec[] {
     for (const s of listSSEServers() || []) {
       for (const t of s.tools || []) {
         const meta = typeof t === 'string' ? { name: t } : t
-        const name = 'mcp__' + String(s.name).replace(/[^a-zA-Z0-9_-]/g, '_') + '__' + String(meta.name).replace(/[^a-zA-Z0-9_-]/g, '_')
+        const name = 'mcp__' + sanitizeMcpPart(s.name) + '__' + sanitizeMcpPart(meta.name)
         if (seen.has(name)) continue
         seen.add(name)
         const props: Record<string, { type: string; description?: string }> = {}

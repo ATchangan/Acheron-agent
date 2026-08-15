@@ -1,4 +1,4 @@
-// 黄泉Agent 版本验证工具 —— CDP 连接运行中的应用, 检查页面健康并截图
+// 桌面智能助手 版本验证工具 —— CDP 连接运行中的应用, 检查页面健康并截图
 // 用法: node scripts/verify-cdp.cjs <port> [输出目录]
 // 例:   node scripts/verify-cdp.cjs 9232 C:\Users\ROG\Pictures
 const http = require('node:http')

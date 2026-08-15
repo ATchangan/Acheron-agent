@@ -123,17 +123,17 @@ describe('记忆安全扫描', () => {
 
 describe('dispatch 参数解析容错', () => {
   it('接受数组', () => {
-    const r = parseDispatchTasks([{ agent: '螺丝咕姆', task: '写代码' }])
+    const r = parseDispatchTasks([{ agent: '开发', task: '写代码' }])
     expect(r.length).toBe(1)
-    expect(r[0].agent).toBe('螺丝咕姆')
+    expect(r[0].agent).toBe('开发')
   })
   it('接受 {tasks:[...]} 对象', () => {
-    const r = parseDispatchTasks({ tasks: [{ agent: '三月七', task: '读文档' }] })
+    const r = parseDispatchTasks({ tasks: [{ agent: '文档', task: '读文档' }] })
     expect(r.length).toBe(1)
-    expect(r[0].agent).toBe('三月七')
+    expect(r[0].agent).toBe('文档')
   })
   it('接受 JSON 字符串', () => {
-    const r = parseDispatchTasks('[{"agent":"姬子","task":"调度"}]')
+    const r = parseDispatchTasks('[{"agent":"主控","task":"调度"}]')
     expect(r.length).toBe(1)
     expect(r[0].task).toBe('调度')
   })

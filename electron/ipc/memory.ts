@@ -7,7 +7,7 @@ import { listMemories, softDeleteMemory, setMemoryEmbedding, searchFts, searchVe
 import { setEmbeddingConfig, embedText, embedBatch } from '../memory/embeddings'
 import { rrfFuse } from '../memory/searcher'
 
-const GLOBAL_SCOPE = { agent: '黄泉', scope: 'global' as const }
+const GLOBAL_SCOPE = { agent: '助手', scope: 'global' as const }
 
 export function registerMemoryIpc(deps: {
   memoryPath: string
@@ -49,7 +49,7 @@ export function registerMemoryIpc(deps: {
     refreshEmbeddingConfig()
     const text = String(content || '').trim()
     if (!text) return false
-    const id = upsertFactDb('黄泉', 'global', text, false)
+    const id = upsertFactDb('助手', 'global', text, false)
     if (id > 0) {
       const vec = await embedText(text)
       if (vec && vec.length) setMemoryEmbedding(id, vec)
@@ -82,7 +82,7 @@ export function registerMemoryIpc(deps: {
           const hits = searchVector(vec, 1, GLOBAL_SCOPE)
           if (hits.length && hits[0].score > threshold) continue
         }
-        const id = upsertFactDb('黄泉', 'global', batch[i], false)
+        const id = upsertFactDb('助手', 'global', batch[i], false)
         if (id > 0) {
           if (vec) setMemoryEmbedding(id, vec)
           added++
@@ -92,7 +92,7 @@ export function registerMemoryIpc(deps: {
     } catch { return false }
   })
   ipcMain.handle('memory:clearVector', () => {
-    const rows = listMemories({ agent: '黄泉', scope: 'global', layer: 'L1', includeSuperseded: false, limit: 2000 })
+    const rows = listMemories({ agent: '助手', scope: 'global', layer: 'L1', includeSuperseded: false, limit: 2000 })
       .filter(m => m.level !== 'pinned')
     for (const r of rows) softDeleteMemory(r.id as number)
     return true

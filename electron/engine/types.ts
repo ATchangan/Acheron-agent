@@ -1,5 +1,5 @@
 // electron/engine/types.ts — 独立内核共享类型
-import type { GeneralSettings } from '../shared/settings-types'
+import type { GeneralSettings, UiDisplayConfig } from '../shared/settings-types'
 
 export interface EngineProvider {
   id: string
@@ -129,7 +129,7 @@ export type EngineEvent =
   | { type: 'usage'; sid: string; model: string; usage: EngineUsage }
   | { type: 'context'; sid: string; used: number; limit: number }
   | { type: 'restore'; sid: string; messages: EngineMessage[]; agent?: string; activeAgents: string[]; model: string }
-  | { type: 'ui'; sid: string; workDir?: string; theme?: string }
+  | { type: 'ui'; sid: string; workDir?: string; theme?: string; uiDisplay?: UiDisplayConfig }
   | { type: 'plan'; sid: string; summary: string; steps: PlanStep[] }
   | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[]; changedIds?: string[] }
   | { type: 'compact'; sid: string; messages: EngineMessage[] }

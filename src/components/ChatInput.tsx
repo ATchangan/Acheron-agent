@@ -12,6 +12,7 @@ import { ChatAttachmentBar } from './ChatAttachmentBar'
 import { ChatToolbar } from './ChatToolbar'
 import { ChatThinkSelector } from './ChatThinkSelector'
 import { U } from './ui-styles'
+import { resolveDisplay } from '../store/display'
 
 
 export default function ChatInput() {
@@ -172,6 +173,7 @@ export default function ChatInput() {
   const handleStop = () => { useChatStore.getState().stop() }
 
   const canSend = !!text.trim() || !!images.length || !!attachments.length || !!quote || !!extraText.trim()
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
   const basePlaceholder = images.length
     ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...')
     : attachments.length ? '描述或说明这些文件...' : '输入消息，Enter 发送，Shift+Enter 换行（可拖入图片/视频/文件）'
@@ -181,14 +183,16 @@ export default function ChatInput() {
     <div className="chat-input-area" onDragOver={e => { e.preventDefault(); if (!dragOver) setDragOver(true) }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }} onDrop={handleDrop}>
       {/* 拖拽遮罩 */}
       {dragOver && <div style={{ position: 'absolute', inset: 0, zIndex: 99, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(var(--skin-accent),.18)', border: '2px dashed var(--accent)', borderRadius: 10, pointerEvents: 'none', fontSize: 'calc(var(--ui-font-size) + 2px)', fontWeight: 600, color: 'var(--accent)' }}>松开鼠标 · 添加图片 / 视频 / 文件</div>}
-      <ChatAttachmentBar
-        quote={quote}
-        images={images}
-        attachments={attachments}
-        onRemoveQuote={() => setQuote(null)}
-        onRemoveImage={(i) => setImages(p => p.filter((_, j) => j !== i))}
-        onRemoveAttachment={(i) => setAttachments(p => p.filter((_, j) => j !== i))}
-      />
+      {!disp.hideAttachmentBar && (
+        <ChatAttachmentBar
+          quote={quote}
+          images={images}
+          attachments={attachments}
+          onRemoveQuote={() => setQuote(null)}
+          onRemoveImage={(i) => setImages(p => p.filter((_, j) => j !== i))}
+          onRemoveAttachment={(i) => setAttachments(p => p.filter((_, j) => j !== i))}
+        />
+      )}
 
       <div className="input-card">
         {curBusy && (
@@ -208,47 +212,51 @@ export default function ChatInput() {
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} />
 
         <div className="input-wrapper">
-          <ChatToolbar
-            extraOpen={extraOpen}
-            cmdOpen={cmdOpen}
-            memOpen={memOpen}
-            permOpen={permOpen}
-            memText={memText}
-            perm={perm}
-            supportsVision={supportsVision}
-            visionAssist={visionAssist}
-            fileRef={fileRef}
-            attFileRef={attFileRef}
-            onToggleExtra={() => { closeAll(); setExtraOpen(!extraOpen) }}
-            onToggleCmd={() => { closeAll(); setCmdOpen(!cmdOpen) }}
-            onToggleMem={() => { closeAll(); setMemOpen(!memOpen) }}
-            onTogglePerm={() => { closeAll(); setPermOpen(!permOpen) }}
-            onMemText={setMemText}
-            onSaveMemory={saveMemory}
-            onPerm={setPerm}
-            onSetText={setText}
-            onSend={handleSend}
-            onImagePick={handleImagePick}
-            onFilePick={handleFilePick}
-          />
+          {!disp.hideChatToolbar && (
+            <ChatToolbar
+              extraOpen={extraOpen}
+              cmdOpen={cmdOpen}
+              memOpen={memOpen}
+              permOpen={permOpen}
+              memText={memText}
+              perm={perm}
+              supportsVision={supportsVision}
+              visionAssist={visionAssist}
+              fileRef={fileRef}
+              attFileRef={attFileRef}
+              onToggleExtra={() => { closeAll(); setExtraOpen(!extraOpen) }}
+              onToggleCmd={() => { closeAll(); setCmdOpen(!cmdOpen) }}
+              onToggleMem={() => { closeAll(); setMemOpen(!memOpen) }}
+              onTogglePerm={() => { closeAll(); setPermOpen(!permOpen) }}
+              onMemText={setMemText}
+              onSaveMemory={saveMemory}
+              onPerm={setPerm}
+              onSetText={setText}
+              onSend={handleSend}
+              onImagePick={handleImagePick}
+              onFilePick={handleFilePick}
+            />
+          )}
 
           <div className="input-right">
             {/* 角色选择器 */}
-            <select className="model-select" style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '4px 8px', maxWidth: 80, height: 28, borderRadius: 5 }}
-              onChange={e => { const v = e.target.value; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: v || undefined, agentManual: !!v } : x) })) }}
-              defaultValue="">
-              <option value="">自动</option>
-          <option value="姬子">主控</option>
-          <option value="三月七">文档</option>
-          <option value="银狼">安全</option>
-          <option value="艾丝妲">通知</option>
-          <option value="知更鸟">陪伴</option>
-          <option value="黑天鹅">设计</option>
-          <option value="螺丝咕姆">开发</option>
-            </select>
+            {!disp.hideModelPicker && (
+              <select className="model-select" style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '4px 8px', maxWidth: 80, height: 28, borderRadius: 5 }}
+                onChange={e => { const v = e.target.value; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: v || undefined, agentManual: !!v } : x) })) }}
+                defaultValue="">
+                <option value="">自动</option>
+            <option value="主控">主控</option>
+            <option value="文档">文档</option>
+            <option value="安全">安全</option>
+            <option value="通知">通知</option>
+            <option value="陪伴">陪伴</option>
+            <option value="设计">设计</option>
+            <option value="开发">开发</option>
+              </select>
+            )}
 
             {/* 模型选择器 */}
-            {models.length > 0 ? (
+            {!disp.hideModelPicker && (models.length > 0 ? (
               <select className="model-select" value={currentModel} onChange={e => {
                 const v = e.target.value
                 setModelSel(v)
@@ -268,29 +276,35 @@ export default function ChatInput() {
                   {modelItems.filter(x => x.group === g).map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
                 </optgroup>
               ))}</select>
-            ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>}
+            ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>)}
 
-            <ChatThinkSelector
-              thinkLabel={thinkLabel}
-              effThink={effThink}
-              thinkOpen={thinkOpen}
-              ovModel={ovModel}
-              thinkOnly={thinkOnly}
-              onToggle={() => { closeAll(); setThinkOpen(!thinkOpen) }}
-              onToggleThinkMode={setThinkMode}
-              onToggleThinkOnly={toggleThinkOnly}
-              onSetLevel={setThinkLevel}
-            />
+            {!disp.hideThinkSelector && (
+              <ChatThinkSelector
+                thinkLabel={thinkLabel}
+                effThink={effThink}
+                thinkOpen={thinkOpen}
+                ovModel={ovModel}
+                thinkOnly={thinkOnly}
+                onToggle={() => { closeAll(); setThinkOpen(!thinkOpen) }}
+                onToggleThinkMode={setThinkMode}
+                onToggleThinkOnly={toggleThinkOnly}
+                onSetLevel={setThinkLevel}
+              />
+            )}
 
             {/* Token 用量环 */}
-            <span title="本会话累计输入/输出 token = 每次请求的 prompt/completion 之和（含工具轮次与子任务），并非当前上下文大小" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>累计 入 {fmtK(tokSum.input)} / 出 {fmtK(tokSum.output)}</span>
-            <svg width="28" height="28" style={U.shrink0}>
-              <title>上下文用量（最近一次请求实际输入）：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
-              <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
-              <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
-                strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
-          <text x="14" y="17" textAnchor="middle" fontSize="9" fill="var(--text-muted)" fontWeight="600">{ctxRatio > 0.7 ? '!' : '◉'}</text>
-            </svg>
+            {!disp.hideTokenUsage && (
+              <>
+                <span title="本会话累计输入/输出 token = 每次请求的 prompt/completion 之和（含工具轮次与子任务），并非当前上下文大小" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>累计 入 {fmtK(tokSum.input)} / 出 {fmtK(tokSum.output)}</span>
+                <svg width="28" height="28" style={U.shrink0}>
+                  <title>上下文用量（最近一次请求实际输入）：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
+                  <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
+                  <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
+                    strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
+              <text x="14" y="17" textAnchor="middle" fontSize="9" fill="var(--text-muted)" fontWeight="600">{ctxRatio > 0.7 ? '!' : '◉'}</text>
+                </svg>
+              </>
+            )}
 
             {/* 发送/停止按钮 */}
             {curBusy && !text.trim() ? (

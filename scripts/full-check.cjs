@@ -7,7 +7,7 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
 
 ;(async () => {
   const targets = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`))
-  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '黄泉Agent')) || targets.find(t => t.type === 'page')
+  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '桌面智能助手')) || targets.find(t => t.type === 'page')
   if (!page) { console.log('NO_PAGE'); process.exit(3) }
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })
@@ -65,19 +65,19 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
     await run('computer.sysPerf', async () => String(await h.computer.sysPerf()).slice(0, 200))
     await run('computer.processList', async () => String(await h.computer.processList()).slice(0, 200))
     await run('computer.readDir', async () => {
-      const dir = paths.workspaceDir || 'D:\\\\桌面\\\\黄泉agent'
+      const dir = paths.workspaceDir || 'D:\\\\桌面\\\\助手agent'
       return snapCount(await h.computer.readDir(dir))
     })
     await run('computer.grep', async () => {
-      const r = await h.computer.grep('D:\\\\桌面\\\\黄泉agent\\\\黄泉agent开发版\\\\src\\\\store', 'export function')
+      const r = await h.computer.grep('D:\\\\桌面\\\\助手agent\\\\助手agent开发版\\\\src\\\\store', 'export function')
       return { lines: String(r).split('\\n').length, head: String(r).slice(0, 120) }
     })
     await run('computer.find', async () => {
-      const r = await h.computer.find('D:\\\\桌面\\\\黄泉agent\\\\黄泉agent开发版\\\\src\\\\store', '*.ts')
+      const r = await h.computer.find('D:\\\\桌面\\\\助手agent\\\\助手agent开发版\\\\src\\\\store', '*.ts')
       return { lines: String(r).split('\\n').length, head: String(r).slice(0, 120) }
     })
     await run('computer.fileIO', async () => {
-      const dir = 'D:\\\\桌面\\\\黄泉agent\\\\_verify_tmp'
+      const dir = 'D:\\\\桌面\\\\助手agent\\\\_verify_tmp'
       await h.computer.mkdir(dir)
       const file = dir + '\\\\test.txt'
       await h.computer.writeFile(file, 'verify-ok')
@@ -109,7 +109,7 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
       return { count: Array.isArray(list) ? list.length : 0, names: Array.isArray(list) ? list.filter(x => String(x.name || x).includes('__verify__')) : [] }
     })
     await run('web.search', async () => {
-      const r = await h.web.search('黄泉Agent')
+      const r = await h.web.search('桌面智能助手')
       return { len: String(r).length, head: String(r).slice(0, 150) }
     }, 45000)
     await run('web.fetch', async () => {

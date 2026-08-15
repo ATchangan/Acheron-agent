@@ -1,4 +1,4 @@
-// scripts/eval/benchmark.ts — 黄泉Agent 评估基准(v0.3.9)
+// scripts/eval/benchmark.ts — 桌面智能助手 评估基准(v0.3.9)
 // unit: 纯函数回归(无需 API Key, 发布门禁必跑)
 // live: 真实模型工具选择(BFCL-lite, 可选, 需要应用内已配置供应商)
 // 用法: npx tsx scripts/eval/benchmark.ts unit [settings.json] | live [settings.json]
@@ -31,8 +31,8 @@ function msg(id: string, role: EngineMessage['role'], content: string | null, to
 
 function runUnit(): void {
   // 1. 意图路由
-  check('route-code', '代码任务路由到螺丝咕姆', routeAgent('帮我写个 Python 脚本处理数据', {}) === '螺丝咕姆')
-  check('route-doc', '文档任务路由到三月七', routeAgent('把今天的会议整理成一份总结报告', {}) === '三月七')
+  check('route-code', '代码任务路由到开发', routeAgent('帮我写个 Python 脚本处理数据', {}) === '开发')
+  check('route-doc', '文档任务路由到文档', routeAgent('把今天的会议整理成一份总结报告', {}) === '文档')
   check('route-close', '协作关闭时返回 null', routeAgent('帮我写代码', { collabMode: '关闭' }) === null)
 
   // 2. 记忆注入: 无乱码 + 相关度
@@ -47,7 +47,7 @@ function runUnit(): void {
   // 3. 记忆检索与私有命名空间
   const recall = recallFromMemory(mem({ facts: ['Python 项目在 D:/py'] }), 'python', [])
   check('memory-recall', 'recall_memory 命中关键词事实', recall.includes('Python 项目在 D:/py'))
-  check('memory-scope', 'private 记忆独立于全局文件', memoryPathFor('C:/data/memory.json', 'private', '银狼') !== 'C:/data/memory.json')
+  check('memory-scope', 'private 记忆独立于全局文件', memoryPathFor('C:/data/memory.json', 'private', '安全') !== 'C:/data/memory.json')
 
   // 4. 上下文压缩: 保留最近轮次 + 批量微压缩
   const history: EngineMessage[] = []

@@ -41,7 +41,7 @@ for (const name of themeNames) {
   }
 }
 // 必需主题数
-const required = ['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn']
+const required = ['dark', 'light', 'black', 'violet', 'bloodmoon', 'dawn']
 for (const r of required) if (!themeBlocks[r]) err('缺少主题: ' + r)
 
 // 3. :root 组件专属 token 完整性

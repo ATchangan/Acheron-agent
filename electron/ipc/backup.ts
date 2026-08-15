@@ -23,8 +23,8 @@ export function registerBackupIpc(deps: { userDataPath: string; getWorkDir: () =
       const win = deps.getWindow()
       const stamp = new Date().toISOString().slice(0, 10)
       const { canceled, filePath } = await dialog.showSaveDialog(win!, {
-        title: '备份黄泉Agent 数据',
-        defaultPath: join(deps.getWorkDir() || '', '黄泉Agent备份-' + stamp + '.zip'),
+        title: '备份桌面智能助手 数据',
+        defaultPath: join(deps.getWorkDir() || '', '桌面智能助手备份-' + stamp + '.zip'),
         filters: [{ name: 'ZIP 备份', extensions: ['zip'] }],
       })
       if (canceled || !filePath) return { ok: false, canceled: true }

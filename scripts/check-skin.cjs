@@ -54,7 +54,7 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
   await clickByText('外观')
   await new Promise(r => setTimeout(r, 600))
   console.log('SKIN_OPEN:', JSON.stringify(await state()))
-  const themeNames = ['浅色', '极黑', '黄泉', '血月', '晨曦', '暗夜']
+  const themeNames = ['浅色', '极黑', '经典紫', '血月', '晨曦', '暗夜']
   for (const name of themeNames) {
     const ok = await clickByText(name, true)
     await new Promise(r => setTimeout(r, 500))

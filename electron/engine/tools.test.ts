@@ -23,6 +23,7 @@ vi.mock('./registry', () => ({
 
 import { getActiveTools, runTool } from './tools'
 import type { ToolRunCtx } from './tool-types'
+import { invalidatePluginToolSpecCache } from '../plugins/author'
 
 function makeCtx(over: Partial<ToolRunCtx> = {}): ToolRunCtx {
   const memory = { facts: [], pinnedFacts: [], goals: [], episodic: [], summaries: [] }
@@ -176,7 +177,79 @@ describe('runTool 分发器', () => {
     expect(withPerm).toContain('screenshot')
     const full = names(makeCtx({ g: { filePermission: 'full', perf: { toolCore: false } } }))
     expect(full).toContain('screenshot')
-    const agentFull = names(makeCtx({ agent: '螺丝咕姆', agents: { 螺丝咕姆: { name: '螺丝咕姆', icon: '码', role: 'r', prompt: 'p', tools: ['*'] } as never } }))
+    const agentFull = names(makeCtx({ agent: '开发', agents: { 开发: { name: '开发', icon: '码', role: 'r', prompt: 'p', tools: ['*'] } as never } }))
     expect(agentFull).toContain('screenshot')
+  })
+
+  it('插件启用/禁用开关真正生效: 禁用后从模型工具列表消失, 重新启用恢复', () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-plugin-toggle-'))
+    try {
+      const pluginsDir = join(dir, 'plugins')
+      fs.mkdirSync(join(pluginsDir, 'greeter'), { recursive: true })
+      fs.writeFileSync(join(pluginsDir, 'greeter', 'index.js'), `module.exports = { tools: [{ name: 'hello', description: 'd', params: {}, run: () => 'ok' }] }`, 'utf-8')
+      const settingsPath = join(dir, 'settings.json')
+      const names = () => getActiveTools(makeCtx({ userDataPath: dir, g: { filePermission: 'full', perf: { toolCore: false } } })).map(t => t.function.name)
+      expect(names()).toContain('plugin_greeter__hello')
+      fs.writeFileSync(settingsPath, JSON.stringify({ general: { pluginStates: { greeter: { enabled: false } } } }), 'utf-8')
+      invalidatePluginToolSpecCache()
+      expect(names()).not.toContain('plugin_greeter__hello')
+      fs.writeFileSync(settingsPath, JSON.stringify({ general: { pluginStates: { greeter: { enabled: true } } } }), 'utf-8')
+      invalidatePluginToolSpecCache()
+      expect(names()).toContain('plugin_greeter__hello')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+      invalidatePluginToolSpecCache()
+    }
+  })
+
+  it('set_ui_display 白名单合并补丁并触发回调, 无效字段忽略', async () => {
+    const calls: unknown[] = []
+    const ctx = makeCtx({ g: { filePermission: 'full', uiDisplay: { hideSessionSearch: false } } as never, onUiDisplayChange: (d) => calls.push(d) } as Partial<ToolRunCtx>)
+    const r = await runTool('set_ui_display', { patches: { hideSessionSearch: true, density: 'compact', customCss: '.x{}', badField: 1 } }, ctx)
+    expect(r).toContain('hideSessionSearch=true')
+    expect(r).toContain('未知字段: badField')
+    expect(calls).toHaveLength(1)
+    const d = calls[0] as { hideSessionSearch?: boolean; density?: string; customCss?: string }
+    expect(d.hideSessionSearch).toBe(true)
+    expect(d.density).toBe('compact')
+    expect(d.customCss).toBe('.x{}')
+    expect(await runTool('get_ui_display', {}, ctx)).toContain('"density": "compact"')
+  })
+
+  it('get/set_settings 经白名单读写并脱敏, 安全字段拒绝', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-settings-tool-'))
+    try {
+      fs.writeFileSync(join(dir, 'settings.json'), JSON.stringify({ providers: [{ id: 'p1', apiKey: 'sk-secret-1', name: 'old' }], general: { theme: 'dark', riskConfirm: true } }), 'utf-8')
+      const ctx = makeCtx({ userDataPath: dir })
+      const r = await runTool('set_settings', { patch: { theme: 'light', animation: false } }, ctx)
+      expect(r).toContain('ok')
+      const data = JSON.parse(fs.readFileSync(join(dir, 'settings.json'), 'utf-8'))
+      expect(data.general.theme).toBe('light')
+      expect(data.general.animation).toBe(false)
+      expect(data.providers[0].apiKey).toBe('sk-secret-1')
+      const read = await runTool('get_settings', { section: 'all' }, ctx)
+      expect(read).toContain('***')
+      expect(read).not.toContain('sk-secret-1')
+      expect(await runTool('set_settings', { patch: { riskConfirm: false } }, ctx)).toContain('不允许')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('set_settings 含 uiDisplay 时只落盘广播, 不触发渲染层旧快照保存(避免覆盖同批其他字段)', async () => {
+    const dir = fs.mkdtempSync(join(os.tmpdir(), 'hq-settings-race-'))
+    const uiCalls: unknown[] = []
+    try {
+      fs.writeFileSync(join(dir, 'settings.json'), JSON.stringify({ general: { theme: 'dark', uiDisplay: { hideSessionSearch: false } } }), 'utf-8')
+      const ctx = makeCtx({ userDataPath: dir, onUiDisplayChange: (d) => uiCalls.push(d) })
+      const r = await runTool('set_settings', { patch: { theme: 'light', uiDisplay: { hideSessionSearch: true } } }, ctx)
+      expect(r).toContain('ok')
+      expect(uiCalls).toHaveLength(0)
+      const data = JSON.parse(fs.readFileSync(join(dir, 'settings.json'), 'utf-8'))
+      expect(data.general.theme).toBe('light')
+      expect(data.general.uiDisplay.hideSessionSearch).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

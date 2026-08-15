@@ -12,6 +12,12 @@ function isDangerousCmd(cmd:string):boolean{ return DANGEROUS_COMMANDS.some(d=>c
 function isSystemPath(p:string):boolean{ return SYSTEM_PATHS.some(s=>p.replace(/\\/g,'/').startsWith(s.replace(/\\/g,'/'))) }
 function isReadonlyCmd(cmd:string):boolean{ return READONLY_CMDS.some(r=>cmd.toLowerCase().startsWith(r)) || cmd.startsWith('echo ') || cmd.startsWith('dir ') || cmd.startsWith('ls ') }
 
+// 命令是否会改变系统状态(L2 分级细化): 只读查询不再打扰用户, 写/删除/发布类才需确认
+export function isMutatingCommand(cmd: string): boolean {
+  const c = String(cmd || '')
+  return /(\bdel\b|\brm\b|\bremove\b|delete|erase|move|ren\b|copy|mkdir|mci\b|install|uninstall|publish|\bpush\b|\bcommit\b|\bmerge\b|\breset\b|drop\b|truncate|update|insert|\bkill\b|taskkill|stop-|restart-|set-|new-|remove-|clear-|format|mount|unmount|shutdown|reboot|chmod|chown|attrib|takeown|icacls|reg\s+(add|delete)|npm\s+(install|uninstall)|pip\s+(install|uninstall)|git\s+(push|commit|merge|reset|clean|checkout\s+-)|docker\s+(rm|stop|kill|build|push)|Start-Process|Invoke-WebRequest|>|>>)/i.test(c)
+}
+
 export function assessRisk(action:{type:'filesystem'|'terminal'|'screenshot',operation?:Operation,path?:string,command?:string}):RiskLevel{
   if(action.type==='filesystem'){
     if(action.operation==='read')return'L0'

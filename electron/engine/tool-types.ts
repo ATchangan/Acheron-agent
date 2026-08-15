@@ -2,6 +2,7 @@
 import type { EngineMemory } from './memory'
 import type { EngineSettings } from './types'
 import type { AgentDef } from './agents'
+import type { UiDisplayConfig } from '../shared/settings-types'
 
 export interface ToolRunCtx {
   sid: string
@@ -22,6 +23,7 @@ export interface ToolRunCtx {
   onAgentChange: (agent: string) => void
   onWorkDirChange?: (dir: string) => void
   onThemeChange?: (theme: string) => void
+  onUiDisplayChange?: (d: UiDisplayConfig) => void
   onPlanUpdate?: (steps: { label?: string; status?: string; expected?: string; id?: string; tool?: string }[]) => string
   onGoalUpdate?: (goal: string) => void
   runDispatch: (tasks: { agent: string; task: string }[]) => Promise<string>

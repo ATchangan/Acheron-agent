@@ -27,8 +27,8 @@ describe('agents 自定义子代理', () => {
 
   it('覆盖内置角色时合并默认字段', () => {
     setCustomAgentsDir(dir)
-    fs.writeFileSync(join(dir, 'x.json'), JSON.stringify({ 三月七: { role: '覆盖角色', tools: ['read'] } }), 'utf-8')
-    const a = getAgents()['三月七']
+    fs.writeFileSync(join(dir, 'x.json'), JSON.stringify({ 文档: { role: '覆盖角色', tools: ['read'] } }), 'utf-8')
+    const a = getAgents()['文档']
     expect(a.role).toBe('覆盖角色')
     expect(a.tools).toEqual(['read'])
     expect(a.handoff_to.length).toBeGreaterThan(0)

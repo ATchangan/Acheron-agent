@@ -13,6 +13,7 @@ import {
 import { parseFact, storeFact } from '../memory/facts'
 import { embedText } from '../memory/embeddings'
 import { rrfFuse, type FusedHit } from '../memory/searcher'
+import { normalizeAgentName } from '../shared/agents-data'
 export { scanMemoryText }
 
 export interface EngineMemory {
@@ -35,9 +36,10 @@ export interface MemoryScopeOpts { agent?: string; scope?: 'global' | 'private' 
 function resolveOpts(memoryPath: string, opts?: MemoryScopeOpts): { agent: string; scope: 'global' | 'private' } {
   const base = memoryPath.split(/[\\/]/).pop() || ''
   const priv = /^memory-(.+)\.json$/.exec(base)
-  if (opts?.scope) return { agent: String(opts.agent || '黄泉'), scope: opts.scope }
+  const agent = normalizeAgentName(opts?.agent)
+  if (opts?.scope) return { agent, scope: opts.scope }
   if (priv) return { agent: priv[1], scope: 'private' }
-  return { agent: String(opts?.agent || '黄泉'), scope: opts?.scope || 'global' }
+  return { agent, scope: opts?.scope || 'global' }
 }
 
 export function loadMemory(memoryPath: string, opts?: MemoryScopeOpts): EngineMemory {
@@ -178,7 +180,17 @@ export function saveMemory(memoryPath: string, m: EngineMemory, opts?: MemorySco
 // v0.3.9: 私有记忆命名空间(保留: JSON 降级路径与旧备份兼容; SQLite 主路径用 scope 列)
 export function memoryPathFor(memoryPath: string, scope: string | undefined, agent: string | undefined): string {
   if (scope !== 'private' || !agent) return memoryPath
-  const safe = String(agent).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40) || 'agent'
+  const norm = normalizeAgentName(agent)
+  const safeLegacy = String(agent).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40) || 'agent'
+  const safe = String(norm).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40) || 'agent'
+  // 旧名私有记忆文件一次性迁移到新名(只迁不删旧档, 保留可回退)
+  if (safeLegacy !== safe) {
+    const legacyFile = join(dirname(memoryPath), 'memory-' + safeLegacy + '.json')
+    const newFile = join(dirname(memoryPath), 'memory-' + safe + '.json')
+    try {
+      if (fs.existsSync(legacyFile) && !fs.existsSync(newFile)) fs.renameSync(legacyFile, newFile)
+    } catch { /* 迁移失败保持可用 */ }
+  }
   return join(dirname(memoryPath), 'memory-' + safe + '.json')
 }
 

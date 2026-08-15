@@ -5,7 +5,7 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 ;(async () => {
-  const msg = '用 dispatch 并行执行两个子任务：螺丝咕姆负责列出 D:\\桌面\\黄泉agent 下的文件夹；三月七负责读取 D:\\桌面\\黄泉agent\\README.md 的前 5 行。执行完汇总结果'
+  const msg = '用 dispatch 并行执行两个子任务：开发负责列出 D:\\桌面\\助手agent 下的文件夹；文档负责读取 D:\\桌面\\助手agent\\README.md 的前 5 行。执行完汇总结果'
   const getTarget = async () => {
     try {
       const t = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`))

@@ -23,18 +23,18 @@ describe('sub-result 结构化结果', () => {
   it('无法解析时回退原文', () => {
     const r = parseSubResult('没有任何 JSON')
     expect(r).toEqual({})
-    expect(buildSubSummary('银狼', '检查安全', r, '原始结果')).toContain('原始结果')
+    expect(buildSubSummary('安全', '检查安全', r, '原始结果')).toContain('原始结果')
   })
 
   it('结构化摘要包含目标/状态/产出物', () => {
-    const s = buildSubSummary('银狼', 't', { goal: '安全审计', status: 'done', outputs: ['report.md'], open: [] })
-    expect(s).toContain('【银狼】')
+    const s = buildSubSummary('安全', 't', { goal: '安全审计', status: 'done', outputs: ['report.md'], open: [] })
+    expect(s).toContain('【安全】')
     expect(s).toContain('安全审计')
     expect(s).toContain('report.md')
   })
 
   it('子代理提示词包含交付格式与私有记忆', () => {
-    const p = buildSubSystemPrompt(AG, '银狼', '检查配置', '## 私有记忆\n- 之前发现过配置泄漏')
+    const p = buildSubSystemPrompt(AG, '安全', '检查配置', '## 私有记忆\n- 之前发现过配置泄漏')
     expect(p).toContain('交付格式')
     expect(p).toContain('```json')
     expect(p).toContain('配置泄漏')

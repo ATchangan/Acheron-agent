@@ -1,6 +1,6 @@
 import React from 'react'
 
-// 黄泉主题专属线性图标 —— 手绘风, 不用 emoji / 通用 AI 应用图标
+// 经典紫主题专属线性图标 —— 手绘风, 不用 emoji / 通用 AI 应用图标
 const base = (size: number) => ({
   width: size,
   height: size,
@@ -29,7 +29,7 @@ export const ScrollMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
   </svg>
 )
 
-// 面具（式神）
+// 面具（插件）
 export const MaskMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
   <svg {...base(size)}>
     <path d="M4.5 11.5C5.4 6.7 8.2 4.6 12 4.6s6.6 2.1 7.5 6.9c.4 2.3-.7 4.4-3.1 5.3-1.4.5-2.9.6-4.4.6s-3-.1-4.4-.6c-2.4-.9-3.5-3-3.1-5.3z" />

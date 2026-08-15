@@ -8,7 +8,6 @@ import { clearInterjectForSid } from './interject'
 import type { S } from './chat-send'
 import { bindEngineEvents } from './engine-client'
 
-import { refreshMcpTools } from './mcp-tools'
 
 
 // v0.3.3 性能优化: 已加载过全量消息的会话 id(启动只读 meta, 点开/切换才读全量)
@@ -40,14 +39,13 @@ const releaseRemoteSessions = (keepId: string): void => {
 // 安全序列化——防止 Proxy/循环引用导致 IPC 报错
 
 // ─── v0.2: 渲染进程内置模块 ────────────────────────────
-// v0.3.3: 启动时加载 MCP 工具清单(连接过的服务器 schema 直接并入 LLM 工具)
-if (typeof window !== 'undefined') refreshMcpTools().catch(() => {})
+// MCP 工具 schema 由主进程内核注入(engine/tool-specs.ts), 渲染层不再维护副本
 
 // 简易工具缓存（避免 IPC 往返延迟）
 
 // Token 估算（中英混合）
 
-// ─── v0.2: 多角色编队（改用崩坏：星穹铁道角色命名，贴合黄泉旅途背景）───
+// ─── v0.2: 多角色编队（改用通用助手设定角色命名，贴合助手旅途背景）───
 
 
 // ─── v0.2: 模型上下文窗口自动检测 ──────────────────────
@@ -67,7 +65,6 @@ export const useChatStore = create<S>((set, get) => ({
       ;(window as unknown as { __engineBound?: boolean }).__engineBound = true
       bindEngineEvents()
     }
-    refreshMcpTools().catch(() => {})
     const [cfg, , metas] = await Promise.all([
       window.huangquan.settings.load().catch(() => ({ providers: [] as ProviderConfig[], general: { mode: 'work', theme: 'dark' } } as SettingsData)),
       window.huangquan.ishiki.load().catch(() => ''),

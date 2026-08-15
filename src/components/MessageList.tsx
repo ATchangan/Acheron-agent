@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { Copy, Check } from 'lucide-react'
 import { useChatStore } from '../store/chat'
+import { useSettingsStore } from '../store/settings'
 import { ConversationTurn, ThinkingRow } from './ConversationThread'
 import { isNearBottom, latestAssistantText } from '../store/chat-view-utils'
+import { resolveDisplay } from '../store/display'
 import type { Message } from '../global'
 
 // 单条消息渲染错误边界: 某条消息渲染异常时降级为纯文本, 防止拖垮整个渲染进程
@@ -32,6 +34,7 @@ export default function MessageList(): JSX.Element {
   const streamText = useChatStore(s => s.streamText)
   const streamingText = useChatStore(s => !!s.streamText)
   const msgs = session?.messages || []
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
 
   const endRef = useRef<HTMLDivElement>(null)
   const listBox = useRef({ el: null as HTMLDivElement | null })
@@ -192,7 +195,7 @@ export default function MessageList(): JSX.Element {
           if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' })
         }}>↓</button>
       )}
-      {lastReply && (
+      {!disp.hideCopyButtons && lastReply && (
         <button className={`chat-fab chat-copy-last-btn${copiedLast ? ' copied' : ''}`}
           title={copiedLast ? '已复制最后回复' : '复制最后回复（原文 Markdown）'} onClick={copyLastReply}>
           {copiedLast ? <Check size={15} /> : <Copy size={15} />}

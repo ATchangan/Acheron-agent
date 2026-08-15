@@ -23,7 +23,7 @@ export function routeAgent(userMessage: string, g: EngineSettings): string | nul
 // ─── system prompt 构建(与渲染层 buildPrompt 同构) ───
 export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, agents: Record<string, AgentDef>, wd: string, skills?: { name: string; description: string }[], planStage = false): string {
   const yuan = '## 元设定\nming — 底层行为锚点。务实执行，去冗余，直指核心。\n'
-  const identity = '## 身份\n' + (ishiki || '').slice(0, 600) + '\n\n黄泉，出云国幸存者，巡海游侠。配长刀「无」，行走于有与无的狭间。\n'
+  const identity = '## 身份\n' + (ishiki || '').slice(0, 600) + '\n\n助手，本地优先的桌面 AI 助手，可读写文件、执行命令、搜索网络并调度多角色编队。\n'
   const userInfo = '## 用户\n称呼：' + (g.userAlias || '老板') + '。关注代码与办公自动化场景。\n'
   const defaultChatPersona = '轻松自然的聊天伙伴。语气温和自然，像朋友一样交流，适当回应情绪，言简意赅；不堆砌术语，不主动调用工具，除非用户明确要求。'
   const defaultWorkPersona = '务实执行型工作模式。言简意赅，去冗余，直击核心。\n覆盖：全栈开发 / 机器学习建模 / 运维部署 / 数据处理 / 职场文书 / 自动化。\n输出优先结构化（标题/列表/表格/代码块），禁止客套收尾。\n接收模糊需求立刻反问补齐条件，不自行脑补。'
@@ -46,11 +46,11 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
     + '- 身份一致性: 任务身份(交接/分发后) > 人格 > 本体设定; 同一回复只用一种语气与格式风格, 禁止两种语气并存\n'
     + '- 工具必要性: 能直接回答就不调工具; 每次调用前确认它服务于当前目标, 不为展示而调用\n'
   const env = '## 当前环境\n工作目录：' + wd + '\n平台：Windows\n'
-  const multiAgent = '## 多角色编队\n你属于黄泉编队的一员。编队成员：\n' +
+  const multiAgent = '## 多角色编队\n你属于助手编队的一员。编队成员：\n' +
     Object.entries(agents).map(([n, ag]) => `- ${ag.icon} ${n} (${ag.role}): ${ag.tools.includes('*') ? '全工具权限' : '专业领域(' + (ag.capabilities || []).join('/') + ')'}`).join('\n') +
     '\n使用 handoff 工具交接给更合适的角色（必须带 context 字段：任务背景/已完成/未决问题，禁止只传结论）；复杂任务（预计 3 步以上或跨领域）必须用 dispatch 拆成子任务并行执行，禁止串行单干；使用 list_agents 查看编队信息。\n'
   const base = yuan + identity + userInfo + persona + appearance + tools + think + pinned + env
-  const agentName = g.agentName || '黄泉'
+  const agentName = g.agentName || '助手'
   const toneStyle = g.toneStyle || '实用直接'
   const verbosity = g.verbosity ?? 2
   const toneMap: Record<string, string> = { '专业正式': '严谨规范，使用专业术语，避免口语化', '实用直接': '言简意赅，去冗余，直击核心', '轻松友好': '亲切自然，可适当使用表情和口语', '极简克制': '最简洁表达，一句说清，不扩展' }
@@ -246,7 +246,7 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
       sp += '\n\n## 当前身份\n' + ag.icon + ' ' + agentRole + ' — ' + ag.role + '\n' + ag.prompt +
         '\n可用工具范围: ' + (ag.tools.includes('*') ? '全部' : '本专业领域工具集(详见工具列表)') +
         '\n（本次任务全程以该身份执行，风格统一，不混用本体人格；工具调用只为完成当前目标）'
-      if (agentRole === '姬子') {
+      if (agentRole === '主控') {
         sp += '\n\n【调度铁律】只有涉及多个专业领域的复杂任务（如代码+文档、设计+开发、分析+总结、开发+测试+审查）才调用 dispatch 分发；简单任务（单步问答、简短说明、单个文件操作、闲聊等）一律直接完成，绝对禁止 dispatch 或 handoff，不得小题大做。'
       }
     }

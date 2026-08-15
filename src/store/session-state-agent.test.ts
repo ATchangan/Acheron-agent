@@ -12,23 +12,23 @@ describe('session-state 会话级角色身份', () => {
   })
 
   it('setSessionAgent 写入角色字段', () => {
-    const s = setSessionAgent(baseSession, '螺丝咕姆')
-    expect(s.agent).toBe('螺丝咕姆')
+    const s = setSessionAgent(baseSession, '开发')
+    expect(s.agent).toBe('开发')
     expect(s.agentManual).toBeFalsy()
     // 原对象不可变(返回新对象)
     expect(baseSession.agent).toBeUndefined()
   })
 
   it('setSessionAgent 支持 manual 标记且保留原 manual', () => {
-    const s1 = setSessionAgent(baseSession, '银狼', true)
+    const s1 = setSessionAgent(baseSession, '安全', true)
     expect(s1.agentManual).toBe(true)
-    const s2 = setSessionAgent(s1, '姬子')
-    expect(s2.agent).toBe('姬子')
+    const s2 = setSessionAgent(s1, '主控')
+    expect(s2.agent).toBe('主控')
     expect(s2.agentManual).toBe(true) // 未传时保留原值
   })
 
   it('getSessionAgent 读取写入值', () => {
-    const s = setSessionAgent(baseSession, '黑天鹅')
-    expect(getSessionAgent(s)).toBe('黑天鹅')
+    const s = setSessionAgent(baseSession, '设计')
+    expect(getSessionAgent(s)).toBe('设计')
   })
 })

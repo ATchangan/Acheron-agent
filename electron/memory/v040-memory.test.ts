@@ -37,7 +37,7 @@ describe('storeFact 去重与冲突(M4)', () => {
   it('同一事实重复 5 次仅 1 行, confidence=5', () => {
     for (let i = 0; i < 5; i++) {
       storeFact({
-        agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1',
+        agent: '助手', scope: 'global', level: 'normal', layer: 'L1',
         content: '项目使用 TypeScript 开发', subject: '项目', relation: '使用', object: 'TypeScript 开发',
         embedding: null, sourceId: null, ts: Date.now(), lastAccess: Date.now(), accessCount: 0, superseded: 0, confidence: 1,
       })
@@ -49,12 +49,12 @@ describe('storeFact 去重与冲突(M4)', () => {
 
   it('同主谓不同宾 → 新行, 旧行 superseded', () => {
     storeFact({
-      agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1',
+      agent: '助手', scope: 'global', level: 'normal', layer: 'L1',
       content: '项目技术栈是 Electron', subject: '项目技术栈', relation: '是', object: 'Electron',
       embedding: null, sourceId: null, ts: Date.now(), lastAccess: Date.now(), accessCount: 0, superseded: 0, confidence: 1,
     })
     storeFact({
-      agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1',
+      agent: '助手', scope: 'global', level: 'normal', layer: 'L1',
       content: '项目技术栈是 Tauri', subject: '项目技术栈', relation: '是', object: 'Tauri',
       embedding: null, sourceId: null, ts: Date.now(), lastAccess: Date.now(), accessCount: 0, superseded: 0, confidence: 1,
     })
@@ -76,8 +76,8 @@ describe('三档衰减(M3)', () => {
 
   it('超期 normal 软删除, pinned 不删', () => {
     const old = Date.now() - 40 * 86400000
-    const pinnedId = insertMemory({ agent: '黄泉', scope: 'global', level: 'pinned', layer: 'L3', content: '长期约定', subject: null, relation: null, object: null, embedding: null, sourceId: null, ts: old, lastAccess: old, accessCount: 0, superseded: 0, confidence: 1 })
-    const normalId = insertMemory({ agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1', content: '过期事实', subject: null, relation: null, object: null, embedding: null, sourceId: null, ts: old, lastAccess: old, accessCount: 0, superseded: 0, confidence: 2 })
+    const pinnedId = insertMemory({ agent: '助手', scope: 'global', level: 'pinned', layer: 'L3', content: '长期约定', subject: null, relation: null, object: null, embedding: null, sourceId: null, ts: old, lastAccess: old, accessCount: 0, superseded: 0, confidence: 1 })
+    const normalId = insertMemory({ agent: '助手', scope: 'global', level: 'normal', layer: 'L1', content: '过期事实', subject: null, relation: null, object: null, embedding: null, sourceId: null, ts: old, lastAccess: old, accessCount: 0, superseded: 0, confidence: 2 })
     runDecay()
     const remaining = listMemories({ includeSuperseded: true })
     expect(remaining.some(m => m.id === pinnedId && m.superseded === 0)).toBe(true)

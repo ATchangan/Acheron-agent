@@ -65,7 +65,7 @@ export function importLegacyMemory(paths: LegacyPaths): { imported: number; ok: 
       if (seen.has(key)) continue
       seen.add(key)
       const id = insertMemory({
-        agent: '黄泉',
+        agent: '助手',
         scope: 'global',
         level: c.pinned ? 'pinned' : 'normal',
         layer: c.pinned ? 'L3' : 'L1',
@@ -86,13 +86,13 @@ export function importLegacyMemory(paths: LegacyPaths): { imported: number; ok: 
     // 摘要/教训/目标迁移(去重后落库)
     for (const s of summaries.slice(0, 200)) {
       insertMemory({
-        agent: '黄泉', scope: 'global', level: 'normal', layer: 'L3', content: s.content,
+        agent: '助手', scope: 'global', level: 'normal', layer: 'L3', content: s.content,
         subject: null, relation: null, object: null, embedding: null, sourceId: null,
         ts: s.ts, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
       })
     }
-    for (const l of lessons.slice(0, 50)) insertLesson('黄泉', 'global', l, now)
-    if (goals.length) replaceGoals('黄泉', 'global', goals.map(g => ({ ...g, updated: now })))
+    for (const l of lessons.slice(0, 50)) insertLesson('助手', 'global', l, now)
+    if (goals.length) replaceGoals('助手', 'global', goals.map(g => ({ ...g, updated: now })))
 
     // 导入完成标记 + 旧文件改名备份(失败也不影响已导入数据)
     markLegacyImported()

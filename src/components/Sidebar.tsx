@@ -1,6 +1,7 @@
 import React from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
+import { resolveDisplay } from '../store/display'
 import type { View } from '../App'
 import ResizeBar from './ResizeBar'
 import { U } from './ui-styles'
@@ -42,6 +43,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
   const togglePin = useChatStore(s => s.togglePin)
   const mode = useSettingsStore(s => s.general.mode || 'work')
   const setMode = useSettingsStore(s => s.setMode)
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
 
   // 左侧只显示当前模式(聊天/工作)的历史会话; 切换模式用顶部「聊天/工作」标签
   // 置顶会话永远排最前(组内保持原有顺序)
@@ -78,7 +80,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
     <aside className="sidebar" style={{ position: 'relative' }}>
       {/* 品牌区 */}
       <div className="sidebar-top-bar">
-        <span className="brand-text">黄泉</span>
+        <span className="brand-text">助手</span>
         <div className="sidebar-top-actions">
           <button onClick={create} title="新对话" aria-label="新对话" style={{ minWidth: 36, height: 36, padding: '0 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--on-accent)', borderRadius: 8, fontSize: 'var(--ui-font-size)', fontWeight: 600, transition: 'all .12s' }}
             onMouseEnter={e => { e.currentTarget.style.opacity = '0.85' }}
@@ -91,7 +93,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
       {/* 导航 */}
       <div className="sidebar-nav">
         <div className="sidebar-section-label">导航</div>
-        {NAV_ITEMS.map(item => (
+        {NAV_ITEMS.filter(item => item.id === 'chat' || item.id === 'settings' || !disp.hiddenNav.includes(item.id)).map(item => (
           <div
             key={item.id}
             className={`menu-item ${currentView === item.id ? 'active' : ''}`}
@@ -111,7 +113,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
       </div>
 
       {/* 会话列表 */}
-      {currentView === 'chat' && (
+      {currentView === 'chat' && !disp.hideSessionList && (
         <>
           {/* v0.4.0: 聊天/工作模式切换从顶部标签移到这里 */}
           <div className="sidebar-section-label" style={{ ...U.mt6, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -135,15 +137,17 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             ))}
             <span style={{ color: 'var(--text-muted)' }}>· {filtered.length}</span>
           </div>
-          <div style={{ position: 'relative', margin: '4px 6px 6px' }}>
-            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>
-            <input
-              value={searchQ}
-              onChange={e => onSearch(e.target.value)}
-              placeholder="搜索会话…"
-              style={{ width: '100%', padding: '5px 8px 5px 24px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 2px)', outline: 'none', boxSizing: 'border-box' }}
-            />
-          </div>
+          {!disp.hideSessionSearch && (
+            <div style={{ position: 'relative', margin: '4px 6px 6px' }}>
+              <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', display: 'flex' }}><SearchIcon /></span>
+              <input
+                value={searchQ}
+                onChange={e => onSearch(e.target.value)}
+                placeholder="搜索会话…"
+                style={{ width: '100%', padding: '5px 8px 5px 24px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 6, fontSize: 'calc(var(--ui-font-size) - 2px)', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+          )}
           <div className="session-list">
             {searchResults !== null && <div className="sidebar-section-label" style={U.mt6}>搜索结果</div>}
             {searchResults !== null ? searchResults.map(r => ({ id: r.sid, title: r.title, snippet: r.snippet, ts: r.ts, mode: undefined, busy: undefined, isSearch: true as const })).map(s => (

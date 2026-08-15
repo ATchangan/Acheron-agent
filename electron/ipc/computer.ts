@@ -7,6 +7,7 @@ import { exec, type ChildProcess } from 'child_process'
 import { requestRiskConfirm, type RiskDecision } from './risk-confirm'
 import { registerComputerFiles } from './computer-files'
 import { getPowerShellCmdQuoted } from '../shared/pwsh'
+import { isMutatingCommand } from '../security/permission'
 const iconv = require('iconv-lite') as { decode: (b: Buffer, enc: string) => string }
 
 
@@ -44,10 +45,6 @@ export function registerComputerIpc(deps: {
   // 风险操作确认 —— L2(终端写/非只读命令)与 L3(系统路径写入/删除)默认弹原生确认框;
   // 设置 riskConfirm=false 时静默放行(保持旧行为)。
   // v0.3.3 修复: L2 只对"会改变系统状态"的命令确认(node -v/npm ls/git status 等只读查询不再打扰)。
-  const isMutating = (cmd: string): boolean => {
-    const c = String(cmd || '')
-    return /(\bdel\b|\brm\b|\bremove\b|delete|erase|move|ren\b|copy|mkdir|mci\b|install|uninstall|publish|\bpush\b|\bcommit\b|\bmerge\b|\breset\b|drop\b|truncate|update|insert|\bkill\b|taskkill|stop-|restart-|set-|new-|remove-|clear-|format|mount|unmount|shutdown|reboot|chmod|chown|attrib|takeown|icacls|reg\s+(add|delete)|npm\s+(install|uninstall)|pip\s+(install|uninstall)|git\s+(push|commit|merge|reset|clean|checkout\s+-)|docker\s+(rm|stop|kill|build|push)|Start-Process|Invoke-WebRequest|>|>>)/i.test(c)
-  }
   // v0.3.3: 确认不再弹原生 Windows 窗口 —— 推送到软件内角落卡片,
   // 60 秒无人操作自动拒绝; 可勾选「本次任务都批准」
   const confirmRisk = async (
@@ -58,7 +55,7 @@ export function registerComputerIpc(deps: {
     taskId?: string,
   ): Promise<RiskDecision> => {
     if (level !== 'L2' && level !== 'L3') return 'allow'
-    if (level === 'L2' && !isMutating(detail)) return 'allow'
+    if (level === 'L2' && !isMutatingCommand(detail)) return 'allow'
     try {
       const s = JSON.parse(fs.readFileSync(join(userDataPath, 'settings.json'), 'utf-8'))
       // v0.3.6: 「永久放行全部风险操作」开关 —— 开启后 L2/L3 全部直接放行
@@ -73,7 +70,7 @@ export function registerComputerIpc(deps: {
 
   registerComputerFiles({ assertInsideWorkDir, assessRisk, confirmRisk, getEffectiveWorkDir, userDataPath })
 
-ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: string) => {
+ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: string, workDir?: string) => {
   const cmdS = String(cmd || '')
   const riskLevel = assessRisk({ type: 'terminal', command: cmdS })
   if (riskLevel === 'L4') {
@@ -114,7 +111,8 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
     const child = exec(finalCmd, {
       timeout: 300000,
       maxBuffer: 50 * 1024 * 1024,
-      cwd: getEffectiveWorkDir(),
+      // v0.4.x: 引擎传入本次会话工作目录(经 set_workdir 切换)时优先使用, 否则回落设置值
+      cwd: (workDir && String(workDir).trim()) || getEffectiveWorkDir(),
       env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
     }, (err, stdout, stderr) => {
       clearTimeout(timer)

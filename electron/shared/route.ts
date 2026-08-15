@@ -10,7 +10,7 @@ const CAPABILITY_KEYWORDS: Record<string, string[]> = {
   vision: ['图片', '截图', '设计', '配色', '看图', 'ui', '图标', '视觉'],
   chat: [],
 }
-const CAP_TO_AGENT: Record<string, string> = { code: '螺丝咕姆', doc: '三月七', security: '银狼', automation: '艾丝妲', vision: '黑天鹅', chat: '知更鸟' }
+const CAP_TO_AGENT: Record<string, string> = { code: '开发', doc: '文档', security: '安全', automation: '通知', vision: '设计', chat: '陪伴' }
 
 export function routeAgentCore(userMessage: string, disabled: string[], collabMode: string): string | null {
   const t = userMessage.toLowerCase()
@@ -18,7 +18,7 @@ export function routeAgentCore(userMessage: string, disabled: string[], collabMo
   const hitCaps = Object.entries(CAPABILITY_KEYWORDS)
     .filter(([, kws]) => kws.length > 0 && kws.some(k => t.includes(k.toLowerCase())))
     .map(([cap]) => cap)
-  if (hitCaps.length >= 2 && !disabled.includes('姬子')) return '姬子'
+  if (hitCaps.length >= 2 && !disabled.includes('主控')) return '主控'
   if (hitCaps.length === 1) {
     const capAg = CAP_TO_AGENT[hitCaps[0]]
     if (capAg && !disabled.includes(capAg)) return capAg
@@ -27,10 +27,10 @@ export function routeAgentCore(userMessage: string, disabled: string[], collabMo
   for (const [name, re] of Object.entries(DOMAIN_RE)) {
     if (re.test(t) && !disabled.includes(name)) hitDomains++
   }
-  if (hitDomains >= 2 && !disabled.includes('姬子')) return '姬子'
+  if (hitDomains >= 2 && !disabled.includes('主控')) return '主控'
   for (const [name, re] of Object.entries(DOMAIN_RE)) {
     if (re.test(t)) return disabled.includes(name) ? null : name
   }
   if (t.trim().length < 30) return null
-  return disabled.includes('姬子') ? null : '姬子'
+  return disabled.includes('主控') ? null : '主控'
 }

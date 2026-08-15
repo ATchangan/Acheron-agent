@@ -37,7 +37,7 @@ export default function AboutTab() {
       <div style={S.card}>
         <div style={S.section}>关于</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[['版本', info?.version || '…'], ['平台', '黄泉Agent'], ['Electron', info?.electron || '…'], ['React', React.version], ['Node', info?.node || '…']].map(([k, v]) => (
+          {[['版本', info?.version || '…'], ['平台', '桌面智能助手'], ['Electron', info?.electron || '…'], ['React', React.version], ['Node', info?.node || '…']].map(([k, v]) => (
             <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: C.text }}>{v}</div></div>
           ))}
         </div>

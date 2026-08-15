@@ -46,8 +46,8 @@ describe('routeProfile 统一路由', () => {
   })
 
   it('角色模型覆盖优先', () => {
-    const agents = { 黑天鹅: { model: 'chat-x' } } as never
-    const r = routeProfile(g, [p], p, { agent: '黑天鹅', taskType: 'code', agents })
+    const agents = { 设计: { model: 'chat-x' } } as never
+    const r = routeProfile(g, [p], p, { agent: '设计', taskType: 'code', agents })
     expect(r.model).toBe('chat-x')
   })
 })

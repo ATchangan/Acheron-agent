@@ -6,6 +6,9 @@ import ChatInput from './ChatInput'
 import MessageList from './MessageList'
 import { U } from './ui-styles'
 import { fmtDur } from './work-steps'
+import { resolveDisplay } from '../store/display'
+import { compileStatusLine } from '../store/display'
+import { useModelItems } from './useModelItems'
 
 // v0.3.6 P0-1: ChatView 只负责头部/空态/错误/输入区,
 // 消息列表与流式渲染完全下沉到 MessageList, 不再订阅 streamText。
@@ -27,6 +30,25 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   const mode = useSettingsStore(s => s.general.mode || 'work')
   const workDir = useSettingsStore(s => s.general.workDir)
   const hasProvider = providers.some(p => p.apiKey)
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
+  const { curModelName } = useModelItems()
+  const contextUsed = useChatStore(s => s.cu)
+  const contextLimit = useChatStore(s => s.cl)
+  const sessTokMap = useChatStore(s => s.sessTok)
+  const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
+  const tokSum = React.useMemo(() => {
+    const m = (sessionId && sessTokMap[sessionId]) || {}
+    let input = 0, output = 0
+    for (const c of Object.values(m)) { input += c.inputTokens || 0; output += c.outputTokens || 0 }
+    return { input, output }
+  }, [sessTokMap, sessionId])
+  const statusLine = disp.statusLine ? compileStatusLine(disp.statusLine, {
+    workDir: workDir ? String(workDir.split(/[/\\]/).pop()) : '',
+    model: curModelName || '',
+    context: contextLimit > 0 ? Math.round(contextUsed / 102.4) / 10 + 'K/' + Math.round(contextLimit / 102.4) / 10 + 'K' : '',
+    tokens: '入' + fmtK(tokSum.input) + '/出' + fmtK(tokSum.output),
+    agents: activeAgents.join(' '),
+  }) : ''
   const [showDoneSteps, setShowDoneSteps] = useState(false)
 
   const jumpToMsg = (mid: string) => {
@@ -49,13 +71,19 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
   return (
     <>
       <div className="chat-header-tab">
-        {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }} title={workDir}><Folder size={12} />{workDir.split(/[/\\]/).pop()}</span>}
-        {(streaming || executing) && activeAgents.length > 0 && (
-          <span style={{ display: 'inline-flex', gap: 4, marginLeft: 8, flexWrap: 'wrap' }}>
-            {activeAgents.map(a => (
-              <span key={a} style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 'calc(var(--ui-font-size) - 3px)', background: 'rgba(var(--skin-accent),.12)', border: '1px solid rgba(var(--skin-accent),.28)', borderRadius: 10, padding: '1px 8px' }}>● {a}</span>
-            ))}
-          </span>
+        {statusLine ? (
+          <span style={{ marginLeft: 8, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{statusLine}</span>
+        ) : (
+          <>
+            {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }} title={workDir}><Folder size={12} />{workDir.split(/[/\\]/).pop()}</span>}
+            {(streaming || executing) && activeAgents.length > 0 && (
+              <span style={{ display: 'inline-flex', gap: 4, marginLeft: 8, flexWrap: 'wrap' }}>
+                {activeAgents.map(a => (
+                  <span key={a} style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 'calc(var(--ui-font-size) - 3px)', background: 'rgba(var(--skin-accent),.12)', border: '1px solid rgba(var(--skin-accent),.28)', borderRadius: 10, padding: '1px 8px' }}>● {a}</span>
+                ))}
+              </span>
+            )}
+          </>
         )}
       </div>
 
@@ -78,7 +106,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
         </div>
       )}
 
-      {plan && sessionId && (
+      {!disp.hidePlanCards && plan && sessionId && (
         <div className="plan-card" style={U.wrap8}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', minWidth: 0 }}>
             <span style={U.b600}>执行计划</span>
@@ -159,12 +187,12 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
 
       {!hasProvider ? (
         <div className="chat-center-empty">
-          <h1>黄泉</h1><p>请先在「模型服务」中配置一个服务商</p>
+          <h1>助手</h1><p>请先在「模型服务」中配置一个服务商</p>
           <button className="btn-primary" style={U.mt8} onClick={() => onNavigate('settings')}>前往设置</button>
         </div>
       ) : empty ? (
         <div className="chat-center-empty">
-          <h1>黄泉</h1>
+          <h1>助手</h1>
           <p>{mode === 'chat' ? '雨停了没多久。你是循着声音来的，还是碰巧路过？' : '说吧，这次要处理什么？'}</p>
           <span className="memory-badge">{mode === 'chat' ? '● 聊天模式' : '● 工作模式'}</span>
         </div>

@@ -2,6 +2,7 @@
 import * as fs from 'fs'
 import { join } from 'path'
 import { BASE_AGENTS } from '../shared/agents-data'
+import { normalizeAgentName } from '../shared/agents-data'
 
 export interface AgentDef {
   role: string
@@ -42,8 +43,9 @@ export function getAgents(overrides?: Record<string, Partial<AgentDef>>): Record
   const custom = loadCustomAgents()
   for (const [name, o] of Object.entries({ ...custom, ...(overrides || {}) })) {
     if (!o || typeof o !== 'object') continue
-    const base = out[name] || { role: '自定义子代理', prompt: '你是自定义子代理 ' + name + '，按用户配置执行任务。', tools: ['*'], handoff_to: [], icon: '客', memoryScope: 'private', capabilities: [] }
-    out[name] = {
+    const key = normalizeAgentName(name)
+    const base = out[key] || { role: '自定义子代理', prompt: '你是自定义子代理 ' + key + '，按用户配置执行任务。', tools: ['*'], handoff_to: [], icon: '客', memoryScope: 'private', capabilities: [] }
+    out[key] = {
       ...base,
       ...o,
       tools: Array.isArray(o.tools) && o.tools.length ? o.tools : base.tools,

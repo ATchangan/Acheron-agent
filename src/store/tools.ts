@@ -1,4 +1,4 @@
-﻿// src/store/tools.ts — 工具 Schema 定义(纯数据)
+// src/store/tools.ts — 工具 Schema 定义(纯数据)
 // 从 chat.ts 拆分, 降低单文件复杂度
 // v0.3.0 M1: TOOLS 类型化为 ToolSpec[](结构本身已符合, 仅补类型标注)
 import type { ToolSpec } from '../types'
@@ -43,7 +43,7 @@ export const TOOLS: ToolSpec[] = [
   { type: 'function', function: { name: 'list_schedules', description: 'list_schedules() 列出全部定时任务', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'mcp_connect', description: 'mcp_connect(name, command, args) 连接 MCP 服务器(args 为字符串数组)', parameters: { type: 'object', properties: { name: { type: 'string' }, command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['name', 'command'] } } },
   { type: 'function', function: { name: 'mcp_call', description: 'mcp_call(server, tool, args) 调用 MCP 工具', parameters: { type: 'object', properties: { server: { type: 'string' }, tool: { type: 'string' }, args: { type: 'object' } }, required: ['server', 'tool'] } } },
-  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason) 将任务交接给另一角色并切换身份执行', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['姬子','三月七','银狼','艾丝妲','知更鸟','黑天鹅','螺丝咕姆'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
+  { type: 'function', function: { name: 'handoff', description: 'handoff(agent_name, reason) 将任务交接给另一角色并切换身份执行', parameters: { type: 'object', properties: { agent_name: { type: 'string', enum: ['主控','文档','安全','通知','陪伴','设计','开发'] }, reason: { type: 'string' }, context: { type: 'string' } }, required: ['agent_name'] } } },
   { type: 'function', function: { name: 'dispatch', description: 'dispatch(tasks) 并行分发子任务给多个角色独立执行并汇总; tasks=[{agent, task}]', parameters: { type: 'object', properties: { tasks: { type: 'array', items: { type: 'object', properties: { agent: { type: 'string' }, task: { type: 'string' } }, required: ['agent', 'task'] } }, reason: { type: 'string' } }, required: ['tasks'] } } },
   { type: 'function', function: { name: 'list_agents', description: 'list_agents() 列出全部角色', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'list_workflows', description: 'list_workflows() 列出工作流模板', parameters: { type: 'object', properties: {} } } },

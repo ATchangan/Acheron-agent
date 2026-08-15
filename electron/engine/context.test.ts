@@ -20,13 +20,13 @@ describe('engine context', () => {
   it('buildPrompt 包含身份与多角色编队', () => {
     const sp = buildPrompt('work', '测试人设', G, getAgents(), 'D:/test')
     expect(sp).toContain('多角色编队')
-    expect(sp).toContain('黄泉')
+    expect(sp).toContain('助手')
     expect(sp).toContain('简单任务直接调工具')
   })
 
-  it('routeAgent 简单消息不路由, 代码消息路由螺丝咕姆', () => {
+  it('routeAgent 简单消息不路由, 代码消息路由开发', () => {
     expect(routeAgent('你好', G)).toBeNull()
-    expect(routeAgent('帮我写一个 python 脚本', G)).toBe('螺丝咕姆')
+    expect(routeAgent('帮我写一个 python 脚本', G)).toBe('开发')
   })
 
   it('buildContextualMessages 注入 LLM 早期摘要', () => {
@@ -55,8 +55,8 @@ describe('engine context', () => {
   it('handoffContext=false 时只保留交接点之后的消息', () => {
     const msgs = [
       { id: 'u1', role: 'user' as const, content: '早期需求', timestamp: 1 },
-      { id: 'a1', role: 'assistant' as const, content: null, timestamp: 2, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'handoff', arguments: '{"agent_name":"三月七"}' } }] },
-    { id: 't1', role: 'tool' as const, content: '[已交接] 已交接给 三月七', timestamp: 3, tool_call_id: 'c1' },
+      { id: 'a1', role: 'assistant' as const, content: null, timestamp: 2, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'handoff', arguments: '{"agent_name":"文档"}' } }] },
+    { id: 't1', role: 'tool' as const, content: '[已交接] 已交接给 文档', timestamp: 3, tool_call_id: 'c1' },
       { id: 'a2', role: 'assistant' as const, content: '接手后的回答', timestamp: 4 },
     ]
     const g = { ...G, handoffContext: false }
@@ -65,7 +65,7 @@ describe('engine context', () => {
       cl: 65536,
       spIshiki: '人设',
       sp: buildPrompt('work', '人设', g, getAgents(), 'D:/test'),
-      agent: '三月七',
+      agent: '文档',
       handoffFrom: 2,
       memoryText: '',
       model: 'test',

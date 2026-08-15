@@ -26,7 +26,7 @@ afterAll(() => {
 function freshRow(partial: Partial<Parameters<typeof insertMemory>[0]>): Parameters<typeof insertMemory>[0] {
   const now = Date.now()
   return {
-    agent: '黄泉', scope: 'global', level: 'normal', layer: 'L1', content: '',
+    agent: '助手', scope: 'global', level: 'normal', layer: 'L1', content: '',
     subject: null, relation: null, object: null, embedding: null, sourceId: null,
     ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
     ...partial,
@@ -52,14 +52,14 @@ describe('SQLite 存储基座(M1)', () => {
   })
 
   it('审计写入与筛选查询', () => {
-    insertAudit({ ts: 1000, agent: '黄泉', tool: 'exec_command', argsSummary: 'a', resultSummary: 'r', durationMs: 12, tokens: 3 })
-    insertAudit({ ts: 2000, agent: '银狼', tool: 'read', argsSummary: 'b', resultSummary: 'r2', durationMs: 5, tokens: null })
-    const byAgent = queryAudit({ agent: '银狼', limit: 10 })
+    insertAudit({ ts: 1000, agent: '助手', tool: 'exec_command', argsSummary: 'a', resultSummary: 'r', durationMs: 12, tokens: 3 })
+    insertAudit({ ts: 2000, agent: '安全', tool: 'read', argsSummary: 'b', resultSummary: 'r2', durationMs: 5, tokens: null })
+    const byAgent = queryAudit({ agent: '安全', limit: 10 })
     expect(byAgent.length).toBe(1)
     expect(byAgent[0].tool).toBe('read')
     const byRange = queryAudit({ from: 0, to: 1500, limit: 10 })
     expect(byRange.length).toBe(1)
-    expect(byRange[0].agent).toBe('黄泉')
+    expect(byRange[0].agent).toBe('助手')
   })
 })
 
@@ -110,11 +110,11 @@ describe('索引与维护(v0.4.0 定稿)', () => {
 
   it('side-channel 与审计按条数/时间上限清理', () => {
     const id = saveToolOutput('s2', 'read', '待清理内容')
-    insertAudit({ ts: Date.now() - 1000, agent: '黄泉', tool: 'exec_command' })
+    insertAudit({ ts: Date.now() - 1000, agent: '助手', tool: 'exec_command' })
     expect(getToolOutput(id)).toBe('待清理内容')
     pruneToolOutputs(1, 0)
     expect(getToolOutput(id)).toBeNull()
     pruneAudit(0)
-    expect(queryAudit({ agent: '黄泉', limit: 10 })).toHaveLength(0)
+    expect(queryAudit({ agent: '助手', limit: 10 })).toHaveLength(0)
   })
 })

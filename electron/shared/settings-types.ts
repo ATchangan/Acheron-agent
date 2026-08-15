@@ -5,7 +5,7 @@
 export interface AgentDef {
   role: string
   prompt: string
-  tools: string[] // 真实白名单; '*' = 全工具(仅姬子/螺丝咕姆可配)
+  tools: string[] // 真实白名单; '*' = 全工具(仅主控/开发可配)
   handoff_to: string[]
   icon: string
   model?: string // 模型偏好(v0.4 网关接入, 先落字段)
@@ -134,6 +134,12 @@ export interface GeneralSettings {
   briefClosing?: boolean
   // v0.3.0 M5: 补全运行期字段(代码实际访问, 之前宽类型逃逸)
   pluginPerm?: Record<string, string>
+  // v0.4.x 自写插件: 插件启用/分类状态(从 memory.json 迁入, 修复 SQLite 迁移后不持久化的老问题)
+  pluginStates?: Record<string, { enabled?: boolean; category?: string }>
+  // v0.4.x 插件设置: pluginSettings[插件名][key] = 值(manifest.settings 声明 schema)
+  pluginSettings?: Record<string, Record<string, string | number | boolean>>
+  // v0.4.x 界面自定义: 显示开关/密度/自定义 CSS
+  uiDisplay?: UiDisplayConfig
   browserHomeUrl?: string
   browserWinW?: number
   browserWinH?: number
@@ -147,6 +153,8 @@ export interface GeneralSettings {
   mcpAutoConnectOnStart?: boolean
   mcpAutoReconnect?: boolean
   mcpTimeout?: number
+  // v0.4.1: MCP 服务器配置持久化(连接后自动保存, 启动按 mcpAutoConnectOnStart 自动连接)
+  mcpServers?: McpServerConfig[]
   autoMediaImg?: boolean
   autoMediaVideo?: boolean
   // v0.3.3 T3: 跨任务归档开关(默认开启, 0.3.5 并入性能开关区)
@@ -232,4 +240,44 @@ export interface GeneralSettings {
   toneStyle?: string
   userAlias?: string
   verbosity?: number
+}
+
+export interface McpServerConfig {
+  name: string
+  type?: 'stdio' | 'sse'
+  command?: string
+  args?: string[]
+  url?: string
+  headers?: Record<string, string>
+}
+
+// v0.4.x 界面自定义: 结构化显隐开关 + 信息密度 + 自定义 CSS(覆盖其余任意显示细节)
+export interface UiDisplayConfig {
+  hiddenNav?: string[]
+  hideSessionSearch?: boolean
+  hideSessionList?: boolean
+  hidePlanCards?: boolean
+  hideChatToolbar?: boolean
+  hideAttachmentBar?: boolean
+  hideModelPicker?: boolean
+  hideThinkSelector?: boolean
+  hideTokenUsage?: boolean
+  hideTimestamps?: boolean
+  hideToolCalls?: boolean
+  hideTokenMeta?: boolean
+  hideCopyButtons?: boolean
+  hideRegenerate?: boolean
+  statusLine?: string
+  density?: 'compact' | 'comfortable' | 'spacious'
+  customCss?: string
+}
+
+// v0.4.x 插件设置: manifest 声明 schema, 设置页自动渲染, 运行时以 ctx.settings 注入插件
+export interface PluginSettingDef {
+  key: string
+  label: string
+  type: 'string' | 'number' | 'boolean' | 'select'
+  default?: string | number | boolean
+  options?: string[]
+  hint?: string
 }

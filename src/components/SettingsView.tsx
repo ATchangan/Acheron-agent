@@ -3,13 +3,14 @@ import { useSettingsStore } from '../store/settings'
 import { C, S } from './settings-ui'
 
 
-import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Info, Download, Upload, RotateCcw, Activity } from 'lucide-react'
+import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Puzzle, BookOpen, Palette, BarChart3, Settings as SettingsIcon, Info, Download, Upload, RotateCcw, Activity, MonitorSmartphone } from 'lucide-react'
 import { HourglassMark, ScrollMark, MaskMark } from './themed-icons'
 // v0.3.6 P3-10: 设置各 tab 懒加载, 首屏只加载默认 tab(供应商), 减少启动与首屏 bundle
 const AboutTab = React.lazy(() => import('./settings/AboutTab'))
 const ModelsTab = React.lazy(() => import('./settings/ModelsTab'))
 const StatsTab = React.lazy(() => import('./settings/StatsTab'))
 const SkinTab = React.lazy(() => import('./settings/SkinTab'))
+const UiTab = React.lazy(() => import('./settings/UiTab'))
 const McpTab = React.lazy(() => import('./settings/McpTab'))
 const MemoryTab = React.lazy(() => import('./settings/MemoryTab'))
 const StrategyTab = React.lazy(() => import('./settings/StrategyTab'))
@@ -86,13 +87,14 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     { key: 'tools', icon: <Wrench size={15} />, label: '工具' },
     { key: 'mcp', icon: <Puzzle size={15} />, label: 'MCP' }, { key: 'skills', icon: <BookOpen size={15} />, label: '技能' },
     { key: 'skin', icon: <Palette size={15} />, label: '外观' },
+    { key: 'ui', icon: <MonitorSmartphone size={15} />, label: '界面' },
     { key: 'stats', icon: <BarChart3 size={15} />, label: '模型缓存统计' },
     { key: 'diagnostics', icon: <Activity size={15} />, label: '诊断' },
     { key: 'advanced', icon: <SettingsIcon size={15} />, label: '引擎' },
     { key: 'cron', icon: <HourglassMark size={15} />, label: '定时任务' },
     // 藏书阁（原知识库）：私人文档的录入/检索/问答
     { key: 'knowledge', icon: <ScrollMark size={15} />, label: '藏书阁' },
-    { key: 'plugins', icon: <MaskMark size={15} />, label: '式神' },
+    { key: 'plugins', icon: <MaskMark size={15} />, label: '插件' },
     { key: 'about', icon: <Info size={15} />, label: '关于' },
   ]
 
@@ -107,13 +109,14 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
     ['mcp', ['mcp', '服务器', '连接']],
     ['skills', ['技能']],
     ['skin', ['外观', '主题', '皮肤', '背景', '字体', '字号', '动画']],
+    ['ui', ['界面', '自定义', '显示', '隐藏', 'css', '密度', '布局', '侧边栏', '工具栏', '界面元素']],
     ['stats', ['缓存', '统计', '用量', '命中']],
     ['diagnostics', ['诊断', '轨迹', '日志', 'trace', '调试', '恢复']],
     ['advanced', ['引擎', '性能', '性能优化', 'token优化', 'token 优化', '流量', '渲染', 'gpu', '超时', '重试', '通知', '路径']],
     ['about', ['关于', '版本', '更新']],
     ['cron', ['定时', '任务', 'cron']],
     ['knowledge', ['知识', '文档', '导入', '知识库', '藏书', '典籍', '书', '检索', 'rag']],
-    ['plugins', ['插件', '式神', '契约', 'plugin']],
+    ['plugins', ['插件', '插件', '契约', 'plugin']],
   ]
 
   return (
@@ -162,7 +165,7 @@ export default function SettingsView({ onNavigate }: { onNavigate: (v: string) =
         {/* Content */}
         <div style={{ flex: 1, overflow: 'auto' }}>
           <React.Suspense fallback={<div style={{ padding: 24, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>加载中…</div>}>
-            {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'diagnostics' ? <DiagnosticsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'about' ? <AboutTab /> : null}
+            {tab === 'models' ? <ModelsTab showToast={showToast} /> : tab === 'strategy' ? <StrategyTab /> : tab === 'persona' ? <PersonaTab /> : tab === 'memory' ? <MemoryTab /> : tab === 'collab' ? <CollabTab onNavigate={(pg) => onNavigate(pg)} setTab={setTab} openWfModal={(n, d) => { setWfName(n); setWfDesc(d); setWfModal(true) }} /> : tab === 'mcp' ? <McpTab /> : tab === 'skills' ? <SkillsTab /> : tab === 'stats' ? <StatsTab /> : tab === 'diagnostics' ? <DiagnosticsTab /> : tab === 'skin' ? <SkinTab /> : tab === 'ui' ? <UiTab /> : tab === 'tools' ? <ToolsTab /> : tab === 'advanced' ? <AdvancedTab /> : tab === 'cron' ? <CronView /> : tab === 'knowledge' ? <KnowledgeView /> : tab === 'plugins' ? <PluginsView /> : tab === 'about' ? <AboutTab /> : null}
           </React.Suspense>
         </div>
       </div>

@@ -36,12 +36,12 @@ import { maybeRunDailyDecay } from './memory/decay'
 import { stopLocalVisionProcesses } from './llm/vision'
 import * as fs from 'fs'
 
-// 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 黄泉Agent),
+// 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → 桌面智能助手),
 // 不显式指回原目录会丢失全部配置/会话
 // 自省整改: 支持 HQ_USER_DATA 环境变量做测试隔离(测试数据不污染真实用户数据)
 app.setPath('userData', process.env.HQ_USER_DATA ? process.env.HQ_USER_DATA : join(app.getPath('appData'), 'huangquan-agent'))
 // 任务栏/系统托盘显示应用名与 AppUserModelID —— 不设置时 Windows 任务栏右键显示 "Electron"
-app.setName('黄泉Agent')
+app.setName('桌面智能助手')
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.huangquan.agent')
 }
@@ -206,9 +206,9 @@ registerEngineIpc({
   decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>,
   getSender: () => appShell.getWindow()?.webContents || null,
 })
-registerPluginsIpc({ userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir })
+registerPluginsIpc({ userDataPath, settingsPath, assessRisk, getEffectiveWorkDir })
 registerModelStatsIpc()
-registerMcpIpc()
+registerMcpIpc({ settingsPath })
 registerCacheIpc()
 registerMiscIpc({ settingsPath, userDataPath, resourcesDir, skillsDir, workspaceDir, dirSize, fmtSize })
 registerModelsIpc({ netFetch })
@@ -315,6 +315,30 @@ app.whenReady().then(async () => {
   const win0 = appShell.getWindow()
   if (win0) initBrowserViews(win0, { live: rendererMode !== 'cpu' })
   appShell.createTray()
+  // v0.4.x: 设置文件热重载韧性(对齐 deepseek-harness config-hot-reload)——
+  // 外部有效修改即时传导渲染层; 无效修改保留最后可用配置并记录, 绝不拖垮/重启应用
+  try {
+    let settingsWatchContent = ''
+    let settingsWatchTimer: ReturnType<typeof setTimeout> | null = null
+    try { settingsWatchContent = fs.readFileSync(settingsPath, 'utf-8') } catch { /* 首次无文件 */ }
+    fs.watch(settingsPath, () => {
+      if (settingsWatchTimer) clearTimeout(settingsWatchTimer)
+      settingsWatchTimer = setTimeout(() => {
+        try {
+          const cur = fs.readFileSync(settingsPath, 'utf-8')
+          if (cur === settingsWatchContent) return
+          JSON.parse(cur) // 语法校验; 内容未变或非法 JSON 都不传导
+          settingsWatchContent = cur
+          appShell.getWindow()?.webContents.send('settings:changed')
+          safeLog('[settings] 检测到外部修改, 已热重载')
+        } catch (e: unknown) {
+          safeLog('[settings] 外部修改无效, 保留最后可用配置: ' + (e instanceof Error ? e.message : String(e)))
+        }
+      }, 250)
+    })
+  } catch (e: unknown) { safeLog('[settings] 监听启动失败: ' + (e instanceof Error ? e.message : String(e))) }
+  // v0.4.1: MCP 配置持久化后, 启动时按开关自动连接已保存的服务器(失败不阻塞启动)
+  import('./mcp/auto').then(m => m.autoConnectMcp(settingsPath)).catch(() => {})
   // v0.4.0 定稿: 会话索引与每日记忆维护延后到窗口显示后执行, 避免大记忆库阻塞首屏
   if (dbInit.ok) {
     setTimeout(() => {

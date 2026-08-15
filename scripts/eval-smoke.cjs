@@ -1,4 +1,4 @@
-// 黄泉Agent 冒烟评估(eval 基准): 通过 CDP 驱动真实任务, 断言关键行为, 输出 JSON 报告
+// 桌面智能助手 冒烟评估(eval 基准): 通过 CDP 驱动真实任务, 断言关键行为, 输出 JSON 报告
 // 用法: 先以 --remote-debugging-port=9232 启动应用, 再 node scripts/eval-smoke.cjs [port]
 const http = require('node:http')
 const httpGet = (u) => new Promise((res, rej) => http.get(u, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>res(d)) }).on('error', rej))
@@ -203,7 +203,7 @@ async function main() {
       JSON.stringify({ gitCalls: gitCalls.map(c => c.args), tools: r8.result?.value?.toolNames || [] }))
 
     // 场景9: 子目录项目指令按需注入
-    const instrDir = 'D:\\桌面\\黄泉工作台\\eval-instr'
+    const instrDir = 'D:\\桌面\\桌面工作台\\eval-instr'
     try {
       fsEval.mkdirSync(instrDir, { recursive: true })
       fsEval.writeFileSync(instrDir + '\\AGENTS.md', '---\npaths:\n  - notes.txt\n---\nEVAL_RULE_9F3A', 'utf-8')
@@ -218,7 +218,7 @@ async function main() {
     try { fsEval.rmSync(instrDir, { recursive: true, force: true }) } catch { /* 忽略 */ }
 
     // 场景10: 任务文件回滚
-    const rbFile = 'D:\\桌面\\黄泉工作台\\eval-rb.txt'
+    const rbFile = 'D:\\桌面\\桌面工作台\\eval-rb.txt'
     const t10 = await sendTask(ev, '请使用 write 工具在 ' + rbFile + ' 写入 hello，然后读回确认')
     await sleep(1500)
     const r10 = await waitSessionInfo(ev, t10)

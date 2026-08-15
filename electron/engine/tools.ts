@@ -1,16 +1,18 @@
 // electron/engine/tools.ts — 工具分发器(schema/执行器已拆分到 tool-specs / tool-handlers)
 // 本文件只保留: 权限/缓存/白名单/MCP 确认 + runTool 分发框架。
 import { invokeHandler } from './registry'
+import { join } from 'path'
 import { CACHE_TTL } from './constants'
 import type { EngineToolSpec } from './types'
 import type { AgentDef } from './agents'
 import { errMsg } from './errmsg'
-import { parseMcpToolName } from '../shared/mcp-utils'
+import { parseMcpToolName, resolveMcpToolName } from '../shared/mcp-utils'
 import { TOOLS, getMcpToolSpecs } from './tool-specs'
 import { TOOL_HANDLERS, closeTerminalSessions, setRunToolRef } from './tool-handlers'
 import type { ToolRunCtx } from './tool-types'
 import { checkFilePermission } from './tool-permission'
 import { requestRiskConfirm } from '../ipc/risk-confirm'
+import { getPluginToolSpecs } from '../plugins/author'
 export { parseMcpToolName, TOOLS, getMcpToolSpecs, closeTerminalSessions }
 export type { ToolRunCtx }
 
@@ -21,6 +23,9 @@ const CORE_TOOLS = new Set([
   'web_search', 'web_fetch', 'web_read', 'read_skill', 'skill_manage', 'init_project_docs', 'update_plan',
   'system_info', 'session_search', 'save_memory', 'recall_memory', 'recall_events', 'recall_tool_output',
   'list_agents', 'dispatch', 'handoff', 'list_workflows', 'run_workflow',
+  'install_plugin', 'list_plugins', 'read_plugin', 'remove_plugin', 'reload_plugins',
+  'set_ui_display', 'get_ui_display',
+  'get_settings', 'set_settings',
 ])
 
 // ─── 工具缓存(引擎内, 写操作自动失效) ───
@@ -40,11 +45,12 @@ export function getActiveTools(ctx: ToolRunCtx): EngineToolSpec[] {
   const raw = ctx.g.disabledTools
   const disabled: string[] = raw === undefined ? ['workflow'] : (raw || [])
   const autoMcp = ctx.g.mcpAutoInject !== false
-  const merged = autoMcp ? [...TOOLS, ...getMcpToolSpecs()] : [...TOOLS]
+  // 插件工具恒注入(与 MCP 开关解耦): 用户显式安装的自写插件按 plugin_<name>__<tool> 进模型工具列表
+  const merged = [...TOOLS, ...getPluginToolSpecs(join(ctx.userDataPath, 'plugins'), false, join(ctx.userDataPath, 'settings.json')), ...(autoMcp ? getMcpToolSpecs() : [])]
   // v0.3.5 T2: 工具白名单开关 —— 关闭时不过 agent 白名单, 返回全量工具
   let filtered = (ctx.agent && ctx.g.perf?.toolWhitelist !== false) ? filterTools(merged, ctx.agent, ctx.agents, ctx.g.mcpAutoInject !== false) : merged
-  // v0.3.8: 核心工具模式(默认开) —— 只约束主控(无 agent / 姬子), 其它角色仍按各自白名单; 用户在工具权限里显式配置过的工具自动放行
-  const isMain = !ctx.agent || ctx.agent === '姬子'
+  // v0.3.8: 核心工具模式(默认开) —— 只约束主控(无 agent / 主控), 其它角色仍按各自白名单; 用户在工具权限里显式配置过的工具自动放行
+  const isMain = !ctx.agent || ctx.agent === '主控'
   if (ctx.g.perf?.toolCore !== false && isMain) {
     const explicit = new Set(Object.keys(ctx.g.toolPerms || {}).filter(k => (ctx.g.toolPerms || {})[k] !== 'deny'))
     filtered = filtered.filter(t => CORE_TOOLS.has(t.function.name) || explicit.has(t.function.name) || t.function.name.startsWith('mcp__') || t.function.name.startsWith('plugin_'))
@@ -99,11 +105,15 @@ export async function runTool(name: string, a: Record<string, unknown>, ctx: Too
     try {
       let r: unknown
       try {
-        const { callMCPTool } = require('../mcp/client')
-        r = await callMCPTool(t.server, t.tool, a || {})
+        const { callMCPTool, listServers } = require('../mcp/client')
+        const real = resolveMcpToolName(name, listServers().map((s: { name: string; tools: { name: string }[] }) => ({ name: s.name, tools: s.tools.map(x => x.name) })))
+        const p = real || { server: t.server, tool: t.tool }
+        r = await callMCPTool(p.server, p.tool, a || {})
       } catch (_e) {
-        const { callSSETool } = require('../mcp/sse-transport')
-        r = await callSSETool(t.server, t.tool, a || {})
+        const { callSSETool, listSSEServers } = require('../mcp/sse-transport')
+        const real = resolveMcpToolName(name, listSSEServers().map((s: { name: string; tools: unknown[] }) => ({ name: s.name, tools: s.tools.map(x => typeof x === 'string' ? x : String((x as { name?: string })?.name || '')) })))
+        const p = real || { server: t.server, tool: t.tool }
+        r = await callSSETool(p.server, p.tool, a || {})
       }
       return typeof r === 'string' ? r : JSON.stringify(r)
     } catch (e: unknown) { return 'E:MCP 工具调用异常: ' + errMsg(e) }
@@ -115,7 +125,7 @@ export async function runTool(name: string, a: Record<string, unknown>, ctx: Too
     if (sep <= 0) return 'E:插件工具名格式错误: ' + name
     const plugin = rest.slice(0, sep)
     const tool = rest.slice(sep + 2)
-    try { return String(await invokeHandler('plugins:exec', [{ plugin, tool, args: a || {} }], ctx.sender)) } catch (e: unknown) { return 'E:插件执行异常: ' + errMsg(e) }
+    try { return String(await invokeHandler('plugins:exec', [{ plugin, tool, args: a || {}, sid: ctx.sid, taskId: ctx.taskId, workDir: ctx.workDir }], ctx.sender)) } catch (e: unknown) { return 'E:插件执行异常: ' + errMsg(e) }
   }
   // 声明式 handler 分发
   const def = TOOL_HANDLERS.find(d => d.name === name)

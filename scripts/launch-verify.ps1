@@ -1,4 +1,4 @@
-﻿# 黄泉Agent 版本验证：启动应用 -> CDP 检查 -> 截图 -> 关闭
+# 桌面智能助手 版本验证：启动应用 -> CDP 检查 -> 截图 -> 关闭
 # 用法: powershell -ExecutionPolicy Bypass -File scripts/launch-verify.ps1 -VersionDir D:\...\v0.3.2\源码 -Port 9232
 param(
   [Parameter(Mandatory=$true)][string]$VersionDir,
@@ -39,7 +39,7 @@ if ($About) { $extra = 'about' }
 if ($Strategy) { $extra = 'strategy' }
 if ($Features) { $extra = 'features' }
 if ($Chat) {
-  node (Join-Path $scriptDir 'verify-chat.cjs') $Port '你好，用一句话介绍自己' '读取 D:\桌面\黄泉agent\打包发布流程.md 的第一行并原样回复'
+  node (Join-Path $scriptDir 'verify-chat.cjs') $Port '你好，用一句话介绍自己' '读取 D:\桌面\助手agent\打包发布流程.md 的第一行并原样回复'
 } else {
   node (Join-Path $scriptDir 'verify-cdp.cjs') $Port $outDir $extra
 }

@@ -3,15 +3,21 @@ import { ipcMain, BrowserWindow, dialog } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { exec } from 'child_process'
+import { invalidatePluginToolSpecCache, bustPluginCache, isPluginDisabled, readPluginStates } from '../plugins/author'
+import { writeFileAtomic } from '../fs-atomic'
+import { requestRiskConfirm } from './risk-confirm'
+import { isMutatingCommand } from '../security/permission'
+import { handleHostCall, type PluginPolicyEnv } from '../plugins/plugin-policy'
+import { runPluginInMain, type HostDone } from '../plugins/host-core'
+import { runPluginInUtility } from '../plugins/plugin-runner'
 
 export function registerPluginsIpc(deps: {
   userDataPath: string
   settingsPath: string
-  assertInsideWorkDir: (p: string) => boolean
   assessRisk: (e: { type: string; command: string }) => string
   getEffectiveWorkDir: () => string | undefined
 }): void {
-  const { userDataPath, settingsPath, assertInsideWorkDir, assessRisk, getEffectiveWorkDir } = deps
+  const { userDataPath, settingsPath, assessRisk, getEffectiveWorkDir } = deps
 
   ipcMain.handle('plugins:install', (_e, url: string) => {
     // spawn 替代 exec 拼接 —— 修复命令注入
@@ -28,7 +34,10 @@ export function registerPluginsIpc(deps: {
       let errOut = ''
       cp.stderr?.on('data', (d: Buffer) => { errOut += d.toString(); if (errOut.length > 500) errOut = errOut.slice(-500) })
       cp.on('error', (e: unknown) => resolve('Error: ' + (e instanceof Error ? e.message : String(e)) || 'git 启动失败'))
-      cp.on('close', (code: number) => resolve(code === 0 ? ('Plugin installed: ' + name) : ('Error: ' + (errOut.trim() || 'git clone 失败, code ' + code))))
+      cp.on('close', (code: number) => {
+        if (code === 0) { invalidatePluginToolSpecCache(); resolve('Plugin installed: ' + name) }
+        else resolve('Error: ' + (errOut.trim() || 'git clone 失败, code ' + code))
+      })
     })
   })
   ipcMain.handle('plugins:scan', () => {
@@ -45,12 +54,28 @@ export function registerPluginsIpc(deps: {
   ipcMain.handle('plugins:delete', (_e, name: string) => {
     try {
       const dir = join(userDataPath, 'plugins', name)
-      if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); return true }
+      if (fs.existsSync(dir)) {
+        bustPluginCache(join(userDataPath, 'plugins'), name)
+        fs.rmSync(dir, { recursive: true, force: true })
+        invalidatePluginToolSpecCache()
+        return true
+      }
       return 'Error: plugin not found'
     } catch (e: unknown) { return 'Error: ' + (e instanceof Error ? e.message : String(e)) }
   })
-  // ─── v0.3.0 M4: 插件执行层 —— vm 沙箱 + ask 权限 + 10s 超时 + 4KB 截断 ──
-  const vm = require('vm')
+  // v0.4.x: 插件启用/禁用与分类状态, 从 memory.json 迁到 settings.json(修复 v0.4.0 SQLite 迁移后状态不持久化的老问题)
+  ipcMain.handle('plugins:getState', () => readPluginStates(settingsPath))
+  ipcMain.handle('plugins:setState', (_e, state: Record<string, { enabled?: boolean; category?: string }>) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+      d.general = d.general || {}
+      d.general.pluginStates = state && typeof state === 'object' ? state : {}
+      writeFileAtomic(settingsPath, JSON.stringify(d, null, 2))
+      invalidatePluginToolSpecCache()
+      return true
+    } catch (e: unknown) { return 'Error: ' + (e instanceof Error ? e.message : String(e)) }
+  })
+  // ─── 插件执行层 —— 独立进程 + ask 权限 + 超时强杀 + 4KB 截断(utilityProcess 不可用时回落同进程 vm) ──
   const readPluginPerm = (): Record<string, string> => {
     try { return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general?.pluginPerm || {} } catch { return {} }
   }
@@ -59,19 +84,15 @@ export function registerPluginsIpc(deps: {
       const d = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
       d.general = d.general || {}
       d.general.pluginPerm = perm
-      fs.writeFileSync(settingsPath, JSON.stringify(d, null, 2), 'utf-8')
+      writeFileAtomic(settingsPath, JSON.stringify(d, null, 2))
     } catch (e: unknown) { console.warn('[plugin] 权限写入失败:', e instanceof Error ? e.message : String(e)) }
   }
-  // 插件工具桥: 只走既有权限校验(L0-L4 复用) —— 插件无法绕过
-  const pluginBridgeTools: Record<string, (a: Record<string, unknown>) => Promise<string>> = {
-    read: async (a: Record<string, unknown>) => { const p = String(a?.path || ''); if (!assertInsideWorkDir(p)) return 'E:仅允许读取工作目录内的文件'; try { return fs.readFileSync(p, 'utf-8').slice(0, 8000) } catch (e: unknown) { return 'E:' + (e instanceof Error ? e.message : String(e)) } },
-    write: async (a: Record<string, unknown>) => { const p = String(a?.path || ''); if (!assertInsideWorkDir(p)) return 'E:仅允许写入工作目录内的文件'; try { fs.writeFileSync(p, String(a?.content ?? ''), 'utf-8'); return 'ok' } catch (e: unknown) { return 'E:' + (e instanceof Error ? e.message : String(e)) } },
-    exec_command: async (a: Record<string, unknown>) => { const cmd = String(a?.cmd || ''); if (assessRisk({ type: 'terminal', command: cmd }) === 'L4') return 'E:permission denied: 危险命令已被拦截'; return new Promise<string>(r => exec(cmd, { cwd: getEffectiveWorkDir(), timeout: 15000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => r((stdout || '') + (stderr ? '\n[stderr] ' + stderr.slice(0, 500) : '') + (err ? '\n[exit] ' + err.message : '')))) },
-  }
-  ipcMain.handle('plugins:exec', async (_e, payload: { plugin: string; tool: string; args: Record<string, unknown> }) => {
+  ipcMain.handle('plugins:exec', async (_e, payload: { plugin: string; tool: string; args: Record<string, unknown>; sid?: string; taskId?: string; workDir?: string }) => {
     try {
-      const { plugin, tool, args } = payload || {}
+      const { plugin, tool, args, sid, taskId, workDir } = payload || {}
       const pluginsDir = join(userDataPath, 'plugins')
+      // 0. 插件级禁用: UI 关闭后不注入、不可执行
+      if (isPluginDisabled(settingsPath, String(plugin))) return 'E:插件已被禁用: ' + plugin
       // 1. 校验 plugin/tool 在已扫描实现清单内(防任意路径注入)
       const loader = require('../plugins/loader')
       if (!loader.isPluginToolValid(pluginsDir, String(plugin), String(tool))) return 'E:PLUGIN_UNKNOWN: ' + plugin + '/' + tool
@@ -84,56 +105,59 @@ export function registerPluginsIpc(deps: {
         const r = await dialog.showMessageBox(win, {
           type: 'question', title: '插件工具请求执行',
           message: `插件「${plugin}」的工具「${tool}」请求执行。`,
-          detail: '插件运行在沙箱中: 文件操作仅限工作目录, 命令执行受危险命令拦截。',
+          detail: '插件运行在独立进程中: 文件操作仅限工作目录; 会改变系统状态的命令逐条弹确认, 危险命令直接拦截。',
           buttons: ['允许一次', '始终允许', '拒绝'], defaultId: 0, cancelId: 2,
         })
         if (r.response === 2) { perm[key] = 'deny'; writePluginPerm(perm); return 'E:用户拒绝了插件工具调用' }
         if (r.response === 1) { perm[key] = 'allow'; writePluginPerm(perm) }
       }
-      // 3. vm 沙箱执行 index.js(require 白名单: path + fs 只读子集)
-      const idx = join(pluginsDir, String(plugin), 'index.js')
-      const code = fs.readFileSync(idx, 'utf-8')
-      const logs: string[] = []
-      const sandboxRequire = (modName: string): unknown => {
-        if (modName === 'path' || modName === 'node:path') return require('path')
-        if (modName === 'fs' || modName === 'node:fs') {
-          // v0.3.1 补丁: fs 白名单全部包一层工作目录校验 —— 插件禁止读取工作目录外的任意文件
-          const guardRead = (p: unknown): string => {
-            const path = String(p ?? '')
-            if (!assertInsideWorkDir(path)) throw new Error('E:仅允许读取工作目录内的文件')
-            return path
-          }
-          const f: Record<string, unknown> = {
-            readFileSync: (p: unknown, ...a: unknown[]) => fs.readFileSync(guardRead(p), ...(a as [never])),
-            readdirSync: (p: unknown, ...a: unknown[]) => fs.readdirSync(guardRead(p), ...(a as [never])),
-            existsSync: (p: unknown) => { const q = String(p ?? ''); return assertInsideWorkDir(q) && fs.existsSync(q) },
-            statSync: (p: unknown) => fs.statSync(guardRead(p)),
-            readFile: (p: unknown, ...a: unknown[]) => fs.promises.readFile(guardRead(p), ...(a as [never])),
-            readdir: (p: unknown, ...a: unknown[]) => fs.promises.readdir(guardRead(p), ...(a as [never])),
-          }
-          return f
-        }
-        throw new Error('E:PLUGIN_FORBIDDEN: ' + modName)
+      // 3. 任务级工作目录优先(经 set_workdir 切换), 所有特权操作经父进程策略裁决
+      const effectiveWorkDir = (workDir && String(workDir).trim()) || getEffectiveWorkDir() || ''
+      const env: PluginPolicyEnv = {
+        workDir: effectiveWorkDir,
+        isDangerous: cmd => assessRisk({ type: 'terminal', command: cmd }) === 'L4',
+        isMutating: isMutatingCommand,
+        confirmCommand: async (cmd: string): Promise<'allow' | 'deny'> => {
+          try {
+            const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+            if (s?.general?.riskAutoApprove === true) return 'allow'
+            if (s?.general?.riskConfirm === false) return 'allow'
+            if (Array.isArray(s?.general?.riskAlwaysAllow) && s.general.riskAlwaysAllow.includes('插件命令')) return 'allow'
+          } catch { /* 设置缺失走确认 */ }
+          const d = await requestRiskConfirm({ kind: '插件命令', detail: cmd, level: 'L2', sid, taskId })
+          return d === 'allow' ? 'allow' : 'deny'
+        },
+        runCommand: cmd => new Promise<string>(r => exec(cmd, { cwd: effectiveWorkDir, timeout: 15000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => r((stdout || '') + (stderr ? '\n[stderr] ' + stderr.slice(0, 500) : '') + (err ? '\n[exit] ' + err.message : '')))),
+        readFile: p => fs.readFileSync(p, 'utf-8'),
+        writeFile: (p, c) => fs.writeFileSync(p, c, 'utf-8'),
       }
-      const sandbox = {
-        module: { exports: {} }, exports: {},
-        require: sandboxRequire,
-        console: { log: (m: unknown) => logs.push(String(m)), warn: (m: unknown) => logs.push('warn: ' + m), error: (m: unknown) => logs.push('error: ' + m) },
-        setTimeout, clearTimeout,
-        log: (m: unknown) => logs.push(String(m)),
-        tools: { run: async (n: string, a: Record<string, unknown>) => { const fn = pluginBridgeTools[n]; return fn ? await fn(a || {}) : 'E:未知工具: ' + n } },
+      const handleCall = (n: string, a: Record<string, unknown>) => handleHostCall(n, a, env)
+      // 插件设置: manifest.settings 声明的 schema 默认值 + settings.json 中用户保存值, 以 ctx.settings 注入运行时
+      const manifest = (() => { try { return JSON.parse(fs.readFileSync(join(pluginsDir, String(plugin), 'manifest.json'), 'utf-8')) } catch { return {} } })() as { settings?: { key: string; type?: string; default?: unknown; options?: string[] }[] }
+      const saved = (() => {
+        try {
+          const g = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))?.general
+          return (g && typeof g.pluginSettings === 'object' && g.pluginSettings[String(plugin)]) || {}
+        } catch { return {} }
+      })() as Record<string, unknown>
+      const settings: Record<string, unknown> = {}
+      for (const d of Array.isArray(manifest.settings) ? manifest.settings : []) {
+        settings[d.key] = saved[d.key] !== undefined ? saved[d.key]
+          : d.default !== undefined ? d.default
+          : d.type === 'number' ? 0 : d.type === 'boolean' ? false : (Array.isArray(d.options) && d.options.length ? d.options[0] : '')
       }
-      const vmCtx = vm.createContext(sandbox)
-      vm.runInContext(code, vmCtx, { timeout: 10000 })
-      const exportsInSandbox = vm.runInContext('module.exports', vmCtx, { timeout: 1000 })
-      const toolDef = (Array.isArray(exportsInSandbox?.tools) ? exportsInSandbox.tools : []).find((t: { name?: string }) => t?.name === tool)
-      if (!toolDef || typeof toolDef.run !== 'function') return 'E:PLUGIN_NO_RUN: ' + tool
-      // 4. 执行(run 可为同步或 Promise), 10s 超时
-      const result = await Promise.race([
-        Promise.resolve().then(() => toolDef.run(args || {}, { log: sandbox.log, tools: sandbox.tools })),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('E:PLUGIN_TIMEOUT(10s)')), 10000)),
-      ])
-      const s = String(result ?? '')
+      const hostPayload = { code: fs.readFileSync(join(pluginsDir, String(plugin), 'index.js'), 'utf-8'), tool: String(tool), args: args || {}, settings }
+      // 4. 独立进程执行(挂死强杀/崩溃隔离), utilityProcess 异常时回落同进程 vm(权限边界不变)
+      let done: HostDone
+      try {
+        done = await runPluginInUtility(join(__dirname, '..', 'plugins', 'plugin-host.js'), hostPayload, handleCall)
+      } catch (e: unknown) {
+        console.debug('[plugin] utilityProcess 不可用, 回落同进程 vm:', e instanceof Error ? e.message : String(e))
+        done = await runPluginInMain(hostPayload, handleCall)
+      }
+      if (!done.ok) return 'E:PLUGIN_ERR: ' + (done.error || '插件执行失败')
+      const s = String(done.result ?? '')
+      const logs = done.logs || []
       return s.length > 4000 ? s.slice(0, 4000) + '...[截断, 共 ' + s.length + ' 字符]' : (s + (logs.length ? '\n[插件日志]\n' + logs.join('\n').slice(0, 1000) : ''))
     } catch (e: unknown) { return 'E:PLUGIN_ERR: ' + ((e instanceof Error ? e.message : String(e))) }
   })

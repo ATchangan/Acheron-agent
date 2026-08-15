@@ -7,6 +7,7 @@ import { useSettingsStore } from '../store/settings'
 import type { Message } from '../global'
 import { api } from '../services/ipc'
 import { TOOL_LABELS, fmtDur } from './work-steps'
+import { resolveDisplay } from '../store/display'
 
 // ============================================================
 // 会话区 (v0.3.4)
@@ -86,6 +87,7 @@ const UserBubble: React.FC<{
     return false
   })
   const showTimestamps = useSettingsStore(s => (s.general).showTimestamps || 'hover')
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
   const timeText = new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 
   const measure = useCallback(() => {
@@ -164,10 +166,10 @@ const UserBubble: React.FC<{
       </div>
       <div className="hq-user-hover-actions" onClick={e => e.stopPropagation()}>
         {clamped && !expanded && <button className="hq-mini-btn" title="展开完整内容" onClick={() => setExpanded(true)}><ChevronDown size={12} /></button>}
-        {!editing && <button className="hq-mini-btn" title="重新生成回复" disabled={busy} style={busy ? { opacity: 0.4, cursor: 'default' } : undefined} onClick={() => resendFrom(message.id)}><RefreshCw size={12} /></button>}
+        {!editing && !disp.hideRegenerate && <button className="hq-mini-btn" title="重新生成回复" disabled={busy} style={busy ? { opacity: 0.4, cursor: 'default' } : undefined} onClick={() => resendFrom(message.id)}><RefreshCw size={12} /></button>}
         {!editing && <button className="hq-mini-btn" title="编辑" onClick={startEdit}><Pencil size={12} /></button>}
-        {!editing && <button className="hq-mini-btn" title={copied ? '已复制' : '复制'} onClick={handleCopy}>{copied ? <Check size={12} /> : <Copy size={12} />}</button>}
-        {showTimestamps === 'always' && <span className="hq-user-time">{timeText}</span>}
+        {!editing && !disp.hideCopyButtons && <button className="hq-mini-btn" title={copied ? '已复制' : '复制'} onClick={handleCopy}>{copied ? <Check size={12} /> : <Copy size={12} />}</button>}
+        {!disp.hideTimestamps && showTimestamps === 'always' && <span className="hq-user-time">{timeText}</span>}
       </div>
     </div>
   )
@@ -282,6 +284,7 @@ const AssistantBlock: React.FC<{
 
   const tools = message.tool_calls || []
   const hasText = !!content || isStreaming
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
 
   return (
     <div className="hq-assistant-block group" data-role="assistant" data-message-id={message.id}>
@@ -303,7 +306,7 @@ const AssistantBlock: React.FC<{
           ) : null}
         </div>
       )}
-      {tools.length > 0 && (
+      {!disp.hideToolCalls && tools.length > 0 && (
         <div className="hq-tool-list">
           {tools.map((tc, i) => (
             <ToolRowMemo
@@ -318,12 +321,12 @@ const AssistantBlock: React.FC<{
       )}
       {hasText && (
         <div className="hq-msg-actions">
-          <span className="hq-msg-age">{fmtAgo(message.timestamp)}</span>
-  {message.meta?.taskMs !== undefined && <span className="hq-msg-meta" title="任务总时长">{fmtDur(message.meta.taskMs)}</span>}
-          {message.meta?.taskTokens != null && <span className="hq-msg-meta" title="本任务总消耗(全 agent)">{message.meta.taskTokens} token</span>}
+          {!disp.hideTimestamps && <span className="hq-msg-age">{fmtAgo(message.timestamp)}</span>}
+  {!disp.hideTokenMeta && message.meta?.taskMs !== undefined && <span className="hq-msg-meta" title="任务总时长">{fmtDur(message.meta.taskMs)}</span>}
+          {!disp.hideTokenMeta && message.meta?.taskTokens != null && <span className="hq-msg-meta" title="本任务总消耗(全 agent)">{message.meta.taskTokens} token</span>}
           {ttsEnabled && <button title={ttsBusy ? '朗读中…' : '语音朗读'} onClick={speak}><Volume2 size={13} /></button>}
-          <button title="重新生成" onClick={regen}><RefreshCw size={13} /></button>
-          <button title={copied ? '已复制' : '复制回复'} onClick={handleCopy}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
+          {!disp.hideRegenerate && <button title="重新生成" onClick={regen}><RefreshCw size={13} /></button>}
+          {!disp.hideCopyButtons && <button title={copied ? '已复制' : '复制回复'} onClick={handleCopy}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>}
           <button title="引用到输入框" onClick={quote}><Quote size={13} /></button>
         </div>
       )}

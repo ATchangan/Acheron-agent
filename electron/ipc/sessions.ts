@@ -1,4 +1,4 @@
-﻿// electron/ipc/sessions.ts —— 会话域 IPC(0.3.1 块 G 迁移, 行为零变化)
+// electron/ipc/sessions.ts —— 会话域 IPC(0.3.1 块 G 迁移, 行为零变化)
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
@@ -135,14 +135,14 @@ export function registerSessionIpc(deps: {
       }
       if (format === 'txt') {
         const lines: string[] = []
-        for (const s of all) { lines.push(`=== ${s.title || '对话'} ===`); for (const m of s.messages || []) { if (m.role === 'user' || (m.role === 'assistant' && m.content)) lines.push(`[${m.role === 'user' ? '用户' : '黄泉'}] ${(m.content || '').replace(/\n+/g, ' ')}`) } lines.push('') }
+        for (const s of all) { lines.push(`=== ${s.title || '对话'} ===`); for (const m of s.messages || []) { if (m.role === 'user' || (m.role === 'assistant' && m.content)) lines.push(`[${m.role === 'user' ? '用户' : '助手'}] ${(m.content || '').replace(/\n+/g, ' ')}`) } lines.push('') }
         const out = join(dir, `huangquan-history-${stamp}.txt`)
         fs.writeFileSync(out, lines.join('\n'), 'utf-8')
         return out
       }
       // md
-      const lines: string[] = ['# 黄泉Agent 对话历史', '']
-      for (const s of all) { lines.push(`## ${s.title || '对话'}`, ''); for (const m of s.messages || []) { if (m.role === 'user' || (m.role === 'assistant' && m.content)) lines.push(`**${m.role === 'user' ? '用户' : '黄泉'}**：${(m.content || '').replace(/\n+/g, '\n\n')}`, '') } }
+      const lines: string[] = ['# 桌面智能助手 对话历史', '']
+      for (const s of all) { lines.push(`## ${s.title || '对话'}`, ''); for (const m of s.messages || []) { if (m.role === 'user' || (m.role === 'assistant' && m.content)) lines.push(`**${m.role === 'user' ? '用户' : '助手'}**：${(m.content || '').replace(/\n+/g, '\n\n')}`, '') } }
       const out = join(dir, `huangquan-history-${stamp}.md`)
       fs.writeFileSync(out, lines.join('\n'), 'utf-8')
       return out

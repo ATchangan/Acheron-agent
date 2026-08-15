@@ -2,7 +2,7 @@
 import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
-import { writeFileAtomic } from '../fs-atomic'
+import { writeFileAtomic, writeFileAtomicIfChanged } from '../fs-atomic'
 
 export function registerSettingsIpc(deps: {
   settingsPath: string
@@ -62,6 +62,14 @@ export function registerSettingsIpc(deps: {
           } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
         }
       }
+      // v0.4.x: 主进程私有字段合并 —— 插件状态等由主进程侧写入的字段, 渲染层全量保存时不得清空
+      try {
+        const onDisk = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+        const diskG = onDisk?.general || {}
+        for (const key of ['pluginStates'] as const) {
+          if (g2[key] === undefined && diskG[key] !== undefined) g2[key] = diskG[key]
+        }
+      } catch { /* 首次保存无旧文件 */ }
       const slim = { ...s, general: g2 }
       // v0.3.0: 自定义工作目录 —— 目录不存在时自动创建(输入新路径即可直接使用)
       try {
@@ -69,7 +77,7 @@ export function registerSettingsIpc(deps: {
         if (typeof wd === 'string' && wd.trim()) fs.mkdirSync(wd.trim(), { recursive: true })
       } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
       // API Key 加密落盘(DPAPI)
-      writeFileAtomic(settingsPath, JSON.stringify(encProviders(slim)))
+      writeFileAtomicIfChanged(settingsPath, JSON.stringify(encProviders(slim)))
       return true
     } catch (e) { console.error('[SETTINGS] save error:', e); return false }
   })

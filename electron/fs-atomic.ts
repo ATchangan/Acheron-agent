@@ -19,6 +19,15 @@ export function writeFileAtomic(file: string, content: string): void {
   }
 }
 
+// 内容未变化时不写(与 deepseek-harness 的 write-path integrity 对齐): 抑制自写触发的 watcher/热重载环路
+export function writeFileAtomicIfChanged(file: string, content: string): boolean {
+  try {
+    if (fs.existsSync(file) && fs.readFileSync(file, 'utf-8') === content) return false
+  } catch { /* 读取失败按需要写入处理 */ }
+  writeFileAtomic(file, content)
+  return true
+}
+
 export async function writeFileAtomicAsync(file: string, content: string): Promise<void> {
   // v0.3.3 性能优化: 异步原子写(大会话不再阻塞主进程事件循环)
   const dir = dirname(file)

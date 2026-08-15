@@ -1,6 +1,7 @@
 // src/store/engine-client.ts — 独立内核渲染层客户端
 // 把主进程 AgentEngine 的事件流应用到 Zustand store(消息/状态/token/计划门), 渲染层不再跑 agent 循环。
 import type { Message, SessionData, UsageData } from '../global'
+import type { UiDisplayConfig } from '../types'
 import { useChatStore } from './chat'
 import { useSettingsStore } from './settings'
 import { autoExtractMemory } from './memory'
@@ -260,13 +261,17 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'ui': {
-      const ui = ev as unknown as { workDir?: string; theme?: string }
+      const ui = ev as unknown as { workDir?: string; theme?: string; uiDisplay?: Record<string, unknown> }
       if (ui.workDir) {
         useSettingsStore.setState(s => ({ general: { ...s.general, workDir: ui.workDir } }))
         useSettingsStore.getState().save().catch(() => {})
       }
       if (ui.theme) {
         useSettingsStore.setState(s => ({ general: { ...s.general, theme: ui.theme as string } }))
+        useSettingsStore.getState().save().catch(() => {})
+      }
+      if (ui.uiDisplay) {
+        useSettingsStore.setState(s => ({ general: { ...s.general, uiDisplay: ui.uiDisplay as UiDisplayConfig } }))
         useSettingsStore.getState().save().catch(() => {})
       }
       break

@@ -1,4 +1,4 @@
-﻿# 黄泉Agent 智力基线报告（baseline-intelligence-report）
+# 桌面智能助手 智力基线报告（baseline-intelligence-report）
 
 > 用途：0.3.2 token 优化系列的对照基准。**本文件为执行模板**——需要在实际配置的模型上跑一遍真实任务后填写数据。
 > 基线代码：v0.3.1（含安全补丁，无 token 优化）；生成日期：2026-08-04

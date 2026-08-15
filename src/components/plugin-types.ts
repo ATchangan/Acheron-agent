@@ -1,5 +1,7 @@
 ﻿// v0.3.1 块 K: 插件页 类型/常量(从 PluginsView 拆出, 行为零变化)
 
+import type { PluginSettingDef } from '../types'
+
 // ─── 型定義 ────────────────────────────────────────────
 export interface PluginManifest {
   name: string
@@ -11,6 +13,7 @@ export interface PluginManifest {
   permissions?: string[]
   tools?: { name: string; description: string; params: Record<string, string> }[]
   commands?: { name: string; action: string }[]
+  settings?: PluginSettingDef[]
   category?: 'oni' | 'yokai' | 'sen' | 'jin'
 }
 

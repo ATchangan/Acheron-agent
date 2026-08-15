@@ -1,7 +1,7 @@
 // 发送消息并捕获渲染进程 console 输出(定位异常堆栈)
 const http = require('node:http')
 const port = process.argv[2] || '9253'
-const msg = process.argv[3] || '读取 D:\\桌面\\黄泉agent\\README.md 的第一行并原样回复'
+const msg = process.argv[3] || '读取 D:\\桌面\\助手agent\\README.md 的第一行并原样回复'
 const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => res(d)) }).on('error', rej))
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 

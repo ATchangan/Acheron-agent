@@ -224,7 +224,7 @@ export default function ToolsTab() {
         <div style={S.section}>系统信息</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
-            ['平台', '黄泉Agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
+            ['平台', '桌面智能助手'], ['Electron', sys?.electron || '…'], ['React', React.version],
             ['Node', sys?.node || '…'], ['工具数', String(TOOLS.length)], ['角色数', String(Object.keys(agentsMap).length)],
             ['技能数', skillCount ? String(skillCount) : '…']
           ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}

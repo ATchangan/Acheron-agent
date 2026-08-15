@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (s: unknown) => ipcRenderer.invoke('settings:save', safeArg(s)),
     reset: () => ipcRenderer.invoke('settings:reset'),
+    onChanged: (cb: () => void) => {
+      const h = () => cb()
+      ipcRenderer.on('settings:changed', h)
+      return () => ipcRenderer.removeListener('settings:changed', h)
+    },
   },
   sessions: {
     list: () => ipcRenderer.invoke('sessions:list'),
@@ -102,10 +107,19 @@ contextBridge.exposeInMainWorld('huangquan', {
     tools: () => ipcRenderer.invoke('plugins:tools'),
     install: (url: string) => ipcRenderer.invoke('plugins:install', url),
     delete: (name: string) => ipcRenderer.invoke('plugins:delete', name),
+    // v0.4.x 自写插件: 安装/删除后由主进程推送刷新信号(无需手动重扫)
+    onChanged: (cb: () => void) => {
+      const h = () => cb()
+      ipcRenderer.on('plugins:changed', h)
+      return () => ipcRenderer.removeListener('plugins:changed', h)
+    },
+    getState: () => ipcRenderer.invoke('plugins:getState'),
+    setState: (state: Record<string, { enabled?: boolean; category?: string }>) => ipcRenderer.invoke('plugins:setState', state),
     // v0.3.0 M4: 插件工具执行(vm 沙箱)
     exec: (plugin: string, tool: string, args: Record<string, unknown>) => ipcRenderer.invoke('plugins:exec', { plugin, tool, args }),
   },
   mcpConnect: (name: string, cmd: string, args: string[]) => ipcRenderer.invoke('mcp:connect', name, cmd, args),
+  mcpDisconnect: (name: string) => ipcRenderer.invoke('mcp:disconnect', name),
   mcpCall: (server: string, tool: string, a: Record<string, unknown>) => ipcRenderer.invoke('mcp:call', server, tool, a),
   mcpList: () => ipcRenderer.invoke('mcp:list'),
   mcpSSEConnect: (name: string, url: string, headers?: Record<string,string>) => ipcRenderer.invoke('mcp:sse:connect', name, url, headers),

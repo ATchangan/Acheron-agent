@@ -4,7 +4,7 @@
 import { spawn, ChildProcess } from 'child_process'
 import { createInterface } from 'readline'
 
-interface MCPServer { name: string; command: string; args: string[]; process?: ChildProcess; tools: MCPTool[]; reqId: number }
+interface MCPServer { name: string; command: string; args: string[]; process?: ChildProcess; tools: MCPTool[]; reqId: number; manualClose?: boolean; onExit?: (name: string, code: number | null) => void }
 
 interface MCPTool { name: string; description: string; inputSchema: Record<string, unknown> }
 
@@ -31,19 +31,21 @@ function sendRPC(server: MCPServer, method: string, params: Record<string, unkno
   })
 }
 
-export async function connectServer(name: string, command: string, args: string[] = []): Promise<MCPTool[]> {
+export async function connectServer(name: string, command: string, args: string[] = [], initTimeoutMs = 15000, onExit?: (name: string, code: number | null) => void): Promise<MCPTool[]> {
   try {
     const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] })
     // spawn error 监听 —— 命令不存在(ENOENT)等启动失败时优雅返回错误, 防止冒泡为 uncaughtException
     const spawnError = new Promise<never>((_, rej) => { proc.on('error', (e: Error) => rej(new Error('MCP 启动失败: ' + (e instanceof Error ? e.message : String(e))))) })
     const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity })
-    const server: MCPServer = { name, command, args, process: proc, tools: [], reqId: 0 }
+    const server: MCPServer = { name, command, args, process: proc, tools: [], reqId: 0, onExit }
+    // v0.4.1: 意外退出回调(供断线重连); 主动断开时置 manualClose 抑制回调
+    proc.on('exit', code => { if (!server.manualClose && server.onExit) server.onExit(name, code) })
     
     await Promise.race([
       new Promise<{ ok?: boolean; error?: string; serverInfo?: unknown }>((resolve, reject) => {
       const id = ++server.reqId
       proc.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {} } }) + '\n')
-      const timer = setTimeout(() => { proc.kill(); reject(new Error('Init timeout')) }, 15000)
+      const timer = setTimeout(() => { proc.kill(); reject(new Error('Init timeout')) }, initTimeoutMs)
       rl.once('line', line => { clearTimeout(timer); resolve(JSON.parse(line)) })
     }), spawnError])
     
@@ -68,4 +70,13 @@ export function listServers(): { name: string; tools: MCPTool[] }[] {
   return [...servers.entries()].map(([name, s]) => ({ name, tools: s.tools }))
 }
 
-export function disconnectAll() { for (const [_, s] of servers) { try { s.process?.kill() } catch (e) { console.debug('[mcp] 终止进程失败:', e) } }; servers.clear() }
+export function disconnectServer(name: string): boolean {
+  const s = servers.get(name)
+  if (!s) return false
+  s.manualClose = true
+  try { s.process?.kill() } catch (e) { console.debug('[mcp] 终止进程失败:', e) }
+  servers.delete(name)
+  return true
+}
+
+export function disconnectAll() { for (const [_, s] of servers) { s.manualClose = true; try { s.process?.kill() } catch (e) { console.debug('[mcp] 终止进程失败:', e) } }; servers.clear() }

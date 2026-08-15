@@ -149,7 +149,7 @@ function rowToMemory(r: Record<string, unknown>): MemoryRow {
   const layerRaw = String(r.layer || 'L1')
   return {
     id: Number(r.id),
-    agent: String(r.agent || '黄泉'),
+    agent: String(r.agent || '助手'),
     scope: (r.scope === 'private' ? 'private' : 'global') as 'global' | 'private',
     level: (levelRaw === 'important' || levelRaw === 'pinned' ? levelRaw : 'normal') as 'normal' | 'important' | 'pinned',
     layer: (layerRaw === 'L0' || layerRaw === 'L2' || layerRaw === 'L3' ? layerRaw : 'L1') as 'L0' | 'L1' | 'L2' | 'L3',
@@ -300,7 +300,7 @@ function ensureVectorCache(): void {
     for (const r of rows) {
       if (vectorCache.has(r.id)) continue
       const e = parseVec(r.embedding)
-      if (e) vectorCache.set(r.id, { ...e, agent: String(r.agent || '黄泉'), scope: r.scope === 'private' ? 'private' : 'global' })
+      if (e) vectorCache.set(r.id, { ...e, agent: String(r.agent || '助手'), scope: r.scope === 'private' ? 'private' : 'global' })
     }
   } catch { /* 缓存加载失败时本函数仍标记完成, 检索端返回空避免误报 */ }
   vectorCacheLoaded = true

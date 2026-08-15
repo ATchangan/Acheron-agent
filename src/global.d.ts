@@ -26,6 +26,7 @@ declare global {
         load: () => Promise<SettingsData>
         save: (data: unknown) => Promise<boolean>
         reset: () => Promise<boolean>
+        onChanged: (cb: () => void) => () => void
       },
       sessions: {
         list: () => Promise<SessionMeta[]>
@@ -76,9 +77,13 @@ declare global {
         tools: () => Promise<{ plugin: string; name: string; description: string; params: Record<string, string> }[]>
         install: (url: string) => Promise<string>
         delete: (name: string) => Promise<boolean | string>
+        onChanged: (cb: () => void) => () => void
+        getState: () => Promise<Record<string, { enabled?: boolean; category?: string }>>
+        setState: (state: Record<string, { enabled?: boolean; category?: string }>) => Promise<boolean | string>
         exec: (plugin: string, tool: string, args: Record<string, unknown>) => Promise<string>
       }
       mcpConnect: (name: string, cmd: string, args: string[]) => Promise<{ ok: boolean; error?: string }>
+      mcpDisconnect: (name: string) => Promise<boolean>
       mcpCall: (server: string, tool: string, a: Record<string, unknown>) => Promise<unknown>
       mcpList: () => Promise<McpServerInfo[]>
       mcpSSEConnect: (name: string, url: string, headers?: Record<string, string>) => Promise<{ ok: boolean; error?: string }>

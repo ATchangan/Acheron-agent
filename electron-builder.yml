@@ -1,9 +1,9 @@
 appId: com.huangquan.agent
-productName: 黄泉Agent
+productName: 桌面智能助手
 directories:
   output: release
   buildResources: resources
-artifactName: Acheron-agent-${version}.exe
+artifactName: Desktop-Assistant-${version}.exe
 publish:
   provider: github
   owner: ATchangan
@@ -31,6 +31,6 @@ linux:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  shortcutName: 黄泉Agent
+  shortcutName: 桌面智能助手
   createDesktopShortcut: true
   include: installer.nsh    # 安装时默认展开详情面板(ShowInstDetails show)

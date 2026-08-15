@@ -19,12 +19,12 @@ const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = 
   const evalJs = async (expression) => (await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value
   await evalJs(`(() => { const el = [...document.querySelectorAll('button,div,span,li')].find(x => x.innerText && x.innerText.trim() === '设置'); if (el) el.click(); return true })()`)
   await new Promise(r => setTimeout(r, 600))
-  await evalJs(`(() => { const el = [...document.querySelectorAll('button,div,span,li')].find(x => x.innerText && x.innerText.trim() === '式神'); if (el) el.click(); return true })()`)
+  await evalJs(`(() => { const el = [...document.querySelectorAll('button,div,span,li')].find(x => x.innerText && x.innerText.trim() === '插件'); if (el) el.click(); return true })()`)
   await new Promise(r => setTimeout(r, 800))
   const info = await evalJs(`(() => {
     const root = document.querySelector('.settings-view') || document.body
     const rect = root.getBoundingClientRect()
-    const h2 = [...document.querySelectorAll('h2')].find(x => x.innerText && x.innerText.includes('黄泉式神录'))
+    const h2 = [...document.querySelectorAll('h2')].find(x => x.innerText && x.innerText.includes('插件库'))
     const h2Info = h2 ? (() => {
       const cs = getComputedStyle(h2)
       const svg = h2.querySelector('svg')

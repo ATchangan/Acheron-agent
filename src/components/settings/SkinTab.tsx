@@ -11,7 +11,7 @@ const THEME_META = [
   { id: 'dark', label: '暗夜', dots: ['#17181c', '#7c6fa8', '#e2e2e8'] },
   { id: 'light', label: '浅色', dots: ['#f5f5f7', '#4f6ef7', '#1a1a1f'] },
   { id: 'black', label: '极黑', dots: ['#000000', '#8b8b95', '#d0d0d8'] },
-  { id: 'huangquan', label: '黄泉', dots: ['#1a1420', '#a855f7', '#e9d5ff'] },
+  { id: 'violet', label: '经典紫', dots: ['#1a1420', '#a855f7', '#e9d5ff'] },
   { id: 'bloodmoon', label: '血月', dots: ['#1c0f12', '#dc2626', '#fecaca'] },
   { id: 'dawn', label: '晨曦', dots: ['#fdf6e3', '#d08770', '#2b2b2b'] },
 ]
@@ -117,7 +117,7 @@ export default function SkinTab() {
         <div style={S.row}><div style={S.label}>界面字号</div><select style={S.sel} value={g.uiFontSize || 13} onChange={e => save({ uiFontSize: parseInt(e.target.value) })}>{[12, 13, 14, 15, 16, 18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
         <div style={S.row}><div style={S.label}>会话字号</div><select style={S.sel} value={g.codeFontSize || 0} onChange={e => { const v = e.target.value; save({ codeFontSize: v ? parseInt(v) : undefined }) }}><option value={0}>跟随界面</option>{[12, 13, 14, 15, 16, 18].map(s => <option key={s} value={s}>{s}px</option>)}</select></div>
         <div style={S.row}><div style={S.label}>会话模式</div><select style={S.sel} value={g.mode || 'work'} onChange={e => save({ mode: e.target.value })}><option value="chat">聊天</option><option value="work">工作</option></select></div>
-        <div style={S.hint}>聊天模式使用黄泉人设闲聊，工作模式使用高效执行人设；也可在左侧会话区顶部快速切换</div>
+        <div style={S.hint}>聊天模式使用助手人设闲聊，工作模式使用高效执行人设；也可在左侧会话区顶部快速切换</div>
         <div style={S.hint}>控制交互会话（聊天正文、输入框、消息内代码与工具输出）的字号，默认跟随界面字号</div>
         <div style={S.row}><div style={S.label}>消息间距</div><select style={S.sel} value={g.messageSpacing || 'comfortable'} onChange={e => save({ messageSpacing: e.target.value })}><option value="compact">紧凑</option><option value="comfortable">舒适</option><option value="loose">宽松</option></select></div>
       </div>

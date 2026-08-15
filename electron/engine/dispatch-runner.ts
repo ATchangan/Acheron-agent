@@ -64,7 +64,7 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
         saveMemory: (m: EngineMemory) => { subMem = m; saveMemory(subMemPath, m, { agent: t.agent, scope: subScope }) },
       }
       const agTools = filterToolsByAgent(getActiveTools(subCtx), t.agent, agents).filter(tt => !COLLAB_TOOLS.includes(tt.function.name))
-      // 子任务使用角色专属模型(如黑天鹅 vision), 未配置则继承当前模型
+      // 子任务使用角色专属模型(如设计 vision), 未配置则继承当前模型
       const subPick = pickSubModel(task.g, task.providers, task.curP, task.model, ag)
       const subP = subPick.p
       const subModel = subPick.model

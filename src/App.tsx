@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
+import { CUSTOM_CSS_MAX } from './store/display'
 import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
 import FilesView from './components/FilesView'
@@ -15,8 +16,8 @@ import RiskConfirmCard from './components/RiskConfirmCard'
 export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser' | 'files'
 
 // 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
-const THEME_WHITELIST = ['dark', 'light', 'black', 'huangquan', 'bloodmoon', 'dawn']
-const LEGACY_THEME: Record<string, string> = { 'system': 'dark', 'dark-tech': 'dark', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'dark', 'high-contrast': 'black' }
+const THEME_WHITELIST = ['dark', 'light', 'black', 'violet', 'bloodmoon', 'dawn']
+const LEGACY_THEME: Record<string, string> = { 'system': 'dark', 'dark-tech': 'dark', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'dark', 'high-contrast': 'black', 'huangquan': 'violet' }
 function resolveTheme(g: GeneralSettings): string {
   const t = g.theme
   if (THEME_WHITELIST.includes(t)) return t
@@ -89,12 +90,24 @@ function applyAppearance(g: GeneralSettings) {
   const chatWidth = g.chatMaxWidth || 780
   r.setProperty('--chat-max-width', chatWidth + 'px')
   r.setProperty('--hq-composer-width', chatWidth + 'px')
+  // 界面自定义: 信息密度(消息间距) + 自定义 CSS(任意显示细节可覆写)
+  const uiDensity = g.uiDisplay?.density === 'compact' || g.uiDisplay?.density === 'spacious' ? g.uiDisplay.density : 'comfortable'
+  document.documentElement.setAttribute('data-density', uiDensity)
+  const DENSITY_GAP: Record<string, string> = { compact: '4px', comfortable: '12px', spacious: '24px' }
+  r.setProperty('--msg-gap', DENSITY_GAP[uiDensity] || '12px')
+  let cssEl = document.getElementById('hq-custom-css') as HTMLStyleElement | null
+  if (!cssEl) {
+    cssEl = document.createElement('style')
+    cssEl.id = 'hq-custom-css'
+    document.head.appendChild(cssEl)
+  }
+  cssEl.textContent = (g.uiDisplay?.customCss || '').slice(0, CUSTOM_CSS_MAX)
   // 系统窗口按钮(最小化/最大化/关闭)配色跟随主题: 预置主题直接映射根背景色, 自定义配色按亮度选图标色
   const OVERLAY_BY_THEME: Record<string, { color: string; symbolColor: string }> = {
     dark: { color: '#15171c', symbolColor: '#c8c8cc' },
     light: { color: '#f4f2ec', symbolColor: '#1a1a1f' },
     black: { color: '#0e0e0e', symbolColor: '#d0d0d8' },
-    huangquan: { color: '#121014', symbolColor: '#e9d5ff' },
+    violet: { color: '#121014', symbolColor: '#e9d5ff' },
     bloodmoon: { color: '#171013', symbolColor: '#fecaca' },
     dawn: { color: '#f6f1e8', symbolColor: '#2b2b2b' },
   }
@@ -121,6 +134,18 @@ function applyAppearance(g: GeneralSettings) {
     } catch { /* 忽略: 非 Electron/早期调用 */ }
   }
   applyOverlay()
+  // 解析后主题色同步(对齐 deepseek-harness resolved-theme-color-metadata):
+  // color-scheme 与 <meta name=theme-color> 跟随渲染结果, 浏览器/系统界面与应用一致
+  const resolvedTheme = resolveTheme(g)
+  document.documentElement.style.colorScheme = (resolvedTheme === 'light' || resolvedTheme === 'dawn') ? 'light' : 'dark'
+  let metaTheme = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null
+  if (!metaTheme) {
+    metaTheme = document.createElement('meta')
+    metaTheme.name = 'theme-color'
+    document.head.appendChild(metaTheme)
+  }
+  const bodyBg = getComputedStyle(document.body).backgroundColor
+  if (bodyBg) metaTheme.content = bodyBg
   // 首次进入时主题 CSS 可能尚未完全落地, 延迟再同步一次
   setTimeout(applyOverlay, 150)
 }
@@ -163,7 +188,7 @@ export default function App() {
     useSettingsStore.getState().load()
     useChatStore.getState().load()
     const settings = useSettingsStore.getState()
-    const theme = settings.general.theme || 'huangquan'
+    const theme = settings.general.theme || 'violet'
     document.documentElement.setAttribute('data-theme', theme)
     // 恢复自定义主题
     const cc = (settings.general).customColors
@@ -202,6 +227,14 @@ export default function App() {
     }
     mq.addEventListener('change', onSysChange)
     return () => { unsub(); mq.removeEventListener('change', onSysChange) }
+  }, [])
+
+  // 聊天修改设置(set_settings 工具)后, 主进程推送变更信号 → 渲染层重载设置并即时应用
+  useEffect(() => {
+    try {
+      const off = window.huangquan?.settings?.onChanged?.(() => { useSettingsStore.getState().load().catch(() => {}) })
+      return () => { try { off?.() } catch { /* 忽略 */ } }
+    } catch { return undefined }
   }, [])
 
   const renderView = () => {

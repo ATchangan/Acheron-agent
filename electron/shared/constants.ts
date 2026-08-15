@@ -42,11 +42,11 @@ export const WORKFLOWS: Record<string, { name: string; triggers: string[]; steps
   ] },
 }
 export const DOMAIN_RE: Record<string, RegExp> = {
-  '银狼': /安全|漏洞|审查|bug|风险|检查|审计|防护|攻击|渗透|注入|权限|扫描|加密|认证|授权|越权|XSS|SQL注入|CSRF|DDoS|后门|木马|病毒|防火墙|沙箱|隔离|签名|证书|安全策略|加固|修复漏洞|review|security|audit|scan|vuln/,
-  '三月七': /文档|报告|总结|分析|整理|翻译|校对|审核|论文|文章|写作|撰写|编辑|排版|格式化|笔记|摘要|纪要|周报|月报|日报|PPT|幻灯片|手册|说明书|合同|协议|白皮书|提案|readme|document|report|translate|summar/,
-  '艾丝妲': /提醒|通知|日程|定时|监控|跟踪|闹钟|计划|安排|周期|循环|自动|定时器|cron|日程表|日历|倒计时|推送|alert|remind|schedule|watch|monitor|observe|track/,
-  '知更鸟': /聊天|陪伴|心情|安慰|倾诉|放松|故事|累|伤心|难过|开心|快乐|烦|无聊|困|推荐|建议|意见|想法|聊聊|唠嗑|吐槽|八卦|日常|生活|健康|作息|饮食|电影|音乐|游戏|书|小说|娱乐|旅行|天气|新闻|chat|talk|feel|mood|story|tired|sad|happy/,
-  '黑天鹅': /设计|画|配色|UI|UX|图标|logo|banner|海报|审美|绘图|可视化|图表|架构图|流程图|时序图|思维导图|脑图|原型|线框|mockup|sketch|Figma|Photoshop|前端|样式|CSS|布局|响应式|动画|过渡|渐变|阴影|字体|排版|design|draw|visual|chart|graph|layout|style/,
-  '螺丝咕姆': /代码|写|开发|编程|实现|脚本|函数|类|接口|api|框架|构建|部署|项目|调试|测试|单元测试|集成测试|CI|CD|Git|commit|branch|merge|PR|pull request|重构|优化|性能|数据库|SQL|查询|索引|ORM|后端|前端|全栈|Node|React|Vue|Python|Java|Go|Rust|Type|npm|pip|docker|k8s|容器|微服务|rest|http|code|dev|build|deploy|test|debug|optimiz/,
+  '安全': /安全|漏洞|审查|bug|风险|检查|审计|防护|攻击|渗透|注入|权限|扫描|加密|认证|授权|越权|XSS|SQL注入|CSRF|DDoS|后门|木马|病毒|防火墙|沙箱|隔离|签名|证书|安全策略|加固|修复漏洞|review|security|audit|scan|vuln/,
+  '文档': /文档|报告|总结|分析|整理|翻译|校对|审核|论文|文章|写作|撰写|编辑|排版|格式化|笔记|摘要|纪要|周报|月报|日报|PPT|幻灯片|手册|说明书|合同|协议|白皮书|提案|readme|document|report|translate|summar/,
+  '通知': /提醒|通知|日程|定时|监控|跟踪|闹钟|计划|安排|周期|循环|自动|定时器|cron|日程表|日历|倒计时|推送|alert|remind|schedule|watch|monitor|observe|track/,
+  '陪伴': /聊天|陪伴|心情|安慰|倾诉|放松|故事|累|伤心|难过|开心|快乐|烦|无聊|困|推荐|建议|意见|想法|聊聊|唠嗑|吐槽|八卦|日常|生活|健康|作息|饮食|电影|音乐|游戏|书|小说|娱乐|旅行|天气|新闻|chat|talk|feel|mood|story|tired|sad|happy/,
+  '设计': /设计|画|配色|UI|UX|图标|logo|banner|海报|审美|绘图|可视化|图表|架构图|流程图|时序图|思维导图|脑图|原型|线框|mockup|sketch|Figma|Photoshop|前端|样式|CSS|布局|响应式|动画|过渡|渐变|阴影|字体|排版|design|draw|visual|chart|graph|layout|style/,
+  '开发': /代码|写|开发|编程|实现|脚本|函数|类|接口|api|框架|构建|部署|项目|调试|测试|单元测试|集成测试|CI|CD|Git|commit|branch|merge|PR|pull request|重构|优化|性能|数据库|SQL|查询|索引|ORM|后端|前端|全栈|Node|React|Vue|Python|Java|Go|Rust|Type|npm|pip|docker|k8s|容器|微服务|rest|http|code|dev|build|deploy|test|debug|optimiz/,
 }
 export const VISION_MODEL_HINTS = ['gpt-4o', 'gpt-4-turbo', 'gpt-4.1', 'claude-3', 'claude-3.5', 'claude-3.7', 'gemini', 'vision', 'vl', 'vlm', 'qwen-vl', 'qwen2-vl', 'qwen2.5-vl', 'qwen3-vl', 'glm-4v', 'glm-4.5v', 'glm-4.6v', 'glm-4.1v', 'minimax-vl', 'deepseek-vl', 'internvl', 'internvl2', 'llava', 'yi-vision', 'step-1v', 'moonshot-v1-8k-vision', 'minicpm-v', 'pixtral', 'phi-vision', 'llama-3.2-vision', 'moondream', 'hunyuan-vision', 'doubao-vision', 'ocr', 'agnes-image', 'seedream', 'cogview', 'seedance', 'doubao-seedance', 'wanx', 'kling']

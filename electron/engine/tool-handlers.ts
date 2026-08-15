@@ -17,6 +17,11 @@ import { getToolOutput, queryAudit, setMemoryEmbedding } from '../db'
 import { formatFusedHits } from '../memory/searcher'
 import { embedText } from '../memory/embeddings'
 import { searchSessions } from '../memory/session-index'
+import { requestRiskConfirm } from '../ipc/risk-confirm'
+import { validatePluginCode, validatePluginSettings, installPlugin, removePlugin, readPluginSource, listPluginDetails, invalidatePluginToolSpecCache, bustAllPluginCaches, isPluginDisabled } from '../plugins/author'
+import type { UiDisplayConfig } from '../shared/settings-types'
+import { sanitizeGeneralPatch, sanitizeProvidersPatch, redactSettings } from '../shared/settings-patch'
+import { writeFileAtomicIfChanged } from '../fs-atomic'
 
 const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer; decode: (b: Buffer, enc: string) => string }
 
@@ -169,7 +174,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
   } },
   { name: 'exec_command', writeOp: true, run: async (A, ctx) => {
     if (!A.cmd) return 'E:need cmd'
-    const r = String(await invokeHandler('computer:exec', [A.cmd, ctx.sid, ctx.taskId], ctx.sender))
+    const r = String(await invokeHandler('computer:exec', [A.cmd, ctx.sid, ctx.taskId, ctx.workDir], ctx.sender))
     const out = r || '(empty output)'
     return out.length > 3000 ? out.slice(0, 1500) + '\n...[输出过长已截断, 共 ' + out.length + ' 字符, 头尾已保留]\n' + out.slice(-1500) : out
   } },
@@ -180,7 +185,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const args = String(A.args || '').trim()
     // 只读 action 与写 action 分开标注, 方便后续权限控制
     const cmd = 'git ' + action + (args ? ' ' + args : '')
-    return String(await invokeHandler('computer:exec', [cmd, ctx.sid, ctx.taskId], ctx.sender))
+    return String(await invokeHandler('computer:exec', [cmd, ctx.sid, ctx.taskId, ctx.workDir], ctx.sender))
   } },
   { name: 'init_project_docs', writeOp: true, run: (A, ctx) => {
     const wd = ctx.workDir || ''
@@ -348,7 +353,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       if (m.facts.some(f => String(f).trim() === fact)) return 'ok:already saved'
       m.facts = [...m.facts, fact]
     }
-    const agent = ctx.agent || '黄泉'
+    const agent = ctx.agent || '助手'
     const scope: 'global' | 'private' = ctx.agent && ctx.agents[ctx.agent] && ctx.agents[ctx.agent].memoryScope === 'private' ? 'private' : 'global'
     const id = upsertFactDb(agent, scope, fact, !!(A.pinned || autoPin), String(ctx.latestUserText || fact))
     if (id > 0) {
@@ -359,7 +364,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
   } },
   { name: 'recall_memory', run: async (A, ctx) => {
     const query = (A.query || '').trim()
-    const agent = ctx.agent || '黄泉'
+    const agent = ctx.agent || '助手'
     const scope: 'global' | 'private' = ctx.agent && ctx.agents[ctx.agent] && ctx.agents[ctx.agent].memoryScope === 'private' ? 'private' : 'global'
     try {
       const fused = await recallMemoryDb(agent, scope, query, 5)
@@ -389,7 +394,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const from = Date.now() - days * 86400000
     const rows = queryAudit({ agent: ctx.agent || undefined, from, limit: 50 })
     if (!rows.length) return '(该时间段无操作记录)'
-    return rows.map((r, i) => `${i + 1}. [${new Date(r.ts).toLocaleString('zh-CN')}] ${r.agent || '黄泉'} ${r.tool || ''} → ${r.resultSummary || r.argsSummary || ''}`.slice(0, 200)).join('\n')
+    return rows.map((r, i) => `${i + 1}. [${new Date(r.ts).toLocaleString('zh-CN')}] ${r.agent || '助手'} ${r.tool || ''} → ${r.resultSummary || r.argsSummary || ''}`.slice(0, 200)).join('\n')
   } },
   { name: 'recall_tool_output', run: (A, ctx) => {
     // v0.4.0 M7: side-channel 取回(每次会话最多 5 次, 返回截断 1.5KB)
@@ -447,6 +452,100 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (!A.theme) return 'E:need theme'
     ctx.onThemeChange?.(A.theme)
     return '主题已切换: ' + A.theme
+  } },
+  { name: 'get_ui_display', run: (A, ctx) => {
+    try { return JSON.stringify(ctx.g.uiDisplay || {}, null, 2) } catch { return '{}' }
+  } },
+  { name: 'set_ui_display', run: (A, ctx) => {
+    const raw = (A as unknown as { patches?: unknown }).patches
+    let patches: Record<string, unknown> | undefined
+    if (typeof raw === 'string') {
+      try { patches = JSON.parse(raw) } catch { return 'E:patches JSON 解析失败' }
+    } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      patches = raw as Record<string, unknown>
+    }
+    if (!patches) return 'E:patches 必须是对象'
+    const BOOLS = ['hideSessionSearch', 'hideSessionList', 'hidePlanCards', 'hideChatToolbar', 'hideAttachmentBar', 'hideModelPicker', 'hideThinkSelector', 'hideTokenUsage', 'hideTimestamps', 'hideToolCalls', 'hideTokenMeta', 'hideCopyButtons', 'hideRegenerate']
+    const next: Record<string, unknown> = { ...(ctx.g.uiDisplay || {}) }
+    const applied: string[] = []
+    const errors: string[] = []
+    for (const [k, v] of Object.entries(patches)) {
+      if (k === 'hiddenNav') {
+        if (Array.isArray(v) && v.every(x => typeof x === 'string')) { next[k] = v; applied.push(k) } else errors.push('hiddenNav 必须是字符串数组')
+      } else if (k === 'density') {
+        if (['compact', 'comfortable', 'spacious'].includes(String(v))) { next[k] = String(v); applied.push(k) } else errors.push('density 仅支持 compact/comfortable/spacious')
+      } else if (k === 'customCss') {
+        next[k] = String(v ?? '').slice(0, 65536); applied.push(k)
+      } else if (k === 'statusLine') {
+        next[k] = String(v ?? '').slice(0, 500); applied.push(k)
+      } else if (BOOLS.includes(k)) {
+        if (typeof v === 'boolean') { next[k] = v; applied.push(k) } else errors.push(k + ' 必须是布尔值')
+      } else {
+        errors.push('未知字段: ' + k)
+      }
+    }
+    if (!applied.length) return 'E:' + (errors.join('; ') || '无可应用的字段')
+    const merged = next as UiDisplayConfig
+    ctx.g.uiDisplay = merged
+    ctx.onUiDisplayChange?.(merged)
+    return '界面已更新: ' + applied.map(k => k + '=' + JSON.stringify(next[k])).join(', ') + (errors.length ? '\n[已忽略无效项] ' + errors.join('; ') : '')
+  } },
+  { name: 'get_settings', run: (A, ctx) => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(join(ctx.userDataPath, 'settings.json'), 'utf-8'))
+      const red = redactSettings(raw) as { providers?: unknown; mediaProviders?: unknown; general?: unknown }
+      const section = String(A.section || 'general')
+      const pick = section === 'all' ? red
+        : section === 'providers' ? { providers: red.providers || [] }
+        : section === 'mediaProviders' ? { mediaProviders: red.mediaProviders || [] }
+        : { general: red.general || {} }
+      return JSON.stringify(pick, null, 2).slice(0, 24000)
+    } catch (e: unknown) { return 'E:' + errMsg(e) }
+  } },
+  { name: 'set_settings', writeOp: true, run: (A, ctx) => {
+    const section = String(A.section || 'general')
+    const rawPatch = (A as unknown as { patch?: unknown }).patch
+    let patch: unknown = rawPatch
+    if (typeof rawPatch === 'string') {
+      try { patch = JSON.parse(rawPatch) } catch { return 'E:patch JSON 解析失败' }
+    }
+    const settingsPath = join(ctx.userDataPath, 'settings.json')
+    try {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { general?: Record<string, unknown>; providers?: { id: string; [k: string]: unknown }[]; mediaProviders?: { id: string; [k: string]: unknown }[] }
+      if (section === 'general') {
+        const r = sanitizeGeneralPatch(patch)
+        if (!r.ok) return 'E:设置补丁校验失败: ' + r.problems.join('; ')
+        data.general = data.general || {}
+        if (r.value.uiDisplay && typeof r.value.uiDisplay === 'object') {
+          const merged = { ...((data.general.uiDisplay as object) || {}), ...(r.value.uiDisplay as object) }
+          data.general.uiDisplay = merged
+          ctx.g.uiDisplay = merged as UiDisplayConfig
+          // 不触发 onUiDisplayChange: 主进程已落盘并广播 settings:changed, 渲染层统一 reload。
+          // 否则 uiDisplay 事件会让渲染层用旧快照立即 save, 覆盖同一补丁里的其他字段(theme/workDir 等)。
+          delete r.value.uiDisplay
+        }
+        Object.assign(data.general, r.value)
+        Object.assign(ctx.g, r.value)
+        if (typeof r.value.workDir === 'string' && r.value.workDir.trim()) {
+          try { fs.mkdirSync(r.value.workDir.trim(), { recursive: true }) } catch { /* 目录创建失败不阻断设置保存 */ }
+        }
+      } else if (section === 'providers' || section === 'mediaProviders') {
+        const r = sanitizeProvidersPatch(patch, section)
+        if (!r.ok) return 'E:设置补丁校验失败: ' + r.problems.join('; ')
+        const cur = (Array.isArray(data[section]) ? data[section] : []) as { id: string; [k: string]: unknown }[]
+        for (const item of (r.value.list || []) as { id: string; [k: string]: unknown }[]) {
+          let target = cur.find(x => x.id === item.id)
+          if (!target) { target = { id: item.id }; cur.push(target) }
+          for (const [k, v] of Object.entries(item)) if (k !== 'id') target[k] = v
+        }
+        data[section] = cur
+      } else {
+        return 'E:section 仅支持 general/providers/mediaProviders'
+      }
+      writeFileAtomicIfChanged(settingsPath, JSON.stringify(data, null, 2))
+      try { ctx.sender?.send('settings:changed') } catch { /* 无窗口忽略 */ }
+      return 'ok:设置已保存并即时生效(section=' + section + ')\n修改: ' + JSON.stringify(patch).slice(0, 1500)
+    } catch (e: unknown) { return 'E:' + errMsg(e) }
   } },
   { name: 'handoff', run: (A, ctx) => {
     if (ctx.isSubtask) return 'E:子任务内不允许交接，请直接完成当前子任务或返回主控角色'
@@ -507,7 +606,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     return '<!--CARD' + (A.title ? ':' + A.title : '') + '-->' + A.html + '<!--/CARD-->'
   } },
   { name: 'bridge_notify', run: (A) => {
-    try { new Notification({ title: A.title || '黄泉Agent', body: A.body || '' }).show() } catch { /* 忽略 */ }
+    try { new Notification({ title: A.title || '桌面智能助手', body: A.body || '' }).show() } catch { /* 忽略 */ }
     return 'ok:notified'
   } },
   { name: 'workflow', run: (A, ctx) => {
@@ -571,5 +670,58 @@ export const TOOL_HANDLERS: ToolHandler[] = [
   { name: 'list_goals', run: (A, ctx) => {
     const goals = ctx.getMemory().goals || []
     return goals.length ? goals.map((g, i) => `${i + 1}. [${g.status}] ${g.goal} (${(g.steps || []).length} steps, ${new Date(g.created || 0).toLocaleDateString('zh-CN')})`).join('\n') : '(无持久化目标)'
+  } },
+  { name: 'install_plugin', writeOp: true, run: async (A, ctx) => {
+    const name = String(A.name || '').trim()
+    const description = String(A.description || '').trim()
+    const code = String(A.code || '')
+    if (!name || !description || !code) return 'E:need name+description+code'
+    const v = validatePluginCode(name, description, code)
+    if (!v.ok) return 'E:插件校验失败:\n- ' + v.problems.join('\n- ')
+    const rawSettings = (A as unknown as { settings?: unknown }).settings
+    let settings: unknown = rawSettings
+    if (typeof rawSettings === 'string') {
+      try { settings = JSON.parse(rawSettings) } catch { return 'E:settings JSON 解析失败' }
+    }
+    const sv = validatePluginSettings(settings)
+    if (!sv.ok) return 'E:插件设置 schema 校验失败:\n- ' + sv.problems.join('\n- ')
+    const toolNames = v.tools.map(t => 'plugin_' + name + '__' + t.name).join(', ')
+    const d = await requestRiskConfirm({
+      kind: '插件安装',
+      detail: `插件「${name}」将新增 ${v.tools.length} 个工具(运行在沙箱内: 文件仅限工作目录, 命令受危险拦截)。\n\n${v.tools.map(t => '- ' + t.name + ': ' + t.description.slice(0, 120)).join('\n')}`,
+      level: 'L3',
+      sid: ctx.sid,
+      taskId: ctx.taskId,
+    })
+    if (d !== 'allow') return 'E:permission denied: ' + (d === 'timeout' ? '确认超时(60 秒未操作, 已自动拒绝)' : '用户拒绝了插件安装')
+    const r = installPlugin(join(ctx.userDataPath, 'plugins'), name, description, code, String(A.overwrite) === 'true', sv.defs)
+    if (!r.ok) return 'E:' + (r.error || '安装失败')
+    invalidatePluginToolSpecCache()
+    try { ctx.sender?.send('plugins:changed') } catch { /* 无窗口忽略 */ }
+    return `ok:插件已安装 v${r.version} 并热加载(无需重启), 新工具下一轮即可调用:\n${toolNames}\n提示: 首次调用每个插件工具会弹出权限确认, 可选择「始终允许」。`
+  } },
+  { name: 'list_plugins', run: (A, ctx) => {
+    const list = listPluginDetails(join(ctx.userDataPath, 'plugins'))
+    if (!list.length) return '(未安装任何插件; 可用 install_plugin 给自己写一个)'
+    const disabled = (n: string) => isPluginDisabled(join(ctx.userDataPath, 'settings.json'), n) ? ' [已禁用]' : ''
+    return list.map(p => `- **${p.name}** v${p.version}${p.selfWritten ? ' [自写]' : ''}${p.hasImpl ? '' : ' [缺实现]'}${disabled(p.name)}: ${p.description}\n  工具: ${p.tools.length ? p.tools.map(t => 'plugin_' + p.name + '__' + t).join(', ') : '(无)'}`).join('\n')
+  } },
+  { name: 'read_plugin', run: (A, ctx) => readPluginSource(join(ctx.userDataPath, 'plugins'), String(A.name || '').trim()) },
+  { name: 'remove_plugin', writeOp: true, run: async (A, ctx) => {
+    const name = String(A.name || '').trim()
+    if (!name) return 'E:need name'
+    const d = await requestRiskConfirm({ kind: '删除插件', detail: '删除插件: ' + name, level: 'L3', sid: ctx.sid, taskId: ctx.taskId })
+    if (d !== 'allow') return 'E:permission denied: ' + (d === 'timeout' ? '确认超时(60 秒未操作, 已自动拒绝)' : '用户拒绝了删除')
+    const r = removePlugin(join(ctx.userDataPath, 'plugins'), name)
+    if (!r.ok) return 'E:' + (r.error || '删除失败')
+    invalidatePluginToolSpecCache()
+    try { ctx.sender?.send('plugins:changed') } catch { /* 无窗口忽略 */ }
+    return 'ok:已删除插件 ' + name
+  } },
+  { name: 'reload_plugins', run: (A, ctx) => {
+    bustAllPluginCaches(join(ctx.userDataPath, 'plugins'))
+    invalidatePluginToolSpecCache()
+    const list = listPluginDetails(join(ctx.userDataPath, 'plugins'))
+    return 'ok:已重新扫描插件目录, 当前 ' + list.length + ' 个插件(工具列表下一轮生效)'
   } },
 ]

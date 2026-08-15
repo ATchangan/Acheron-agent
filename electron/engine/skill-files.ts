@@ -12,9 +12,9 @@ export function safeSkillName(name: string): string {
   return n && n !== '.' && n !== '..' ? n.slice(0, 40) : ''
 }
 
-// v0.3.9: 可写技能目录 —— 依次探测, 返回第一个可写目录(只读系统目录自动跳过)
+// v0.3.9: 可写技能目录 —— 从后往前探测, 优先用户目录(内置目录在开发态可写时会误选源码目录, 导致技能写进仓库)
 export function writableSkillDir(dirs: string[]): string | null {
-  for (const dir of dirs || []) {
+  for (const dir of [...(dirs || [])].reverse()) {
     if (!dir) continue
     try { fs.accessSync(dir, fs.constants.W_OK); return dir } catch { /* 跳过只读目录 */ }
   }

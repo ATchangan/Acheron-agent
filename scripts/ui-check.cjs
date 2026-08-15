@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 ;(async () => {
   const targets = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`))
-  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '黄泉Agent')) || targets.find(t => t.type === 'page')
+  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '桌面智能助手')) || targets.find(t => t.type === 'page')
   if (!page) { console.log('NO_PAGE'); process.exit(3) }
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })
@@ -81,7 +81,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
     await shot('ui-nav')
 
     // 设置全部 Tab
-    const tabs = ['供应商', '策略', '角色', '记忆', '协作', '工具', 'MCP', '技能', '外观', '模型缓存统计', '诊断', '引擎', '定时任务', '藏书阁', '式神', '关于']
+    const tabs = ['供应商', '策略', '角色', '记忆', '协作', '工具', 'MCP', '技能', '外观', '模型缓存统计', '诊断', '引擎', '定时任务', '藏书阁', '插件', '关于']
     await clickNav('设置')
     await sleep(400)
     for (const t of tabs) {

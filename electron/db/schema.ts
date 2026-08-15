@@ -6,7 +6,7 @@
 export const MEMORIES_DDL = `
 CREATE TABLE IF NOT EXISTS memories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent TEXT NOT NULL DEFAULT '黄泉',
+  agent TEXT NOT NULL DEFAULT '助手',
   scope TEXT NOT NULL DEFAULT 'global',
   level TEXT NOT NULL DEFAULT 'normal',
   layer TEXT NOT NULL DEFAULT 'L1',
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS skills (
 export const LESSONS_DDL = `
 CREATE TABLE IF NOT EXISTS lessons (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent TEXT NOT NULL DEFAULT '黄泉',
+  agent TEXT NOT NULL DEFAULT '助手',
   scope TEXT NOT NULL DEFAULT 'global',
   content TEXT NOT NULL,
   ts INTEGER NOT NULL
@@ -114,7 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_lessons_agent ON lessons(agent, scope, ts);
 export const GOALS_DDL = `
 CREATE TABLE IF NOT EXISTS goals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent TEXT NOT NULL DEFAULT '黄泉',
+  agent TEXT NOT NULL DEFAULT '助手',
   scope TEXT NOT NULL DEFAULT 'global',
   goal TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'open',
@@ -127,7 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_goals_agent ON goals(agent, scope, updated);
 export const EPISODIC_DDL = `
 CREATE TABLE IF NOT EXISTS episodic (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent TEXT NOT NULL DEFAULT '黄泉',
+  agent TEXT NOT NULL DEFAULT '助手',
   scope TEXT NOT NULL DEFAULT 'global',
   op TEXT,
   path TEXT,

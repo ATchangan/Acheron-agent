@@ -41,9 +41,9 @@ describe('memory 0.3.9 修复与增强', () => {
   })
 
   it('私有记忆命名空间: memoryScope=private 时使用独立文件', () => {
-    expect(memoryPathFor('C:/data/memory.json', 'private', '银狼')).toBe(join('C:/data', 'memory-银狼.json'))
+    expect(memoryPathFor('C:/data/memory.json', 'private', '安全')).toBe(join('C:/data', 'memory-安全.json'))
     expect(memoryPathFor('C:/data/memory.json', 'private', 'a/b:c')).toBe(join('C:/data', 'memory-a_b_c.json'))
-    expect(memoryPathFor('C:/data/memory.json', 'global', '银狼')).toBe('C:/data/memory.json')
+    expect(memoryPathFor('C:/data/memory.json', 'global', '安全')).toBe('C:/data/memory.json')
     expect(memoryPathFor('C:/data/memory.json', 'private', '')).toBe('C:/data/memory.json')
   })
 

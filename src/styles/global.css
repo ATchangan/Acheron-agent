@@ -1,8 +1,8 @@
-/* ═══════════ 黄泉Agent 全局样式 · v0.2.5 主题 token 体系 ═══════════ */
+/* ═══════════ 桌面智能助手 全局样式 · v0.2.5 主题 token 体系 ═══════════ */
 [data-theme="dark"] { --bg-root:#15171c;--bg-surface:#1b1d23;--bg-elevated:#212329;--bg-card:#24262d;--bg-hover:#2c2e36;--border:#363840;--border-glow:#454852;--accent:#5e7c96;--accent-dim:#4e6a82;--accent-purple:#7e93a8;--accent-green:#5f8f74;--text-primary:#e0e2e8;--text-secondary:#999ba6;--text-muted:#60636e;--danger:#d05a5a;--success:#5f9f74;--warning:#b08940;--skin-accent:94,124,150;color-scheme:dark; }
 [data-theme="light"] { --bg-root:#f4f2ec;--bg-surface:#fbfaf6;--bg-elevated:#f7f5ef;--bg-card:#fbfaf6;--bg-hover:#edeBe3;--border:#e2dfd5;--border-glow:#d2cfc4;--accent:#7a6a55;--accent-dim:#665845;--accent-purple:#94846c;--accent-green:#5f7d62;--text-primary:#2a2a28;--text-secondary:#6e6e68;--text-muted:#9a9a92;--danger:#b04a48;--success:#4f7a5a;--warning:#8a6d2f;--skin-accent:122,106,85;color-scheme:light; }
 [data-theme="black"] { --bg-root:#0e0e0e;--bg-surface:#131313;--bg-elevated:#181818;--bg-card:#1c1c1c;--bg-hover:#242424;--border:#2e2e2e;--border-glow:#404040;--accent:#8a8f98;--accent-dim:#767b84;--accent-purple:#a0a5ad;--accent-green:#6f8f74;--text-primary:#e4e4e4;--text-secondary:#989898;--text-muted:#606060;--danger:#c94f4f;--success:#5f9f74;--warning:#a97c3a;--skin-accent:138,143,152;color-scheme:dark; }
-[data-theme="huangquan"] { --bg-root:#121014;--bg-surface:#18151b;--bg-elevated:#1e1a22;--bg-card:#221d26;--bg-hover:#2a2430;--border:#322a36;--border-glow:#4a3a44;--accent:#c0455a;--accent-dim:#9c3448;--accent-purple:#7e6a9c;--accent-green:#5f8f74;--text-primary:#e6e0e8;--text-secondary:#a098a8;--text-muted:#6a6270;--danger:#d05a5a;--success:#5f9f74;--warning:#b08940;--skin-accent:192,69,90;color-scheme:dark; }
+[data-theme="violet"] { --bg-root:#121014;--bg-surface:#18151b;--bg-elevated:#1e1a22;--bg-card:#221d26;--bg-hover:#2a2430;--border:#322a36;--border-glow:#4a3a44;--accent:#c0455a;--accent-dim:#9c3448;--accent-purple:#7e6a9c;--accent-green:#5f8f74;--text-primary:#e6e0e8;--text-secondary:#a098a8;--text-muted:#6a6270;--danger:#d05a5a;--success:#5f9f74;--warning:#b08940;--skin-accent:192,69,90;color-scheme:dark; }
 [data-theme="bloodmoon"] { --bg-root:#171013;--bg-surface:#1d1519;--bg-elevated:#241a1f;--bg-card:#291e24;--bg-hover:#32252c;--border:#3d2a33;--border-glow:#55353f;--accent:#b23a4a;--accent-dim:#922c3b;--accent-purple:#8a5a70;--accent-green:#5f8f74;--text-primary:#e8dde0;--text-secondary:#a58e96;--text-muted:#6e5a61;--danger:#c94f4f;--success:#5f9f74;--warning:#a97c3a;--skin-accent:178,58,74;color-scheme:dark; }
 [data-theme="dawn"] { --bg-root:#f6f1e8;--bg-surface:#fbf7ef;--bg-elevated:#f4eee2;--bg-card:#fbf7ef;--bg-hover:#ece4d4;--border:#e0d6c4;--border-glow:#cfc2ab;--accent:#a08454;--accent-dim:#8a6d42;--accent-purple:#9c8a6c;--accent-green:#5f7d62;--text-primary:#2e2a22;--text-secondary:#6e675a;--text-muted:#9a9282;--danger:#a8423f;--success:#4f7a5a;--warning:#8a6d2f;--skin-accent:160,132,84;color-scheme:light; }
 /* v0.2.5: 通用 token —— 与主题无关的尺寸/动效/组件专属(组件专属引用主题变量, 禁止硬编码) */
@@ -217,7 +217,7 @@
 .toggle.on{background:var(--accent)}
 .toggle.on::after{left:18px;background:var(--on-accent)}
 
-/* ─── 黄泉 Agent 扩展样式 ─── */
+/* ─── 桌面智能助手 扩展样式 ─── */
 .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size: calc(var(--ui-font-size) - 3px);font-weight:600;letter-spacing:.3px}
 .badge-fact{background:var(--skin-accent-soft);color:var(--accent-purple)}
 .badge-pref{background:var(--warning-soft);color:var(--warning)}

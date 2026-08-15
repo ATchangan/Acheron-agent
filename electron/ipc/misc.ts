@@ -78,7 +78,7 @@ export function registerMiscIpc(deps: {
   })
   ipcMain.handle('settings:reset', () => {
     try {
-      const defaults = { providers: [], mediaProviders: [], general: { mode: 'work', theme: 'dark', agentName: '黄泉' } }
+      const defaults = { providers: [], mediaProviders: [], general: { mode: 'work', theme: 'dark', agentName: '助手' } }
       writeFileAtomic(settingsPath, JSON.stringify(defaults, null, 2))
       return true
     } catch { return false }

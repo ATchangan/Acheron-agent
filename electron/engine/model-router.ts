@@ -82,7 +82,7 @@ export function visionCandidates(g: EngineSettings, providers: EngineProvider[],
   return out
 }
 
-// 子任务模型: 角色专属模型(如黑天鹅 vision)优先, 否则继承当前模型
+// 子任务模型: 角色专属模型(如设计 vision)优先, 否则继承当前模型
 export function pickSubModel(g: EngineSettings, providers: EngineProvider[], curP: EngineProvider, currentModel: string, ag?: AgentDef): ModelPick {
   const pref = ag?.model
   if (pref === 'vision') {

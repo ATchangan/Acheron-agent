@@ -43,8 +43,8 @@ export class AppShell {
   createMenu(): void {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {
-        label: '黄泉Agent', submenu: [
-          { label: '关于黄泉Agent', role: 'about' }, { type: 'separator' },
+        label: '桌面智能助手', submenu: [
+          { label: '关于桌面智能助手', role: 'about' }, { type: 'separator' },
           { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => { this.deps.setQuitting(true); app.quit() } },
         ],
       },
@@ -68,7 +68,7 @@ export class AppShell {
     switch (theme) {
       case 'light': return { color: '#f4f2ec', symbolColor: '#1a1a1f', height: 32 }
       case 'black': return { color: '#0e0e0e', symbolColor: '#d0d0d8', height: 32 }
-      case 'huangquan': return { color: '#121014', symbolColor: '#e9d5ff', height: 32 }
+      case 'violet': return { color: '#121014', symbolColor: '#e9d5ff', height: 32 }
       case 'bloodmoon': return { color: '#171013', symbolColor: '#fecaca', height: 32 }
       case 'dawn': return { color: '#f6f1e8', symbolColor: '#2b2b2b', height: 32 }
       default: return { color: '#15171c', symbolColor: '#c8c8cc', height: 32 }
@@ -105,7 +105,7 @@ export class AppShell {
     } catch { /* ignore */ }
     const win = new BrowserWindow({
       width: 1280, height: 860, minWidth: 900, minHeight: 600,
-      title: '黄泉Agent', icon: join(this.deps.resourcesDir, 'icon.png'),
+      title: '桌面智能助手', icon: join(this.deps.resourcesDir, 'icon.png'),
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
       backgroundColor: '#08080f', show: false, frame: false,
       titleBarStyle: 'hidden',
@@ -152,7 +152,7 @@ export class AppShell {
       const recent = this.countRecentCrashes()
       if (recent >= 3) {
         try {
-          new Notification({ title: '黄泉Agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
+          new Notification({ title: '桌面智能助手 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
         } catch { /* 忽略 */ }
       }
       if (this.mainWindow && !this.mainWindow.isDestroyed()) { this.mainWindow.loadURL('http://127.0.0.1:' + this.deps.serverPort() + '/index.html') }
@@ -167,7 +167,7 @@ export class AppShell {
   createTray(): void {
     const icon = nativeImage.createFromPath(join(this.deps.resourcesDir, 'icon.png'))
     this.tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-    this.tray.setToolTip('黄泉Agent')
+    this.tray.setToolTip('桌面智能助手')
     this.tray.setContextMenu(Menu.buildFromTemplate([
       { label: '打开主窗口', click: () => this.mainWindow?.show() },
       { type: 'separator' },
