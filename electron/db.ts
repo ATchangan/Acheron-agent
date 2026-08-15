@@ -65,6 +65,14 @@ let db: SqliteDb | null = null
 let inMemory = false
 let dbPath = ''
 
+// 向量缓存: 避免每次检索都 JSON.parse 全库 embedding, 并预存模长。
+// 记忆量级 ≤2000 时内积检索足够快; 缓存把重复解析成本降为一次, 量再大再考虑 sqlite-vec/ANN。
+interface VecCore { vec: Float32Array; norm: number }
+interface VecEntry extends VecCore { agent: string; scope: 'global' | 'private' }
+const vectorCache = new Map<number, VecEntry>()
+let vectorCacheLoaded = false
+const VECTOR_CACHE_MAX = 5000
+
 function lastId(r: { lastInsertRowid: number | bigint }): number {
   return Number(r.lastInsertRowid)
 }
@@ -87,6 +95,8 @@ export function setMeta(key: string, value: string): boolean {
 
 export function initDb(path: string): { ok: boolean; inMemory: boolean } {
   if (!sqlite) return { ok: false, inMemory: false }
+  vectorCache.clear()
+  vectorCacheLoaded = false
   const mk = (dbInstance: SqliteDb): void => {
     dbInstance.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;')
     migrate(dbInstance)
@@ -122,8 +132,11 @@ export function isInMemory(): boolean { return inMemory }
 export function getDbPath(): string { return dbPath }
 
 export function closeDb(): void {
+  try { db?.exec('PRAGMA wal_checkpoint(TRUNCATE)') } catch { /* 忽略 */ }
   try { db?.close() } catch { /* 忽略 */ }
   db = null
+  vectorCache.clear()
+  vectorCacheLoaded = false
 }
 
 // ─── 记忆 ───────────────────────────────────────────
@@ -162,13 +175,17 @@ export function insertMemory(m: MemoryRow): number {
       .run(m.agent, m.scope, m.level, m.layer, m.content, m.subject, m.relation, m.object,
         m.embedding && m.embedding.length ? JSON.stringify(m.embedding) : null, m.sourceId ?? null,
         m.ts, m.lastAccess, m.accessCount, m.superseded, m.confidence)
-    return lastId(r)
+    const id = lastId(r)
+    if (m.embedding && m.embedding.length) vectorCacheLoaded = false // 新向量下次检索时补进缓存
+    return id
   } catch { return 0 }
 }
 
 export function setMemoryEmbedding(id: number, vec: number[]): void {
   if (!db || !vec?.length) return
   try { db.prepare('UPDATE memories SET embedding=? WHERE id=?').run(JSON.stringify(vec), id) } catch { /* 忽略 */ }
+  vectorCache.delete(id)
+  vectorCacheLoaded = false
 }
 
 export function updateMemoryAccess(id: number): void {
@@ -181,11 +198,13 @@ export function updateMemoryAccess(id: number): void {
 export function softDeleteMemory(id: number): void {
   if (!db) return
   try { db.prepare('UPDATE memories SET superseded=1 WHERE id=?').run(id) } catch { /* 忽略 */ }
+  vectorCache.delete(id)
 }
 
 export function markSuperseded(id: number): void {
   if (!db) return
   try { db.prepare('UPDATE memories SET superseded=1 WHERE id=?').run(id) } catch { /* 忽略 */ }
+  vectorCache.delete(id)
 }
 
 export function bumpConfidence(id: number): void {
@@ -216,7 +235,7 @@ export function listMemories(filter?: { agent?: string; scope?: 'global' | 'priv
     if (filter?.layer) { conds.push('layer=?'); args.push(filter.layer) }
     if (!filter?.includeSuperseded) conds.push('superseded=0')
     const where = conds.length ? ' WHERE ' + conds.join(' AND ') : ''
-    const rows = db.prepare('SELECT ' + MEMORY_COLS + ' FROM memories' + where + ' ORDER BY ts DESC LIMIT ?').all(...args, Math.max(1, Math.min(2000, Number(filter?.limit) || 1000))) as Record<string, unknown>[]
+    const rows = db.prepare('SELECT ' + MEMORY_COLS + ' FROM memories' + where + ' ORDER BY ts DESC, id DESC LIMIT ?').all(...args, Math.max(1, Math.min(2000, Number(filter?.limit) || 1000))) as Record<string, unknown>[]
     return rows.map(rowToMemory)
   } catch { return [] }
 }
@@ -226,14 +245,18 @@ export function getMemoriesForDecay(): MemoryRow[] {
 }
 
 // FTS5 trigram 关键词检索(≥3 字符走 MATCH+BM25; 2 字符走 LIKE 前缀兜底)
-export function searchFts(query: string, limit = 20): { id: number; score: number; content: string }[] {
+export function searchFts(query: string, limit = 20, filter?: { agent?: string; scope?: 'global' | 'private' }): { id: number; score: number; content: string }[] {
   if (!db || !query) return []
   const q = String(query).trim()
   try {
     if (q.length >= 3) {
       const safe = q.replace(/["*:()^\-+]/g, ' ').replace(/\s+/g, ' ').trim()
       if (safe) {
-        const rows = db.prepare('SELECT rowid, bm25(memories_fts) AS score FROM memories_fts WHERE memories_fts MATCH ? ORDER BY score LIMIT ?').all(safe, limit) as { rowid: number; score: number }[]
+        const conds = ['memories_fts MATCH ?']
+        const args: unknown[] = [safe]
+        if (filter?.agent) { conds.push('m.agent=?'); args.push(filter.agent) }
+        if (filter?.scope) { conds.push('m.scope=?'); args.push(filter.scope) }
+        const rows = db.prepare(`SELECT f.rowid, bm25(memories_fts) AS score FROM memories_fts f JOIN memories m ON m.id=f.rowid WHERE ${conds.join(' AND ')} AND m.superseded=0 ORDER BY score LIMIT ?`).all(...args, limit) as { rowid: number; score: number }[]
         const out: { id: number; score: number; content: string }[] = []
         for (const r of rows) {
           const m = getMemoryById(r.rowid)
@@ -242,45 +265,110 @@ export function searchFts(query: string, limit = 20): { id: number; score: numbe
         return out
       }
     }
-    const rows = db.prepare('SELECT id, content FROM memories WHERE superseded=0 AND content LIKE ? ORDER BY ts DESC LIMIT ?').all('%' + q + '%', limit) as { id: number; content: string }[]
+    const conds = ['superseded=0', 'content LIKE ?']
+    const args: unknown[] = ['%' + q + '%']
+    if (filter?.agent) { conds.push('agent=?'); args.push(filter.agent) }
+    if (filter?.scope) { conds.push('scope=?'); args.push(filter.scope) }
+    const rows = db.prepare('SELECT id, content FROM memories WHERE ' + conds.join(' AND ') + ' ORDER BY ts DESC LIMIT ?').all(...args, limit) as { id: number; content: string }[]
     return rows.map(r => ({ id: r.id, score: 0.5, content: r.content }))
   } catch { return [] }
 }
 
-// 向量余弦检索: 对库内已存 embedding 逐条计算(记忆量级 ≤2000, 内存内计算足够快)
-export function searchVector(queryVec: number[], limit = 20): { id: number; score: number; content: string }[] {
-  if (!db || !Array.isArray(queryVec) || queryVec.length === 0) return []
+function parseVec(text: unknown): VecCore | null {
+  if (typeof text !== 'string' || !text) return null
   try {
-    const rows = db.prepare('SELECT id, content, embedding FROM memories WHERE superseded=0 AND embedding IS NOT NULL').all() as { id: number; content: string; embedding: string }[]
-    const scored: { id: number; score: number; content: string }[] = []
-    for (const r of rows) {
-      try {
-        const vec = JSON.parse(r.embedding) as number[]
-        if (!Array.isArray(vec) || vec.length !== queryVec.length) continue
-        let dot = 0
-        let na = 0
-        let nb = 0
-        for (let i = 0; i < vec.length; i++) { dot += vec[i] * queryVec[i]; na += vec[i] * vec[i]; nb += queryVec[i] * queryVec[i] }
-        if (na === 0 || nb === 0) continue
-        const score = dot / (Math.sqrt(na) * Math.sqrt(nb))
-        if (score > 0.0001) scored.push({ id: r.id, score, content: r.content })
-      } catch { /* 坏向量跳过 */ }
+    const arr = JSON.parse(text) as unknown
+    if (!Array.isArray(arr) || !arr.length) return null
+    const vec = new Float32Array(arr.length)
+    let norm = 0
+    for (let i = 0; i < arr.length; i++) {
+      const v = Number(arr[i])
+      if (!Number.isFinite(v)) return null
+      vec[i] = v
+      norm += v * v
     }
-    return scored.sort((a, b) => b.score - a.score).slice(0, limit)
-  } catch { return [] }
+    norm = Math.sqrt(norm)
+    if (norm === 0) return null
+    return { vec, norm }
+  } catch { return null }
 }
 
-// 溯源链: 沿 source_id 向下钻取 L3→L2→L1→L0
-export function traceSourceChain(id: number): MemoryRow[] {
-  const chain: MemoryRow[] = []
-  const seen = new Set<number>()
-  let cur: MemoryRow | null = getMemoryById(id)
-  while (cur && !seen.has(cur.id as number)) {
-    seen.add(cur.id as number)
-    chain.push(cur)
-    cur = cur.sourceId ? getMemoryById(cur.sourceId) : null
+function ensureVectorCache(): void {
+  if (!db || vectorCacheLoaded) return
+  try {
+    const rows = db.prepare('SELECT id, agent, scope, embedding FROM memories WHERE superseded=0 AND embedding IS NOT NULL').all() as { id: number; agent: string; scope: string; embedding: string }[]
+    for (const r of rows) {
+      if (vectorCache.has(r.id)) continue
+      const e = parseVec(r.embedding)
+      if (e) vectorCache.set(r.id, { ...e, agent: String(r.agent || '黄泉'), scope: r.scope === 'private' ? 'private' : 'global' })
+    }
+  } catch { /* 缓存加载失败时本函数仍标记完成, 检索端返回空避免误报 */ }
+  vectorCacheLoaded = true
+  while (vectorCache.size > VECTOR_CACHE_MAX) {
+    const oldest = vectorCache.keys().next().value as number | undefined
+    if (oldest === undefined) break
+    vectorCache.delete(oldest)
   }
-  return chain
+}
+
+// 向量余弦检索: embedding 解析一次后缓存在内存(含预存模长), 每次查询只做 O(n) 内积
+export function searchVector(queryVec: number[], limit = 20, filter?: { agent?: string; scope?: 'global' | 'private' }): { id: number; score: number; content: string }[] {
+  if (!db || !Array.isArray(queryVec) || queryVec.length === 0) return []
+  ensureVectorCache()
+  let qNorm = 0
+  for (let i = 0; i < queryVec.length; i++) {
+    const v = Number(queryVec[i])
+    if (!Number.isFinite(v)) return []
+    qNorm += v * v
+  }
+  qNorm = Math.sqrt(qNorm)
+  if (qNorm === 0) return []
+  const scored: { id: number; score: number }[] = []
+  for (const [id, e] of vectorCache) {
+    if (filter?.agent && e.agent !== filter.agent) continue
+    if (filter?.scope && e.scope !== filter.scope) continue
+    if (e.vec.length !== queryVec.length) continue
+    let dot = 0
+    for (let i = 0; i < e.vec.length; i++) dot += e.vec[i] * Number(queryVec[i])
+    const score = dot / (e.norm * qNorm)
+    if (score > 0.0001) scored.push({ id, score })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  const take = Math.max(1, Math.min(200, Number(limit) || 20))
+  const out: { id: number; score: number; content: string }[] = []
+  for (const s of scored.slice(0, take)) {
+    const m = getMemoryById(s.id)
+    if (m && !m.superseded) out.push({ id: s.id, score: s.score, content: m.content })
+  }
+  return out
+}
+
+// 溯源链: 递归 CTE 一次取整条 L3→L2→L1→L0, 替代逐层 getMemoryById 的 N+1 查询
+export function traceSourceChain(id: number): MemoryRow[] {
+  if (!db) return []
+  try {
+    const rows = db.prepare(`
+      WITH RECURSIVE chain(id, depth) AS (
+        SELECT ?, 0
+        UNION ALL
+        SELECT m.source_id, chain.depth + 1
+        FROM memories m JOIN chain ON m.id = chain.id
+        WHERE m.source_id IS NOT NULL AND chain.depth < 100
+      )
+      SELECT m.id, m.agent, m.scope, m.level, m.layer, m.content, m.subject, m.relation, m.object,
+             m.embedding, m.source_id, m.ts, m.last_access, m.access_count, m.superseded, m.confidence
+      FROM chain JOIN memories m ON m.id = chain.id
+    `).all(id) as Record<string, unknown>[]
+    const out: MemoryRow[] = []
+    const seen = new Set<number>()
+    for (const r of rows) {
+      const m = rowToMemory(r)
+      if (seen.has(m.id as number)) continue
+      seen.add(m.id as number)
+      out.push(m)
+    }
+    return out
+  } catch { return [] }
 }
 
 // ─── 工具输出 side-channel ──────────────────────────
@@ -346,18 +434,45 @@ export function queryAudit(filter: AuditFilter = {}): AuditResult[] {
 }
 
 // ─── 会话索引(供 session_search FTS 后端) ───────────
-export function replaceSessionIndex(chunks: { sid: string; role: string; snippet: string; ts: number }[]): void {
+export function replaceSessionChunks(sid: string, chunks: { role: string; snippet: string; ts: number }[]): void {
   if (!db) return
   try {
-    db.exec('DELETE FROM session_chunks')
-    db.exec("INSERT INTO session_chunks_fts(session_chunks_fts) VALUES('delete-all')")
-    const insChunk = db.prepare('INSERT INTO session_chunks(sid, role, snippet, ts) VALUES(?, ?, ?, ?)')
-    const insFts = db.prepare('INSERT INTO session_chunks_fts(rowid, snippet) VALUES(?, ?)')
-    for (const c of chunks.slice(0, 5000)) {
-      const r = insChunk.run(c.sid, c.role, c.snippet.slice(0, 1200), c.ts)
-      insFts.run(lastId(r), c.snippet.slice(0, 1200))
+    db.exec('BEGIN')
+    try {
+      // contentless FTS5: 删除行必须提供旧 content, 先取旧片段再从两表删除
+      const old = db.prepare('SELECT rowid, snippet FROM session_chunks WHERE sid=?').all(sid) as { rowid: number; snippet: string }[]
+      const delFts = db.prepare("INSERT INTO session_chunks_fts(session_chunks_fts, rowid, snippet) VALUES('delete', ?, ?)")
+      for (const r of old) delFts.run(r.rowid, r.snippet)
+      db.prepare('DELETE FROM session_chunks WHERE sid=?').run(sid)
+      const insChunk = db.prepare('INSERT INTO session_chunks(sid, role, snippet, ts) VALUES(?, ?, ?, ?)')
+      const insFts = db.prepare('INSERT INTO session_chunks_fts(rowid, snippet) VALUES(?, ?)')
+      for (const c of chunks.slice(0, 200)) {
+        const r = insChunk.run(sid, c.role, c.snippet.slice(0, 1200), c.ts)
+        insFts.run(lastId(r), c.snippet.slice(0, 1200))
+      }
+      db.exec('COMMIT')
+    } catch (e) {
+      try { db.exec('ROLLBACK') } catch { /* 忽略 */ }
+      throw e
     }
   } catch { /* 索引失败不影响会话功能 */ }
+}
+
+export function deleteSessionChunks(sid: string): void {
+  if (!db) return
+  try {
+    db.exec('BEGIN')
+    try {
+      const old = db.prepare('SELECT rowid, snippet FROM session_chunks WHERE sid=?').all(sid) as { rowid: number; snippet: string }[]
+      const delFts = db.prepare("INSERT INTO session_chunks_fts(session_chunks_fts, rowid, snippet) VALUES('delete', ?, ?)")
+      for (const r of old) delFts.run(r.rowid, r.snippet)
+      db.prepare('DELETE FROM session_chunks WHERE sid=?').run(sid)
+      db.exec('COMMIT')
+    } catch (e) {
+      try { db.exec('ROLLBACK') } catch { /* 忽略 */ }
+      throw e
+    }
+  } catch { /* 忽略 */ }
 }
 
 export interface SessionHit { sid: string; role: string; snippet: string; ts: number; score: number }
@@ -431,6 +546,123 @@ export function listSessionMetas(): SessionMetaRow[] {
   } catch { return [] }
 }
 
+// ─── 教训 / 目标 / 情景(0.4.0 定稿: 从 memory.json 并入 SQLite) ─────────
+export interface LessonRow { id: number; content: string; ts: number }
+export interface GoalRow { goal: string; status: string; created: number; updated: number }
+export interface EpisodicRow { op: string; path: string; status: string; ts: number }
+
+export function listLessons(agent: string, scope: 'global' | 'private', limit = 50): LessonRow[] {
+  if (!db) return []
+  try {
+    const rows = db.prepare('SELECT id, content, ts FROM lessons WHERE agent=? AND scope=? ORDER BY ts DESC LIMIT ?').all(agent, scope, Math.max(1, Math.min(500, limit))) as Record<string, unknown>[]
+    return rows.map(r => ({ id: Number(r.id), content: String(r.content || ''), ts: Number(r.ts || 0) }))
+  } catch { return [] }
+}
+
+export function insertLesson(agent: string, scope: 'global' | 'private', content: string, ts = Date.now()): boolean {
+  if (!db || !content) return false
+  try {
+    const existing = db.prepare('SELECT id FROM lessons WHERE agent=? AND scope=? AND content=?').get(agent, scope, content)
+    if (existing) return false
+    db.prepare('INSERT INTO lessons(agent, scope, content, ts) VALUES(?, ?, ?, ?)').run(agent, scope, content.slice(0, 500), ts)
+    return true
+  } catch { return false }
+}
+
+export function deleteLessonByContent(agent: string, scope: 'global' | 'private', content: string): void {
+  if (!db) return
+  try { db.prepare('DELETE FROM lessons WHERE agent=? AND scope=? AND content=?').run(agent, scope, content) } catch { /* 忽略 */ }
+}
+
+export function listGoals(agent: string, scope: 'global' | 'private'): GoalRow[] {
+  if (!db) return []
+  try {
+    const rows = db.prepare('SELECT goal, status, created, updated FROM goals WHERE agent=? AND scope=? ORDER BY updated DESC LIMIT 500').all(agent, scope) as Record<string, unknown>[]
+    return rows.map(r => ({ goal: String(r.goal || ''), status: String(r.status || 'open'), created: Number(r.created || 0), updated: Number(r.updated || 0) }))
+  } catch { return [] }
+}
+
+export function replaceGoals(agent: string, scope: 'global' | 'private', goals: GoalRow[]): void {
+  if (!db) return
+  try {
+    db.exec('BEGIN')
+    try {
+      db.prepare('DELETE FROM goals WHERE agent=? AND scope=?').run(agent, scope)
+      const ins = db.prepare('INSERT INTO goals(agent, scope, goal, status, created, updated) VALUES(?, ?, ?, ?, ?, ?)')
+      for (const g of goals.slice(0, 500)) {
+        ins.run(agent, scope, String(g.goal || '').slice(0, 1000), String(g.status || 'open').slice(0, 40), Number(g.created || Date.now()), Number(g.updated || Date.now()))
+      }
+      db.exec('COMMIT')
+    } catch (e) {
+      try { db.exec('ROLLBACK') } catch { /* 忽略 */ }
+      throw e
+    }
+  } catch { /* 忽略 */ }
+}
+
+export function insertEpisodic(agent: string, scope: 'global' | 'private', e: { op: string; path: string; status: string }, ts = Date.now()): void {
+  if (!db) return
+  try { db.prepare('INSERT INTO episodic(agent, scope, op, path, status, ts) VALUES(?, ?, ?, ?, ?, ?)').run(agent, scope, String(e.op || '').slice(0, 80), String(e.path || '').slice(0, 500), String(e.status || '').slice(0, 40), ts) } catch { /* 忽略 */ }
+}
+
+export function listEpisodic(agent: string, scope: 'global' | 'private', limit = 20): EpisodicRow[] {
+  if (!db) return []
+  try {
+    const rows = db.prepare('SELECT op, path, status, ts FROM episodic WHERE agent=? AND scope=? ORDER BY ts DESC LIMIT ?').all(agent, scope, Math.max(1, Math.min(1000, limit))) as Record<string, unknown>[]
+    return rows.map(r => ({ op: String(r.op || ''), path: String(r.path || ''), status: String(r.status || ''), ts: Number(r.ts || 0) }))
+  } catch { return [] }
+}
+
+export function setMemoryLevel(id: number, level: 'normal' | 'important' | 'pinned'): void {
+  if (!db) return
+  try { db.prepare('UPDATE memories SET level=? WHERE id=?').run(level, id) } catch { /* 忽略 */ }
+}
+
 // legacy 导入标记(供 migrate-legacy 使用, 避免每次启动重复导入)
 export function isLegacyImported(): boolean { return getMeta('legacy_imported') === '1' }
 export function markLegacyImported(): void { setMeta('legacy_imported', '1') }
+
+// ─── 保留期清理与数据库维护 ─────────────────────────
+// side-channel 与审计是纯追加表: 不设保留期会随使用无限增长, 每日维护时按时间+条数双上限清理。
+export function pruneToolOutputs(olderThanMs: number, keepMax = 10000): number {
+  if (!db) return 0
+  try {
+    const cutoff = Date.now() - olderThanMs
+    let removed = Number((db.prepare('DELETE FROM tool_outputs WHERE ts < ?').run(cutoff) as { changes: number }).changes)
+    const row = db.prepare('SELECT COUNT(*) AS c FROM tool_outputs').get() as { c?: number } | undefined
+    const over = Math.max(0, Number(row?.c || 0) - keepMax)
+    if (over > 0) {
+      removed += Number((db.prepare('DELETE FROM tool_outputs WHERE id IN (SELECT id FROM tool_outputs ORDER BY ts ASC LIMIT ?)').run(over) as { changes: number }).changes)
+    }
+    return removed
+  } catch { return 0 }
+}
+
+export function pruneAudit(olderThanMs: number, keepMax = 50000): number {
+  if (!db) return 0
+  try {
+    const cutoff = Date.now() - olderThanMs
+    let removed = Number((db.prepare('DELETE FROM audit WHERE ts < ?').run(cutoff) as { changes: number }).changes)
+    const row = db.prepare('SELECT COUNT(*) AS c FROM audit').get() as { c?: number } | undefined
+    const over = Math.max(0, Number(row?.c || 0) - keepMax)
+    if (over > 0) {
+      removed += Number((db.prepare('DELETE FROM audit WHERE id IN (SELECT id FROM audit ORDER BY ts ASC LIMIT ?)').run(over) as { changes: number }).changes)
+    }
+    return removed
+  } catch { return 0 }
+}
+
+export function optimizeDb(): void {
+  if (!db) return
+  try { db.exec('PRAGMA optimize') } catch { /* 忽略 */ }
+}
+
+export function checkpointDb(): void {
+  if (!db) return
+  try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)') } catch { /* 忽略 */ }
+}
+
+export function vacuumDb(): void {
+  if (!db) return
+  try { db.exec('VACUUM') } catch { /* 忽略 */ }
+}

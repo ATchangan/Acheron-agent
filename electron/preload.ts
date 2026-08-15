@@ -53,19 +53,6 @@ contextBridge.exposeInMainWorld('huangquan', {
     save: (s: unknown) => ipcRenderer.invoke('settings:save', safeArg(s)),
     reset: () => ipcRenderer.invoke('settings:reset'),
   },
-  pet: {
-    toggle: (enable: boolean) => ipcRenderer.invoke('pet:toggle', enable),
-    setForm: (form: 'normal' | 'ultimate') => ipcRenderer.invoke('pet:set-form', form),
-    setAction: (action: 'idle' | 'dance1' | 'dance2' | 'dance3') => ipcRenderer.invoke('pet:set-action', action),
-    setAnchor: (anchor: 'float' | 'window' | 'taskbar') => ipcRenderer.invoke('pet:set-anchor', anchor),
-    setOptions: (patch: Record<string, unknown>) => ipcRenderer.invoke('pet:set-options', patch),
-    resetPos: () => ipcRenderer.invoke('pet:reset-pos'),
-    onChat: (cb: (content: string) => void) => {
-      const h = (_e: unknown, d: { content?: string }) => { try { cb(String(d?.content || '')) } catch { /* 忽略 */ } }
-      ipcRenderer.on('pet:chat', h)
-      return () => ipcRenderer.removeListener('pet:chat', h)
-    },
-  },
   sessions: {
     list: () => ipcRenderer.invoke('sessions:list'),
     load: (id: string) => ipcRenderer.invoke('sessions:load', id),
@@ -158,7 +145,7 @@ contextBridge.exposeInMainWorld('huangquan', {
   getPaths: () => ipcRenderer.invoke('get:paths'),
   update: {
     check: () => ipcRenderer.invoke('update:check'),
-    download: (url: string, fileName: string) => ipcRenderer.invoke('update:download', url, fileName),
+    download: (url: string, fileName: string, expectedSha256?: string) => ipcRenderer.invoke('update:download', url, fileName, expectedSha256),
     onProgress: (cb: (d: { received: number; total: number; ts: number }) => void) => {
       const h = (_: unknown, d: { received: number; total: number; ts: number }) => cb(d)
       ipcRenderer.on('update:progress', h); return () => ipcRenderer.removeListener('update:progress', h)

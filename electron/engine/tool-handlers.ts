@@ -6,16 +6,16 @@ import { Notification } from 'electron'
 import { invokeHandler } from './registry'
 import { WORKFLOWS } from './constants'
 import type { ToolHandler, ToolRunCtx } from './tool-types'
-import { scanMemoryText, recallFromMemory } from './memory'
+import { scanMemoryText, recallFromMemory, upsertFactDb, recallMemoryDb } from './memory'
 import { errMsg } from './errmsg'
 import { applyPatchToContent } from '../shared/patch-utils'
 import { getMcpToolSpecs } from './tool-specs'
 import { checkFilePermission } from './tool-permission'
 import { resolveSkillFile, safeSkillName, writableSkillDir, listSkills } from './skill-files'
 import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
-import { insertMemory, getToolOutput, queryAudit } from '../db'
-import { parseFact, storeFact } from '../memory/facts'
-import { rrfFuse, ftsHits, formatFusedHits } from '../memory/searcher'
+import { getToolOutput, queryAudit, setMemoryEmbedding } from '../db'
+import { formatFusedHits } from '../memory/searcher'
+import { embedText } from '../memory/embeddings'
 import { searchSessions } from '../memory/session-index'
 
 const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer; decode: (b: Buffer, enc: string) => string }
@@ -339,6 +339,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (!scan.ok) return 'E:' + scan.reason
     // 自省整改 #7: 约定/规则/偏好类事实自动置顶, 避免关键约定沉底丢失
     const autoPin = !A.pinned && /约定|规则|偏好|以后|必须|每次/.test(fact)
+    // 同任务内存快照同步(dispatch 子代理与同任务召回可见)
     if (A.pinned || autoPin) {
       const pf = m.pinnedFacts || []
       if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'
@@ -347,49 +348,24 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       if (m.facts.some(f => String(f).trim() === fact)) return 'ok:already saved'
       m.facts = [...m.facts, fact]
     }
-    ctx.saveMemory(m)
-    // v0.4.0 M4: 四层金字塔落库(L0 原始来源 → L1 原子事实 → L3 核心结论), 带溯源与去重
-    try {
-      const now = Date.now()
-      const agent = ctx.agent || '黄泉'
-      const agentScope = ctx.agent && ctx.agents[ctx.agent] ? ctx.agents[ctx.agent].memoryScope : 'global'
-      const scope: 'global' | 'private' = agentScope === 'private' ? 'private' : 'global'
-      const l0 = insertMemory({
-        agent, scope, level: 'normal', layer: 'L0',
-        content: String(ctx.latestUserText || fact).slice(0, 2000),
-        subject: null, relation: null, object: null, embedding: null, sourceId: null,
-        ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
-      })
-      const triple = parseFact(fact)
-      const l1: Parameters<typeof insertMemory>[0] = {
-        agent, scope, level: (A.pinned || autoPin) ? 'pinned' : 'normal', layer: 'L1',
-        content: fact.slice(0, 1000), subject: triple.subject, relation: triple.relation, object: triple.object,
-        embedding: null, sourceId: l0 || null, ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
-      }
-      const stored = triple.subject ? storeFact(l1) : { action: 'new' as const, id: insertMemory(l1) }
-      if ((A.pinned || autoPin) && stored.id > 0) {
-        insertMemory({ ...l1, layer: 'L3', sourceId: stored.id, level: 'pinned' })
-      }
-    } catch { /* 记忆落库失败不阻塞任务, 仍保留 JSON 通道 */ }
+    const agent = ctx.agent || '黄泉'
+    const scope: 'global' | 'private' = ctx.agent && ctx.agents[ctx.agent] && ctx.agents[ctx.agent].memoryScope === 'private' ? 'private' : 'global'
+    const id = upsertFactDb(agent, scope, fact, !!(A.pinned || autoPin), String(ctx.latestUserText || fact))
+    if (id > 0) {
+      void embedText(fact).then(vec => { if (vec && vec.length) setMemoryEmbedding(id, vec) }).catch(() => {})
+    }
+    ctx.saveMemory(m) // db 可用时 saveMemory 只同步快照(事实已落库), 不可用时走 JSON 降级
     return 'ok:saved' + (autoPin ? '（已自动置顶：约定/规则类）' : '')
   } },
   { name: 'recall_memory', run: async (A, ctx) => {
     const query = (A.query || '').trim()
-    let vecHits: { content: string; score: number }[] = []
+    const agent = ctx.agent || '黄泉'
+    const scope: 'global' | 'private' = ctx.agent && ctx.agents[ctx.agent] && ctx.agents[ctx.agent].memoryScope === 'private' ? 'private' : 'global'
     try {
-      const v = await invokeHandler('memory:search', [query], ctx.sender)
-      if (Array.isArray(v)) vecHits = v.map((x: { content?: string }) => ({ content: String(x.content || ''), score: 0.5 }))
-    } catch { /* 忽略 */ }
-    const legacy = recallFromMemory(ctx.getMemory(), query, vecHits)
-    // v0.4.0 M2: FTS5 + 向量 RRF 融合检索(带溯源层与置信度)
-    try {
-      const fused = rrfFuse(ftsHits(query, 20), vecHits, { limit: 5 })
-      if (fused.length) {
-        const dbText = formatFusedHits(fused)
-        return legacy && legacy !== '(empty)' ? dbText + '\n---\n[历史记忆]\n' + legacy : dbText
-      }
-    } catch { /* 检索失败回退 JSON 通道 */ }
-    return legacy
+      const fused = await recallMemoryDb(agent, scope, query, 5)
+      if (fused) return formatFusedHits(fused)
+    } catch { /* db 不可用时回退 JSON 关键词通道 */ }
+    return recallFromMemory(ctx.getMemory(), query, [])
   } },
   { name: 'session_search', run: async (A, ctx) => {
     const q = String(A.query || '').trim()

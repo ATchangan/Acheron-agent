@@ -4,7 +4,6 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import ChatInput from './ChatInput'
 import MessageList from './MessageList'
-import PetToolbar from './PetToolbar'
 import { U } from './ui-styles'
 import { fmtDur } from './work-steps'
 
@@ -49,9 +48,7 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
 
   return (
     <>
-      {/* v0.4.0: 顶部改为黄泉桌宠控制条; 聊天/工作模式切换移至侧边栏会话区与设置 */}
       <div className="chat-header-tab">
-        <PetToolbar />
         {workDir && mode === 'work' && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-secondary)', marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }} title={workDir}><Folder size={12} />{workDir.split(/[/\\]/).pop()}</span>}
         {(streaming || executing) && activeAgents.length > 0 && (
           <span style={{ display: 'inline-flex', gap: 4, marginLeft: 8, flexWrap: 'wrap' }}>

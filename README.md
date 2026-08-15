@@ -12,15 +12,16 @@
 
 - **独立内核 AgentEngine**：Agent 主循环、工具分发、记忆、计划全部在主进程，渲染层只消费事件流；支持断点恢复、计划确认门、执行计划卡与自动复盘
 - **多角色编队**：姬子 / 三月七 / 银狼 / 艾丝妲 / 知更鸟 / 黑天鹅 / 螺丝咕姆，各自拥有工具白名单与私有记忆；`dispatch` 并行分发、`handoff` 带上下文交接
-- **工具与生态**：59 个内置工具（文件/命令/Git/终端/网络/浏览器/多媒体/记忆/计划/协作/MCP/插件/技能），主控默认「核心工具模式」省 token
-- **记忆与上下文**：向量 + 关键词双路检索、容量封顶自动归档、约定类事实自动置顶、失败教训沉淀；上下文压缩自动适配模型窗口
-- **安全与可靠**：L0-L4 风险分级、DPAPI 密钥加密、危险命令黑名单（可动态扩展）、文件回滚快照、模型降级链、事件钩子 Hooks
+- **工具与生态**：62 个内置工具（文件/命令/Git/终端/网络/浏览器/多媒体/记忆/计划/协作/MCP/插件/技能），主控默认「核心工具模式」省 token
+- **记忆与上下文**：本地 SQLite 单数据源（强杀不丢）+ FTS5/向量 RRF 双路检索 + 四层金字塔可溯源 + 三档衰减 + 事实去重与冲突淘汰；失败教训、目标、情景操作统一落库；上下文压缩自动适配模型窗口
+- **安全与可靠**：L0-L4 风险分级、DPAPI 密钥加密、危险命令黑名单（可动态扩展）、文件回滚快照、模型降级链、事件钩子 Hooks、localVision 命令无 shell 执行
+- **备份与更新**：一键备份含 SQLite 记忆库（打包前 WAL checkpoint），支持断点续传 + SHA256 校验的安装包下载，GitHub Release 增量更新
 - **项目指令**：自动读取 `AGENTS.md` / `CLAUDE.md` / `.agents.md`（目录链合并、子目录按需注入、注入安全扫描）
 - **可观测**：一键环境自检、引擎轨迹导出、token/成本统计、发布门禁
 
 ## 技术栈
 
-Electron 32 · React 18 · TypeScript · Vite 5 · Zustand · Playwright-core（浏览器自动化）
+Electron 43 · React 19 · TypeScript 5.9 · Vite 7 · Zustand · Playwright-core（浏览器自动化） · node:sqlite · electron-updater
 
 ## 快速开始
 
@@ -34,13 +35,15 @@ npm run package:win  # 打包 Windows 安装程序
 
 > 打包前请先关闭正在运行的黄泉Agent（应用会锁定 `release/win-unpacked` 下的文件）。
 
+下载安装：[GitHub Releases](https://github.com/ATchangan/Acheron-agent/releases/latest)
+
 ## 更新日志（重点）
 
 ### v0.4.0
-- 记忆：本地 SQLite 持久化 + FTS5/向量双路检索 + 三档衰减 + 四层金字塔可溯源 + 事实去重
+- 记忆：本地 SQLite 持久化 + FTS5/向量双路检索 + 三档衰减 + 四层金字塔可溯源 + 事实去重；上下文注入 / recall_memory / 记忆页统一收敛到 agent.db（旧 JSON 自动迁移）
 - 网关：任务类型路由（text/code/vision/long）+ 降级链 + 本地视觉服务自动切换
 - 上下文：工具结果 side-channel + 四要素状态提炼 + 技能按需注入
-- 桌宠：式神伴身（透明置顶、状态动画、定时提醒）+ 黄泉 3D 建模（正常/大招形态、three.js 渲染、ammo 物理、程序化待机动画、可切换舞蹈动作）
+- 工程：移除桌宠，安装包 116.8MB→94.6MB；Electron 32→43、React 19、Vite 7、TS 5.9；备份含 agent.db、CI 完整质量门禁 + Release 增量更新；49 文件 287 用例全绿
 
 ### v0.3.9
 - 正确性：中文乱码修复、子代理统一执行管道、私有记忆隔离、模型降级链、密钥解密兜底

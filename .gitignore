@@ -10,9 +10,3 @@ _archive/userdata-20260811/
 .test-data/
 .DS_Store
 .playwright-cli/
-# 米哈游官方素材衍生模型(PMX/贴图): 仅本机个人使用, 不进开源仓库
-pet/models/*
-!pet/models/NOTICE.md
-# 第三方舞蹈动作(VMD): 版权归动作作者, 仅本机个人使用
-pet/actions/*
-!pet/actions/NOTICE.md

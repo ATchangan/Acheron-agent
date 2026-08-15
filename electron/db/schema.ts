@@ -99,10 +99,48 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 `
 
+// v0.4.0 定稿: 失败教训 / 目标 / 情景(操作追溯)从 memory.json 并入 SQLite
+export const LESSONS_DDL = `
+CREATE TABLE IF NOT EXISTS lessons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL DEFAULT '黄泉',
+  scope TEXT NOT NULL DEFAULT 'global',
+  content TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lessons_agent ON lessons(agent, scope, ts);
+`
+
+export const GOALS_DDL = `
+CREATE TABLE IF NOT EXISTS goals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL DEFAULT '黄泉',
+  scope TEXT NOT NULL DEFAULT 'global',
+  goal TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  created INTEGER NOT NULL,
+  updated INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goals_agent ON goals(agent, scope, updated);
+`
+
+export const EPISODIC_DDL = `
+CREATE TABLE IF NOT EXISTS episodic (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent TEXT NOT NULL DEFAULT '黄泉',
+  scope TEXT NOT NULL DEFAULT 'global',
+  op TEXT,
+  path TEXT,
+  status TEXT,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_episodic_agent ON episodic(agent, scope, ts);
+`
+
 export const META_DDL = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `
 
 export function allSchemaDdl(): string[] {
-  return [MEMORIES_DDL, MEMORIES_FTS_TRIGGERS, TOOL_OUTPUTS_DDL, AUDIT_DDL, SESSIONS_DDL, SESSION_INDEX_DDL, SKILLS_DDL, META_DDL]
+  return [MEMORIES_DDL, MEMORIES_FTS_TRIGGERS, TOOL_OUTPUTS_DDL, AUDIT_DDL, SESSIONS_DDL, SESSION_INDEX_DDL, SKILLS_DDL, LESSONS_DDL, GOALS_DDL, EPISODIC_DDL, META_DDL]
 }

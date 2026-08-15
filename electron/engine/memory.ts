@@ -1,8 +1,18 @@
-// electron/engine/memory.ts — 独立内核记忆访问(直接读写 memory.json, 与渲染层共用同一文件)
+// electron/engine/memory.ts — 记忆访问统一入口(v0.4.0 定稿)
+// SQLite 为主存储(facts/pinned/summaries/lessons/goals/episodic 全部落库), 建库失败自动回退 JSON。
 import * as fs from 'fs'
 import { dirname, join } from 'path'
 import { writeFileAtomic } from '../fs-atomic'
 import { scoreOverlap, scanMemoryText, normalizeMemory } from '../shared/memory-utils'
+import {
+  getDb, listMemories, insertMemory, softDeleteMemory, setMemoryLevel,
+  listLessons, insertLesson, deleteLessonByContent,
+  listGoals, replaceGoals, listEpisodic, insertEpisodic,
+  searchFts, searchVector, type MemoryRow,
+} from '../db'
+import { parseFact, storeFact } from '../memory/facts'
+import { embedText } from '../memory/embeddings'
+import { rrfFuse, type FusedHit } from '../memory/searcher'
 export { scanMemoryText }
 
 export interface EngineMemory {
@@ -11,7 +21,6 @@ export interface EngineMemory {
   pinnedFacts?: string[]
   episodic?: { op: string; path: string; status: string; ts: number }[]
   goals?: { goal: string; status: string; steps?: unknown[]; created?: number }[]
-  // v0.3.9: 失败教训(自动复盘沉淀, 按时效注入)
   lessons?: { content: string; ts: number }[]
 }
 
@@ -21,7 +30,34 @@ const SUMMARIES_CAP = 200
 const LESSONS_CAP = 50
 const MEMORY_DEFAULT_MAX = 6000
 
-export function loadMemory(memoryPath: string): EngineMemory {
+export interface MemoryScopeOpts { agent?: string; scope?: 'global' | 'private' }
+
+function resolveOpts(memoryPath: string, opts?: MemoryScopeOpts): { agent: string; scope: 'global' | 'private' } {
+  const base = memoryPath.split(/[\\/]/).pop() || ''
+  const priv = /^memory-(.+)\.json$/.exec(base)
+  if (opts?.scope) return { agent: String(opts.agent || '黄泉'), scope: opts.scope }
+  if (priv) return { agent: priv[1], scope: 'private' }
+  return { agent: String(opts?.agent || '黄泉'), scope: opts?.scope || 'global' }
+}
+
+export function loadMemory(memoryPath: string, opts?: MemoryScopeOpts): EngineMemory {
+  const { agent, scope } = resolveOpts(memoryPath, opts)
+  if (getDb()) {
+    try {
+      // 列表均按 ts DESC 返回; JSON 旧语义是"旧在前新在后", 统一反转为旧→新以兼容内存块选取逻辑
+      const facts = listMemories({ agent, scope, layer: 'L1', includeSuperseded: false, limit: FACTS_CAP })
+        .filter(m => m.level !== 'pinned').map(m => m.content).reverse()
+      const pinned = listMemories({ agent, scope, includeSuperseded: false, limit: 2000 })
+        .filter(m => m.level === 'pinned').map(m => m.content)
+        .filter((v, i, a) => a.indexOf(v) === i).reverse().slice(-PINNED_CAP)
+      const summaries = listMemories({ agent, scope, layer: 'L3', includeSuperseded: false, limit: SUMMARIES_CAP })
+        .filter(m => m.level !== 'pinned').map(m => ({ content: m.content, timestamp: m.ts })).reverse()
+      const lessons = listLessons(agent, scope, LESSONS_CAP).map(l => ({ content: l.content, ts: l.ts }))
+      const goals = listGoals(agent, scope).map(g => ({ goal: g.goal, status: g.status, created: g.created }))
+      const episodic = listEpisodic(agent, scope, 100).reverse().map(e => ({ op: e.op, path: e.path, status: e.status, ts: e.ts }))
+      return { facts, summaries, pinnedFacts: pinned, episodic, goals, lessons }
+    } catch { /* db 读取失败回退 JSON */ }
+  }
   try {
     if (fs.existsSync(memoryPath)) {
       const d = JSON.parse(fs.readFileSync(memoryPath, 'utf-8'))
@@ -38,11 +74,108 @@ export function loadMemory(memoryPath: string): EngineMemory {
   return { facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [], lessons: [] }
 }
 
-export function saveMemory(memoryPath: string, m: EngineMemory): boolean {
+// 事实落库: 精确去重置信度累计、同主谓冲突旧行淘汰; pinned 额外生成 L3 置顶副本(与旧 save_memory 行为一致)
+export function upsertFactDb(agent: string, scope: 'global' | 'private', content: string, pinned: boolean, sourceText?: string): number {
+  if (!getDb()) return 0
+  try {
+    const fact = content.slice(0, 1000)
+    const now = Date.now()
+    const triple = parseFact(fact)
+    let sourceId: number | null = null
+    if (sourceText) {
+      sourceId = insertMemory({
+        agent, scope, level: 'normal', layer: 'L0', content: String(sourceText).slice(0, 2000),
+        subject: null, relation: null, object: null, embedding: null, sourceId: null,
+        ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
+      }) || null
+    }
+    const l1: MemoryRow = {
+      agent, scope, level: pinned ? 'pinned' : 'normal', layer: 'L1', content: fact,
+      subject: triple.subject, relation: triple.relation, object: triple.object, embedding: null,
+      sourceId, ts: now, lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
+    }
+    const stored = triple.subject ? storeFact(l1) : { action: 'new' as const, id: insertMemory(l1) }
+    if (stored.id > 0 && pinned) {
+      setMemoryLevel(stored.id, 'pinned')
+      const hasCopy = listMemories({ agent, scope, layer: 'L3', includeSuperseded: false, limit: 2000 })
+        .some(x => x.level === 'pinned' && x.content === fact)
+      if (!hasCopy) insertMemory({ ...l1, layer: 'L3', sourceId: stored.id, level: 'pinned' })
+    }
+    return stored.id
+  } catch { return 0 }
+}
+
+function reconcileFacts(agent: string, scope: 'global' | 'private', facts: string[], pinnedFacts: string[]): void {
+  const cur = listMemories({ agent, scope, layer: 'L1', includeSuperseded: false, limit: 2000 })
+  const curNorm = cur.filter(m => m.level !== 'pinned')
+  const normSet = new Set(curNorm.map(m => m.content))
+  for (const f of facts) if (!normSet.has(f)) upsertFactDb(agent, scope, f, false)
+  for (const c of curNorm) if (!facts.includes(c.content)) softDeleteMemory(c.id as number)
+  const curPin = cur.filter(m => m.level === 'pinned')
+  const pinSet = new Set(curPin.map(m => m.content))
+  for (const p of pinnedFacts) if (!pinSet.has(p)) upsertFactDb(agent, scope, p, true)
+  const all = listMemories({ agent, scope, includeSuperseded: false, limit: 2000 })
+  for (const c of curPin) {
+    if (pinnedFacts.includes(c.content)) continue
+    for (const row of all.filter(m => m.level === 'pinned' && m.content === c.content)) softDeleteMemory(row.id as number)
+  }
+}
+
+function reconcileSummaries(agent: string, scope: 'global' | 'private', summaries: { content: string; timestamp: number }[]): void {
+  const cur = listMemories({ agent, scope, layer: 'L3', includeSuperseded: false, limit: 2000 }).filter(m => m.level !== 'pinned')
+  const set = new Set(cur.map(m => m.content))
+  const now = Date.now()
+  for (const s of summaries) {
+    if (set.has(s.content)) continue
+    insertMemory({
+      agent, scope, level: 'normal', layer: 'L3', content: String(s.content || '').slice(0, 1000),
+      subject: null, relation: null, object: null, embedding: null, sourceId: null,
+      ts: Number(s.timestamp || now), lastAccess: now, accessCount: 0, superseded: 0, confidence: 1,
+    })
+  }
+  for (const c of cur) if (!summaries.some(s => s.content === c.content)) softDeleteMemory(c.id as number)
+}
+
+function reconcileLessons(agent: string, scope: 'global' | 'private', lessons: { content: string; ts: number }[]): void {
+  const cur = listLessons(agent, scope, 500)
+  const set = new Set(cur.map(l => l.content))
+  for (const l of lessons) if (!set.has(l.content)) insertLesson(agent, scope, l.content, Number(l.ts || Date.now()))
+  for (const c of cur) if (!lessons.some(l => l.content === c.content)) deleteLessonByContent(agent, scope, c.content)
+}
+
+export function saveMemory(memoryPath: string, m: EngineMemory, opts?: MemoryScopeOpts): boolean {
+  const { agent, scope } = resolveOpts(memoryPath, opts)
+  if (getDb()) {
+    try {
+      // 字段缺失时跳过对应 reconcile, 防止"只带部分字段的保存"误清库(如渲染层降级兜底对象)
+      if (Array.isArray(m.facts) || Array.isArray(m.pinnedFacts)) {
+        const cur = listMemories({ agent, scope, layer: 'L1', includeSuperseded: false, limit: 2000 })
+        const curFacts = cur.filter(x => x.level !== 'pinned').map(x => x.content)
+        const curPinned = [...new Set(cur.filter(x => x.level === 'pinned').map(x => x.content))]
+        reconcileFacts(agent, scope, Array.isArray(m.facts) ? m.facts : curFacts, Array.isArray(m.pinnedFacts) ? m.pinnedFacts : curPinned)
+      }
+      if (Array.isArray(m.summaries)) reconcileSummaries(agent, scope, m.summaries)
+      if (Array.isArray(m.lessons)) reconcileLessons(agent, scope, m.lessons)
+      if (Array.isArray(m.goals)) {
+        replaceGoals(agent, scope, m.goals.map(g => ({
+          goal: String(g.goal || ''), status: String(g.status || 'open'),
+          created: Number(g.created || Date.now()), updated: Date.now(),
+        })))
+      }
+      if (Array.isArray(m.episodic)) {
+        const existing = new Set(listEpisodic(agent, scope, 1000).map(e => e.op + '|' + e.path + '|' + e.ts))
+        for (const e of m.episodic.slice(-100)) {
+          const key = String(e.op) + '|' + String(e.path) + '|' + Number(e.ts || Date.now())
+          if (!existing.has(key)) insertEpisodic(agent, scope, { op: String(e.op), path: String(e.path), status: String(e.status) }, Number(e.ts || Date.now()))
+        }
+      }
+      return true
+    } catch { /* 回退 JSON */ }
+  }
   try { writeFileAtomic(memoryPath, JSON.stringify(normalizeMemory(m), null, 2)); return true } catch { return false }
 }
 
-// v0.3.9: 私有记忆命名空间 —— memoryScope=private 的角色使用独立 memory-<角色>.json
+// v0.3.9: 私有记忆命名空间(保留: JSON 降级路径与旧备份兼容; SQLite 主路径用 scope 列)
 export function memoryPathFor(memoryPath: string, scope: string | undefined, agent: string | undefined): string {
   if (scope !== 'private' || !agent) return memoryPath
   const safe = String(agent).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40) || 'agent'
@@ -76,7 +209,6 @@ export function memoryBlockText(mem: EngineMemory, userMsg?: string, opts: boole
     const scored = q
       ? [...facts].map(f => ({ f: String(f), s: scoreOverlap(String(f), q) })).sort((a, b) => b.s - a.s)
       : facts.map(String)
-    // 有相关命中时只取命中项, 避免零相关事实占满预算; 无命中时回退最近 5 条
     const picked = typeof scored[0] === 'string' ? (scored as string[]).slice(-5) : (() => {
       const arr = scored as { f: string; s: number }[]
       const positive = arr.filter(x => x.s > 0)
@@ -103,6 +235,18 @@ export function memoryBlockText(mem: EngineMemory, userMsg?: string, opts: boole
   return head + joined + tail
 }
 
+// SQLite 检索入口: FTS5 + 查询向量 RRF 融合(带 agent/scope 过滤); db 不可用返回 null 由调用方走 JSON 降级
+export async function recallMemoryDb(agent: string, scope: 'global' | 'private', query: string, limit = 5): Promise<FusedHit[] | null> {
+  if (!getDb()) return null
+  try {
+    const fts = searchFts(query, 20, { agent, scope })
+    const qvec = await embedText(query)
+    const vec = qvec ? searchVector(qvec, 20, { agent, scope }).map(h => ({ content: h.content, score: h.score })) : []
+    return rrfFuse(fts, vec, { limit })
+  } catch { return null }
+}
+
+// JSON 降级通道的关键词+向量合并召回(0.4.0 定稿后仅 db 不可用时使用)
 export function recallFromMemory(mem: EngineMemory, query: string, vecHits: { content: string; score: number }[]): string {
   const pinned = mem.pinnedFacts || []
   const facts = mem.facts || []

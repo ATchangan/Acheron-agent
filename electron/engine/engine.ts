@@ -32,6 +32,12 @@ import { detectTaskType, routeProfile } from '../llm/gateway'
 import { enqueueLocalVision } from '../llm/vision'
 import { recordSkillHit } from '../db'
 
+function agentMemoryScope(general: EngineSettings, agent?: string): 'global' | 'private' {
+  if (!agent) return 'global'
+  const ag = getAgents(general.agentOverrides as Record<string, Partial<AgentDef>> | undefined)[agent]
+  return ag?.memoryScope === 'private' ? 'private' : 'global'
+}
+
 export interface EngineDeps {
   settingsPath: string
   userDataPath: string
@@ -170,7 +176,7 @@ export class AgentEngine {
       projectCtx: null,
       instrVisited: new Set<string>(),
       fileSnapshots: {},
-      memory: loadMemory(this.deps.memoryPath),
+      memory: loadMemory(this.deps.memoryPath, { agent: params.agent ?? '黄泉', scope: agentMemoryScope(general, params.agent) }),
       lastMidSave: 0,
       planSteps: [],
       planSummary: '',
@@ -263,7 +269,7 @@ export class AgentEngine {
       projectCtx: null,
       instrVisited: new Set<string>(),
       fileSnapshots: {},
-      memory: loadMemory(this.deps.memoryPath),
+      memory: loadMemory(this.deps.memoryPath, { agent: cp.agent ?? '黄泉', scope: agentMemoryScope(general, cp.agent) }),
       lastMidSave: 0,
       planSteps: restoredSteps,
       planSummary: String(cp.planSummary || ''),
@@ -748,7 +754,7 @@ export class AgentEngine {
       const scene = String(task.content || '').slice(0, 120)
       const lesson = '失败复盘：' + reason + '。场景：' + scene + '。建议：先复现并定位第一个失败步骤，再决定重试或回滚文件改动。'
       if (scanMemoryText(lesson).ok && addLesson(task.memory, lesson)) {
-        saveMemory(this.deps.memoryPath, task.memory)
+        saveMemory(this.deps.memoryPath, task.memory, { agent: task.agent ?? '黄泉', scope: agentMemoryScope(task.g, task.agent) })
         this.trace('info', 'memory.lesson', '失败教训已沉淀', task.sid, task.taskId)
       }
     }
@@ -1028,7 +1034,7 @@ export class AgentEngine {
       sender: this.deps.getSender(),
       latestUserText: String(task.userMsg?.content || ''),
       getMemory: () => task.memory,
-      saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m) },
+      saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m, { agent: task.agent ?? '黄泉', scope: agentMemoryScope(task.g, task.agent) }) },
       onAgentChange: (agent: string) => {
         task.agent = agent
         if (!task.activeAgents.includes(agent)) task.activeAgents = [...task.activeAgents, agent]

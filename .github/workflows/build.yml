@@ -18,20 +18,26 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: 安装依赖
-        run: npm ci || npm install
-
-      - name: 单元测试
-        run: npm test
+        run: npm ci
 
       - name: Lint 检查
         run: npm run lint
 
       - name: 类型检查
         run: npm run typecheck
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 评估基准
+        run: npm run eval:unit
+
+      - name: 品牌词扫描
+        run: npm run brand:scan
 
       - name: 构建(渲染层 + 主进程)
         run: npm run build
@@ -45,13 +51,38 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: release/*.exe
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
           if-no-files-found: error
+
+      - name: UI 全页面巡检(解包产物 + CDP)
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem release\win-unpacked -Filter '*.exe' | Select-Object -First 1).FullName
+          $env:HQ_USER_DATA = Join-Path $env:RUNNER_TEMP 'hq-ui-smoke'
+          $p = Start-Process -FilePath $exe -ArgumentList '--remote-debugging-port=9234' -WindowStyle Hidden -PassThru
+          $ready = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-WebRequest 'http://127.0.0.1:9234/json' -UseBasicParsing -TimeoutSec 2
+              if ($r.StatusCode -eq 200) { $ready = $true; break }
+            } catch { }
+          }
+          if (-not $ready) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw 'CDP 未就绪' }
+          node scripts/ui-check.cjs 9234 $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit $LASTEXITCODE }
+          Stop-Process -Id $p.Id -Force
 
       - name: 发布到 GitHub Releases(仅 tag 推送)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
           overwrite: true
           # 不用 generate_release_notes: 需要额外权限,且 release 说明由项目维护

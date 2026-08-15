@@ -12,7 +12,9 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - resources/**/*        # SOP红线: 必须含 resources/**,否则人设 ishiki.md + 4 组技能不进包
-  - pet/**/*              # v0.4.0 M9: 桌宠静态页(透明置顶小窗), 关闭设置时零开销
+electronLanguages:
+  - zh-CN
+  - en-US
 win:
   target:
     - nsis

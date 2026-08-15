@@ -50,7 +50,8 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
       if (disabledAgents.includes(t.agent)) return { agent: t.agent, task: t.task, result: 'E:该角色已被禁用: ' + t.agent }
       // 私有记忆命名空间 —— memoryScope=private 的角色读写独立 memory-<角色>.json
       const subMemPath = memoryPathFor(deps.memoryPath, ag.memoryScope, t.agent)
-      let subMem = loadMemory(subMemPath)
+      const subScope: 'global' | 'private' = ag.memoryScope === 'private' ? 'private' : 'global'
+      let subMem = loadMemory(subMemPath, { agent: t.agent, scope: subScope })
       const sp = buildSubSystemPrompt(ag, t.agent, t.task, memoryBlockText(subMem, t.task))
       const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
       // 子任务用子角色构建工具上下文, 避免父角色白名单误伤子角色工具
@@ -60,7 +61,7 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
         isSubtask: true,
         activeAgents: [...task.activeAgents, t.agent],
         getMemory: () => subMem,
-        saveMemory: (m: EngineMemory) => { subMem = m; saveMemory(subMemPath, m) },
+        saveMemory: (m: EngineMemory) => { subMem = m; saveMemory(subMemPath, m, { agent: t.agent, scope: subScope }) },
       }
       const agTools = filterToolsByAgent(getActiveTools(subCtx), t.agent, agents).filter(tt => !COLLAB_TOOLS.includes(tt.function.name))
       // 子任务使用角色专属模型(如黑天鹅 vision), 未配置则继承当前模型

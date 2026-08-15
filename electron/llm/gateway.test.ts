@@ -14,6 +14,15 @@ describe('detectTaskType 任务类型检测', () => {
     expect(detectTaskType('帮我重构这段 TypeScript 代码', undefined)).toBe('code')
     expect(detectTaskType('今天天气怎么样', undefined)).toBe('text')
   })
+
+  it('代码块/行首命令/源码路径识别为 code, URL 与裸文件名不误判', () => {
+    expect(detectTaskType('这里出错了:\n```ts\nconst a = 1\n```', undefined)).toBe('code')
+    expect(detectTaskType('\nnpm install\n', undefined)).toBe('code')
+    expect(detectTaskType('问题在 D:\\work\\src\\main.ts 第 3 行', undefined)).toBe('code')
+    expect(detectTaskType('请执行 npm install 后重试', undefined)).toBe('text')
+    expect(detectTaskType('看这个页面 https://example.com/index.html', undefined)).toBe('text')
+    expect(detectTaskType('文件名叫 app.ts', undefined)).toBe('text')
+  })
 })
 
 describe('routeProfile 统一路由', () => {

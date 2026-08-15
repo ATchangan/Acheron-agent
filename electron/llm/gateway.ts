@@ -11,13 +11,27 @@ export interface ModelPick { p: EngineProvider; model: string }
 
 const CODE_WORDS = ['代码', '脚本', '程序', '函数', '类', '接口', 'bug', '调试', '报错', '编译', '重构', '算法', '单元测试', '数据库', 'SQL', '正则']
 
+// 代码意图强信号: 围栏代码块 / 行首构建命令(可带 shell 提示符) / 含目录的源码路径。
+// 关键词命中 ≥2 作为兜底, 避免单个常见词(如"类")误判。
+const CODE_FENCE_RE = /```[\w.+#-]*\s*\n?[\s\S]*?```/m
+const BUILD_CMD_RE = /^[ \t]*(?:[$>]\s*)?(?:git|npm|pnpm|yarn|pip3?|python3?|node|npx|tsc|vite|vitest|docker|kubectl|curl|wget|choco|scoop|winget|apt|brew)\b\s+\S+/m
+const SOURCE_EXT_RE = /^(?:[A-Za-z]:[\\/])?(?:[\w.@-]+[\\/])*[\w.@-]+\.(?:tsx?|jsx?|mjs|cjs|py|java|kt|go|rs|c|cc|cpp|h|hpp|cs|php|rb|sh|bat|ps1|sql|vue|svelte|html?|css|scss|json|ya?ml|toml|md|swift)$/
+
+function detectCodeIntent(text: string): boolean {
+  if (CODE_FENCE_RE.test(text)) return true
+  if (BUILD_CMD_RE.test(text)) return true
+  const lower = text.toLowerCase()
+  if (CODE_WORDS.filter(w => lower.includes(w.toLowerCase())).length >= 2) return true
+  // 逐 token 检查源码路径(要求带目录或盘符, 避免 URL 与裸文件名误报)
+  return text.split(/[\s,;!?()[\]"'`]+/).some(t => /[/\\]/.test(t) && SOURCE_EXT_RE.test(t))
+}
+
 // 任务类型检测(纯函数, 可单测): 图片→vision; 长文本→long; 代码特征→code; 其余 text
 export function detectTaskType(content: string, images: string[] | undefined, opts?: { longCharThreshold?: number }): TaskType {
   if (images && images.length) return 'vision'
   const text = String(content || '')
   if (text.length >= (opts?.longCharThreshold ?? 3000)) return 'long'
-  const lower = text.toLowerCase()
-  if (CODE_WORDS.some(w => lower.includes(w.toLowerCase()))) return 'code'
+  if (detectCodeIntent(text)) return 'code'
   return 'text'
 }
 

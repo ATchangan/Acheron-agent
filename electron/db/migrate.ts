@@ -1,7 +1,7 @@
 // electron/db/migrate.ts — 版本化迁移(meta.schema_version 记录, 每步包事务)
 import { allSchemaDdl } from './schema'
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 interface DbLike {
   exec(sql: string): void
@@ -16,6 +16,42 @@ const STEPS: MigrationStep[] = [
     version: 1,
     up: (db) => {
       for (const ddl of allSchemaDdl()) db.exec(ddl)
+    },
+  },
+  {
+    // v0.4.0 定稿: lessons/goals/episodic 三张表(已含在 allSchemaDdl 中, 老库升级时补建)
+    version: 2,
+    up: (db) => {
+      db.exec(
+        `CREATE TABLE IF NOT EXISTS lessons (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           agent TEXT NOT NULL DEFAULT '黄泉',
+           scope TEXT NOT NULL DEFAULT 'global',
+           content TEXT NOT NULL,
+           ts INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_lessons_agent ON lessons(agent, scope, ts);
+         CREATE TABLE IF NOT EXISTS goals (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           agent TEXT NOT NULL DEFAULT '黄泉',
+           scope TEXT NOT NULL DEFAULT 'global',
+           goal TEXT NOT NULL,
+           status TEXT NOT NULL DEFAULT 'open',
+           created INTEGER NOT NULL,
+           updated INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_goals_agent ON goals(agent, scope, updated);
+         CREATE TABLE IF NOT EXISTS episodic (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           agent TEXT NOT NULL DEFAULT '黄泉',
+           scope TEXT NOT NULL DEFAULT 'global',
+           op TEXT,
+           path TEXT,
+           status TEXT,
+           ts INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_episodic_agent ON episodic(agent, scope, ts);`
+      )
     },
   },
 ]

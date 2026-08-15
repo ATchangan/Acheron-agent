@@ -27,15 +27,6 @@ declare global {
         save: (data: unknown) => Promise<boolean>
         reset: () => Promise<boolean>
       },
-      pet: {
-        toggle: (enable: boolean) => Promise<boolean>
-        setForm: (form: 'normal' | 'ultimate') => Promise<'normal' | 'ultimate'>
-        setAction: (action: 'idle' | 'dance1' | 'dance2' | 'dance3') => Promise<'idle' | 'dance1' | 'dance2' | 'dance3'>
-        setAnchor: (anchor: 'float' | 'window' | 'taskbar') => Promise<'float' | 'window' | 'taskbar'>
-        setOptions: (patch: Record<string, unknown>) => Promise<boolean>
-        resetPos: () => Promise<boolean>
-        onChat: (cb: (content: string) => void) => () => void
-      }
       sessions: {
         list: () => Promise<SessionMeta[]>
         load: (id: string) => Promise<SessionData>
@@ -124,8 +115,8 @@ declare global {
       }
       getPaths: () => Promise<{ skillsDir: string; pluginsDir: string; workDir: string }>
       update: {
-        check: () => Promise<{ ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string }>,
-        download: (url: string, fileName: string) => Promise<{ ok: boolean; error?: string; path?: string }>
+        check: () => Promise<{ ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string; digest?: string }[]; notes?: string; current?: string }>,
+        download: (url: string, fileName: string, expectedSha256?: string) => Promise<{ ok: boolean; error?: string; path?: string; size?: number }>
         onProgress: (cb: (d: { received: number; total: number; ts: number }) => void) => () => void
       }
       appInfo: () => Promise<{ version: string; electron: string; node: string }>

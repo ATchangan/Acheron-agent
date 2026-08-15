@@ -7,7 +7,7 @@ import { U } from '../ui-styles'
 // v0.3.1 更新下载进度条: 订阅 update:progress 显示下载进度
 // v0.3.7 下载进度细节: 显示速度/剩余时间/文件名
 export default function AboutTab() {
-  const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; progress: { received: number; total: number; ts: number; speed: number } | null; downloadInfo: { ok: boolean; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, progress: null, downloadInfo: null })
+  const [upt, setUpt] = useState<{ checking: boolean; info: { version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string; digest?: string }[]; notes?: string; current?: string } | null; error: string; downloading: boolean; progress: { received: number; total: number; ts: number; speed: number } | null; downloadInfo: { ok: boolean; path?: string } | null }>({ checking: false, info: null, error: '', downloading: false, progress: null, downloadInfo: null })
   // 动态版本信息(主进程 app.getVersion + process.versions), 不硬编码
   const [info, setInfo] = useState<{ version: string; electron: string; node: string } | null>(null)
   useEffect(() => { window.huangquan.appInfo().then(setInfo).catch(() => {}) }, [])
@@ -61,7 +61,7 @@ export default function AboutTab() {
         <div style={U.wrap8mt8}>
           <button style={S.btn('primary')} onClick={async () => {
             setUpt({ ...upt, checking: true, info: null, error: '', downloading: false, progress: null })
-            const r = await window.huangquan.update.check().catch((): { ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string }[]; notes?: string; current?: string } => ({ ok: false, error: '检查失败' }))
+            const r = await window.huangquan.update.check().catch((): { ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string; digest?: string }[]; notes?: string; current?: string } => ({ ok: false, error: '检查失败' }))
             if (!r.ok) { setUpt({ ...upt, checking: false, error: r.error || '检查失败' }); return }
             setUpt({ ...upt, checking: false, info: { version: r.version, hasUpdate: r.hasUpdate, url: r.url, assets: r.assets, notes: r.notes, current: r.current } })
           }} disabled={upt.checking}>{upt.checking ? '检查中…' : '检查更新'}</button>
@@ -77,7 +77,7 @@ export default function AboutTab() {
                 const asset = (upt.info?.assets || []).find((x: { name: string }) => /\.exe$/i.test(x.name)) || (upt.info?.assets || [])[0]
                 if (!asset) { setUpt({ ...upt, error: '发布页无安装包资产' }); return }
                 setUpt({ ...upt, downloading: true, error: '', progress: null, downloadInfo: null })
-                const r = await window.huangquan.update.download(asset.url, asset.name).catch(() => ({ ok: false, error: '下载失败' }))
+                const r = await window.huangquan.update.download(asset.url, asset.name, asset.digest).catch(() => ({ ok: false, error: '下载失败' }))
                 setUpt({ ...upt, downloading: false, downloadInfo: r.ok ? r : null, error: r.ok ? '' : (r.error || '下载失败') })
               }}>{upt.downloading ? '下载中…' : '下载安装包'}</button>
               {upt.downloading && (

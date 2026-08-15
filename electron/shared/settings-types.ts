@@ -202,27 +202,6 @@ export interface GeneralSettings {
     port?: number
     model?: string
   }
-  // v0.4.0 M9: 桌宠(式神伴身, 默认关闭)
-  pet?: {
-    enabled?: boolean
-    agent?: string
-    form?: 'normal' | 'ultimate'
-    action?: 'idle' | 'dance1' | 'dance2' | 'dance3'
-    anchor?: 'float' | 'window' | 'taskbar'
-    scale?: number
-    opacity?: number
-    topmost?: boolean
-    bubble?: boolean
-    look?: boolean
-    physics?: boolean
-    breath?: 'light' | 'normal' | 'strong'
-    gesture?: 'low' | 'normal' | 'high'
-    chibi?: number
-    fps?: number        // 渲染帧率上限, 0=不限(默认 60)
-    transition?: number // 坐/站与状态动画过渡时长(ms, 默认 450)
-    modelFormat?: 'vrm' | 'pmx' // 桌宠模型格式(vrm 默认; pmx 跳舞时带 MMD 头发物理)
-    pos?: { x: number | null; y: number | null }
-  }
   programMemory?: boolean
   shortTermMemory?: boolean
   episodicRetention?: string

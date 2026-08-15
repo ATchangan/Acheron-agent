@@ -7,6 +7,7 @@ import {
   initDb, closeDb, insertMemory, listMemories, searchFts, searchVector,
   setMemoryEmbedding, traceSourceChain, softDeleteMemory, saveToolOutput, getToolOutput,
   insertAudit, queryAudit, getMemoriesForDecay, markSuperseded,
+  replaceSessionChunks, deleteSessionChunks, searchSessionIndex, pruneToolOutputs, pruneAudit,
 } from '../db'
 
 const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'hq-db-test-'))
@@ -93,5 +94,27 @@ describe('四层溯源(M4)', () => {
     const id = insertMemory(freshRow({ content: '待淘汰记忆', layer: 'L1' }))
     markSuperseded(id)
     expect(getMemoriesForDecay().some(m => m.id === id)).toBe(false)
+  })
+})
+
+describe('索引与维护(v0.4.0 定稿)', () => {
+  it('会话索引按 sid 重建后可检索, 重写不残留旧索引', () => {
+    replaceSessionChunks('sA', [{ role: 'user', snippet: '设计评审会议记录', ts: 100 }])
+    expect(searchSessionIndex('评审会议').some(h => h.sid === 'sA')).toBe(true)
+    replaceSessionChunks('sA', [{ role: 'user', snippet: '部署上线清单', ts: 200 }])
+    expect(searchSessionIndex('评审会议')).toHaveLength(0)
+    expect(searchSessionIndex('部署上线').some(h => h.sid === 'sA')).toBe(true)
+    deleteSessionChunks('sA')
+    expect(searchSessionIndex('部署上线')).toHaveLength(0)
+  })
+
+  it('side-channel 与审计按条数/时间上限清理', () => {
+    const id = saveToolOutput('s2', 'read', '待清理内容')
+    insertAudit({ ts: Date.now() - 1000, agent: '黄泉', tool: 'exec_command' })
+    expect(getToolOutput(id)).toBe('待清理内容')
+    pruneToolOutputs(1, 0)
+    expect(getToolOutput(id)).toBeNull()
+    pruneAudit(0)
+    expect(queryAudit({ agent: '黄泉', limit: 10 })).toHaveLength(0)
   })
 })
