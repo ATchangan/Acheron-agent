@@ -1,4 +1,4 @@
-// 桌面智能助手 冒烟评估(eval 基准): 通过 CDP 驱动真实任务, 断言关键行为, 输出 JSON 报告
+// Acheron-agent 冒烟评估(eval 基准): 通过 CDP 驱动真实任务, 断言关键行为, 输出 JSON 报告
 // 用法: 先以 --remote-debugging-port=9232 启动应用, 再 node scripts/eval-smoke.cjs [port]
 const http = require('node:http')
 const httpGet = (u) => new Promise((res, rej) => http.get(u, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>res(d)) }).on('error', rej))

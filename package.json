@@ -1,8 +1,8 @@
 {
   "name": "huangquan-agent",
-  "productName": "桌面智能助手",
+  "productName": "Acheron-agent",
   "version": "0.4.1",
-  "description": "桌面智能助手 - 桌面级 AI 助手",
+  "description": "Acheron-agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "node scripts/check-theme-tokens.mjs && vite build && tsc -p electron/tsconfig.json && concurrently -k \"vite build --watch\" \"electron .\"",

@@ -1,4 +1,4 @@
-// scripts/eval/benchmark.ts — 桌面智能助手 评估基准(v0.3.9)
+// scripts/eval/benchmark.ts — Acheron-agent 评估基准(v0.3.9)
 // unit: 纯函数回归(无需 API Key, 发布门禁必跑)
 // live: 真实模型工具选择(BFCL-lite, 可选, 需要应用内已配置供应商)
 // 用法: npx tsx scripts/eval/benchmark.ts unit [settings.json] | live [settings.json]

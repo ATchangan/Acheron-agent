@@ -1,4 +1,4 @@
-/* ═══════════ 桌面智能助手 全局样式 · v0.2.5 主题 token 体系 ═══════════ */
+/* ═══════════ Acheron-agent 全局样式 · v0.2.5 主题 token 体系 ═══════════ */
 [data-theme="dark"] { --bg-root:#15171c;--bg-surface:#1b1d23;--bg-elevated:#212329;--bg-card:#24262d;--bg-hover:#2c2e36;--border:#363840;--border-glow:#454852;--accent:#5e7c96;--accent-dim:#4e6a82;--accent-purple:#7e93a8;--accent-green:#5f8f74;--text-primary:#e0e2e8;--text-secondary:#999ba6;--text-muted:#60636e;--danger:#d05a5a;--success:#5f9f74;--warning:#b08940;--skin-accent:94,124,150;color-scheme:dark; }
 [data-theme="light"] { --bg-root:#f4f2ec;--bg-surface:#fbfaf6;--bg-elevated:#f7f5ef;--bg-card:#fbfaf6;--bg-hover:#edeBe3;--border:#e2dfd5;--border-glow:#d2cfc4;--accent:#7a6a55;--accent-dim:#665845;--accent-purple:#94846c;--accent-green:#5f7d62;--text-primary:#2a2a28;--text-secondary:#6e6e68;--text-muted:#9a9a92;--danger:#b04a48;--success:#4f7a5a;--warning:#8a6d2f;--skin-accent:122,106,85;color-scheme:light; }
 [data-theme="black"] { --bg-root:#0e0e0e;--bg-surface:#131313;--bg-elevated:#181818;--bg-card:#1c1c1c;--bg-hover:#242424;--border:#2e2e2e;--border-glow:#404040;--accent:#8a8f98;--accent-dim:#767b84;--accent-purple:#a0a5ad;--accent-green:#6f8f74;--text-primary:#e4e4e4;--text-secondary:#989898;--text-muted:#606060;--danger:#c94f4f;--success:#5f9f74;--warning:#a97c3a;--skin-accent:138,143,152;color-scheme:dark; }
@@ -217,7 +217,7 @@
 .toggle.on{background:var(--accent)}
 .toggle.on::after{left:18px;background:var(--on-accent)}
 
-/* ─── 桌面智能助手 扩展样式 ─── */
+/* ─── Acheron-agent 扩展样式 ─── */
 .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size: calc(var(--ui-font-size) - 3px);font-weight:600;letter-spacing:.3px}
 .badge-fact{background:var(--skin-accent-soft);color:var(--accent-purple)}
 .badge-pref{background:var(--warning-soft);color:var(--warning)}

@@ -1,4 +1,4 @@
-// 桌面智能助手 真实对话验证 —— 通过 CDP 驱动 UI 发消息, 直接从会话存储读取结果
+// Acheron-agent 真实对话验证 —— 通过 CDP 驱动 UI 发消息, 直接从会话存储读取结果
 // 用法: node scripts/verify-chat.cjs <port> <消息1> [消息2]
 const http = require('node:http')
 
@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
   let targets
   try { targets = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`)) }
   catch (e) { console.log('CDP_UNREACHABLE:', e.message); process.exit(2) }
-  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '桌面智能助手')) || targets.find(t => t.type === 'page')
+  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === 'Acheron-agent')) || targets.find(t => t.type === 'page')
   if (!page) { console.log('NO_PAGE'); process.exit(3) }
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })

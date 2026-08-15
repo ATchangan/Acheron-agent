@@ -1,4 +1,4 @@
-// electron/engine/engine.ts — 桌面智能助手 独立内核(v0.3.3)
+// electron/engine/engine.ts — Acheron-agent 独立内核(v0.3.3)
 // Agent 主循环完全运行在主进程: LLM 直连(不经渲染层)、工具直接分发、任务可落盘断点恢复。
 // 渲染层只负责: 发送启动请求、消费事件流、展示结果。
 import { v4 as uuidv4 } from 'uuid'
@@ -785,7 +785,7 @@ export class AgentEngine {
     // 自省整改 #13: 后台/并行任务完成通知(设置→引擎 开启 notifyTaskDone 后生效)
     if (task.g.notifyTaskDone === true && status === 'done') {
       try {
-        new Notification({ title: '桌面智能助手 任务完成', body: String(task.content || '').slice(0, 80) }).show()
+        new Notification({ title: 'Acheron-agent 任务完成', body: String(task.content || '').slice(0, 80) }).show()
       } catch { /* 通知失败不影响任务 */ }
     }
   }

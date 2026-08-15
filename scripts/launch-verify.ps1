@@ -1,4 +1,4 @@
-# 桌面智能助手 版本验证：启动应用 -> CDP 检查 -> 截图 -> 关闭
+# Acheron-agent 版本验证：启动应用 -> CDP 检查 -> 截图 -> 关闭
 # 用法: powershell -ExecutionPolicy Bypass -File scripts/launch-verify.ps1 -VersionDir D:\...\v0.3.2\源码 -Port 9232
 param(
   [Parameter(Mandatory=$true)][string]$VersionDir,

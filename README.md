@@ -1,4 +1,4 @@
-# 桌面智能助手
+# Acheron-agent
 
 开源仓库：[ATchangan/Acheron-agent](https://github.com/ATchangan/Acheron-agent)
 
@@ -34,7 +34,7 @@ npm run release:check  # 发布门禁(lint/typecheck/test/eval/brand/tag)
 npm run package:win  # 打包 Windows 安装程序
 ```
 
-> 打包前请先关闭正在运行的桌面智能助手（应用会锁定 `release/win-unpacked` 下的文件）。
+> 打包前请先关闭正在运行的Acheron-agent（应用会锁定 `release/win-unpacked` 下的文件）。
 
 下载安装：[GitHub Releases](https://github.com/ATchangan/Acheron-agent/releases/latest)
 

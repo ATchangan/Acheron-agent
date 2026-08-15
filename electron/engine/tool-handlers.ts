@@ -606,7 +606,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     return '<!--CARD' + (A.title ? ':' + A.title : '') + '-->' + A.html + '<!--/CARD-->'
   } },
   { name: 'bridge_notify', run: (A) => {
-    try { new Notification({ title: A.title || '桌面智能助手', body: A.body || '' }).show() } catch { /* 忽略 */ }
+    try { new Notification({ title: A.title || 'Acheron-agent', body: A.body || '' }).show() } catch { /* 忽略 */ }
     return 'ok:notified'
   } },
   { name: 'workflow', run: (A, ctx) => {

@@ -60,7 +60,7 @@ export function buildCompactPrompt(cands: EngineMessage[]): { system: string; us
     return ''
   }).filter(Boolean).join('\n')
   return {
-    system: '你是桌面智能助手。请把下面的对话历史压缩成 ' + COMPACT_SUMMARY_MAX_CHARS + ' 字以内的要点摘要：保留关键事实、文件路径、命令、结论、待办和约束。只输出摘要。',
+    system: '你是Acheron-agent。请把下面的对话历史压缩成 ' + COMPACT_SUMMARY_MAX_CHARS + ' 字以内的要点摘要：保留关键事实、文件路径、命令、结论、待办和约束。只输出摘要。',
     user: text.slice(0, COMPACT_PROMPT_MAX_CHARS),
   }
 }

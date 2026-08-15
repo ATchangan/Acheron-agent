@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 ;(async () => {
   const targets = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`))
-  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === '桌面智能助手')) || targets.find(t => t.type === 'page')
+  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === 'Acheron-agent')) || targets.find(t => t.type === 'page')
   if (!page) { console.log('NO_PAGE'); process.exit(3) }
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })
