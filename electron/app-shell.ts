@@ -21,6 +21,7 @@ export class AppShell {
   private mainWindow: BrowserWindow | null = null
   private tray: Tray | null = null
   private floatHideTimer: ReturnType<typeof setTimeout> | null = null
+  private reloadTimer: ReturnType<typeof setTimeout> | null = null
   private browserCurUrl = 'about:blank'
   // 渲染进程崩溃上下文 —— 环形缓冲最近的渲染层错误, 崩溃时连同引擎轨迹一起落盘定位
   private crashContext: string[] = []
@@ -156,11 +157,25 @@ export class AppShell {
           new Notification({ title: 'Acheron-agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
         } catch { /* 忽略 */ }
       }
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) { this.mainWindow.loadURL('http://127.0.0.1:' + this.deps.serverPort() + '/index.html') }
+      // 延迟重载: 等旧渲染进程完全退出后再起新进程, 规避快速连续 reload 时
+      // sandboxed preload startupData 为空的竞态崩溃(CI Server 会话下可稳定复现 -36861)
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        if (this.reloadTimer) clearTimeout(this.reloadTimer)
+        this.reloadTimer = setTimeout(() => {
+          try {
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.loadURL('http://127.0.0.1:' + this.deps.serverPort() + '/index.html')
+            }
+          } catch { /* 窗口已关闭则忽略 */ console.debug('[swallow]', 'reload after crash skipped') }
+        }, 1200)
+      }
     })
     win.loadURL('http://127.0.0.1:' + this.deps.serverPort() + '/index.html')
     win.once('ready-to-show', () => this.mainWindow?.show())
-    win.on('closed', () => { this.mainWindow = null })
+    win.on('closed', () => {
+      if (this.reloadTimer) { clearTimeout(this.reloadTimer); this.reloadTimer = null }
+      this.mainWindow = null
+    })
     // 关闭 → 设置开启时缩至托盘，否则正常退出
     win.on('close', (e: Electron.Event) => { if (this.trayEnabled() && !this.deps.isQuitting()) { e.preventDefault(); this.mainWindow?.hide() } })
   }

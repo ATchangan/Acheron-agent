@@ -70,6 +70,12 @@ function rotateCrashLogIfNeeded(): void {
   } catch { /* 忽略 */ }
 }
 function appendCrashLog(line: string) { try { rotateCrashLogIfNeeded(); fs.appendFileSync(join(app.getPath('userData'), 'crash.log'), line) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
+// v0.4.2: 子进程(GPU/utility/zygote 等)崩溃也落盘, 便于区分"渲染进程自身崩溃"与"合成器/GPU 进程连带崩溃"
+app.on('child-process-gone', (_e, details) => {
+  try {
+    appendCrashLog(new Date().toISOString() + ' child process gone: type=' + String(details.type || '?') + ' reason=' + details.reason + ' exit=' + details.exitCode + (details.serviceName ? ' service=' + details.serviceName : '') + '\n')
+  } catch { /* 忽略 */ }
+})
 process.on('uncaughtException', (err: unknown) => {
   // stdout/stderr 被关闭导致的 EPIPE 不记 FATAL(避免刷 crash.log 噪音), 其余真实错误照常记录
   if ((err as NodeJS.ErrnoException)?.code === 'EPIPE') return
