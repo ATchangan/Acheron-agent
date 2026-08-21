@@ -110,7 +110,11 @@ export class AppShell {
     const win = new BrowserWindow({
       width: 1280, height: 860, minWidth: 900, minHeight: 600,
       title: 'Acheron-agent', icon: join(this.deps.resourcesDir, 'icon.png'),
-      webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+      // v0.4.2: 主窗口关闭 Chromium 渲染沙箱, 仅保留 contextIsolation(页面无 Node 能力)。
+      // 沙箱化 preload 的 startupData 传递在 CI Server/无 GPU 会话下存在竞态,
+      // 会导致渲染进程静默崩溃(-36861); 非沙箱 preload 无此启动数据交接路径。
+      // 内嵌浏览器面板(外部网页)仍保持 sandbox: true, 外部内容隔离不受影响。
+      webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false, backgroundThrottling: false },
       backgroundColor: '#08080f', show: false, frame: false,
       titleBarStyle: 'hidden',
       titleBarOverlay: this.titleBarOverlayForTheme(savedTheme),
