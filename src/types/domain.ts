@@ -34,6 +34,7 @@ export interface SessionMeta {
   updatedAt: string
   mode?: string
   pinned?: boolean
+  archived?: boolean
 }
 // v0.3.7: 计划执行 —— 计划步骤/计划卡片类型(会话可持久化)
 export interface PlanStepView {
@@ -59,6 +60,7 @@ export interface SessionData {
   updatedAt?: string
   mode?: string
   pinned?: boolean // 置顶: 不受最大会话数裁剪, 不被空会话清理删除
+  archived?: boolean // 归档: 从常规列表隐藏, 可恢复
   busy?: boolean // 该会话是否正在工作中（独立于其他会话）
   // v0.3.1 会话修复: 会话级并发状态（FIX-1/2/8/16, 取代全局 window.__huangquan_agent / 全局 streaming / 全局 taskGen）
   agent?: string          // 当前 Agent（路由/handoff 写入, 会话隔离）

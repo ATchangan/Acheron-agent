@@ -30,6 +30,7 @@ export interface S {
   activeAgents: string[]
   orphanTasks: { id: string; sid: string; content: string; images?: string[]; attachments?: Message['attachments']; at: number; planProgress?: string }[]
   plans: Record<string, PlanState>
+  clarifyReq: { sid: string; requestId: string; question: string; choices: string[]; multiSelect: boolean } | null
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>
   create: () => void

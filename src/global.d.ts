@@ -18,6 +18,9 @@ declare global {
         setOpacity: (opacity: number) => Promise<void>
         setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) => Promise<boolean>
       }
+      watch: {
+        open: (sid: string) => Promise<boolean>
+      }
       risk: {
         respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string, always?: boolean) => Promise<boolean>
         onConfirm: (cb: (d: RiskConfirmPayload) => void) => () => void
@@ -32,6 +35,7 @@ declare global {
         list: () => Promise<SessionMeta[]>
         load: (id: string) => Promise<SessionData>
         save: (s: unknown) => Promise<boolean>
+        setArchived: (id: string, archived: boolean) => Promise<boolean>
         delete: (id: string) => Promise<boolean>
         audit: () => Promise<string[]>
         clearAll: () => Promise<boolean>
@@ -109,6 +113,7 @@ declare global {
         interject: (sid: string, content: string, images?: string[], attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[], kind?: string, prefix?: string) => Promise<boolean>
         approve: (sid: string) => Promise<boolean>
         reject: (sid: string) => Promise<boolean>
+        clarifyRespond: (sid: string, answer: string) => Promise<boolean>
         resume: (taskId: string) => Promise<boolean>
         subscribe: () => Promise<boolean>
         onEvent: (cb: (ev: unknown) => void) => () => void

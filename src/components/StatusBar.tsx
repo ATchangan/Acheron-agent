@@ -1,0 +1,261 @@
+// StatusBar.tsx —— v0.4.2 底部状态栏：左簇(模式/模型/会话/工作目录) + 上下文用量 + 右簇(版本/命令面板)
+import React, { useEffect, useRef, useState } from 'react'
+import { useChatStore } from '../store/chat'
+import { useSettingsStore } from '../store/settings'
+import { useModelItems } from './useModelItems'
+import { resolveDisplay, compileStatusLine } from '../store/display'
+import { Command, X, Zap } from 'lucide-react'
+
+export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean; onToggleHidden: () => void }) {
+  const { curModelName, modelItems, currentModel, setModelSel } = useModelItems()
+  const mode = useSettingsStore(s => s.general.mode || 'work')
+  const workDir = useSettingsStore(s => s.general.workDir)
+  const sessionCount = useChatStore(s => s.sessions.length)
+  const contextUsed = useChatStore(s => s.cu)
+  const contextLimit = useChatStore(s => s.cl)
+  const sessTokMap = useChatStore(s => s.sessTok)
+  const cid = useChatStore(s => s.cid)
+  const activeAgents = useChatStore(s => s.activeAgents)
+  const streaming = useChatStore(s => s.streaming)
+  const streamText = useChatStore(s => s.streamText)
+  const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
+  const [ver, setVer] = useState('')
+  const [ctxOpen, setCtxOpen] = useState(false)
+  const ctxRef = useRef<HTMLDivElement>(null)
+  const [hiddenIds, setHiddenIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('hq_statusbar_hidden') || '[]') } catch { return [] }
+  })
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const modelMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    try {
+      window.huangquan?.appInfo?.().then(i => setVer(i.version)).catch(() => {})
+    } catch { /* 非 Electron 环境忽略 */ }
+  }, [])
+
+  useEffect(() => {
+    if (!ctxOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [ctxOpen])
+
+  useEffect(() => {
+    if (!modelMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) setModelMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [modelMenuOpen])
+
+  const pickModel = (v: string) => {
+    setModelMenuOpen(false)
+    setModelSel(v)
+    const item = modelItems.find(x => x.key === v)
+    if (!item) return
+    if (item.group === 'text') {
+      useSettingsStore.getState().updateGeneral({ mainModel: v })
+      useSettingsStore.getState().updateProvider(item.pid, { selectedModel: item.model })
+    }
+  }
+
+  const ratio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
+  const ctxColor = ratio > 0.9 ? 'var(--danger)' : ratio > 0.7 ? 'var(--warning)' : 'var(--accent)'
+  const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
+
+  // 当前会话输入/输出 token 统计
+  const tokSum = React.useMemo(() => {
+    const m = (cid && sessTokMap[cid]) || {}
+    let input = 0
+    let output = 0
+    for (const c of Object.values(m)) { input += c.inputTokens || 0; output += c.outputTokens || 0 }
+    return { input, output }
+  }, [sessTokMap, cid])
+
+  const toggleHidden = (id: string) => {
+    const next = hiddenIds.includes(id) ? hiddenIds.filter(x => x !== id) : [...hiddenIds, id]
+    setHiddenIds(next)
+    localStorage.setItem('hq_statusbar_hidden', JSON.stringify(next))
+  }
+  const resetHidden = () => { setHiddenIds([]); localStorage.removeItem('hq_statusbar_hidden') }
+  const vis = (id: string) => !hiddenIds.includes(id)
+
+  // 右键自定义菜单：点击外部关闭
+  useEffect(() => {
+    if (!ctxMenu) return
+    const onDown = () => setCtxMenu(null)
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [ctxMenu])
+
+  // Token 输出速度（估算）：流式输出时每 500ms 采样字符增量，中英混合按 ~1.5 字符/token 折算
+  const [outSpeed, setOutSpeed] = useState(0)
+  const speedSamples = useRef<number[]>([])
+  const lastSample = useRef({ len: 0, ts: 0 })
+
+  useEffect(() => {
+    if (!streaming) {
+      setOutSpeed(0)
+      speedSamples.current = []
+      lastSample.current = { len: streamText.length, ts: 0 }
+      return
+    }
+    const now = Date.now()
+    const last = lastSample.current
+    if (last.ts === 0) {
+      lastSample.current = { len: streamText.length, ts: now }
+      return
+    }
+    const dt = now - last.ts
+    if (dt >= 500) {
+      const cps = Math.max(0, streamText.length - last.len) / (dt / 1000)
+      const tps = cps / 1.5
+      const buf = [...speedSamples.current.slice(-5), tps]
+      speedSamples.current = buf
+      lastSample.current = { len: streamText.length, ts: now }
+      setOutSpeed(buf.reduce((a, b) => a + b, 0) / buf.length)
+    }
+  }, [streamText, streaming])
+
+  // 用户自定义状态行模板(${model}/${workDir}/${context}/${tokens}/${agents})
+  const statusLine = disp.statusLine ? compileStatusLine(disp.statusLine, {
+    workDir: workDir ? String(workDir.split(/[/\\]/).pop()) : '',
+    model: curModelName || '',
+    context: contextLimit > 0 ? Math.round(contextUsed / 102.4) / 10 + 'K/' + Math.round(contextLimit / 102.4) / 10 + 'K' : '',
+    tokens: '入' + fmtK(tokSum.input) + '/出' + fmtK(tokSum.output),
+    agents: activeAgents.join(' '),
+  }) : ''
+
+  if (hidden) return null
+
+  return (
+    <footer
+      className="app-statusbar"
+      onContextMenu={e => {
+        e.preventDefault()
+        setCtxMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      {/* 左簇 */}
+      <div className="hq-sb-cluster">
+        {statusLine && vis('statusline') && <span className="sb-item" title="自定义状态行">{statusLine}</span>}
+        {vis('mode') && (
+          <span className="sb-item" title="当前模式（可在侧边栏切换）">
+            <span className="sb-dot" />
+            {mode === 'work' ? '工作模式' : '聊天模式'}
+          </span>
+        )}
+        {vis('model') && (
+          <span className="sb-item" title="当前模型">
+            模型 {curModelName || '未配置'}
+          </span>
+        )}
+        {vis('sessions') && (
+          <span className="sb-item" title="会话数量">
+            会话 {sessionCount}
+          </span>
+        )}
+        {vis('dir') && workDir && (
+          <span className="sb-item sb-dir" title={workDir}>
+            {workDir.split(/[/\\]/).pop()}
+          </span>
+        )}
+      </div>
+
+      <span className="sb-spacer" />
+
+      {/* 右簇 */}
+      <div className="hq-sb-cluster">
+        {/* 模型目录菜单（model-catalog-menu） */}
+        <div className="hq-sb-model" ref={modelMenuRef}>
+          <button type="button" className="sb-item hq-sb-ctx-btn" title="切换模型" onClick={() => setModelMenuOpen(v => !v)}>
+            <span className="sb-dot" style={{ background: 'var(--accent)' }} />
+            {curModelName || '模型'}
+          </button>
+          {modelMenuOpen && (
+            <div className="hq-statusbar-menu hq-sb-model-menu">
+              <div className="hq-statusbar-menu-title">切换模型</div>
+              {modelItems.filter(x => x.group === 'text').map(x => (
+                <button key={x.key} type="button" className={'hq-statusbar-menu-item' + (currentModel === x.key ? ' active' : '')} onClick={() => pickModel(x.key)}>
+                  <span className={'hq-check' + (currentModel === x.key ? ' on' : '')} />
+                  {x.label}
+                </button>
+              ))}
+              {modelItems.filter(x => x.group === 'text').length === 0 && <div className="hq-split-menu-empty">未配置模型</div>}
+            </div>
+          )}
+        </div>
+        {/* Token 输出速度（上下文左侧） */}
+        {streaming && outSpeed > 0 && !disp.hideTokenUsage && vis('speed') && (
+          <span className="sb-item" title="Token 输出速度（按字符估算）">
+            <Zap size={11} />
+            出 {outSpeed.toFixed(1)} tok/s
+          </span>
+        )}
+        {/* 上下文用量（点击展开明细） */}
+        <div className="hq-sb-ctx" ref={ctxRef}>
+          <button
+            type="button"
+            className="sb-item hq-sb-ctx-btn"
+            title="上下文用量（点击查看明细）"
+            onClick={() => setCtxOpen(v => !v)}
+          >
+            <span>上下文 {contextLimit > 0 ? `${fmtK(contextUsed)}/${fmtK(contextLimit)}` : fmtK(contextUsed)}</span>
+            <span className="sb-ctxbar">
+              <span className="sb-ctxfill" style={{ width: (ratio * 100).toFixed(1) + '%', background: ctxColor }} />
+            </span>
+          </button>
+          {ctxOpen && (
+            <div className="hq-ctx-pop">
+              <div className="hq-ctx-pop-head">
+                <span>上下文用量</span>
+                <button type="button" className="hq-icon-btn" aria-label="关闭" onClick={() => setCtxOpen(false)}><X size={13} /></button>
+              </div>
+              <div className="hq-ctx-pop-bar">
+                <span className="hq-ctx-pop-fill" style={{ width: (ratio * 100).toFixed(1) + '%', background: ctxColor }} />
+              </div>
+              <div className="hq-ctx-pop-grid">
+                <div className="hq-ctx-pop-row"><span>已用</span><b>{fmtK(contextUsed)}</b></div>
+                <div className="hq-ctx-pop-row"><span>上限</span><b>{contextLimit > 0 ? fmtK(contextLimit) : '—'}</b></div>
+                <div className="hq-ctx-pop-row"><span>占比</span><b style={{ color: ctxColor }}>{Math.round(ratio * 100)}%</b></div>
+                <div className="hq-ctx-pop-row"><span>输入</span><b>{fmtK(tokSum.input)}</b></div>
+                <div className="hq-ctx-pop-row"><span>输出</span><b>{fmtK(tokSum.output)}</b></div>
+              </div>
+            </div>
+          )}
+        </div>
+        {vis('cmd') && (
+          <span className="sb-item" title="命令面板快捷键">
+            <Command size={11} />K
+          </span>
+        )}
+        {vis('version') && <span className="sb-item sb-ver" title="当前版本">v{ver || '0.4.2'}</span>}
+        <button type="button" className="sb-item hq-sb-hide" title="隐藏状态栏" aria-label="隐藏状态栏" onClick={onToggleHidden}>
+          <X size={11} />
+        </button>
+      </div>
+      {ctxMenu && (
+        <div className="hq-statusbar-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onMouseDown={e => e.stopPropagation()}>
+          <div className="hq-statusbar-menu-title">自定义状态栏</div>
+          {([
+            ['mode', '模式'], ['model', '模型'], ['sessions', '会话数'], ['dir', '工作目录'],
+            ['statusline', '自定义状态行'], ['speed', '输出速度'], ['cmd', '命令面板提示'], ['version', '版本'],
+          ] as const).map(([id, label]) => (
+            <button key={id} type="button" className="hq-statusbar-menu-item" onClick={() => toggleHidden(id)}>
+              <span className={'hq-check' + (vis(id) ? ' on' : '')} />
+              {label}
+            </button>
+          ))}
+          <div className="hq-statusbar-menu-sep" />
+          <button type="button" className="hq-statusbar-menu-item" onClick={resetHidden}>恢复默认</button>
+          <button type="button" className="hq-statusbar-menu-item" onClick={onToggleHidden}>隐藏整个状态栏</button>
+        </div>
+      )}
+    </footer>
+  )
+}

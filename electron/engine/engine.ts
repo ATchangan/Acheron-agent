@@ -190,6 +190,7 @@ export class AgentEngine {
       planDocTimer: null,
       goal: { objective: String(params.content || '').slice(0, 500), status: 'active', startedAt: Date.now() },
       planPending: null,
+      clarifyPending: null,
       planApproved: false,
       stopped: false,
       taskFinished: false,
@@ -312,6 +313,7 @@ export class AgentEngine {
     if (task) {
       task.stopped = true
       if (task.planPending) { task.planApproved = false; task.planPending.resolve(false) }
+      if (task.clarifyPending) { task.clarifyPending.resolve(''); task.clarifyPending = null }
       this.planCloseAll(task, 'aborted', '用户停止')
       this.emitPlan(task, true)
       this.planAddDecision(task, '用户停止任务')
@@ -345,6 +347,35 @@ export class AgentEngine {
   reject(sid: string): void {
     const task = this.tasks.get(sid)
     if (task?.planPending) { task.planApproved = false; task.planPending.resolve(false) }
+  }
+
+  // v0.4.2: clarify 交互 —— 模型提问并等待用户选择
+  clarifyRespond(sid: string, answer: string): boolean {
+    const task = this.tasks.get(sid)
+    if (task?.clarifyPending) {
+      const p = task.clarifyPending
+      task.clarifyPending = null
+      p.resolve(String(answer ?? ''))
+      this.trace('info', 'clarify.respond', String(answer || '').slice(0, 120), sid, task.taskId)
+      return true
+    }
+    return false
+  }
+
+  private runClarify(task: TaskState, tc: EngineToolCall): Promise<string> {
+    const args = (tc.args || {}) as { question?: unknown; choices?: unknown; multi_select?: unknown }
+    const question = String(args.question || '请选择').slice(0, 500)
+    const raw = Array.isArray(args.choices) ? args.choices.filter((x): x is string => typeof x === 'string').slice(0, 8) : []
+    const multiSelect = args.multi_select === true
+    return new Promise<string>((resolve) => {
+      const reqId = 'clarify_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6)
+      task.clarifyPending = {
+        reqId,
+        resolve: (answer: string) => resolve(JSON.stringify({ question, user_response: answer })),
+      }
+      this.emit({ type: 'clarify', sid: task.sid, requestId: reqId, question, choices: raw, multiSelect })
+      this.trace('info', 'clarify.request', question, task.sid, task.taskId)
+    })
   }
 
   // 计划状态机/PLANS.md 已抽至 plan-controller(0.3.9 结构清理), 以下为薄委托
@@ -1075,6 +1106,10 @@ export class AgentEngine {
     const agentVar = opts.subAgent || task.agent || ''
     const t0 = Date.now()
     runHooks(task.g, 'tool-before', { tool: tc.name, sid: task.sid, taskId: task.taskId, agent: agentVar })
+    // v0.4.2: clarify 交互工具 —— 暂停等待用户选择（不受计划只读门限制）
+    if (tc.name === 'clarify') {
+      return await this.runClarify(task, tc)
+    }
     // v0.3.8: 文件快照 —— 写操作前记录原内容, 任务结束可一键回滚
     if (['write', 'edit', 'apply_patch'].includes(tc.name)) {
       const p = String((tc.args || {}).path || '')
@@ -1092,7 +1127,19 @@ export class AgentEngine {
     // v0.3.3: browser_vision 需要引擎的视觉模型队列(截图 + 视觉通道回答)
     let r: string
     if (tc.name === 'browser_vision') r = await this.runBrowserVision(task, tc)
-    else r = await runTool(tc.name, tc.args, ctx)
+    else {
+      const runner = runTool(tc.name, tc.args, ctx).catch((e: unknown) => 'E:工具 ' + tc.name + ' 异常: ' + ((e instanceof Error) ? e.message : String(e)))
+      // 工具超时兜底: 命令类由用户/停止按钮控制不设限, 媒体生成放宽到 15 分钟, 其余 10 分钟
+      const NO_TIMEOUT_TOOLS = new Set(['exec_command', 'terminal_run'])
+      const cap = NO_TIMEOUT_TOOLS.has(tc.name) ? 0 : (tc.name === 'media_img' || tc.name === 'media_video' ? 15 * 60 * 1000 : 10 * 60 * 1000)
+      if (!cap) r = await runner
+      else {
+        let timeoutId: NodeJS.Timeout | null = null
+        const timeout = new Promise<string>(resolve => { timeoutId = setTimeout(() => resolve('E:工具 ' + tc.name + ' 执行超时(' + Math.round(cap / 60000) + ' 分钟)，已中止'), cap) })
+        r = await Promise.race([runner, timeout])
+        if (timeoutId) { clearTimeout(timeoutId); timeoutId = null }
+      }
+    }
     // v0.3.8: 子目录项目指令按需注入 —— 模型读取/操作某目录文件时, 自动把该目录(上溯 5 层)的规则附加到工具结果
     if (r.startsWith('E:')) { /* 工具失败不注入, 避免混淆错误信息 */ } else {
       r = this.attachSubdirInstructions(task, tc, r)

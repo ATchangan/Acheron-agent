@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
 import type { MemoryData } from '../global'
-import { ArrowUp, Square } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, AtSign } from 'lucide-react'
 import { api } from '../services/ipc'
 import { useChatPanels } from './useChatPanels'
 import { useModelItems } from './useModelItems'
@@ -31,27 +31,75 @@ export default function ChatInput() {
   const { mediaProviders, modelItems, models, currentModel, curModelName, setModelSel, supportsVision } = useModelItems()
   const visionAssist = !supportsVision
   const { thinkOnly, effThink, thinkLabel, ovModel, setThinkMode, toggleThinkOnly, setThinkLevel } = useThinkSelector(currentModel, curModelName)
+  const [modelOpen, setModelOpen] = useState(false)
+  // v0.4.2: @文件引用 / 粘贴聚焦
+  const [atOpen, setAtOpen] = useState(false)
+  const [atQuery, setAtQuery] = useState('')
+  const [atItems, setAtItems] = useState<string[]>([])
+  const atSel = useRef(0)
+  const workDir = useSettingsStore(s => s.general.workDir)
+
+  // 粘贴到聊天区任意位置 → 聚焦输入框
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const ta = taRef.current
+      if (!ta) return
+      const t = e.target as HTMLElement | null
+      if (t && t.closest('input,textarea,select,[contenteditable="true"]')) return
+      if (document.activeElement !== ta) ta.focus()
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [])
+
+  const loadAtItems = async (q: string) => {
+    if (!workDir) { setAtItems([]); return }
+    try {
+      const list = await window.huangquan.computer.readDir(workDir)
+      const names = (list || []).map(i => (i.isDirectory ? i.name + '/' : i.name))
+      setAtItems(q ? names.filter(n => n.toLowerCase().includes(q.toLowerCase())).slice(0, 8) : names.slice(0, 8))
+    } catch { setAtItems([]) }
+  }
+
+  const onTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const v = e.target.value
+    setText(v)
+    const caret = e.target.selectionStart ?? v.length
+    const before = v.slice(0, caret)
+    const m = before.match(/@([^\s@]*)$/)
+    const prev = m && m.index !== undefined && m.index > 0 ? before[m.index - 1] : ''
+    if (m && (!prev || /[\s（(]/.test(prev))) {
+      setAtOpen(true)
+      setAtQuery(m[1] || '')
+      atSel.current = 0
+      void loadAtItems(m[1] || '')
+    } else {
+      setAtOpen(false)
+    }
+  }
+
+  const insertAt = (name: string) => {
+    const ta = taRef.current
+    const caret = ta?.selectionStart ?? text.length
+    const before = text.slice(0, caret)
+    const after = text.slice(caret)
+    const atIdx = before.lastIndexOf('@')
+    const path = name.replace(/\/$/, '')
+    const next = before.slice(0, Math.max(0, atIdx)) + '@' + path + ' ' + after
+    setText(next)
+    setAtOpen(false)
+    requestAnimationFrame(() => {
+      ta?.focus()
+      const pos = Math.max(0, atIdx) + path.length + 2
+      if (ta) { ta.selectionStart = pos; ta.selectionEnd = pos }
+    })
+  }
 
   const send = useChatStore(s => s.send)
   const cid = useChatStore(s => s.cid)
   const allSessions = useChatStore(s => s.sessions)
+  const curMsgCount = useChatStore(s => s.cur()?.messages.length ?? 0)
   const curBusy = allSessions.find(x => x.id === cid)?.busy || false
-  const contextUsed = useChatStore(s => s.cu)
-  const contextLimit = useChatStore(s => s.cl)
-  const sessTokMap = useChatStore(s => s.sessTok)
-  const tokSum = React.useMemo(() => {
-    const m = (cid && sessTokMap[cid]) || {}
-    let input = 0
-    let output = 0
-    for (const c of Object.values(m)) {
-      input += c.inputTokens || 0
-      output += c.outputTokens || 0
-    }
-    return { input, output }
-  }, [sessTokMap, cid])
-  const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
-  const ctxRatio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
-  const ctxColor = ctxRatio > 0.9 ? 'var(--danger)' : ctxRatio > 0.7 ? 'var(--warning)' : 'var(--accent)'
 
   useEffect(() => { if (currentModel && currentModel !== '未配置' && !currentModel.startsWith('img::') && !currentModel.startsWith('vid::') && !currentModel.startsWith('aud::')) updateContextLimit(curModelName) }, [currentModel, curModelName])
 
@@ -172,6 +220,23 @@ export default function ChatInput() {
 
   const handleStop = () => { useChatStore.getState().stop() }
 
+  // 模型选择：pill 按钮 + 分组菜单
+  const pickModel = (v: string) => {
+    setModelOpen(false)
+    setModelSel(v)
+    const item = modelItems.find(x => x.key === v)
+    if (!item) return
+    if (item.group === 'text') {
+      useSettingsStore.getState().updateGeneral({ mainModel: v })
+      useSettingsStore.getState().updateProvider(item.pid, { selectedModel: item.model })
+    } else {
+      const mp = mediaProviders.find(x => x.id === item.pid)
+      if (item.group === 'image') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedImg: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaImgProvider: mp.name }) }
+      if (item.group === 'video') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedVideo: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaVideoProvider: mp.name }) }
+      if (item.group === 'audio') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedAudio: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaAudioProvider: mp.name }) }
+    }
+  }
+
   const canSend = !!text.trim() || !!images.length || !!attachments.length || !!quote || !!extraText.trim()
   const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
   const basePlaceholder = images.length
@@ -194,6 +259,15 @@ export default function ChatInput() {
         />
       )}
 
+      {/* 建议 pills：空输入时显示快捷建议 */}
+      {!curBusy && curMsgCount === 0 && !text.trim() && !images.length && !attachments.length && !extraText.trim() && (
+        <div className="hq-suggestion-pills">
+          {['继续当前任务', '总结本次对话', '生成今日工作日报', '检查项目代码问题', '把常用操作整理成技能'].map(s => (
+            <button key={s} type="button" className="hq-suggestion-pill" onClick={() => { setText(s); taRef.current?.focus() }}>{s}</button>
+          ))}
+        </div>
+      )}
+
       <div className="input-card">
         {curBusy && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 2px 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)' }}>
@@ -202,14 +276,42 @@ export default function ChatInput() {
           </div>
         )}
         {extraOpen && (
-          <textarea className="context-extra" rows={2}
-            placeholder="补充背景、需求细节或约束条件…（随消息一起发送）"
-            value={extraText} onChange={e => setExtraText(e.target.value)} />
+          <div className="context-extra-wrap">
+            <div className="context-extra-head">
+              <span className="context-extra-title">补充上下文</span>
+              <span className="context-extra-hint">随消息一起发送</span>
+            </div>
+            <textarea className="context-extra" rows={2}
+              placeholder="补充背景、需求细节或约束条件…"
+              value={extraText} onChange={e => setExtraText(e.target.value)} />
+          </div>
         )}
         <textarea ref={taRef} className="chat-textarea" rows={1}
           placeholder={placeholder}
-          value={text} onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} />
+          value={text} onChange={onTextChange}
+          onKeyDown={e => {
+            if (atOpen && atItems.length) {
+              if (e.key === 'ArrowDown') { e.preventDefault(); atSel.current = (atSel.current + 1) % atItems.length; return }
+              if (e.key === 'ArrowUp') { e.preventDefault(); atSel.current = (atSel.current - 1 + atItems.length) % atItems.length; return }
+              if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertAt(atItems[atSel.current] || atItems[0]); return }
+              if (e.key === 'Escape') { e.preventDefault(); setAtOpen(false); return }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+          }} />
+        {/* @ 文件引用弹出（inline refs） */}
+        {atOpen && (atItems.length > 0 ? (
+          <div className="hq-at-pop">
+            {atItems.map((n, i) => (
+              <button key={n} type="button" className={'hq-at-item' + (i === atSel.current ? ' selected' : '')}
+                onMouseEnter={() => { atSel.current = i }}
+                onClick={() => insertAt(n)}>
+                <AtSign size={12} />{n}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="hq-at-pop"><div className="hq-at-item" style={{ cursor: 'default' }}>没有匹配「{atQuery}」的文件</div></div>
+        ))}
 
         <div className="input-wrapper">
           {!disp.hideChatToolbar && (
@@ -239,43 +341,27 @@ export default function ChatInput() {
           )}
 
           <div className="input-right">
-            {/* 角色选择器 */}
-            {!disp.hideModelPicker && (
-              <select className="model-select" style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '4px 8px', maxWidth: 80, height: 28, borderRadius: 5 }}
-                onChange={e => { const v = e.target.value; useChatStore.setState(s => ({ sessions: s.sessions.map(x => x.id === s.cid ? { ...x, agent: v || undefined, agentManual: !!v } : x) })) }}
-                defaultValue="">
-                <option value="">自动</option>
-            <option value="主控">主控</option>
-            <option value="文档">文档</option>
-            <option value="安全">安全</option>
-            <option value="通知">通知</option>
-            <option value="陪伴">陪伴</option>
-            <option value="设计">设计</option>
-            <option value="开发">开发</option>
-              </select>
-            )}
-
             {/* 模型选择器 */}
             {!disp.hideModelPicker && (models.length > 0 ? (
-              <select className="model-select" value={currentModel} onChange={e => {
-                const v = e.target.value
-                setModelSel(v)
-                const item = modelItems.find(x => x.key === v)
-                if (!item) return
-                if (item.group === 'text') {
-                  useSettingsStore.getState().updateGeneral({ mainModel: v })
-                  useSettingsStore.getState().updateProvider(item.pid, { selectedModel: item.model })
-                } else {
-                  const mp = mediaProviders.find(x => x.id === item.pid)
-                  if (item.group === 'image') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedImg: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaImgProvider: mp.name }) }
-                  if (item.group === 'video') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedVideo: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaVideoProvider: mp.name }) }
-                  if (item.group === 'audio') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedAudio: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaAudioProvider: mp.name }) }
-                }
-              }} style={{ height: 28, borderRadius: 5, maxWidth: 140 }}>{(['text', 'image', 'video', 'audio'] as const).filter(g => modelItems.some(x => x.group === g)).map(g => (
-                <optgroup key={g} label={g === 'text' ? '文字' : g === 'image' ? '图片' : g === 'video' ? '视频' : '语音'}>
-                  {modelItems.filter(x => x.group === g).map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
-                </optgroup>
-              ))}</select>
+              <div className="dropdown-wrap hq-model-picker">
+                <button type="button" className="hq-model-pill" title="切换模型" onClick={() => setModelOpen(v => !v)}>
+                  <span className="model-dot" />
+                  <span className="hq-model-name">{curModelName || currentModel}</span>
+                  <ChevronDown size={12} />
+                </button>
+                {modelOpen && (
+                  <div className="dropdown-menu hq-model-menu">
+                    {(['text', 'image', 'video', 'audio'] as const).filter(g => modelItems.some(x => x.group === g)).map(g => (
+                      <div key={g}>
+                        <div className="hq-model-group-label">{g === 'text' ? '文字' : g === 'image' ? '图片' : g === 'video' ? '视频' : '语音'}</div>
+                        {modelItems.filter(x => x.group === g).map(x => (
+                          <div key={x.key} className={'dropdown-item' + (currentModel === x.key ? ' active' : '')} onClick={() => pickModel(x.key)}>{x.label}</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>)}
 
             {!disp.hideThinkSelector && (
@@ -290,20 +376,6 @@ export default function ChatInput() {
                 onToggleThinkOnly={toggleThinkOnly}
                 onSetLevel={setThinkLevel}
               />
-            )}
-
-            {/* Token 用量环 */}
-            {!disp.hideTokenUsage && (
-              <>
-                <span title="本会话累计输入/输出 token = 每次请求的 prompt/completion 之和（含工具轮次与子任务），并非当前上下文大小" style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}>累计 入 {fmtK(tokSum.input)} / 出 {fmtK(tokSum.output)}</span>
-                <svg width="28" height="28" style={U.shrink0}>
-                  <title>上下文用量（最近一次请求实际输入）：已用 {(contextUsed / 1024).toFixed(1)}K / 上限 {(contextLimit / 1024).toFixed(0)}K</title>
-                  <circle cx="14" cy="14" r="10" fill="none" stroke="var(--bg-hover)" strokeWidth="2.5" />
-                  <circle cx="14" cy="14" r="10" fill="none" stroke={ctxColor} strokeWidth="2.5"
-                    strokeDasharray={`${ctxRatio * 62.8} 62.8`} transform="rotate(-90 14 14)" strokeLinecap="round" />
-              <text x="14" y="17" textAnchor="middle" fontSize="9" fill="var(--text-muted)" fontWeight="600">{ctxRatio > 0.7 ? '!' : '◉'}</text>
-                </svg>
-              </>
             )}
 
             {/* 发送/停止按钮 */}

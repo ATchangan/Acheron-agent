@@ -224,7 +224,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   return {
   providers: [],
   general: {
-    theme: 'dark', mode: 'work',
+    theme: 'black', mode: 'work',
     // 无头浏览器网页解析工具配置
   webReadEnabled: true,        // 总开关: 关闭后无法调用网页读取
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)

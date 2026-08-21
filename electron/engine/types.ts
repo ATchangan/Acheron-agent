@@ -133,6 +133,7 @@ export type EngineEvent =
   | { type: 'plan'; sid: string; summary: string; steps: PlanStep[] }
   | { type: 'plan-update'; sid: string; summary?: string; steps: PlanStep[]; changedIds?: string[] }
   | { type: 'compact'; sid: string; messages: EngineMessage[] }
+  | { type: 'clarify'; sid: string; requestId: string; question: string; choices: string[]; multiSelect: boolean }
   | { type: 'task-done'; sid: string; taskId: string; status: 'done' | 'failed' | 'aborted'; error?: string; failedStep?: { label: string; tool?: string; detail?: string; messageId?: string }; fileChanges?: number }
   | { type: 'error'; sid: string; message: string }
 

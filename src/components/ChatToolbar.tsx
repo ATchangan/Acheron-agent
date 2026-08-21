@@ -1,4 +1,4 @@
-// ChatToolbar.tsx —— 聊天输入框左侧工具栏（从 ChatInput 拆出，行为不变）
+﻿// ChatToolbar.tsx —— 聊天输入框左侧工具栏（从 ChatInput 拆出，行为不变）
 import React from 'react'
 import { Camera, Command, Bookmark, Paperclip } from 'lucide-react'
 import { useSettingsStore } from '../store/settings'
@@ -8,13 +8,9 @@ import { U } from './ui-styles'
 
 const IconBtn: React.FC<{ title: string; onClick?: () => void; children: React.ReactNode; style?: React.CSSProperties; disabled?: boolean }> =
   ({ title, onClick, children, style, disabled }) => (
-    <button title={title} onClick={onClick} disabled={disabled} style={{
-      width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      background: 'transparent', border: 'none', borderRadius: 6, cursor: disabled ? 'default' : 'pointer',
-      color: disabled ? 'var(--text-muted)' : 'var(--text-secondary)', fontSize: 'calc(var(--ui-font-size) + 3px)', lineHeight: 1,
-      opacity: disabled ? 0.3 : 1, transition: 'all .12s', padding: 0, ...style,
-    }} onMouseEnter={e => { if (!disabled) { e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.background = 'var(--bg-hover)' } }}
-      onMouseLeave={e => { if (!disabled) { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' } }}>
+    <button title={title} onClick={onClick} disabled={disabled} className="hq-toolbar-btn" style={{
+      fontSize: 'calc(var(--ui-font-size) + 3px)', lineHeight: 1, opacity: disabled ? 0.3 : 1, padding: 0, ...style,
+    }}>
       {children}
     </button>
   )

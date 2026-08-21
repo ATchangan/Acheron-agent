@@ -1,4 +1,4 @@
-import { U } from './ui-styles'
+﻿import { U } from './ui-styles'
 
 ﻿import React, { useState, useEffect, useCallback } from 'react'
 
@@ -49,12 +49,12 @@ export default function MemoryView() {
   }
 
   const s = {
-    container: { padding: '24px 28px', height: '100%', overflowY: 'auto' as const, color: 'var(--text-primary)', background: 'rgba(13,13,26,0.55)' },
+    container: { padding: '24px 28px', height: '100%', overflowY: 'auto' as const, color: 'var(--text-primary)', background: 'var(--bg-elevated)' },
     title: { fontSize: 20, fontWeight: 600, color: 'var(--accent)', marginBottom: 4 },
     subtitle: { fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', marginBottom: 20 },
     section: { marginBottom: 24 },
     sectionTitle: { fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: 'var(--warning)', marginBottom: 8 },
-    card: { background: 'rgba(30,30,56,0.6)', border: '1px solid var(--warning-soft)', borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+    card: { background: 'var(--bg-card)', border: '1px solid var(--warning-soft)', borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
     factText: { fontSize: 'var(--ui-font-size)', color: 'var(--text-primary)', flex: 1, whiteSpace: 'pre-wrap' as const },
     btn: (color: string) => ({ background: 'transparent', border: `1px solid ${color}`, color, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', marginLeft: 8 } as React.CSSProperties),
     inp: { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '6px 10px', borderRadius: 4, fontSize: 'calc(var(--ui-font-size) - 1px)', flex: 1, outline: 'none' } as React.CSSProperties,

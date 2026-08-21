@@ -7,13 +7,18 @@ import { U } from '../ui-styles'
 
 
 // v0.3.1 块 H: 外观 tab(从 SettingsView 拆分, 行为零变化)
+// v0.4.2: 内置主题预设
 const THEME_META = [
-  { id: 'dark', label: '暗夜', dots: ['#17181c', '#7c6fa8', '#e2e2e8'] },
-  { id: 'light', label: '浅色', dots: ['#f5f5f7', '#4f6ef7', '#1a1a1f'] },
-  { id: 'black', label: '极黑', dots: ['#000000', '#8b8b95', '#d0d0d8'] },
-  { id: 'violet', label: '经典紫', dots: ['#1a1420', '#a855f7', '#e9d5ff'] },
-  { id: 'bloodmoon', label: '血月', dots: ['#1c0f12', '#dc2626', '#fecaca'] },
-  { id: 'dawn', label: '晨曦', dots: ['#fdf6e3', '#d08770', '#2b2b2b'] },
+  { id: 'auto', label: '跟随系统', dots: ['#0e0e0e', '#9a9a9a', '#f8faff'] },
+  { id: 'black', label: '极黑', dots: ['#0e0e0e', '#9a9a9a', '#eaeaea'] },
+  { id: 'huangquan', label: '黄泉', dots: ['#121014', '#a78bfa', '#ede9f4'] },
+  { id: 'ocean', label: '深蓝', dots: ['#0d2f86', '#ffe6cb', '#0053fd'] },
+  { id: 'midnight', label: '午夜', dots: ['#08081c', '#ddd6ff', '#8b80e8'] },
+  { id: 'ember', label: '余烬', dots: ['#160800', '#ffd8b0', '#d97316'] },
+  { id: 'mono', label: '单色', dots: ['#0e0e0e', '#eaeaea', '#9a9a9a'] },
+  { id: 'cyberpunk', label: '赛博朋克', dots: ['#000a00', '#00ff41', '#00ff41'] },
+  { id: 'slate', label: '石板', dots: ['#0d1117', '#c9d1d9', '#58a6ff'] },
+  { id: 'light', label: '浅色', dots: ['#f8faff', '#0053fd', '#17171a'] },
 ]
 const toHex = (v: string): string => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v) ? v : '#17181c'
 const currentTheme = (g: { theme?: string; themePreset?: string }): string => g.themePreset || g.theme || 'dark'
@@ -30,7 +35,7 @@ export default function SkinTab() {
   return (
     <div style={U.pageBody}>
       <div style={S.card}><div style={S.section}>主题（配色体系）</div>
-        <div style={S.hint}>6 套预设主题 + 自定义配色；主题只管配色，和背景皮肤互不影响</div>
+        <div style={S.hint}>官方主题预设 + 自定义配色；主题只管配色，和背景皮肤互不影响</div>
         <div style={U.grid3}>
           {THEME_META.map(t => {
             const active = currentTheme(g) === t.id

@@ -4,6 +4,15 @@ import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { writeFileAtomic } from '../fs-atomic'
 
+// v0.4.2: 系统通知 —— 懒加载避免非 Electron 测试环境炸裂
+type NotificationCtor = { new(opts: { title: string; body: string }): { show(): void } }
+let NotificationCtor: NotificationCtor | null = null
+try {
+  const electronMod = require('electron') as { Notification?: NotificationCtor }
+  if (electronMod.Notification) NotificationCtor = electronMod.Notification
+} catch { /* 非 electron */ }
+let getNotifyEnabled: () => boolean = () => false
+
 export interface TaskRecord {
   id: string
   sid: string
@@ -90,6 +99,17 @@ export function finishTask(id: string, status: TaskRecord['status'], error?: str
   const i = list.findIndex(t => t.id === id)
   if (i < 0) return false
   upsertAll({ ...list[i], status, error: error || list[i].error, updatedAt: Date.now() })
+  // v0.4.2: 任务完成/失败桌面通知（受 设置→引擎→桌面通知 开关控制）
+  if (NotificationCtor && getNotifyEnabled() && status !== 'running') {
+    try {
+      const rec = list[i]
+      const done = status === 'done'
+      new NotificationCtor({
+        title: done ? '任务完成' : status === 'failed' ? '任务失败' : '任务已中止',
+        body: String(rec.content || '（无描述任务）').slice(0, 120),
+      }).show()
+    } catch { /* 忽略 */ }
+  }
   return true
 }
 export function clearTask(id?: string): boolean {
@@ -99,8 +119,9 @@ export function clearTask(id?: string): boolean {
   return true
 }
 
-export function registerTaskIpc(deps: { tasksPath: string }): void {
+export function registerTaskIpc(deps: { tasksPath: string; getNotifyEnabled?: () => boolean }): void {
   initTaskStore(deps.tasksPath)
+  if (deps.getNotifyEnabled) getNotifyEnabled = deps.getNotifyEnabled
 
   ipcMain.handle('task:list', () => listTasks())
   ipcMain.handle('task:start', (_e, t: Partial<TaskRecord> & { id: string; sid: string; content: string }) => {

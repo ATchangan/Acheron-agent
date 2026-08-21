@@ -55,6 +55,10 @@ interface EngineEvent {
   steps?: PlanStepView[]
   changedIds?: string[]
   pending?: boolean
+  requestId?: string
+  question?: string
+  choices?: string[]
+  multiSelect?: boolean
   agent?: string
   activeAgents?: string[]
   kind?: string
@@ -281,6 +285,11 @@ function applyEngineEventInner(raw: unknown): void {
       useChatStore.setState(s => ({ plans: { ...s.plans, [ev.sid]: plan } }))
       patchSession(ev.sid, s => ({ ...s, plan }))
       throttledSessionSave(ev.sid, 300)
+      break
+    }
+    case 'clarify': {
+      // v0.4.2: 模型提问 —— 渲染层展示选项卡片等待用户选择
+      useChatStore.setState({ clarifyReq: { sid: ev.sid, requestId: ev.requestId || '', question: ev.question || '请选择', choices: ev.choices || [], multiSelect: ev.multiSelect === true } })
       break
     }
     case 'plan-update': {

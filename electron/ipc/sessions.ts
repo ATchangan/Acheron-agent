@@ -11,7 +11,7 @@ const SAFE_ID = /^[0-9a-zA-Z-]{1,64}$/
 export function registerSessionIpc(deps: {
   sessionsDir: string
   userDataPath: string
-  sessionMeta: Map<string, { title?: string; messageCount?: number; updatedAt?: string; mode?: string; pinned?: boolean }>
+  sessionMeta: Map<string, { title?: string; messageCount?: number; updatedAt?: string; mode?: string; pinned?: boolean; archived?: boolean }>
   buildSessionMeta: () => void
 }): void {
   const { sessionsDir, userDataPath, sessionMeta, buildSessionMeta } = deps
@@ -36,13 +36,13 @@ export function registerSessionIpc(deps: {
         const latest = pendingSaves.get(id)!; pendingSaves.delete(id)
         try {
           await writeFileAtomicAsync(join(sessionsDir, id + '.json'), JSON.stringify(latest))
-          const mt = latest as { title?: string; messageCount?: number; mode?: string; pinned?: boolean }
+          const mt = latest as { title?: string; messageCount?: number; mode?: string; pinned?: boolean; archived?: boolean }
           try {
             if (latest && latest.id === id) updateIndexForSession(latest as { id?: string; title?: string; messages?: { role?: string; content?: unknown; timestamp?: number }[] }, searchIndexPath)
           } catch { /* 忽略 */ }
           sessionMeta.set(id, {
             title: String(mt.title || '新对话').slice(0, 60), messageCount: (mt.messageCount || 0) as number,
-            updatedAt: new Date().toISOString(), mode: String(mt.mode || 'work'), pinned: mt.pinned === true,
+            updatedAt: new Date().toISOString(), mode: String(mt.mode || 'work'), pinned: mt.pinned === true, archived: mt.archived === true,
           })                                       // FIX-5: meta 仅在写盘成功后更新
         } catch (e) {
           console.error('[SESSIONS] save error:', e instanceof Error ? e.message : String(e))
@@ -66,7 +66,7 @@ export function registerSessionIpc(deps: {
   ipcMain.handle('sessions:list', () => {
     try {
       if (sessionMeta.size === 0 && fs.existsSync(sessionsDir)) buildSessionMeta()
-      return [...sessionMeta.entries()].map(([id, m]) => ({ id, title: m.title, messageCount: m.messageCount, updatedAt: m.updatedAt, mode: m.mode, pinned: m.pinned }))
+      return [...sessionMeta.entries()].map(([id, m]) => ({ id, title: m.title, messageCount: m.messageCount, updatedAt: m.updatedAt, mode: m.mode, pinned: m.pinned, archived: m.archived === true }))
         .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
     } catch { return [] }
   })
@@ -95,6 +95,21 @@ export function registerSessionIpc(deps: {
     const obj = { ...(s as Record<string, unknown>), updatedAt: new Date().toISOString(), schemaVersion: 1 }
     enqueueSave(id, obj)
     return true
+  })
+  // v0.4.2: 会话归档/恢复 —— 只改 archived 标记, 不触碰消息历史
+  ipcMain.handle('sessions:setArchived', (_e, id: string, archived: boolean) => {
+    try {
+      if (!SAFE_ID.test(String(id || ''))) return false
+      const p = join(sessionsDir, id + '.json')
+      if (!fs.existsSync(p)) return false
+      const d = JSON.parse(fs.readFileSync(p, 'utf-8'))
+      if (!d || typeof d !== 'object') return false
+      d.archived = archived === true
+      writeFileAtomic(p, JSON.stringify(d))
+      const m = sessionMeta.get(id)
+      if (m) sessionMeta.set(id, { ...m, archived: d.archived })
+      return true
+    } catch (e) { console.error('[SESSIONS] setArchived error:', e instanceof Error ? e.message : String(e)); return false }
   })
   ipcMain.handle('sessions:delete', (_e, id: string) => {
     try {

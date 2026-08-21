@@ -56,7 +56,7 @@ const releaseRemoteSessions = (keepId: string): void => {
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, streamText: '', streamId: '',
+  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '',
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
 
@@ -81,7 +81,7 @@ export const useChatStore = create<S>((set, get) => ({
     // v0.3.3 修复: 启动创建工作台走专用 mkdir IPC(L1 无确认), 不再触发 L2 风险弹窗
     if (wd) window.huangquan.computer.mkdir(wd).catch(() => {})
     // v0.3.3 性能优化: 启动只读会话元数据(标题/数量/模式), 消息懒加载
-    const sessions: SessionData[] = metas.map((m: SessionMeta) => ({ id: m.id, title: m.title || '对话', messages: [], mode: m.mode || 'work', pinned: m.pinned === true }))
+    const sessions: SessionData[] = metas.map((m: SessionMeta) => ({ id: m.id, title: m.title || '对话', messages: [], mode: m.mode || 'work', pinned: m.pinned === true, archived: m.archived === true, updatedAt: m.updatedAt }))
     for (const m of metas) {
       if (Number(m.messageCount || 0) === 0) loadedSessionIds.add(m.id)
     }
@@ -94,7 +94,7 @@ export const useChatStore = create<S>((set, get) => ({
       }
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     // 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
-    const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode }
+    const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode, updatedAt: new Date().toISOString() }
     loadedSessionIds.add(ns.id)
     // 清理历史空会话（按 meta.messageCount, 不再依赖已加载消息判断）
     // 置顶会话永久保留: 空会话清理跳过 pinned
@@ -133,7 +133,7 @@ export const useChatStore = create<S>((set, get) => ({
     const sessions = [...get().sessions]
     const ms = sessions.filter(s => (s.mode || 'work') === m)
     if (ms.length === 0) {
-      const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
+      const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m, updatedAt: new Date().toISOString() }
       sessions.unshift(ns)
       window.huangquan.sessions.save(ns)
       set({ sessions, cid: ns.id, streamText: '', streamId: '' })
@@ -144,7 +144,7 @@ export const useChatStore = create<S>((set, get) => ({
 
   create: () => {
     const m = useSettingsStore.getState().general.mode || 'work'
-    const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m }
+    const ns: SessionData = { id: uuidv4(), title: '新对话', messages: [], mode: m, updatedAt: new Date().toISOString() }
     loadedSessionIds.add(ns.id)
     touchLoaded(ns.id)
     // 新会话独立,不继承其他会话的流式/执行状态

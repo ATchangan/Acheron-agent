@@ -66,12 +66,13 @@ export class AppShell {
 
   private titleBarOverlayForTheme(theme?: string): { color: string; symbolColor: string; height: number } {
     switch (theme) {
-      case 'light': return { color: '#f4f2ec', symbolColor: '#1a1a1f', height: 32 }
-      case 'black': return { color: '#0e0e0e', symbolColor: '#d0d0d8', height: 32 }
-      case 'violet': return { color: '#121014', symbolColor: '#e9d5ff', height: 32 }
-      case 'bloodmoon': return { color: '#171013', symbolColor: '#fecaca', height: 32 }
-      case 'dawn': return { color: '#f6f1e8', symbolColor: '#2b2b2b', height: 32 }
-      default: return { color: '#15171c', symbolColor: '#c8c8cc', height: 32 }
+      // 与渲染层 --bg-surface 严格一致(标题栏背景), 消除右上角窗口按钮区色差
+      case 'light': return { color: '#fcfbfe', symbolColor: '#1a1a1f', height: 32 }
+      case 'black': return { color: '#0a0a0b', symbolColor: '#c8c8cc', height: 32 }
+      case 'violet': return { color: '#0a0d12', symbolColor: '#c8c8cc', height: 32 }
+      case 'bloodmoon': return { color: '#1d1519', symbolColor: '#fecaca', height: 32 }
+      case 'dawn': return { color: '#fdfbf6', symbolColor: '#2b2b2b', height: 32 }
+      default: return { color: '#0a0d12', symbolColor: '#c8c8cc', height: 32 }
     }
   }
 

@@ -1,4 +1,4 @@
-import { app, net } from 'electron'
+﻿import { app, net } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMemoryIpc } from './ipc/memory'
@@ -12,6 +12,7 @@ import { registerRollbackIpc } from './ipc/rollback'
 import { registerDiagnosticsIpc } from './ipc/diagnostics'
 import { setCustomAgentsDir } from './engine/agents'
 import { registerWindowIpc } from './ipc/window'
+import { registerWatchIpc } from './ipc/watch'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
 import { registerMiscIpc, cleanChromiumCaches } from './ipc/misc'
@@ -138,7 +139,16 @@ const appShell = new AppShell({
   getBrowserWin: () => getBrowserSession(),
 })
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
-registerTaskIpc({ tasksPath })
+registerTaskIpc({
+  tasksPath,
+  // v0.4.2: 桌面通知开关 —— 设置→引擎→桌面通知(notifyEnabled), 默认开
+  getNotifyEnabled: () => {
+    try {
+      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+      return s?.general?.notifyEnabled !== false
+    } catch { return true }
+  },
+})
 registerTraceIpc({ tracePath })
 const memoryPath = join(userDataPath, 'memory.json')
 // v0.4.0 M1: SQLite 存储基座(记忆/审计/会话索引/工具输出), 启动即初始化 + 旧 JSON 一次性迁移
@@ -175,7 +185,7 @@ import('./mcp/sse-transport').catch(() => {})
 import('./cache/tool-cache').catch(() => {})
 
 // ─── 设置/会话 ─────────────────────────────────────
-const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean }>()
+const sessionMeta = new Map<string, { title: string; messageCount: number; updatedAt: string; mode?: string; pinned?: boolean; archived?: boolean }>()
 registerSessionIpc({ sessionsDir, userDataPath, sessionMeta, buildSessionMeta })
 function buildSessionMeta() {
   sessionMeta.clear()
@@ -184,7 +194,7 @@ function buildSessionMeta() {
     if (!f.endsWith('.json')) continue
     try {
       const d = JSON.parse(fs.readFileSync(join(sessionsDir, f), 'utf-8'))
-      sessionMeta.set(f.replace('.json', ''), { title: d.title || f, messageCount: d.messages?.length || 0, updatedAt: d.updatedAt || '', mode: d.mode || 'work', pinned: d.pinned === true })
+      sessionMeta.set(f.replace('.json', ''), { title: d.title || f, messageCount: d.messages?.length || 0, updatedAt: d.updatedAt || '', mode: d.mode || 'work', pinned: d.pinned === true, archived: d.archived === true })
     } catch (e) { /* 损坏文件跳过 */ console.debug('[swallow]', e) }
   }
 }
@@ -216,6 +226,7 @@ registerUpdateIpc({ netFetch })
 registerMediaIpc({ settingsPath, userDataPath, netFetch, getEffectiveWorkDir })
 registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => appShell.getWindow(), trayEnabled: () => appShell.trayEnabled(), setQuitting: (v) => { isQuitting = v } })
+registerWatchIpc({ serverPort: () => serverPort })
 registerRiskConfirm({ getMainWindow: () => appShell.getWindow(), settingsPath })
 registerCronIpc()
 registerBackupIpc({

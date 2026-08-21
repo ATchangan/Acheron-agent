@@ -14,7 +14,6 @@ files:
   - resources/**/*        # SOP红线: 必须含 resources/**,否则人设 ishiki.md + 4 组技能不进包
 electronLanguages:
   - zh-CN
-  - en-US
 win:
   target:
     - nsis

@@ -66,7 +66,7 @@ export function getActiveTools(ctx: ToolRunCtx): EngineToolSpec[] {
 function filterTools(tools: EngineToolSpec[], agentName: string, agents: Record<string, AgentDef>, autoMcp: boolean): EngineToolSpec[] {
   const ag = agents[agentName]
   if (!ag || ag.tools.includes('*')) return tools
-  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'session_search', 'update_plan', 'read_skill'])
+  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'clarify', 'session_search', 'update_plan', 'read_skill'])
   return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_') || (autoMcp && t.function.name.startsWith('mcp__')))
 }
 

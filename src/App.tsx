@@ -1,27 +1,57 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
 import { CUSTOM_CSS_MAX } from './store/display'
 import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
-import FilesView from './components/FilesView'
 import SettingsView from './components/SettingsView'
 import AgentsView from './components/AgentsView'
 import MemoryView from './components/MemoryView'
 import BrowserView from './components/BrowserView'
 import FloatBadge from './components/FloatBadge'
+import StatusBar from './components/StatusBar'
 import RiskConfirmCard from './components/RiskConfirmCard'
+import TitleBar from './components/TitleBar'
+import RightRail from './components/RightRail'
+import CommandPalette from './components/CommandPalette'
+import OverlayView from './components/OverlayView'
+import SkillsPage from './components/SkillsPage'
+import ArtifactsView from './components/ArtifactsView'
+import CronPage from './components/CronPage'
+import ProfilesView from './components/ProfilesView'
+import CommandCenterView from './components/CommandCenterView'
+import KeysView from './components/KeysView'
+import ReadonlyThread from './components/ReadonlyThread'
+import FirstRunOverlay from './components/FirstRunOverlay'
+import WatchView from './components/WatchView'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { Download } from 'lucide-react'
+import { matchCombo, loadKeybinds } from './store/keybinds'
 
 export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser' | 'files'
+  | 'skills' | 'artifacts' | 'cron' | 'profiles' | 'command-center' | 'keys'
+
+// 聊天区局部崩溃降级: 外壳(标题栏/侧栏)保持可用, 只替换聊天内容区
+const chatFallback = (_err: Error) => (
+  <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 }}>
+    <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>聊天区渲染异常</div>
+    <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>其余界面不受影响，可重新加载恢复</div>
+    <button className="hq-btn" onClick={() => location.reload()}>重新加载</button>
+  </div>
+)
 
 // 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
-const THEME_WHITELIST = ['dark', 'light', 'black', 'violet', 'bloodmoon', 'dawn']
-const LEGACY_THEME: Record<string, string> = { 'system': 'dark', 'dark-tech': 'dark', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'dark', 'high-contrast': 'black', 'huangquan': 'violet' }
+const THEME_WHITELIST = ['auto', 'black', 'huangquan', 'ocean', 'dark', 'light', 'violet', 'bloodmoon', 'dawn', 'deepblue', 'forest', 'amber', 'pastel', 'graphite', 'aurora', 'midnight', 'ember', 'mono', 'cyberpunk', 'slate']
+const LEGACY_THEME: Record<string, string> = { 'system': 'auto', 'dark-tech': 'black', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'black', 'high-contrast': 'black', 'huangquan': 'huangquan' }
 function resolveTheme(g: GeneralSettings): string {
   const t = g.theme
+  // v0.4.2: 跟随系统 —— 深浅色实时跟随系统外观
+  if (t === 'auto') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
   if (THEME_WHITELIST.includes(t)) return t
-  const legacy = LEGACY_THEME[g.themePreset || '']
+  const legacy = LEGACY_THEME[g.theme] || LEGACY_THEME[g.themePreset || '']
   if (legacy) return legacy
   return (g.customColors || g.customTheme) ? 'dark' : 'dark'
 }
@@ -102,26 +132,21 @@ function applyAppearance(g: GeneralSettings) {
     document.head.appendChild(cssEl)
   }
   cssEl.textContent = (g.uiDisplay?.customCss || '').slice(0, CUSTOM_CSS_MAX)
-  // 系统窗口按钮(最小化/最大化/关闭)配色跟随主题: 预置主题直接映射根背景色, 自定义配色按亮度选图标色
-  const OVERLAY_BY_THEME: Record<string, { color: string; symbolColor: string }> = {
-    dark: { color: '#15171c', symbolColor: '#c8c8cc' },
-    light: { color: '#f4f2ec', symbolColor: '#1a1a1f' },
-    black: { color: '#0e0e0e', symbolColor: '#d0d0d8' },
-    violet: { color: '#121014', symbolColor: '#e9d5ff' },
-    bloodmoon: { color: '#171013', symbolColor: '#fecaca' },
-    dawn: { color: '#f6f1e8', symbolColor: '#2b2b2b' },
+  // 系统窗口按钮(最小化/最大化/关闭)配色严格跟随主题: 背景 = 标题栏背景(--bg-surface),
+  // 图标色按背景亮度自动选择 —— 消除右上角窗口按钮区与标题栏的色差接缝
+  const parseRgb = (c: string): [number, number, number] | null => {
+    const hex = c.trim().match(/^#([0-9a-f]{6})$/i)
+    if (hex) { const n = parseInt(hex[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255] }
+    const rgb = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
+    return rgb ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])] : null
   }
   const applyOverlay = () => {
     try {
-      const theme = resolveTheme(g)
-      const custom = g.customColors || g.customTheme
-      let color: string | undefined
+      // 优先取主题 token --bg-surface(标题栏背景); 自定义配色/皮肤内联覆盖后同样生效
+      let color = getComputedStyle(document.documentElement).getPropertyValue('--bg-surface').trim()
       let symbolColor = '#c8c8cc'
-      if (!custom) {
-        color = OVERLAY_BY_THEME[theme]?.color
-        symbolColor = OVERLAY_BY_THEME[theme]?.symbolColor || symbolColor
-      }
-      if (!color) {
+      const rgb = parseRgb(color)
+      if (!rgb) {
         const bg = getComputedStyle(document.body).backgroundColor
         const m = bg.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
         if (m) {
@@ -129,6 +154,9 @@ function applyAppearance(g: GeneralSettings) {
           color = `rgb(${rr}, ${gg}, ${bb})`
           symbolColor = (0.299 * rr + 0.587 * gg + 0.114 * bb) / 255 > 0.55 ? '#1a1a1f' : '#c8c8cc'
         }
+      } else {
+        const [rr, gg, bb] = rgb
+        symbolColor = (0.299 * rr + 0.587 * gg + 0.114 * bb) / 255 > 0.55 ? '#1a1a1f' : '#c8c8cc'
       }
       if (color) window.huangquan.window.setTitleBarOverlay?.({ color, symbolColor, height: 32 })
     } catch { /* 忽略: 非 Electron/早期调用 */ }
@@ -152,6 +180,93 @@ function applyAppearance(g: GeneralSettings) {
 
 export default function App() {
   const [view, setView] = useState<View>('chat')
+  // v0.4.2 外壳状态：侧栏/右栏开关、面板翻转、命令面板、状态栏显隐
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [rightRailOpen, setRightRailOpen] = useState(false)
+  const [panesFlipped, setPanesFlipped] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [statusHidden, setStatusHidden] = useState(false)
+  const [splitDir, setSplitDir] = useState<'row' | 'column' | null>(null)
+  const [splitSessionId, setSplitSessionId] = useState<string | null>(null)
+  const sessions = useChatStore(s => s.sessions)
+  const cid = useChatStore(s => s.cid)
+  const [settingsTab, setSettingsTab] = useState<string | null>(null)
+  const [onboarded, setOnboarded] = useState(() => localStorage.getItem('hq_onboarded_v1') === '1')
+  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate?: boolean; version?: string; assets?: { name: string; url: string; digest?: string }[] } | null>(null)
+  const [updateDl, setUpdateDl] = useState(0)
+  const [splitRatio, setSplitRatio] = useState(0.5)
+  const splitDrag = React.useRef<{ x: number; y: number; ratio: number } | null>(null)
+
+  const openSettings = (tab?: string) => {
+    if (tab) setSettingsTab(tab)
+    setView('settings')
+  }
+
+  // 启动检查更新 → 轻量横幅（updates overlay 简化版）
+  useEffect(() => {
+    let alive = true
+    window.huangquan.update.check().then(r => { if (alive && r?.hasUpdate) setUpdateInfo(r) }).catch(() => {})
+    let off: (() => void) | undefined
+    try { off = window.huangquan.update.onProgress?.(d => { if (d.total > 0) setUpdateDl(Math.round((d.received / d.total) * 100)) }) } catch { /* 忽略 */ }
+    return () => { alive = false; try { off?.() } catch { /* 忽略 */ } }
+  }, [])
+
+  // 分栏拖拽调宽
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!splitDrag.current) return
+      const d = splitDrag.current
+      if (splitDir === 'row') {
+        const w = window.innerWidth
+        setSplitRatio(Math.max(0.25, Math.min(0.75, d.ratio + (e.clientX - d.x) / w)))
+      } else if (splitDir === 'column') {
+        const h = window.innerHeight
+        setSplitRatio(Math.max(0.25, Math.min(0.75, d.ratio + (e.clientY - d.y) / h)))
+      }
+    }
+    const onUp = () => { splitDrag.current = null }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+  }, [splitDir])
+
+  const openSplit = (dir: 'row' | 'column', sessionId: string) => {
+    setSplitDir(dir)
+    setSplitSessionId(sessionId)
+    setSplitRatio(0.5)
+  }
+  const closeSplit = () => { setSplitDir(null); setSplitSessionId(null) }
+
+  const navigate = (v: View) => {
+    // 文件 → 打开右栏文件面板；其余视图照常切换
+    if (v === 'files') { setRightRailOpen(true); setView('chat'); return }
+    setView(v)
+  }
+
+  // Ctrl+K 命令面板 / Ctrl+N 新对话
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const kb = loadKeybinds()
+      if (matchCombo(e, kb['command-palette'])) {
+        e.preventDefault()
+        setPaletteOpen(v => !v)
+      } else if (matchCombo(e, kb['new-chat'])) {
+        e.preventDefault()
+        useChatStore.getState().create()
+      } else if (matchCombo(e, kb['toggle-sidebar'])) {
+        e.preventDefault()
+        setSidebarOpen(v => !v)
+      } else if (matchCombo(e, kb['toggle-right-rail'])) {
+        e.preventDefault()
+        setRightRailOpen(v => !v)
+      } else if (matchCombo(e, kb['settings'])) {
+        e.preventDefault()
+        setView('settings')
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   // hash 路由 —— #browser = 独立无头浏览器窗口; #float = 悬浮窗; 其余 = 主窗口
   const [routeHash, setRouteHash] = useState<string>(window.location.hash || '')
@@ -182,13 +297,18 @@ export default function App() {
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
   }, [])
+  if (routeHash.startsWith('#watch')) {
+    const q = routeHash.replace('#watch', '')
+    const sid = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).get('sid') || ''
+    return <WatchView sid={sid} />
+  }
   if (routeHash === '#browser') return <BrowserView />
 
   useEffect(() => {
     useSettingsStore.getState().load()
     useChatStore.getState().load()
     const settings = useSettingsStore.getState()
-    const theme = settings.general.theme || 'violet'
+    const theme = resolveTheme(settings.general)
     document.documentElement.setAttribute('data-theme', theme)
     // 恢复自定义主题
     const cc = (settings.general).customColors
@@ -223,7 +343,7 @@ export default function App() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const onSysChange = () => {
       const g = useSettingsStore.getState().general
-      if ((g.themePreset || '') === 'system') applyAppearance(g)
+      if (g.theme === 'auto') applyAppearance(g)
     }
     mq.addEventListener('change', onSysChange)
     return () => { unsub(); mq.removeEventListener('change', onSysChange) }
@@ -237,32 +357,125 @@ export default function App() {
     } catch { return undefined }
   }, [])
 
-  const renderView = () => {
-    switch (view) {
-      case 'chat':     return <ChatView onNavigate={(v) => setView(v as View)} />
-      case 'settings': return <SettingsView onNavigate={(v) => setView(v as View)} />
-      case 'agents':   return <AgentsView />
-      case 'memory':   return <MemoryView />
-      case 'files':    return <FilesView />
-      case 'browser':  return <BrowserView embedded />
-      default:         return <ChatView onNavigate={(v) => setView(v as View)} />
-    }
-  }
-
   return (
     <>
-      <div className="app-shell">
-        {/* 拖拽条 — 窗口拖动区域 */}
-        <div style={{
-          // v0.3.3: 右侧让出窗口按钮区(150px), 避免 OS 拖拽区域干扰最小化/最大化/关闭点击
-          position: 'fixed' as const, top: 0, left: 0, right: 150, height: 32, zIndex: 999,
-          WebkitAppRegion: 'drag', pointerEvents: 'none',
-        } as React.CSSProperties} />
-
-        <Sidebar currentView={view} onNavigate={setView} />
+      <div className="hq-app-root">
+      <TitleBar
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(v => !v)}
+        rightRailOpen={rightRailOpen}
+        onToggleRightRail={() => setRightRailOpen(v => !v)}
+        panesFlipped={panesFlipped}
+        onFlipPanes={() => setPanesFlipped(v => !v)}
+        onOpenSettings={() => openSettings()}
+        onTogglePalette={() => setPaletteOpen(v => !v)}
+        onNewChat={() => useChatStore.getState().create()}
+        splitSessionId={splitSessionId}
+        onSplit={openSplit}
+        onCloseSplit={closeSplit}
+      />
+      <div className={'app-shell' + (panesFlipped ? ' hq-panes-flipped' : '') + (sidebarOpen ? '' : ' hq-sidebar-collapsed')}>
+        {sidebarOpen && <Sidebar currentView={view} onNavigate={navigate} />}
         <div className="chat-main" style={{ paddingTop: 0 }}>
-          {renderView()}
+          {view === 'browser' ? <BrowserView embedded />
+            : view === 'skills' ? <SkillsPage />
+            : view === 'artifacts' ? <ArtifactsView />
+            : splitDir && splitSessionId ? (
+              <div className={'hq-split hq-split-' + splitDir}>
+                <div className="hq-split-pane" style={{ flex: `${splitRatio} 1 0%` }}>
+                  <ErrorBoundary fallback={chatFallback}>
+                    <ChatView onNavigate={(v) => navigate(v as View)} />
+                  </ErrorBoundary>
+                </div>
+                <div className="hq-split-divider" onMouseDown={e => { splitDrag.current = { x: e.clientX, y: e.clientY, ratio: splitRatio } }} />
+                <div className="hq-split-pane">
+                  <div className="hq-split-head">
+                    <select className="hq-split-tab" value={splitSessionId} onChange={e => setSplitSessionId(e.target.value)} title="切换此栏会话">
+                      {sessions.filter(s => s.id !== cid && !s.archived).map(s => (
+                        <option key={s.id} value={s.id}>{s.title || '（无标题）'}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="hq-icon-btn" title="关闭分栏" aria-label="关闭分栏" onClick={closeSplit}>×</button>
+                  </div>
+                  <ReadonlyThread sessionId={splitSessionId} pollMs={4000} />
+                </div>
+              </div>
+            ) : (
+              <ErrorBoundary fallback={chatFallback}>
+                <ChatView onNavigate={(v) => navigate(v as View)} />
+              </ErrorBoundary>
+            )}
         </div>
+        {rightRailOpen && <RightRail />}
+      </div>
+      <StatusBar hidden={statusHidden} onToggleHidden={() => setStatusHidden(v => !v)} />
+      {/* v0.4.2 路由浮层：设置/角色编队/记忆 覆盖在聊天之上 */}
+      {view === 'settings' && (
+        <OverlayView title="设置" onClose={() => setView('chat')}>
+          <SettingsView onNavigate={(v) => navigate(v as View)} initialTab={settingsTab || undefined} />
+        </OverlayView>
+      )}
+      {view === 'agents' && (
+        <OverlayView title="子代理" onClose={() => setView('chat')}>
+          <AgentsView />
+        </OverlayView>
+      )}
+      {view === 'memory' && (
+        <OverlayView title="记忆" onClose={() => setView('chat')}>
+          <MemoryView />
+        </OverlayView>
+      )}
+      {view === 'cron' && (
+        <OverlayView title="定时任务" onClose={() => setView('chat')} width={1000}>
+          <CronPage />
+        </OverlayView>
+      )}
+      {view === 'profiles' && (
+        <OverlayView title="配置档案" onClose={() => setView('chat')} width={720}>
+          <ProfilesView />
+        </OverlayView>
+      )}
+      {view === 'command-center' && (
+        <OverlayView title="命令中心" onClose={() => setView('chat')} width={860}>
+          <CommandCenterView />
+        </OverlayView>
+      )}
+      {view === 'keys' && (
+        <OverlayView title="API Keys" onClose={() => setView('chat')} width={860}>
+          <KeysView />
+        </OverlayView>
+      )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={(v) => navigate(v as View)}
+        onOpenSettingsTab={openSettings}
+        onNewChat={() => useChatStore.getState().create()}
+        onToggleSidebar={() => setSidebarOpen(v => !v)}
+        onToggleRightRail={() => setRightRailOpen(v => !v)}
+        onToggleStatusbar={() => setStatusHidden(v => !v)}
+      />
+      {!onboarded && view === 'chat' && (
+        <FirstRunOverlay
+          onDone={() => { localStorage.setItem('hq_onboarded_v1', '1'); setOnboarded(true) }}
+          onOpenSettings={openSettings}
+        />
+      )}
+      {updateInfo && (
+        <div className="hq-update-banner">
+          <div className="hq-update-banner-head"><Download size={14} />发现新版本 v{updateInfo.version}</div>
+          <div className="hq-update-banner-actions">
+            <button type="button" className="hq-btn hq-btn-accent" disabled={updateDl > 0 && updateDl < 100} onClick={async () => {
+              const asset = updateInfo.assets?.find(a => /\.exe$/i.test(a.name)) || updateInfo.assets?.[0]
+              if (!asset) return
+              await window.huangquan.update.download(asset.url, asset.name, asset.digest).catch(() => {})
+              setUpdateInfo(null)
+            }}>{updateDl > 0 && updateDl < 100 ? '下载中 ' + updateDl + '%' : '下载'}</button>
+            <button type="button" className="hq-btn" onClick={() => setUpdateInfo(null)}>忽略</button>
+          </div>
+          {updateDl > 0 && updateDl < 100 && <div className="hq-update-progress"><div className="hq-update-progress-fill" style={{ width: updateDl + '%' }} /></div>}
+        </div>
+      )}
       </div>
       {/* v0.3.6: 右上角按钮组 —— 固定在窗口控制按钮(最小化/最大化/关闭)正下方 */}
       {/* 固定定位浮层(风险确认/浏览器横幅)渲染在 flex 容器之外, 避免参与布局挤窄聊天区 */}

@@ -36,7 +36,7 @@ export default function UiTab() {
         <Toggle checked={!d.hideAttachmentBar} onChange={v => set({ hideAttachmentBar: !v })} label="附件预览条" hint="隐藏引用与图片/文件预览" />
         <Toggle checked={!d.hideModelPicker} onChange={v => set({ hideModelPicker: !v })} label="角色/模型选择器" hint="隐藏输入框右侧的角色与模型下拉" />
         <Toggle checked={!d.hideThinkSelector} onChange={v => set({ hideThinkSelector: !v })} label="推理强度选择器" hint="隐藏推理强度下拉，沿用当前设置" />
-        <Toggle checked={!d.hideTokenUsage} onChange={v => set({ hideTokenUsage: !v })} label="Token 用量环" hint="隐藏累计输入/输出与上下文用量" />
+        <Toggle checked={!d.hideTokenUsage} onChange={v => set({ hideTokenUsage: !v })} label="Token 输出速度" hint="隐藏状态栏 Token 输出速度显示（上下文用量始终展示）" />
         <Toggle checked={!d.hidePlanCards} onChange={v => set({ hidePlanCards: !v })} label="执行计划卡" hint="隐藏任务顶部的计划/批准面板" />
       </div>
 

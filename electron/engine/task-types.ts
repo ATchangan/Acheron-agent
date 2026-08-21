@@ -59,6 +59,7 @@ export interface TaskState {
   planDocTimer: NodeJS.Timeout | null
   goal: TaskGoal
   planPending: PlanGate | null
+  clarifyPending?: { reqId: string; resolve: (answer: string) => void } | null
   planApproved: boolean
   stopped: boolean
   taskFinished: boolean

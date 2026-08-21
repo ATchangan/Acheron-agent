@@ -126,7 +126,7 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
   }
   const btn = (active = true) => ({
     width: 30, height: 30, borderRadius: 6, border: '1px solid ' + C.border,
-    background: C.input, color: active ? C.text : '#444', cursor: active ? 'pointer' : 'default',
+    background: C.input, color: active ? 'var(--text-primary)' : 'var(--text-muted)', cursor: active ? 'pointer' : 'default',
     opacity: active ? 1 : 0.5,
   } as React.CSSProperties)
 
@@ -148,14 +148,14 @@ export default function BrowserView({ embedded }: { embedded?: boolean }) {
       </div>
       {/* 页面标题栏 */}
       {(url || title) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 14px', borderBottom: '1px solid ' + C.border, background: '#181920' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 14px', borderBottom: '1px solid ' + C.border, background: 'var(--bg-elevated)' }}>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '40%' }}>{title || '(无标题)'}</span>
           <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{url}</span>
     {loading && <span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, whiteSpace: 'nowrap' }}>加载中…</span>}
         </div>
       )}
       {/* 实时画面: 内嵌模式由主进程 WebContentsView 原生渲染覆盖此区域 */}
-      <div ref={liveRef} style={{ flex: 1, overflow: 'hidden', background: '#141519', position: 'relative' }}>
+      <div ref={liveRef} style={{ flex: 1, overflow: 'hidden', background: 'var(--bg-root)', position: 'relative' }}>
         {embeddedMode && cpuFallback ? (
           <div style={{ height: '100%', overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 12 }}>
             {snap

@@ -107,10 +107,18 @@ function startServer(distDir: string): Promise<number> {
         res.end(data)
       })
     })
-    s.listen(0, '127.0.0.1', () => {
-      const addr = s.address(); resolve(typeof addr === 'object' ? addr!.port : 0)
-    })
-    s.on('error', reject)
+    // 固定端口让渲染进程 origin 稳定，localStorage(引导/回应/侧栏顺序/快捷键等)才能跨重启持久。
+    // 端口被占用则顺延；静态资源已带 no-cache，热重启不会命中旧 JS。
+    const tryListen = (port: number) => {
+      s.once('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE' && port < 2111) tryListen(port + 1)
+        else { s.removeAllListeners('error'); reject(err) }
+      })
+      s.listen(port, '127.0.0.1', () => {
+        const addr = s.address(); resolve(typeof addr === 'object' ? addr!.port : 0)
+      })
+    }
+    tryListen(2101)
   })
 }
 

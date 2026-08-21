@@ -63,8 +63,8 @@ export function buildPrompt(mode: string, ishiki: string, g: EngineSettings, age
     '\n## 计划执行\n- 简单任务直接调工具，不要调用 update_plan；复杂任务（约 3 步以上）或用户要求计划时才用 update_plan 声明步骤\n- 每轮调用工具前用一句话说明在做什么；修改文件优先 apply_patch，简单替换用 edit，避免整文件重写\n- 交互/长驻命令（REPL、git、npm）用 terminal_open/run/close；一次性命令用 exec_command\n- 涉及文件/代码改动时，交付前必须运行验证命令（构建/测试/检查/列出结果）并列入计划；未验证不得宣称完成\n'
     '\n## Windows 命令纪律\n- 命令一律写 PowerShell 语法，禁止 bash/Linux 语法；含中文路径/输出的命令自动走 PowerShell（UTF-8）\n- 路径含空格用引号包裹；变量用 $env:VAR\n'
     '\n## Git 工作流\n- 改代码前 git status/diff，改完 git diff 验证，确认后 git commit；统一用 git 工具，不要用 exec_command 拼 git 命令\n'
-  const langMap: Record<string, string> = { zh: '始终使用简体中文回复', 'zh-tw': '始终使用繁体中文回复', en: 'always reply in English', ja: '常に日本語で回答してください', auto: '自动检测用户语言并以此回复', match: '始终使用与用户提问相同的语言回复' }
-  const langInstr = langMap[String(g.language || '')] ? '\n【语言要求】' + langMap[String(g.language || '')] : ''
+  // v0.4.2: 仅支持简体中文 —— 无论历史设置如何，一律以简体中文回复
+  const langInstr = '\n【语言要求】始终使用简体中文回复'
   const tokenDiscipline = '\n## 信息调度纪律（重要）\n' +
     '- 大文件/长输出被截断是采样而非错误: 先 ls/grep/read+offset 定位关键段再精读, 需要细节用 read offset/limit 或 grep 从源头取回, 严禁凭记忆编造内容\n' +
     '- 数字/代码/报错信息/用户约束必须逐字保真, 禁止约等于或转述\n' +

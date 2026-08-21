@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, GitPullRequest } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import { ConversationTurn, ThinkingRow } from './ConversationThread'
+import { ZoomLayer } from './zoom'
+import ClarifyCard from './ClarifyCard'
+import InlinePlanApproval from './InlinePlanApproval'
 import { isNearBottom, latestAssistantText } from '../store/chat-view-utils'
 import { resolveDisplay } from '../store/display'
 import type { Message } from '../global'
@@ -33,6 +36,8 @@ export default function MessageList(): JSX.Element {
   const stage = useChatStore(s => s.stage)
   const streamText = useChatStore(s => s.streamText)
   const streamingText = useChatStore(s => !!s.streamText)
+  const fileChanges = useChatStore(s => s.fileChanges)
+  const lastTaskId = useChatStore(s => s.lastTaskId)
   const msgs = session?.messages || []
   const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
 
@@ -43,6 +48,32 @@ export default function MessageList(): JSX.Element {
   const followRef = useRef(true)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [copiedLast, setCopiedLast] = useState(false)
+  // 流式停滞检测：有流式文字但 2 秒无新 token → 显示「等待响应」计时
+  const [stallActive, setStallActive] = useState(false)
+  const [stallSec, setStallSec] = useState(0)
+  const lastStreamLen = useRef(-1)
+
+  useEffect(() => {
+    if (!streaming) { setStallActive(false); setStallSec(0); return }
+    const len = streamText.length
+    if (len !== lastStreamLen.current) {
+      lastStreamLen.current = len
+      setStallActive(false)
+      setStallSec(0)
+    }
+  }, [streamText, streaming])
+
+  useEffect(() => {
+    if (!streaming || stallActive || !streamingText) return
+    const id = window.setTimeout(() => setStallActive(true), 2000)
+    return () => window.clearTimeout(id)
+  }, [streamText, streaming, stallActive, streamingText])
+
+  useEffect(() => {
+    if (!stallActive) return
+    const id = window.setInterval(() => setStallSec(s => s + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [stallActive])
 
   const syncScrollBtn = useCallback(() => {
     const list = listBox.current.el
@@ -184,7 +215,38 @@ export default function MessageList(): JSX.Element {
               />
             </MsgBoundary>
           ))}
+          {/*  clarify：模型提问选项卡 */}
+          <ClarifyCard />
+          {/* 行内计划审批（替代顶部计划卡） */}
+          <InlinePlanApproval />
+          {/* 改动文件卡：回合末尾 */}
+          {fileChanges > 0 && lastTaskId && (
+            <div className="hq-changed-card">
+              <div className="hq-changed-card-head">
+                <GitPullRequest size={13} />
+                <span>该任务改动了 {fileChanges} 个文件</span>
+                <span className="hq-changed-card-sub">可回滚到任务开始前的状态</span>
+              </div>
+              <div className="hq-changed-card-actions">
+                <button type="button" className="hq-btn hq-btn-accent" onClick={async () => {
+                  try {
+                    const r = await window.huangquan.rollback.apply(lastTaskId)
+                    useChatStore.setState({ fileChanges: 0, lastTaskId: '' })
+                    alert(r.ok ? ('已回滚 ' + (r.restored || 0) + ' 个文件') : ('回滚失败：' + (r.error || '')))
+                  } catch { useChatStore.setState({ fileChanges: 0, lastTaskId: '' }) }
+                }}>回滚文件改动</button>
+                <button type="button" className="hq-btn" onClick={() => useChatStore.setState({ fileChanges: 0, lastTaskId: '' })}>忽略</button>
+              </div>
+            </div>
+          )}
           {renderThinkingRow()}
+          {stallActive && !isToolWorking && (
+            <div className="hq-status-row" role="status">
+              <span className="hq-status-pulse" />
+              <span className="hq-status-label">等待响应</span>
+              <span className="hq-status-timer">{stallSec}s</span>
+            </div>
+          )}
           <div ref={endRef} />
         </div>
       </div>
@@ -201,6 +263,7 @@ export default function MessageList(): JSX.Element {
           {copiedLast ? <Check size={15} /> : <Copy size={15} />}
         </button>
       )}
+      <ZoomLayer />
     </div>
   )
 }

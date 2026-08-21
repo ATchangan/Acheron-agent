@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('huangquan', {
     setOpacity: (o: number) => ipcRenderer.invoke('window:setOpacity', o),
     setTitleBarOverlay: (o: { color?: string; symbolColor?: string; height?: number }) => ipcRenderer.invoke('window:setTitleBarOverlay', o),
   },
+  watch: {
+    open: (sid: string) => ipcRenderer.invoke('watch:open', sid),
+  },
   risk: {
     respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string, always?: boolean) =>
       ipcRenderer.invoke('risk:respond', requestId, decision, approveTask, taskKey, always),
@@ -62,6 +65,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     list: () => ipcRenderer.invoke('sessions:list'),
     load: (id: string) => ipcRenderer.invoke('sessions:load', id),
     save: (s: unknown) => ipcRenderer.invoke('sessions:save', safeArg(s)),
+    setArchived: (id: string, archived: boolean) => ipcRenderer.invoke('sessions:setArchived', id, archived),
     delete: (id: string) => ipcRenderer.invoke('sessions:delete', id),
     audit: () => ipcRenderer.invoke('sessions:audit'),
     clearAll: () => ipcRenderer.invoke('sessions:clearAll'),
@@ -145,6 +149,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     interject: (sid: string, content: string, images?: string[], attachments?: unknown, kind?: string, prefix?: string) => ipcRenderer.invoke('engine:interject', sid, content, images, attachments, kind, prefix),
     approve: (sid: string) => ipcRenderer.invoke('engine:approve', sid),
     reject: (sid: string) => ipcRenderer.invoke('engine:reject', sid),
+    clarifyRespond: (sid: string, answer: string) => ipcRenderer.invoke('engine:clarifyRespond', sid, answer),
     resume: (taskId: string) => ipcRenderer.invoke('engine:resume', taskId),
     subscribe: () => ipcRenderer.invoke('engine:subscribe'),
     onEvent: (cb: (ev: unknown) => void) => {

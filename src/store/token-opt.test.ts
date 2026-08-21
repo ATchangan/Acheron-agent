@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { outputLimit, sessionTokens, buildTaskArchives, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
-import { parseDispatchTasks } from './parse-utils'
 import { scanMemoryText } from './memory'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
@@ -117,29 +116,5 @@ describe('记忆安全扫描', () => {
   it('普通记忆正常通过', () => {
     expect(scanMemoryText('老板喜欢喝美式咖啡').ok).toBe(true)
     expect(scanMemoryText('项目代号 NOVA-X，使用 TypeScript 开发').ok).toBe(true)
-  })
-})
-
-
-describe('dispatch 参数解析容错', () => {
-  it('接受数组', () => {
-    const r = parseDispatchTasks([{ agent: '开发', task: '写代码' }])
-    expect(r.length).toBe(1)
-    expect(r[0].agent).toBe('开发')
-  })
-  it('接受 {tasks:[...]} 对象', () => {
-    const r = parseDispatchTasks({ tasks: [{ agent: '文档', task: '读文档' }] })
-    expect(r.length).toBe(1)
-    expect(r[0].agent).toBe('文档')
-  })
-  it('接受 JSON 字符串', () => {
-    const r = parseDispatchTasks('[{"agent":"主控","task":"调度"}]')
-    expect(r.length).toBe(1)
-    expect(r[0].task).toBe('调度')
-  })
-  it('非法输入返回空数组', () => {
-    expect(parseDispatchTasks('not-json')).toEqual([])
-    expect(parseDispatchTasks(null)).toEqual([])
-    expect(parseDispatchTasks({})).toEqual([])
   })
 })

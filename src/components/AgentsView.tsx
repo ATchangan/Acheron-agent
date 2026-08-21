@@ -1,143 +1,182 @@
-import React, { useState, useMemo } from 'react'
-import { useSettingsStore } from '../store/settings'
-import { useAgents } from '../store/agents'
-import { TOOLS } from '../store/tools'
+// AgentsView.tsx —— v0.4.2 子代理活动面板（对齐参考 app/agents/index.tsx）
+// 默认单 Agent 直接执行：没有分派活动时显示空状态；有 dispatch/任务时按行展示
+// 状态图标 / 目标 / 副标题(角色·耗时·步数·更新) / 可展开步骤流
+import React, { useEffect, useMemo, useState } from 'react'
 import { useChatStore } from '../store/chat'
-import type { AgentDef } from '../types'
-import { U } from './ui-styles'
+import { Bot, CheckCircle2, AlertCircle, ChevronRight, Loader2, Activity, Eye } from 'lucide-react'
+import { fmtDur } from './work-steps'
 
+interface TaskRecordLite {
+  id: string
+  sid?: string
+  content: string
+  model?: string
+  status: 'running' | 'done' | 'failed' | 'aborted'
+  startedAt: number
+  updatedAt: number
+  error?: string
+  checkpoint?: { planSteps?: { id: string; label: string; status: string; tool?: string; detail?: string; ms?: number }[] }
+}
 
-// v0.3.0 M3: 角色实体化管理页 —— 工具白名单(标签+可编辑勾选)/模型偏好(仅存储)/记忆范围徽标
-// 编辑保存进 settings.agentOverrides, 运行时由 useAgents() 合并生效
+const fmtAgo = (ts: number, now: number) => {
+  const s = Math.max(0, Math.round((now - ts) / 1000))
+  if (s < 2) return '刚刚'
+  if (s < 60) return s + '秒前'
+  const m = Math.floor(s / 60)
+  if (m < 60) return m + '分钟前'
+  return Math.floor(m / 60) + '小时前'
+}
 
-const S = {
-  card: { background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)', padding: 16, marginBottom: 12 } as React.CSSProperties,
-  title: { fontSize: 'calc(var(--ui-font-size) + 4px)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 } as React.CSSProperties,
-  row: { display: 'flex', alignItems: 'center', gap: 10 } as React.CSSProperties,
-  label: { fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginBottom: 6, marginTop: 12 } as React.CSSProperties,
-  chip: { fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '2px 8px', borderRadius: 10, background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } as React.CSSProperties,
-  badge: { fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '2px 8px', borderRadius: 10 } as React.CSSProperties,
-  btn: (kind: 'primary' | 'ghost'): React.CSSProperties => ({
-    fontSize: 'calc(var(--ui-font-size) - 1px)', padding: '4px 12px', borderRadius: 6, cursor: 'pointer',
-    border: '1px solid ' + (kind === 'primary' ? 'var(--accent)' : 'var(--border)'),
-    background: kind === 'primary' ? 'var(--accent)' : 'transparent',
-    color: kind === 'primary' ? 'var(--on-accent)' : 'var(--text-secondary)',
-  }),
+function StatusGlyph({ status }: { status: TaskRecordLite['status'] }) {
+  if (status === 'running') return <Loader2 size={14} className="hq-spin hq-agents-status-running" />
+  if (status === 'failed' || status === 'aborted') return <AlertCircle size={14} className="hq-agents-status-failed" />
+  return <CheckCircle2 size={14} className="hq-agents-status-done" />
+}
+
+function StepGlyph({ status }: { status: string }) {
+  if (status === 'running') return <Loader2 size={11} className="hq-spin" />
+  if (status === 'failed' || status === 'aborted') return <AlertCircle size={11} />
+  if (status === 'done') return <CheckCircle2 size={11} />
+  return <span className={'hq-agents-step-dot' + (status === 'pending' ? ' hq-agents-step-pending' : '')} />
+}
+
+function TaskRow({ task, nowMs }: { task: TaskRecordLite; nowMs: number }) {
+  const [open, setOpen] = useState(task.status === 'running')
+  const running = task.status === 'running'
+  const steps = task.checkpoint?.planSteps || []
+  const doneSteps = steps.filter(s => s.status === 'done').length
+  const duration = Math.max(0, Math.round((task.updatedAt - task.startedAt) / 1000))
+  const subtitle = [
+    task.model || '子代理',
+    duration > 0 ? fmtDur(duration * 1000) : '',
+    steps.length ? `${doneSteps}/${steps.length} 步` : '',
+    fmtAgo(task.updatedAt, nowMs),
+  ].filter(Boolean).join(' · ')
+  const errorText = task.error ? String(task.error).slice(0, 160) : ''
+
+  return (
+    <div className="hq-agents-row">
+      <button type="button" className="hq-agents-row-head" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+        <span className="hq-agents-row-status"><StatusGlyph status={task.status} /></span>
+        <span className="hq-agents-row-main">
+          <span className={'hq-agents-row-goal' + (running ? ' hq-shimmer' : '')}>{task.content || '(无描述任务)'}</span>
+          {subtitle && <span className="hq-agents-row-sub">{subtitle}</span>}
+        </span>
+        <ChevronRight size={13} className={'hq-agents-chev' + (open ? ' open' : '')} />
+      </button>
+      {running && task.sid && (
+        <div className="hq-agents-watch">
+          <button type="button" className="hq-icon-btn" title="打开任务监视窗" aria-label="打开任务监视窗" onClick={() => { if (task.sid) window.huangquan.watch.open(task.sid).catch(() => {}) }}>
+            <Eye size={13} />
+          </button>
+        </div>
+      )}
+      {open && (
+        <div className="hq-agents-row-detail">
+          {steps.length > 0 && (
+            <div className="hq-agents-steps">
+              {steps.slice(-12).map(s => (
+                <div key={s.id} className="hq-agents-step">
+                  <span className="hq-agents-step-glyph"><StepGlyph status={s.status} /></span>
+                  <span className="hq-agents-step-label">{s.label}</span>
+                  {s.tool && <span className="hq-agents-step-tool">{s.tool}</span>}
+                  {s.ms != null && <span className="hq-agents-step-dur">{fmtDur(s.ms)}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {steps.length === 0 && running && <div className="hq-agents-step-wait">正在启动子代理…</div>}
+          {errorText && <div className="hq-agents-error">{errorText}</div>}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function AgentsView() {
-  const agents = useAgents()
-  const general = useSettingsStore(s => s.general)
   const activeAgents = useChatStore(s => s.activeAgents)
-  const [editAgent, setEditAgent] = useState<string | null>(null)
-  const [draftTools, setDraftTools] = useState<string[]>([])
-  const [draftModel, setDraftModel] = useState<string>('')
-  const [savedMsg, setSavedMsg] = useState('')
+  const [tasks, setTasks] = useState<TaskRecordLite[]>([])
+  const [nowMs, setNowMs] = useState(Date.now())
 
-  const overrides: Record<string, Partial<AgentDef>> = general?.agentOverrides || {}
-  const allToolNames = useMemo(() => TOOLS.map(t => t.function.name), [])
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const list = await window.huangquan.tasks.list()
+        if (alive) setTasks(list as TaskRecordLite[])
+      } catch { /* 忽略 */ }
+    }
+    void load()
+    const id = window.setInterval(load, 4000)
+    return () => { alive = false; window.clearInterval(id) }
+  }, [])
 
-  const toast = (msg: string) => { setSavedMsg(msg); setTimeout(() => setSavedMsg(''), 2500) }
+  const runningCount = tasks.filter(t => t.status === 'running').length + activeAgents.length
+  useEffect(() => {
+    if (runningCount <= 0) return
+    const id = window.setInterval(() => setNowMs(Date.now()), 500)
+    return () => window.clearInterval(id)
+  }, [runningCount])
 
-  const startEdit = (name: string, ag: AgentDef) => {
-    setEditAgent(name)
-    setDraftTools(overrides[name]?.tools && (overrides[name].tools as string[]).length ? (overrides[name].tools as string[]) : ag.tools)
-    setDraftModel(overrides[name]?.model || ag.model || '')
-  }
+  const recent = useMemo(() => tasks.slice(0, 12), [tasks])
+  const runningTasks = recent.filter(t => t.status === 'running')
+  const finishedTasks = recent.filter(t => t.status !== 'running')
+  const failedCount = recent.filter(t => t.status === 'failed' || t.status === 'aborted').length
+  const stepTotal = recent.reduce((sum, t) => sum + (t.checkpoint?.planSteps?.length || 0), 0)
 
-  const saveEdit = (name: string) => {
-    const next = { ...overrides, [name]: { ...(overrides[name] || {}), tools: draftTools, model: draftModel || undefined } }
-    useSettingsStore.getState().updateGeneral({ agentOverrides: next })
-    setEditAgent(null)
-    toast(`已保存「${name}」的角色配置（重启后持续生效）`)
-  }
-
-  const resetOne = (name: string) => {
-    const next = { ...overrides }
-    delete next[name]
-    useSettingsStore.getState().updateGeneral({ agentOverrides: next })
-    toast(`已恢复「${name}」默认配置`)
-  }
-
-  const toggleTool = (t: string) => {
-    setDraftTools(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
-  }
+  const empty = activeAgents.length === 0 && recent.length === 0
+  const summary = [
+    `${recent.length} 个任务`,
+    runningCount > 0 ? `${runningCount} 进行中` : '',
+    failedCount > 0 ? `${failedCount} 失败` : '',
+    stepTotal > 0 ? `${stepTotal} 步` : '',
+  ].filter(Boolean).join(' · ')
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={S.title}>编队管理</div>
-      <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-muted)', marginBottom: 16 }}>
-        在这里设置每位角色的工具范围和记忆范围：全局记忆所有角色共享，私有记忆仅自己可见。模型偏好将在后续版本生效。
+    <div className="hq-agents">
+      <div className="hq-agents-head">
+        <h2 className="hq-agents-title"><Bot size={16} /> 子代理</h2>
+        <span className="hq-agents-subtitle">协作任务与分派活动 · 默认由主 Agent 直接执行</span>
       </div>
-      {savedMsg && <div style={{ color: 'var(--success)', fontSize: 'calc(var(--ui-font-size) - 1px)', marginBottom: 10 }}>{savedMsg}</div>}
-      {Object.entries(agents).map(([name, ag]) => {
-        const isActive = activeAgents.includes(name)
-        const ov = overrides[name]
-        const curTools = ov?.tools && (ov.tools as string[]).length ? (ov.tools as string[]) : ag.tools
-        const isAll = curTools.includes('*')
-        const editing = editAgent === name
-        return (
-          <div key={name} style={{ ...S.card, borderColor: isActive ? 'var(--accent)' : 'var(--border)' }}>
-            <div style={S.row}>
-              <span style={{ fontSize: 22 }}>{ag.icon}</span>
-              <div style={U.flex1min0}>
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 'calc(var(--ui-font-size) + 1px)' }}>
-                  {name}
-                  {isActive && <span style={{ ...S.badge, background: 'var(--accent)', color: 'var(--on-accent)', marginLeft: 8 }}>工作中</span>}
-                  {ov && <span style={{ ...S.badge, background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-secondary)', marginLeft: 6 }}>已自定义</span>}
+
+      {empty ? (
+        <div className="hq-agents-empty">
+          <Activity size={34} className="hq-agents-empty-icon" />
+          <p className="hq-agents-empty-title">暂无子代理活动</p>
+          <p className="hq-agents-empty-desc">
+            当前为单 Agent 直接执行，所有工作都由主助手完成。
+            需要并行协作时，在对话中让助手使用 dispatch 分派子任务，这里会实时展示子代理的运行状态。
+          </p>
+        </div>
+      ) : (
+        <>
+          {summary && <p className="hq-agents-summary">{summary}</p>}
+          <div className="hq-agents-list">
+            {activeAgents.length > 0 && (
+              <div className="hq-agents-section">
+                <div className="hq-agents-section-label">并行角色</div>
+                <div className="hq-agents-chips">
+                  {activeAgents.map(a => (
+                    <span key={a} className="hq-agents-chip"><span className="hq-agents-chip-dot" />{a}</span>
+                  ))}
                 </div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: 'calc(var(--ui-font-size) - 2px)' }}>{ag.role}</div>
               </div>
-              <span style={{ ...S.badge, background: ag.memoryScope === 'global' ? 'color-mix(in srgb, var(--danger) 15%, transparent)' : 'color-mix(in srgb, var(--accent) 15%, transparent)', color: ag.memoryScope === 'global' ? 'var(--danger)' : 'var(--accent)', border: '1px solid var(--border)' }}>
-                {ag.memoryScope === 'global' ? '记忆: 全局' : '记忆: 私有'}
-              </span>
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {(ag.capabilities || []).map(c => <span key={c} style={{ ...S.chip, color: 'var(--accent)', borderColor: 'var(--accent)' }}>擅长:{({ dispatch: '任务调度', doc: '文档处理', security: '安全审查', automation: '自动化', chat: '陪伴沟通', vision: '视觉设计', code: '开发' } as Record<string, string>)[c] || c}</span>)}
-              {ag.model ? <span style={{ ...S.chip }}>模型偏好: {ag.model}</span> : null}
-            </div>
-            <div style={S.label}>工具白名单 {isAll ? '(全工具)' : `(${curTools.length} 项)`}</div>
-            {editing ? (
-              <>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 160, overflowY: 'auto', padding: 8, border: '1px solid var(--border)', borderRadius: 8 }}>
-                  {allToolNames.map(t => {
-                    const on = draftTools.includes('*') || draftTools.includes(t)
-                    return (
-                      <span key={t} onClick={() => toggleTool(t)} style={{ ...S.chip, cursor: 'pointer', background: on ? 'var(--accent)' : 'var(--bg-elevated)', color: on ? 'var(--on-accent)' : 'var(--text-secondary)' }}>
-                        {t}
-                      </span>
-                    )
-                  })}
-                </div>
-                <div style={S.label}>模型偏好（后续版本生效）</div>
-                <input
-                  value={draftModel}
-                  onChange={e => setDraftModel(e.target.value)}
-                  placeholder="留空=默认模型"
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 'calc(var(--ui-font-size) - 1px)' }}
-                />
-                <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-                  <button style={S.btn('ghost')} onClick={() => setEditAgent(null)}>取消</button>
-                  <button style={S.btn('primary')} onClick={() => saveEdit(name)}>保存</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {isAll
-                    ? <span style={{ ...S.chip }}>全部工具（含交接、派发、任务列表）</span>
-                    : curTools.slice(0, 8).map(t => <span key={t} style={S.chip}>{t}</span>)}
-                  {!isAll && curTools.length > 8 && <span style={S.chip}>+{curTools.length - 8} 项</span>}
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
-                  {ov && <button style={S.btn('ghost')} onClick={() => resetOne(name)}>恢复默认</button>}
-                  <button style={S.btn('primary')} onClick={() => startEdit(name, ag)}>编辑</button>
-                </div>
-              </>
+            )}
+            {runningTasks.length > 0 && (
+              <div className="hq-agents-section">
+                <div className="hq-agents-section-label">进行中</div>
+                {runningTasks.map(t => <TaskRow key={t.id} task={t} nowMs={nowMs} />)}
+              </div>
+            )}
+            {finishedTasks.length > 0 && (
+              <div className="hq-agents-section">
+                <div className="hq-agents-section-label">最近完成</div>
+                {finishedTasks.map(t => <TaskRow key={t.id} task={t} nowMs={nowMs} />)}
+              </div>
             )}
           </div>
-        )
-      })}
+        </>
+      )}
     </div>
   )
 }

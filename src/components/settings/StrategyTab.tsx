@@ -110,7 +110,6 @@ export default function StrategyTab() {
         <div style={S.section}>语音识别 / 合成（联动供应商）</div>
         <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaAudioProvider || ''} onChange={e => save({ mediaAudioProvider: e.target.value })}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.audioModels || []).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
         <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaAudioModel || ''} onChange={e => save({ mediaAudioModel: e.target.value })}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.audioModels || []).length).flatMap(mp2 => (mp2.audioModels || []).map(m => ({ id: mp2.id + '::' + m, label: mp2.name + ' · ' + m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
-  <Toggle checked={g.ttsEnabled !== false} onChange={v => save({ ttsEnabled: v })} label="启用语音合成" />
       </div>
     </div>
   )
