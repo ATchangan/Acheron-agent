@@ -1,4 +1,4 @@
-// 0.3.5 UI 全页面巡检：设置全部 Tab + 主导航，检查渲染/报错/关键控件
+// UI 全页面巡检：主视图 + 设置全部 Tab + 版本号，检查渲染/报错/关键控件（适配 v0.4.2 界面）
 // 用法: node scripts/ui-check.cjs <port> [输出目录]
 const http = require('node:http')
 const fs = require('node:fs')
@@ -37,74 +37,93 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
   }
   const shot = async (name) => {
     const s = await send('Page.captureScreenshot', { format: 'png' })
-    const f = path.join(outDir, name + '.png')
-    fs.writeFileSync(f, Buffer.from(s.data, 'base64'))
+    fs.writeFileSync(path.join(outDir, name + '.png'), Buffer.from(s.data, 'base64'))
     console.log('SHOT:', name)
   }
-  const clickText = async (txt) => {
+  const clickSidebarPage = async (label) => {
     const r = await evalJs(`(() => {
-      const all = [...document.querySelectorAll('button, div, span, li')]
-      const exact = all.filter(x => x.innerText && x.innerText.trim() === ${JSON.stringify(txt)})
-      const el = exact.find(x => x.style && x.style.cursor === 'pointer')
-        || exact[exact.length - 1]
-        || all.find(x => x.innerText && x.innerText.trim().startsWith(${JSON.stringify(txt)}) && x.style && x.style.cursor === 'pointer')
+      const el = [...document.querySelectorAll('.hq-nav-item, .hq-sb-page')].find(x => x.innerText && x.innerText.trim().includes(${JSON.stringify(label)}))
       if (el) { el.click(); return true }
       return false
     })()`)
-    await sleep(600)
+    await sleep(700)
     return r
   }
-  const clickNav = async (label) => {
+  const clickSettingsTab = async (label) => {
     const r = await evalJs(`(() => {
-      const el = [...document.querySelectorAll('.menu-item')].find(x => x.innerText && x.innerText.includes(${JSON.stringify(label)}))
+      const el = [...document.querySelectorAll('.hq-settings-nav-item')].find(x => x.innerText && x.innerText.trim().includes(${JSON.stringify(label)}))
       if (el) { el.click(); return true }
       return false
     })()`)
-    await sleep(600)
+    await sleep(500)
     return r
   }
+  const pageState = () => evalJs(`(() => {
+    const err = document.querySelector('.error-bar')
+    const overlay = document.querySelector('.hq-overlay-card')
+    const active = document.querySelector('.hq-settings-nav-item.active')
+    return {
+      len: document.body.innerText.length,
+      head: document.body.innerText.slice(0, 60).replace(/\\n+/g, ' | '),
+      err: err ? err.innerText.slice(0, 100) : '',
+      renderErr: document.body.innerText.includes('渲染错误') || document.body.innerText.includes('运行时错误'),
+      overlay: !!overlay,
+      overlayTitle: overlay ? (overlay.innerText || '').slice(0, 30) : '',
+      activeTab: active ? active.innerText.trim() : '',
+      mainLen: (document.querySelector('.hq-settings-content') || { innerText: '' }).innerText.length
+    }
+  })()`)
+
   const results = []
-  const report = () => {
-    const failed = results.filter(x => !x.ok)
-    console.log('UI_CHECK_RESULT=' + JSON.stringify(results, null, 2))
-    console.log('SUMMARY: total=' + results.length + ' ok=' + (results.length - failed.length) + ' fail=' + failed.length)
-    if (failed.length) console.log('FAILED=' + JSON.stringify(failed.map(x => ({ name: x.name, data: x.data })), null, 2))
-  }
+  const push = (name, ok, data) => { results.push({ name, ok: !!ok, data }) }
 
   try {
-    // 主导航（浏览器面板通过 IPC 单独验证，避免自动化卡在嵌入视图）
-    for (const nav of ['对话', '角色编队', '文件', '设置']) {
-      const ok = await clickNav(nav)
-      const st = await evalJs(`(() => ({ len: document.body.innerText.length, head: document.body.innerText.slice(0, 80).replace(/\\n+/g, ' | '), err: !!document.querySelector('.error-bar') }))()`)
-      results.push({ name: 'nav:' + nav, ok: !!ok && !st.__err, data: st })
-    }
-    await shot('ui-nav')
+    // 0) 首次引导：跳过
+    await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').includes('跳过引导')); if (b) { b.click(); return true } return false })()`)
+    await sleep(600)
 
-    // 设置全部 Tab
-    const tabs = ['供应商', '策略', '角色', '记忆', '协作', '工具', 'MCP', '技能', '外观', '模型缓存统计', '诊断', '引擎', '定时任务', '藏书阁', '插件', '关于']
-    await clickNav('设置')
-    await sleep(400)
+    // 1) 聊天主界面
+    const chat = await pageState()
+    push('chat-main', !chat.err && !chat.renderErr && chat.len > 50, chat)
+
+    // 2) 侧栏主视图(工作区页面 + Overlay 页面)
+    for (const nav of ['技能', '产物', '定时任务', '命令中心', '配置档案', 'API Keys']) {
+      const okClick = await clickSidebarPage(nav)
+      const st = await pageState()
+      const hasOverlay = st.overlay && st.overlayTitle.includes(nav)
+      const hasPage = !st.err && !st.renderErr && st.len > 80
+      push('page:' + nav, okClick === true && hasPage && (hasOverlay || !st.overlay), { ...st, okClick })
+      if (st.overlay) {
+        await evalJs(`(() => { const b = document.querySelector('.hq-overlay-close'); if (b) b.click(); return true })()`)
+        await sleep(500)
+      }
+    }
+
+    // 3) 设置全部 Tab
+    const openSettings = await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置' || (x.getAttribute('aria-label') || '') === '设置'); if (b) { b.click(); return true } return false })()`)
+    await sleep(800)
+    push('settings-open', openSettings === true, await pageState())
+    const tabs = ['供应商', '策略', '角色', '记忆', '协作', '工具', 'MCP', '外观', '界面', '快捷键', '模型缓存统计', '诊断', '引擎', '藏书阁', '插件', '关于']
     for (const t of tabs) {
-      const ok = await clickText(t)
-      const st = await evalJs(`(() => ({
-        len: document.body.innerText.length,
-        contains: document.body.innerText.includes(${JSON.stringify(t)}),
-        err: (document.querySelector('.error-bar') || { innerText: '' }).innerText.slice(0, 100),
-        inputs: document.querySelectorAll('input,select,textarea,button').length
-      }))()`)
-      results.push({ name: 'tab:' + t, ok: !!ok && !!st.contains && !st.__err && !st.err, data: st })
-      await shot('ui-tab-' + t)
+      const okClick = await clickSettingsTab(t)
+      const st = await pageState()
+      const ok = okClick === true && st.activeTab.includes(t) && st.mainLen > 40 && !st.err && !st.renderErr
+      push('tab:' + t, ok, { ...st, okClick })
     }
 
-    // 关于页版本
-    await clickText('关于')
+    // 4) 关于页版本
+    await clickSettingsTab('关于')
     const about = await evalJs(`document.body.innerText.includes(${JSON.stringify(pkg.version)})`)
-    results.push({ name: 'about-version', ok: about === true, data: { versionOk: about, expected: pkg.version } })
+    push('about-version', about === true, { versionOk: about, expected: pkg.version })
+    await shot('ui-final')
   } catch (e) {
-    results.push({ name: 'script-error', ok: false, data: { error: String(e && e.message || e).slice(0, 300) } })
+    push('script-error', false, { error: String(e && e.message || e).slice(0, 300) })
   }
 
-  report()
+  const failed = results.filter(x => !x.ok)
+  console.log('UI_CHECK_RESULT=' + JSON.stringify(results, null, 2))
+  console.log('SUMMARY: total=' + results.length + ' ok=' + (results.length - failed.length) + ' fail=' + failed.length)
+  if (failed.length) console.log('FAILED=' + JSON.stringify(failed.map(x => ({ name: x.name, data: x.data })), null, 2))
   ws.close()
   process.exit(results.some(x => !x.ok) ? 1 : 0)
 })().catch(e => { console.log('UI_CHECK_ERR:', e.message); process.exit(1) })
