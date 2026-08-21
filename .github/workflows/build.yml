@@ -62,7 +62,8 @@ jobs:
         run: |
           $exe = (Get-ChildItem release\win-unpacked -Filter '*.exe' | Select-Object -First 1).FullName
           $env:HQ_USER_DATA = Join-Path $env:RUNNER_TEMP 'hq-ui-smoke'
-          $p = Start-Process -FilePath $exe -ArgumentList '--remote-debugging-port=9234' -WindowStyle Hidden -PassThru
+          # CI 无 GPU: 关闭硬件加速, 避免 Chromium 合成器在软件驱动下崩溃
+          $p = Start-Process -FilePath $exe -ArgumentList '--remote-debugging-port=9234','--disable-gpu' -WindowStyle Hidden -PassThru
           $ready = $false
           for ($i = 0; $i -lt 60; $i++) {
             Start-Sleep -Seconds 1
