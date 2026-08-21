@@ -143,6 +143,8 @@ const appShell = new AppShell({
   appendCrashLog,
   initBrowserViews,
   getBrowserWin: () => getBrowserSession(),
+  // v0.4.2: 崩溃后窗口重建需重新挂载浏览器面板视图(内嵌浏览器/离屏截图引擎)
+  onWindowRecreated: (win) => initBrowserViews(win, { live: rendererMode !== 'cpu' }),
 })
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
 registerTaskIpc({

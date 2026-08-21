@@ -15,6 +15,8 @@ export interface AppShellDeps {
   appendCrashLog: (line: string) => void
   initBrowserViews: (win: BrowserWindow, opts: { live: boolean }) => void
   getBrowserWin: () => { webContents: Electron.WebContents } | null
+  // v0.4.2: 渲染进程崩溃后重建窗口时重新挂载浏览器面板等主进程视图
+  onWindowRecreated?: (win: BrowserWindow) => void
 }
 
 export class AppShell {
@@ -99,7 +101,7 @@ export class AppShell {
     } catch { return 0 }
   }
 
-  createWindow(): void {
+  private buildWindow(): void {
     let savedTheme: string | undefined
     try {
       const s = JSON.parse(fs.readFileSync(this.deps.settingsPath, 'utf-8'))
@@ -157,16 +159,16 @@ export class AppShell {
           new Notification({ title: 'Acheron-agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
         } catch { /* 忽略 */ }
       }
-      // 延迟重载: 等旧渲染进程完全退出后再起新进程, 规避快速连续 reload 时
-      // sandboxed preload startupData 为空的竞态崩溃(CI Server 会话下可稳定复现 -36861)
+      // 延迟重建窗口: 等旧渲染进程完全退出后再创建全新 BrowserWindow。
+      // 复用同一个 webContents loadURL/reload 恢复时, sandboxed preload 的
+      // startupData 可能仍为空(CI Server 会话下稳定复现 -36861), 全新窗口
+      // 必然带完整启动数据, 规避该竞态。
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         if (this.reloadTimer) clearTimeout(this.reloadTimer)
         this.reloadTimer = setTimeout(() => {
           try {
-            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-              this.mainWindow.loadURL('http://127.0.0.1:' + this.deps.serverPort() + '/index.html')
-            }
-          } catch { /* 窗口已关闭则忽略 */ console.debug('[swallow]', 'reload after crash skipped') }
+            this.recreateWindow()
+          } catch { /* 应用退出则忽略 */ console.debug('[swallow]', 'recreate after crash skipped') }
         }, 1200)
       }
     })
@@ -174,10 +176,30 @@ export class AppShell {
     win.once('ready-to-show', () => this.mainWindow?.show())
     win.on('closed', () => {
       if (this.reloadTimer) { clearTimeout(this.reloadTimer); this.reloadTimer = null }
-      this.mainWindow = null
+      // 重建窗口时旧窗口先于新窗口存在, 只有"当前主窗口"被关才清引用,
+      // 避免 recreateWindow 先建新窗后销毁旧窗时误清新窗口引用
+      if (this.mainWindow === win) this.mainWindow = null
     })
     // 关闭 → 设置开启时缩至托盘，否则正常退出
     win.on('close', (e: Electron.Event) => { if (this.trayEnabled() && !this.deps.isQuitting()) { e.preventDefault(); this.mainWindow?.hide() } })
+  }
+
+  createWindow(): void { this.buildWindow() }
+
+  // v0.4.2: 渲染进程崩溃后的确定性恢复 —— 销毁旧窗口, 用全新渲染进程重建。
+  // 复用同一 webContents 重载时可能因 sandboxed preload startupData 未就绪
+  // 而反复崩溃(-36861), 新窗口能拿到完整启动数据, 恢复稳定。
+  recreateWindow(): void {
+    if (this.reloadTimer) { clearTimeout(this.reloadTimer); this.reloadTimer = null }
+    const old = this.mainWindow
+    // 先建新窗口再销毁旧窗口: 任意时刻都至少有一个窗口存活,
+    // 避免触发 window-all-closed 导致应用直接退出
+    this.buildWindow()
+    if (old && !old.isDestroyed()) {
+      try { old.destroy() } catch (e) { /* 已关闭则忽略 */ console.debug('[swallow]', e) }
+    }
+    const fresh = this.mainWindow
+    if (fresh) { try { this.deps.onWindowRecreated?.(fresh) } catch (e) { /* 视图重建失败不影响窗口 */ console.debug('[swallow]', e) } }
   }
 
   createTray(): void {

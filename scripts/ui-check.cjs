@@ -1,4 +1,6 @@
 // UI 全页面巡检：主视图 + 设置全部 Tab + 版本号，检查渲染/报错/关键控件（适配 v0.4.2 界面）
+// v0.4.2: 渲染进程崩溃恢复后 CDP target 会被替换, 脚本改为断线自动重连 +
+// 每个操作前等待页面就绪 + tab 点击重试, 避免崩溃恢复期短路。
 // 用法: node scripts/ui-check.cjs <port> [输出目录]
 const http = require('node:http')
 const fs = require('node:fs')
@@ -10,31 +12,70 @@ const outDir = process.argv[3] || process.cwd()
 const httpGet = (url) => new Promise((res, rej) => http.get(url, r => { let d = ''; r.on('data', c => d += c); r.on('end', () => res(d)) }).on('error', rej))
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
-;(async () => {
+let ws = null
+let id = 0
+const pending = new Map()
+
+async function connect() {
   const targets = JSON.parse(await httpGet(`http://127.0.0.1:${port}/json`))
-  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === 'Acheron-agent')) || targets.find(t => t.type === 'page')
-  if (!page) { console.log('NO_PAGE'); process.exit(3) }
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j })
-  let id = 0
-  const pending = new Map()
+  const page = targets.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title === 'Acheron-agent' || (t.title || '').includes('Agent'))) || targets.find(t => t.type === 'page')
+  if (!page) throw new Error('NO_PAGE')
+  ws = new WebSocket(page.webSocketDebuggerUrl)
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = () => j(new Error('ws connect failed')) })
+  id = 0
+  pending.clear()
   ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m.result); pending.delete(m.id) } }
-  const send = (method, params = {}) => new Promise((r, j) => {
+  await sendRaw('Runtime.enable')
+}
+
+// 页面崩溃恢复时旧 target 会消失, 重新从 /json 拿新 page 再继续
+async function reconnect() {
+  try { ws?.close() } catch { /* ignore */ }
+  ws = null
+  await connect()
+}
+
+function sendRaw(method, params = {}) {
+  return new Promise((r, j) => {
+    if (!ws || ws.readyState !== 1) return j(new Error('CDP socket closed: ' + method))
     const mid = ++id
     const timer = setTimeout(() => { pending.delete(mid); j(new Error('CDP timeout: ' + method)) }, 20000)
     pending.set(mid, (v) => { clearTimeout(timer); r(v) })
     ws.send(JSON.stringify({ id: mid, method, params }))
   })
-  await send('Runtime.enable')
-  const evalJs = async (expr) => {
-    try {
-      const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
-      if (r.exceptionDetails) return { __err: r.exceptionDetails.exception?.description || r.exceptionDetails.text }
-      return r.result?.value
-    } catch (e) {
-      return { __err: String(e && e.message || e) }
-    }
+}
+
+async function send(method, params = {}) {
+  try {
+    return await sendRaw(method, params)
+  } catch (e) {
+    // 崩溃恢复导致 socket 断开 → 重连后重试一次
+    await reconnect()
+    return sendRaw(method, params)
   }
+}
+
+const evalJs = async (expr) => {
+  try {
+    const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
+    if (r.exceptionDetails) return { __err: r.exceptionDetails.exception?.description || r.exceptionDetails.text }
+    return r.result?.value
+  } catch (e) {
+    return { __err: String(e && e.message || e) }
+  }
+}
+
+// 崩溃后 app-shell 会重建窗口并重新加载, 必须等 React 挂载完成再操作
+async function waitReady(timeoutMs = 15000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    const r = await evalJs(`(() => { const root = document.querySelector('#root'); return { ready: document.readyState === 'complete', root: !!root, children: root ? root.children.length : 0 } })()`)
+    if (r && !r.__err && r.ready && r.root && r.children > 0) return true
+    await sleep(400)
+  }
+  return false
+}
+;(async () => {
   const shot = async (name) => {
     const s = await send('Page.captureScreenshot', { format: 'png' })
     fs.writeFileSync(path.join(outDir, name + '.png'), Buffer.from(s.data, 'base64'))
@@ -55,7 +96,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
       if (el) { el.click(); return true }
       return false
     })()`)
-    await sleep(500)
+    await sleep(700)
     return r
   }
   const pageState = () => evalJs(`(() => {
@@ -78,7 +119,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
   const push = (name, ok, data) => { results.push({ name, ok: !!ok, data }) }
 
   try {
+    await connect()
     // 0) 首次引导：跳过
+    await waitReady(20000)
     await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').includes('跳过引导')); if (b) { b.click(); return true } return false })()`)
     await sleep(600)
 
@@ -88,6 +131,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
     // 2) 侧栏主视图(工作区页面 + Overlay 页面)
     for (const nav of ['技能', '产物', '定时任务', '命令中心', '配置档案', 'API Keys']) {
+      await waitReady(12000)
       const okClick = await clickSidebarPage(nav)
       const st = await pageState()
       const hasOverlay = st.overlay && st.overlayTitle.includes(nav)
@@ -100,25 +144,33 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
     }
 
     // 3) 设置全部 Tab
+    await waitReady(12000)
     const openSettings = await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置' || (x.getAttribute('aria-label') || '') === '设置'); if (b) { b.click(); return true } return false })()`)
     await sleep(800)
     push('settings-open', openSettings === true, await pageState())
     const tabs = ['供应商', '策略', '角色', '记忆', '协作', '工具', 'MCP', '外观', '界面', '快捷键', '模型缓存统计', '诊断', '引擎', '藏书阁', '插件', '关于']
     for (const t of tabs) {
-      let okClick = await clickSettingsTab(t)
-      let st = await pageState()
-      // 渲染进程若崩溃自动恢复(回到聊天页), 重开设置并重试一次
-      if (!st.overlay) {
-        await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置'); if (b) { b.click(); return true } return false })()`)
-        await sleep(800)
+      let ok = false
+      let okClick = false
+      let st = {}
+      // 渲染进程崩溃后会自动恢复(回到聊天页), 每轮先等页面就绪并重开设置
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        await waitReady(12000)
         okClick = await clickSettingsTab(t)
+        await sleep(900)
         st = await pageState()
+        ok = okClick === true && String(st.activeTab || '').includes(t) && (st.mainLen || 0) > 40 && !st.err && !st.renderErr
+        if (!ok && !st.overlay) {
+          await waitReady(8000)
+          await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置'); if (b) { b.click(); return true } return false })()`)
+          await sleep(800)
+        }
       }
-      const ok = okClick === true && st.activeTab.includes(t) && st.mainLen > 40 && !st.err && !st.renderErr
       push('tab:' + t, ok, { ...st, okClick })
     }
 
     // 4) 关于页版本
+    await waitReady(12000)
     let stAbout = await pageState()
     if (!stAbout.overlay) {
       await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置'); if (b) { b.click(); return true } return false })()`)
