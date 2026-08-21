@@ -73,7 +73,12 @@ jobs:
           }
           if (-not $ready) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; throw 'CDP 未就绪' }
           node scripts/ui-check.cjs 9234 $env:RUNNER_TEMP
-          if ($LASTEXITCODE -ne 0) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            $cl = Join-Path $env:HQ_USER_DATA 'crash.log'
+            if (Test-Path $cl) { Write-Output '--- crash.log tail ---'; Get-Content $cl -Tail 20 }
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            exit $LASTEXITCODE
+          }
           Stop-Process -Id $p.Id -Force
 
       - name: 发布到 GitHub Releases(仅 tag 推送)

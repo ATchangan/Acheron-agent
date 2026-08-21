@@ -105,13 +105,25 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
     push('settings-open', openSettings === true, await pageState())
     const tabs = ['供应商', '策略', '角色', '记忆', '协作', '工具', 'MCP', '外观', '界面', '快捷键', '模型缓存统计', '诊断', '引擎', '藏书阁', '插件', '关于']
     for (const t of tabs) {
-      const okClick = await clickSettingsTab(t)
-      const st = await pageState()
+      let okClick = await clickSettingsTab(t)
+      let st = await pageState()
+      // 渲染进程若崩溃自动恢复(回到聊天页), 重开设置并重试一次
+      if (!st.overlay) {
+        await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置'); if (b) { b.click(); return true } return false })()`)
+        await sleep(800)
+        okClick = await clickSettingsTab(t)
+        st = await pageState()
+      }
       const ok = okClick === true && st.activeTab.includes(t) && st.mainLen > 40 && !st.err && !st.renderErr
       push('tab:' + t, ok, { ...st, okClick })
     }
 
     // 4) 关于页版本
+    let stAbout = await pageState()
+    if (!stAbout.overlay) {
+      await evalJs(`(() => { const b = [...document.querySelectorAll('button')].find(x => (x.title || '') === '设置'); if (b) { b.click(); return true } return false })()`)
+      await sleep(800)
+    }
     await clickSettingsTab('关于')
     const about = await evalJs(`document.body.innerText.includes(${JSON.stringify(pkg.version)})`)
     push('about-version', about === true, { versionOk: about, expected: pkg.version })
