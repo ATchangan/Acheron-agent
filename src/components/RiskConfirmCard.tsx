@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 // v0.3.3: 风险操作确认 —— 软件内右下角卡片(替代原生 Windows 弹窗)
 // 支持「本次任务都批准」(主进程按 sid+taskId 记录, 新任务自动失效)

@@ -2,8 +2,8 @@
 // 目的: 自然语言可以调节"所有安全可改的设置", 但密钥/风险开关/超大字段必须走设置页, 防止提示注入与密钥进上下文。
 
 const STRING_KEYS = new Set(['theme', 'mode', 'agentName', 'language', 'region', 'messageSpacing', 'showTimestamps', 'customSystemPrompt', 'promptInjectPos', 'thinkLevel', 'sp', 'ishiki', 'mainModel', 'fastModel', 'longTextModel', 'codeModel', 'mediaImgProvider', 'mediaVideoProvider', 'browserHomeUrl', 'compactStrategy', 'workDir', 'skinSecondary'])
-const BOOL_KEYS = new Set(['autoFastModel', 'autoMediaImg', 'autoMediaVideo', 'mcpAutoConnectOnStart', 'mcpAutoReconnect', 'ttsEnabled', 'autoCopy', 'useTables', 'useLists', 'useEmoji', 'expressUncertainty', 'askWhenMissing', 'showConfidence', 'explainRefusal', 'neutralOnControversial', 'noClosingPhrase', 'briefClosing', 'notifyTaskDone', 'notifyError', 'keepUserGoals', 'keepPendingTasks', 'keepDecisions', 'keepRecentRaw', 'taskArchive', 'animation'])
-const NUMBER_KEYS = new Set(['uiFontSize', 'codeFontSize', 'chatMaxWidth', 'opacity', 'ttsRate', 'mcpTimeout', 'compactMsgCount', 'compactTokenLimit', 'compactStrength', 'ragChunkSize', 'ragThreshold'])
+const BOOL_KEYS = new Set(['autoFastModel', 'autoMediaImg', 'autoMediaVideo', 'mcpAutoConnectOnStart', 'mcpAutoReconnect', 'autoCopy', 'useTables', 'useLists', 'useEmoji', 'expressUncertainty', 'askWhenMissing', 'showConfidence', 'explainRefusal', 'neutralOnControversial', 'noClosingPhrase', 'briefClosing', 'notifyTaskDone', 'notifyError', 'keepUserGoals', 'keepPendingTasks', 'keepDecisions', 'keepRecentRaw', 'taskArchive', 'animation'])
+const NUMBER_KEYS = new Set(['uiFontSize', 'codeFontSize', 'chatMaxWidth', 'opacity', 'mcpTimeout', 'compactMsgCount', 'compactTokenLimit', 'compactStrength', 'ragChunkSize', 'ragThreshold'])
 const OBJECT_KEYS = new Set(['thinkOverrides', 'toolPerms', 'perf', 'customColors', 'customTheme', 'skinColors', 'uiDisplay', 'pluginSettings'])
 
 // 明确不允许经对话修改: 密钥/凭证、风险放行、命令黑名单、MCP 服务器命令、插件权限、代理与 GPU 等安全或主进程私有项
@@ -67,9 +67,9 @@ export function sanitizeProvidersPatch(patch: unknown, section: 'providers' | 'm
   const out: unknown[] = []
   const allowed = section === 'providers'
     ? ['id', 'name', 'type', 'baseUrl', 'models', 'selectedModel', 'enabled']
-    : ['id', 'name', 'baseUrl', 'imgModels', 'videoModels', 'audioModels', 'selectedImg', 'selectedVideo', 'selectedAudio', 'enabled']
-  const STRING_FIELDS = new Set(['name', 'type', 'baseUrl', 'selectedModel', 'selectedImg', 'selectedVideo', 'selectedAudio'])
-  const ARRAY_FIELDS = new Set(['models', 'imgModels', 'videoModels', 'audioModels'])
+    : ['id', 'name', 'baseUrl', 'imgModels', 'videoModels', 'selectedImg', 'selectedVideo', 'enabled']
+  const STRING_FIELDS = new Set(['name', 'type', 'baseUrl', 'selectedModel', 'selectedImg', 'selectedVideo'])
+  const ARRAY_FIELDS = new Set(['models', 'imgModels', 'videoModels'])
   for (const item of patch) {
     if (!isObj(item) || typeof item.id !== 'string' || !item.id) { problems.push('每一项必须含字符串 id'); continue }
     const cleaned: Record<string, unknown> = { id: item.id }

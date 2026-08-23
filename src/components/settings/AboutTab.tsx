@@ -35,9 +35,12 @@ export default function AboutTab() {
   return (
     <div style={U.pageBody}>
       <div style={S.card}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+          <img src="huangquan.png" alt="黄泉" style={{ width: 190, height: 190, objectFit: 'contain', filter: 'drop-shadow(0 10px 24px rgba(0,0,0,.4))' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+        </div>
         <div style={S.section}>关于</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[['版本', info?.version || '…'], ['平台', 'Acheron-agent'], ['Electron', info?.electron || '…'], ['React', React.version], ['Node', info?.node || '…']].map(([k, v]) => (
+          {[['版本', info?.version || '…'], ['平台', 'Acheron-Agent'], ['Electron', info?.electron || '…'], ['React', React.version], ['Node', info?.node || '…']].map(([k, v]) => (
             <div key={k}><div style={S.hint}>{k}</div><div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: C.text }}>{v}</div></div>
           ))}
         </div>

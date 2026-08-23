@@ -24,7 +24,7 @@ export default function ChatInput() {
   const [extraText, setExtraText] = useState('')
   const [memText, setMemText] = useState('')
   const [perm, setPerm] = useState<string>(useSettingsStore.getState().general.filePermission || 'auto')
-  const { extraOpen, setExtraOpen, cmdOpen, setCmdOpen, memOpen, setMemOpen, permOpen, setPermOpen, thinkOpen, setThinkOpen, closeAll } = useChatPanels()
+  const { extraOpen, setExtraOpen, cmdOpen, setCmdOpen, memOpen, setMemOpen, permOpen, setPermOpen, thinkOpen, setThinkOpen } = useChatPanels()
   const fileRef = useRef<HTMLInputElement>(null)
   const attFileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -38,6 +38,30 @@ export default function ChatInput() {
   const [atItems, setAtItems] = useState<string[]>([])
   const atSel = useRef(0)
   const workDir = useSettingsStore(s => s.general.workDir)
+  const [moreTools, setMoreTools] = useState(false)
+  // 关闭"实际下拉/面板"(模型/@引用/补充上下文/快捷指令/记忆/权限/推理)，保留更多工具(more)组展开
+  const closeAllPanels = () => { setModelOpen(false); setAtOpen(false); setExtraOpen(false); setCmdOpen(false); setMemOpen(false); setPermOpen(false); setThinkOpen(false) }
+  // 连更多工具组一起关(用于点外部关闭、打开模型选择器等非 more 区的入口)
+  const closeAllInput = () => { closeAllPanels(); setMoreTools(false) }
+  // v0.4.3 点击"下方菜单/触发器之外"的任何地方(含输入框、聊天区)→ 关闭所有输入区下拉
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null
+      if (t && typeof t.closest === 'function' && t.closest('.dropdown-menu, .hq-model-menu, .hq-at-pop, .context-extra-wrap, .dropdown-wrap, .input-left-icons, .hq-model-picker, .hq-think-selector')) return
+      closeAllInput()
+    }
+    document.addEventListener('mousedown', onDown, true)
+    return () => document.removeEventListener('mousedown', onDown, true)
+  }, [])
+  // v0.4.3 系统级"选中即问"草稿(全局热键带入)
+  const askDraft = useChatStore(s => s.askDraft)
+  const setAskDraft = useChatStore(s => s.setAskDraft)
+  useEffect(() => {
+    if (!askDraft) return
+    setText(t => (t ? t + '\n' : '') + askDraft)
+    setAskDraft('')
+    taRef.current?.focus()
+  }, [askDraft, setAskDraft])
 
   // 粘贴到聊天区任意位置 → 聚焦输入框
   useEffect(() => {
@@ -121,7 +145,7 @@ export default function ChatInput() {
     if (!t && !images.length && !attachments.length && !extraText.trim()) return
     window.dispatchEvent(new CustomEvent('huangquan-follow-scroll'))
     if (t.startsWith('/')) {
-      const cmd = t.slice(1); setText(''); closeAll()
+      const cmd = t.slice(1); setText(''); closeAllInput()
       if (cmd === 'diary') await send('请将本次对话整理为一篇日记。')
       else if (cmd === 'xing') await send('请从本次对话中提取可复用的流程。')
       else if (cmd === 'compact') await send('请精简压缩本次对话历史。')
@@ -233,7 +257,6 @@ export default function ChatInput() {
       const mp = mediaProviders.find(x => x.id === item.pid)
       if (item.group === 'image') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedImg: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaImgProvider: mp.name }) }
       if (item.group === 'video') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedVideo: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaVideoProvider: mp.name }) }
-      if (item.group === 'audio') { useSettingsStore.getState().updateMediaProvider(item.pid, { selectedAudio: item.model }); if (mp) useSettingsStore.getState().updateGeneral({ mediaAudioProvider: mp.name }) }
     }
   }
 
@@ -326,10 +349,10 @@ export default function ChatInput() {
               visionAssist={visionAssist}
               fileRef={fileRef}
               attFileRef={attFileRef}
-              onToggleExtra={() => { closeAll(); setExtraOpen(!extraOpen) }}
-              onToggleCmd={() => { closeAll(); setCmdOpen(!cmdOpen) }}
-              onToggleMem={() => { closeAll(); setMemOpen(!memOpen) }}
-              onTogglePerm={() => { closeAll(); setPermOpen(!permOpen) }}
+              onToggleExtra={() => { closeAllPanels(); setExtraOpen(!extraOpen) }}
+              onToggleCmd={() => { closeAllPanels(); setCmdOpen(!cmdOpen) }}
+              onToggleMem={() => { closeAllPanels(); setMemOpen(!memOpen) }}
+              onTogglePerm={() => { closeAllPanels(); setPermOpen(!permOpen) }}
               onMemText={setMemText}
               onSaveMemory={saveMemory}
               onPerm={setPerm}
@@ -337,6 +360,8 @@ export default function ChatInput() {
               onSend={handleSend}
               onImagePick={handleImagePick}
               onFilePick={handleFilePick}
+              moreOpen={moreTools}
+              onToggleMore={() => { const next = !moreTools; if (next) closeAllPanels(); setMoreTools(next) }}
             />
           )}
 
@@ -344,16 +369,16 @@ export default function ChatInput() {
             {/* 模型选择器 */}
             {!disp.hideModelPicker && (models.length > 0 ? (
               <div className="dropdown-wrap hq-model-picker">
-                <button type="button" className="hq-model-pill" title="切换模型" onClick={() => setModelOpen(v => !v)}>
+                <button type="button" className="hq-model-pill" title="切换模型" onClick={() => { closeAllInput(); setModelOpen(v => !v) }}>
                   <span className="model-dot" />
                   <span className="hq-model-name">{curModelName || currentModel}</span>
                   <ChevronDown size={12} />
                 </button>
                 {modelOpen && (
                   <div className="dropdown-menu hq-model-menu">
-                    {(['text', 'image', 'video', 'audio'] as const).filter(g => modelItems.some(x => x.group === g)).map(g => (
+                    {(['text', 'image', 'video'] as const).filter(g => modelItems.some(x => x.group === g)).map(g => (
                       <div key={g}>
-                        <div className="hq-model-group-label">{g === 'text' ? '文字' : g === 'image' ? '图片' : g === 'video' ? '视频' : '语音'}</div>
+                        <div className="hq-model-group-label">{g === 'text' ? '文字' : g === 'image' ? '图片' : '视频'}</div>
                         {modelItems.filter(x => x.group === g).map(x => (
                           <div key={x.key} className={'dropdown-item' + (currentModel === x.key ? ' active' : '')} onClick={() => pickModel(x.key)}>{x.label}</div>
                         ))}
@@ -371,7 +396,7 @@ export default function ChatInput() {
                 thinkOpen={thinkOpen}
                 ovModel={ovModel}
                 thinkOnly={thinkOnly}
-                onToggle={() => { closeAll(); setThinkOpen(!thinkOpen) }}
+                onToggle={() => { closeAllPanels(); setThinkOpen(!thinkOpen) }}
                 onToggleThinkMode={setThinkMode}
                 onToggleThinkOnly={toggleThinkOnly}
                 onSetLevel={setThinkLevel}

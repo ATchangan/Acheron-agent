@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../store/settings'
 import { C, S } from './settings-ui'
+import { MEDIA_PRESETS } from './settings/consts'
 
 
 import { Key, SlidersHorizontal, UserRound, Database, Users, Wrench, Puzzle, Palette, BarChart3, Settings as SettingsIcon, Info, Download, Upload, RotateCcw, Activity, MonitorSmartphone, Keyboard } from 'lucide-react'
@@ -25,20 +26,6 @@ const PluginsView = React.lazy(() => import('./PluginsView'))
 import { U } from './ui-styles'
 
 
-const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean; img?: string[]; video?: string[]; audio?: string[] }> = {
-  '即梦Jimeng': { type: 'multi', url: 'https://ark.cn-beijing.volces.com/api/v3', img: ['seedream-4.0', 'seedream-3.0', 'cogview-4'], video: ['seedance2.0', 'seedance2.0fast', 'doubao-seedance'] },
-  'Agnes': { type: 'multi', url: 'https://apihub.agnes-ai.com/v1', img: ['agnes-image', 'agnes-flux'], video: ['agnes-video'], audio: ['agnes-asr'] },
-  '可灵Kling': { type: 'multi', url: 'https://api.klingai.com/v1', img: ['kling-v1', 'kolors'], video: ['kling-v2', 'kling-v2.1'] },
-  'Runway': { type: 'video', url: 'https://api.runwayml.com/v1', video: ['gen3a_turbo', 'gen4'] },
-  'Pika': { type: 'video', url: 'https://api.pika.art/v1', video: ['pika-2.0', 'pika-1.5'] },
-  'Midjourney': { type: 'image', url: 'https://api.midjourney.com/v1', img: ['mj-v7', 'mj-v6.1'] },
-  'Stable Diffusion': { type: 'image', url: 'http://127.0.0.1:7860', noKey: true, img: ['sd-1.5', 'sd-xl', 'flux.1-dev'] },
-  '通义万相': { type: 'multi', url: 'https://dashscope.aliyuncs.com/api/v1', img: ['wanx-v1', 'wanx2.1-t2i-turbo'], video: ['wanx2.1-t2v-turbo'] },
-  '文心一格': { type: 'image', url: 'https://aip.baidubce.com', img: ['ernie-vilg-v3'] },
-  '讯飞语音': { type: 'audio', url: 'https://iat-api.xfyun.cn', audio: ['iflytek-asr', 'iflytek-tts'] },
-  'Whisper本地': { type: 'audio', url: 'http://127.0.0.1:9000', noKey: true, audio: ['whisper-large-v3'] },
-}
-
 // 判断是否为本地服务（127.0.0.1 / localhost / noKey）
 
 
@@ -59,7 +46,6 @@ export default function SettingsView({ onNavigate, initialTab }: { onNavigate: (
         const patch: Parameters<typeof updateMediaProvider>[1] = {}
         if (same(mp.imgModels, pre.img)) { patch.imgModels = []; patch.selectedImg = undefined }
         if (same(mp.videoModels, pre.video)) { patch.videoModels = []; patch.selectedVideo = undefined }
-        if (same(mp.audioModels, pre.audio)) { patch.audioModels = []; patch.selectedAudio = undefined }
         if (Object.keys(patch).length) updateMediaProvider(mp.id, patch)
       })
     } catch (e) { /* 迁移失败不影响使用 */ console.debug('[swallow]', e) }
@@ -96,36 +82,62 @@ export default function SettingsView({ onNavigate, initialTab }: { onNavigate: (
   ]
   // v0.4.2: 支持命令面板/引导深链到指定 tab（TABS 定义后才能安全引用）
   const [tab, setTab] = useState(() => initialTab && TABS.some(t => t.key === initialTab) ? initialTab : 'models')
+  const [q, setQ] = useState('')
 
-  // 导航分组：组间留白(gapBefore)，行高 28px，图标 + 标签
-  const NAV_GROUPS: { key: string; gapBefore?: boolean }[] = [
-    { key: 'models' }, { key: 'strategy' }, { key: 'persona' }, { key: 'collab' }, { key: 'tools' }, { key: 'mcp' }, { key: 'skills' },
-    { key: 'skin', gapBefore: true }, { key: 'ui' }, { key: 'keybinds' },
-    { key: 'memory', gapBefore: true }, { key: 'knowledge' }, { key: 'plugins' },
-    { key: 'stats', gapBefore: true }, { key: 'diagnostics' }, { key: 'advanced' }, { key: 'about' },
+  // 分类导航：把线性 Tab 收敛成几组 + 顶部搜索（低密度，能力藏而不堆）
+  const CATEGORIES: { key: string; label: string; items: string[] }[] = [
+    { key: 'model', label: '模型', items: ['models', 'strategy'] },
+    { key: 'team', label: '角色与协作', items: ['persona', 'collab'] },
+    { key: 'cap', label: '能力与扩展', items: ['tools', 'mcp', 'plugins'] },
+    { key: 'content', label: '内容', items: ['memory', 'knowledge'] },
+    { key: 'look', label: '外观与界面', items: ['skin', 'ui', 'keybinds'] },
+    { key: 'system', label: '系统', items: ['stats', 'diagnostics', 'advanced', 'about'] },
   ]
+  const norm = (s: string) => String(s || '').toLowerCase()
+  const catOf = (key: string) => CATEGORIES.find(c => c.items.includes(key))
+  const currentCat = catOf(tab)
+  const matches = (t: { key: string; label: string }) => !q || norm(t.label).includes(norm(q)) || norm(t.key).includes(norm(q))
+  const filteredTabs = TABS.filter(matches)
 
   return (
     <div className="hq-settings">
       {/* OverlayNav：左导航（分组 + 底部导入/导出/重置） */}
       <div className="hq-settings-nav">
-        {NAV_GROUPS.map(g => {
-          const t = TABS.find(x => x.key === g.key)
-          if (!t) return null
-          return (
-            <React.Fragment key={g.key}>
-              {g.gapBefore && <div className="hq-settings-nav-gap" aria-hidden="true" />}
-              <button
-                type="button"
-                className={'hq-settings-nav-item' + (tab === g.key ? ' active' : '')}
-                onClick={() => setTab(g.key)}
-              >
+        <input
+          className="hq-settings-search"
+          placeholder="搜索设置…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
+        {q ? (
+          <div className="hq-settings-nav-scroll">
+            {currentCat && <div className="hq-settings-nav-cat">{currentCat.label}</div>}
+            {filteredTabs.map(t => (
+              <button key={t.key} type="button" className={'hq-settings-nav-item' + (tab === t.key ? ' active' : '')} onClick={() => setTab(t.key)}>
                 <span className="nav-icon">{t.icon}</span>
                 <span className="hq-settings-nav-label">{t.label}</span>
               </button>
-            </React.Fragment>
-          )
-        })}
+            ))}
+          </div>
+        ) : (
+          <div className="hq-settings-nav-scroll">
+            {CATEGORIES.map(cat => {
+              const items = cat.items.map(k => TABS.find(x => x.key === k)).filter((x): x is (typeof TABS)[number] => !!x)
+              if (!items.length) return null
+              return (
+                <div key={cat.key} className="hq-settings-nav-group">
+                  <div className="hq-settings-nav-cat">{cat.label}</div>
+                  {items.map(t => (
+                    <button key={t.key} type="button" className={'hq-settings-nav-item' + (tab === t.key ? ' active' : '')} onClick={() => setTab(t.key)}>
+                      <span className="nav-icon">{t.icon}</span>
+                      <span className="hq-settings-nav-label">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        )}
         <div className="hq-settings-nav-footer">
           <button type="button" className="hq-icon-btn" title="导出设置" aria-label="导出设置" onClick={async () => { try { const cfg = await window.huangquan.settings.load(); const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' }); const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'huangquan-settings-' + new Date().toISOString().slice(0, 10) + '.json' }); a.click() } catch { alert('导出失败') } }}><Download size={14} /></button>
           <button type="button" className="hq-icon-btn" title="导入设置" aria-label="导入设置" onClick={() => { const f = Object.assign(document.createElement('input'), { type: 'file', accept: '.json' }); f.onchange = async () => { try { const t = await f.files?.[0]?.text(); if (t) { const cfg = JSON.parse(t); await window.huangquan.settings.save(cfg); alert('导入成功，请重启应用'); window.location.reload() } } catch { alert('导入失败，文件格式不正确') } }; f.click() }}><Upload size={14} /></button>

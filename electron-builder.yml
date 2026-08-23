@@ -1,9 +1,9 @@
 appId: com.huangquan.agent
-productName: Acheron-agent
+productName: Acheron-Agent
 directories:
   output: release
   buildResources: resources
-artifactName: Acheron-agent-${version}.exe
+artifactName: Acheron-Agent-${version}.exe
 publish:
   provider: github
   owner: ATchangan
@@ -17,7 +17,7 @@ electronLanguages:
 win:
   target:
     - nsis
-  icon: resources/icon.ico
+  icon: resources/icon.png   # electron-builder 自动由 512 PNG 生成多尺寸 .ico(黄泉立绘)
   # 无证书自动跳过签名; 需要签名时配置 signtoolOptions/azureSignOptions(E4), 绝不要写 signAndEditExecutable: false(会丢失图标/版本信息)
 mac:
   target:

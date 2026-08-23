@@ -42,7 +42,8 @@ export default function CollabTab(props: {
           const list = (g.disabledAgents || []) as string[]
           const on = !list.includes(name)
           return <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid ' + C.border }}>
-            <div><span style={{ fontSize: 'var(--ui-font-size)' }}>{icon}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: on ? C.text : C.muted, marginLeft: 6 }}>{name}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginLeft: 8 }}>{desc}</span></div>
+            <div style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 'var(--ui-font-size)' }}>{icon}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', fontWeight: 600, color: on ? C.text : C.muted, marginLeft: 6 }}>{name}</span><span style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, marginLeft: 8 }}>{desc}</span></div>
+            <button type="button" style={{ ...S.btn('ghost'), height: 24, padding: '0 8px', marginRight: 8, fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={() => onNavigate('agents')} title="管理该代理的工具/能力/模型">管理</button>
             <div onClick={() => { const d = [...list]; if (on) d.push(name); else d.splice(d.indexOf(name), 1); save({ disabledAgents: d }) }} style={{ width: 36, height: 20, borderRadius: 10, background: on ? C.accent : C.border, cursor: 'pointer', position: 'relative', flexShrink: 0 }}><div style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: on ? 19 : 3 }} /></div>
           </div>
         })}

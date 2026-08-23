@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
 import { useSettingsStore } from '../store/settings'
 import { YELLOW_RIVER } from './plugin-types'

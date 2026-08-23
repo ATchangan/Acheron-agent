@@ -62,10 +62,13 @@ CREATE TABLE IF NOT EXISTS audit (
   args_summary TEXT,
   result_summary TEXT,
   duration_ms INTEGER,
-  tokens INTEGER DEFAULT 0
+  tokens INTEGER DEFAULT 0,
+  sid TEXT,
+  task_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_tool ON audit(tool);
+CREATE INDEX IF NOT EXISTS idx_audit_sid ON audit(sid, ts);
 `
 
 export const SESSIONS_DDL = `
@@ -96,6 +99,18 @@ CREATE TABLE IF NOT EXISTS skills (
   description TEXT,
   hits INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER
+);
+`
+
+// v0.4.3 技能命中统计(按日聚合, 0.7.0 质量评估数据源)
+export const SKILL_STATS_DDL = `
+CREATE TABLE IF NOT EXISTS skill_stats (
+  name TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  hit INTEGER NOT NULL DEFAULT 0,
+  trigger INTEGER NOT NULL DEFAULT 0,
+  ok INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (name, ts)
 );
 `
 
@@ -141,6 +156,15 @@ export const META_DDL = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `
 
+// v0.4.3: 记忆"撤回即不复活" —— 用户主动遗忘的记忆永久进入遗忘清单,
+// 检索/注入/复写均按 content 精确排除, 防止"对了再说一遍"又被存回来的逻辑复活。
+export const FORGETTING_DDL = `
+CREATE TABLE IF NOT EXISTS forgetting (
+  content TEXT PRIMARY KEY,
+  ts INTEGER NOT NULL
+);
+`
+
 export function allSchemaDdl(): string[] {
-  return [MEMORIES_DDL, MEMORIES_FTS_TRIGGERS, TOOL_OUTPUTS_DDL, AUDIT_DDL, SESSIONS_DDL, SESSION_INDEX_DDL, SKILLS_DDL, LESSONS_DDL, GOALS_DDL, EPISODIC_DDL, META_DDL]
+  return [MEMORIES_DDL, MEMORIES_FTS_TRIGGERS, TOOL_OUTPUTS_DDL, AUDIT_DDL, SESSIONS_DDL, SESSION_INDEX_DDL, SKILLS_DDL, SKILL_STATS_DDL, LESSONS_DDL, GOALS_DDL, EPISODIC_DDL, META_DDL, FORGETTING_DDL]
 }

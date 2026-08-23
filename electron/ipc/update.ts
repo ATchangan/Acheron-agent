@@ -123,7 +123,7 @@ export function registerUpdateIpc(deps: {
   })
   // 下载安装包到系统下载目录(带进度事件)
   ipcMain.handle('update:download', async (event, url: string, fileName: string, expectedSha256?: string) => {
-    const name = String(fileName || '').replace(/[^\w\-. ]/g, '').slice(0, 120) || 'Acheron-agent-update.exe'
+    const name = String(fileName || '').replace(/[^\w\-. ]/g, '').slice(0, 120) || 'Acheron-Agent-update.exe'
     const dest = join(app.getPath('downloads'), name)
     const r = await downloadToFile({
       netFetch,

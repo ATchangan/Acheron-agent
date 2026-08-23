@@ -23,47 +23,47 @@ html[data-bg] body::before {
 
 /* 设置界面在壁纸模式下半透明 —— 透出背景图氛围, 同时保证选项可读 */
 html[data-bg] .settings-root {
-  background: rgba(10,8,18,0.35) !important;
+  background: var(--bg-scrim, rgba(10,8,18,0.35)) !important;
 }
 html[data-bg] .settings-root > div:first-child,
 html[data-bg] .settings-root [style*="overflowY"] {
-  background: rgba(8,8,15,0.35) !important;
+  background: var(--bg-scrim, rgba(8,8,15,0.35)) !important;
 }
 /* 浏览器/技能/工作台界面在壁纸模式下一视同仁 */
 html[data-bg] .browser-root,
 html[data-bg] .skills-root,
 html[data-bg] .agents-root {
-  background: rgba(10,8,18,0.35) !important;
+  background: var(--bg-scrim, rgba(10,8,18,0.35)) !important;
 }
 /* 侧边栏/右侧面板/顶部导航 — 背景跟随皮肤亮度 */
 html[data-bg] .sidebar {
-  background: rgba(16,13,24,0.55) !important;
+  background: var(--bg-scrim-strong, rgba(16,13,24,0.55)) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 html[data-bg] .sidebar-right {
-  background: rgba(16,13,24,0.55) !important;
+  background: var(--bg-scrim-strong, rgba(16,13,24,0.55)) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 html[data-bg] .chat-header-tab {
-  background: rgba(16,13,24,0.50) !important;
+  background: var(--bg-scrim-strong, rgba(16,13,24,0.50)) !important;
 }
 
 /* 中央聊天区半透深色蒙版 */
 html[data-bg] .chat-main {
-  background: rgba(10,8,18,0.28) !important;
+  background: var(--bg-scrim, rgba(10,8,18,0.28)) !important;
 }
 /* 底部输入框区域 */
 html[data-bg] .chat-input-area {
-  background: rgba(10,8,18,0.45) !important;
+  background: var(--bg-scrim, rgba(10,8,18,0.45)) !important;
 }
 /* 设置页 / Agent 页 */
 html[data-bg] .settings-view {
-  background: rgba(10,8,18,0.35);
+  background: var(--bg-scrim, rgba(10,8,18,0.35));
 }
 html[data-bg] .agents-view {
-  background: rgba(10,8,18,0.35);
+  background: var(--bg-scrim, rgba(10,8,18,0.35));
 }
 /* 空状态页 */
 html[data-bg] .chat-center-empty {
@@ -1168,18 +1168,18 @@ html[data-bg] .app-shell > * { position: relative; z-index: 2; }
 .hq-suggestion-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   width: min(var(--hq-composer-width, 48.75rem), 100%);
   margin-bottom: 8px;
   flex: none;
 }
 .hq-suggestion-pill {
-  height: 26px;
-  padding: 0 12px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  color: var(--text-secondary);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
   font-size: calc(var(--ui-font-size) - 2px);
   cursor: pointer;
   transition: border-color .12s, color .12s, background .12s;
@@ -1240,35 +1240,6 @@ html[data-bg] .app-shell > * { position: relative; z-index: 2; }
   transition: border-color .12s, background .12s;
 }
 .hq-reactions .hq-react-chip:hover { border-color: var(--accent-dim); background: var(--bg-hover); }
-.hq-reactions .hq-react-add { position: relative; }
-.hq-react-menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  display: flex;
-  gap: 2px;
-  padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-glow);
-  border-radius: 10px;
-  box-shadow: var(--shadow-2);
-  z-index: 300;
-}
-.hq-react-menu.down {
-  bottom: auto;
-  top: calc(100% + 6px);
-}
-.hq-react-menu button {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  border-radius: 7px;
-  font-size: 15px;
-  cursor: pointer;
-  transition: background .12s;
-}
-.hq-react-menu button:hover { background: var(--bg-hover); }
 .hq-link-card {
   display: inline-flex;
   align-items: center;
@@ -1820,9 +1791,13 @@ html[data-bg] .app-shell > * { position: relative; z-index: 2; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow-y: auto;
+  overflow: hidden;
 }
-.hq-settings-nav-gap { height: 8px; flex: none; }
+.hq-settings-search { width: 100%; height: 30px; padding: 0 10px; margin-bottom: 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-primary); font-size: calc(var(--ui-font-size) - 1px); font-family: inherit; outline: none; flex: none; transition: border-color .12s }
+.hq-settings-search:focus { border-color: var(--accent-dim) }
+.hq-settings-nav-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px }
+.hq-settings-nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px }
+.hq-settings-nav-cat { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; letter-spacing: .03em; color: var(--text-muted); text-transform: uppercase; flex: none }
 .hq-settings-nav-item {
   display: flex;
   align-items: center;
@@ -2600,16 +2575,6 @@ html[data-bg] .app-shell > * { position: relative; z-index: 2; }
 }
 .hq-preview-err { padding: 14px; font-size: calc(var(--ui-font-size) - 2px); color: var(--danger); }
 
-/* === 状态栏模型菜单(model-catalog-menu) === */
-.hq-sb-model { position: relative; display: flex; align-items: center; }
-.hq-sb-model-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  max-height: 320px;
-  overflow-y: auto;
-  min-width: 220px;
-}
 .hq-statusbar-menu-item.active { color: var(--accent); }
 
 /* === 分栏拖拽 === */
@@ -3038,10 +3003,10 @@ html[data-bg] .app-shell > * { position: relative; z-index: 2; }
 .hq-update-progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .2s; }
 
 /* === 壁纸模式下新壳层跟随 === */
-html[data-bg] .hq-titlebar { background: rgba(16, 13, 24, .50) !important; }
-html[data-bg] .hq-right-rail { background: rgba(16, 13, 24, .55) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-html[data-bg] .hq-overlay-card { background: rgba(10, 8, 18, .92) !important; }
-html[data-bg] .hq-settings { background: rgba(10, 8, 18, .35) !important; }
-html[data-bg] .hq-settings-nav { background: rgba(16, 13, 24, .55) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-html[data-bg] .hq-agents { background: rgba(10, 8, 18, .35) !important; }
-html[data-bg] .hq-palette { background: rgba(18, 15, 26, .96) !important; }
+html[data-bg] .hq-titlebar { background: var(--bg-scrim-strong, rgba(16, 13, 24, .50)) !important; }
+html[data-bg] .hq-right-rail { background: var(--bg-scrim-strong, rgba(16, 13, 24, .55)) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+html[data-bg] .hq-overlay-card { background: var(--bg-card, rgba(10, 8, 18, .92)) !important; }
+html[data-bg] .hq-settings { background: var(--bg-scrim, rgba(10, 8, 18, .35)) !important; }
+html[data-bg] .hq-settings-nav { background: var(--bg-scrim-strong, rgba(16, 13, 24, .55)) !important; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+html[data-bg] .hq-agents { background: var(--bg-scrim, rgba(10, 8, 18, .35)) !important; }
+html[data-bg] .hq-palette { background: var(--bg-card, rgba(18, 15, 26, .96)) !important; }

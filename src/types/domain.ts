@@ -2,7 +2,7 @@
 import type { GeneralSettings } from '../types'
 
 export interface SettingsData { providers: ProviderConfig[]; mediaProviders?: MediaProvider[]; general: GeneralSettings }
-// 多媒体供应商（图片生成/视频生成/语音识别）
+// 多媒体供应商（图片生成/视频生成）
 export interface MediaProvider {
   id: string
   name: string
@@ -12,10 +12,8 @@ export interface MediaProvider {
   type: string            // API 类型(OpenAI Compatible 等)
   imgModels: string[]     // 图片生成模型
   videoModels: string[]   // 视频生成模型
-  audioModels: string[]   // 语音识别/合成模型
   selectedImg?: string
   selectedVideo?: string
-  selectedAudio?: string
 }
 export interface ProviderConfig {
   id: string
@@ -35,6 +33,27 @@ export interface SessionMeta {
   mode?: string
   pinned?: boolean
   archived?: boolean
+}
+// v0.4.3 审计回放: 单次工具调用的结构化记录(决策时间线的一条)
+export interface AuditRow {
+  id: number
+  ts: number
+  agent: string
+  tool: string
+  argsSummary: string
+  resultSummary: string
+  durationMs: number | null
+  tokens: number | null
+  sid: string
+  taskId: string
+}
+// v0.4.3 上下文内容可见: 上报"它心里装着什么"的分段报表
+export interface ContextSection { label: string; chars: number; tokens: number }
+export interface ContextSnapshot {
+  sections: ContextSection[]
+  memory: { chars: number; tokens: number; items: number }
+  history: { count: number; chars: number; tokens: number }
+  totalTokens: number
 }
 // v0.3.7: 计划执行 —— 计划步骤/计划卡片类型(会话可持久化)
 export interface PlanStepView {

@@ -18,7 +18,7 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
   // 有密钥但还没有任何模型时，自动读取一次（新填密钥或打开已有配置都会触发；失败可手动点「读取模型」重试）
   const autoFired2 = React.useRef<Set<string>>(new Set())
   React.useEffect(() => {
-    const hasModels = !!mp && ((mp.imgModels || []).length > 0 || (mp.videoModels || []).length > 0 || (mp.audioModels || []).length > 0)
+    const hasModels = !!mp && ((mp.imgModels || []).length > 0 || (mp.videoModels || []).length > 0)
     if (!mp || !mp.baseUrl || !mp.apiKey || hasModels) return
     if (autoFired2.current.has(mp.id)) return
     autoFired2.current.add(mp.id)
@@ -65,15 +65,14 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
       <div style={S.card}>
         <div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text, marginBottom: 14 }}>模型列表</div>
         {(() => {
-          const allModels = [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])]
+          const allModels = [...(mp.imgModels || []), ...(mp.videoModels || [])]
           if (!allModels.length) return <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', padding: '12px 0' }}>暂无，点击"读取模型"从接口获取</div>
           return allModels.map((m: string, i: number) => {
             const caps = detectCaps([m])
             const removeM = (mm: string) => {
               const img = (mp.imgModels || []).filter(x => x !== mm)
               const vid = (mp.videoModels || []).filter(x => x !== mm)
-              const aud = (mp.audioModels || []).filter(x => x !== mm)
-              updateMediaProvider(mp.id, { imgModels: img, videoModels: vid, audioModels: aud })
+              updateMediaProvider(mp.id, { imgModels: img, videoModels: vid })
             }
             return <div key={i} style={U.betweenGap10Mb7}>
               <span style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m}</span>
@@ -86,8 +85,8 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
         })()}
         <div style={U.endMt12}>
           {modelInput2 !== null ? <>
-            <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput2} onChange={e => setModelInput2(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }} autoFocus />
-            <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; if (caps.includes('语音')) upd.audioModels = [...(mp.audioModels || []), mm]; if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) upd.imgModels = [...(mp.imgModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }}>确认</button>
+            <input style={{ ...S.inp, width: 200, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)' }} placeholder="模型编号…" value={modelInput2} onChange={e => setModelInput2(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片') || !caps.includes('视频')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }} autoFocus />
+            <button style={{ ...S.btn('primary'), height: 30 }} onClick={() => { if (modelInput2.trim()) { const mm = modelInput2.trim(); const caps = detectCaps([mm]); const upd: Record<string, unknown> = {}; if (caps.includes('图片') || !caps.includes('视频')) upd.imgModels = [...(mp.imgModels || []), mm]; if (caps.includes('视频')) upd.videoModels = [...(mp.videoModels || []), mm]; updateMediaProvider(mp.id, upd); setModelInput2(null) } }}>确认</button>
             <button style={{ ...S.btn('ghost'), height: 30 }} onClick={() => setModelInput2(null)}>取消</button>
           </> : <button style={S.btn('primary')} onClick={() => setModelInput2('')}>添加模型</button>}
           <button style={S.btn('ghost')} disabled={loading2} onClick={detect2}>{loading2 ? '读取中...' : '读取模型'}</button>
@@ -106,7 +105,7 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
               <button style={S.btn('ghost')} onClick={() => setDetectSel2([])}>清空</button>
             </div>
             <div style={U.scrollMb14}>
-              {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal2.items.some(x => x.caps[0] === g)).map(g => (
+              {['多模态', '文字', '图片', '视频'].filter(g => detectModal2.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>
                   <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: CAP_COLORS[g] || C.text, margin: '8px 0 4px' }}>{g}</div>
                   {detectModal2.items.filter(x => x.caps[0] === g).map(x => (
@@ -124,15 +123,13 @@ const MediaForm: React.FC<{ mediaSelIdx: number; showToast: (msg: string) => voi
               <button style={S.btn('primary')} disabled={!detectSel2.length} onClick={() => {
                 const cur = mediaProviders.find(pp => pp.id === detectModal2.providerId)
                 if (cur) {
-                  const img = [...(cur.imgModels || [])]; const vid = [...(cur.videoModels || [])]; const aud = [...(cur.audioModels || [])]
+                  const img = [...(cur.imgModels || [])]; const vid = [...(cur.videoModels || [])]
                   for (const m of detectSel2) {
                     const caps = detectCaps([m])
-                    if (caps.includes('图片')) img.push(m)
+                    if (caps.includes('图片') || !caps.includes('视频')) img.push(m)
                     if (caps.includes('视频')) vid.push(m)
-                    if (caps.includes('语音')) aud.push(m)
-                    if (!caps.includes('图片') && !caps.includes('视频') && !caps.includes('语音')) img.push(m)
                   }
-                  updateMediaProvider(cur.id, { imgModels: [...new Set(img)], videoModels: [...new Set(vid)], audioModels: [...new Set(aud)] })
+                  updateMediaProvider(cur.id, { imgModels: [...new Set(img)], videoModels: [...new Set(vid)] })
                 }
                 setDetectModal2(null); setDetectSel2([])
               }}>添加所选 ({detectSel2.length})</button>

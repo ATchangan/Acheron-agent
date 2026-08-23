@@ -3,7 +3,7 @@ import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { normalizeMemory } from '../shared/memory-utils'
 import { loadMemory, saveMemory, upsertFactDb, type EngineMemory } from '../engine/memory'
-import { listMemories, softDeleteMemory, setMemoryEmbedding, searchFts, searchVector } from '../db'
+import { listMemories, softDeleteMemory, setMemoryEmbedding, searchFts, searchVector, forgetMemoryText } from '../db'
 import { setEmbeddingConfig, embedText, embedBatch } from '../memory/embeddings'
 import { rrfFuse } from '../memory/searcher'
 
@@ -96,5 +96,21 @@ export function registerMemoryIpc(deps: {
       .filter(m => m.level !== 'pinned')
     for (const r of rows) softDeleteMemory(r.id as number)
     return true
+  })
+
+  // v0.4.3 记忆治理: "撤回即不复活" —— 用户主动遗忘, 物理删除 + 进遗忘清单
+  ipcMain.handle('memory:forget', (_e, content: string) => {
+    return forgetMemoryText(String(content || ''))
+  })
+
+  // v0.4.3 语义透明度: 告诉用户当前"语义记忆"是否真在跑(避免静默降级成纯关键词)
+  ipcMain.handle('memory:semanticStatus', () => {
+    try {
+      const g = (JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { general?: { embeddingBaseUrl?: unknown; embeddingModel?: unknown } })?.general || {}
+      const on = !!(g.embeddingBaseUrl && g.embeddingModel)
+      return { on, note: on ? '语义向量检索已启用（FTS 关键词 + 向量双路融合）' : '未配置嵌入模型：仅用关键词(FTS)检索，语义召回会退化' }
+    } catch {
+      return { on: false, note: '语义向量检索状态未知' }
+    }
   })
 }

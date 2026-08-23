@@ -1,5 +1,5 @@
 // CronView.tsx —— 定时任务页（状态编排；表单/过滤/列表已拆至子组件）
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { CronJob, MemoryData } from '../global'
 import { HourglassMark } from './themed-icons'
 import { isToday, type TaskMeta, type FilterTab } from './cron-utils'

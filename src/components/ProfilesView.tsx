@@ -1,5 +1,5 @@
 // ProfilesView.tsx —— v0.4.2 配置档案（Profiles）：多套设置快照，一键切换/新建/重命名/删除
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Users, Plus, Pencil, Trash2, Check, User } from 'lucide-react'
 import { useSettingsStore } from '../store/settings'
 import type { SettingsData } from '../global'

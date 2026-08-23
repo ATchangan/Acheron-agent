@@ -8,6 +8,9 @@ const FileIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="non
 
 export default function MemoryView() {
   const [pinnedFacts, setPinnedFacts] = useState<string[]>([])
+  const [facts, setFacts] = useState<string[]>([])
+  const [summaries, setSummaries] = useState<{ content: string; timestamp: number }[]>([])
+  const [semantic, setSemantic] = useState<{ on: boolean; note: string }>({ on: false, note: '' })
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState('')
   const [newPinned, setNewPinned] = useState('')
@@ -21,12 +24,17 @@ export default function MemoryView() {
       setLoading(true)
       const m = await window.huangquan.memory.load()
       setPinnedFacts(m.pinnedFacts || [])
+      setFacts((m.facts || []).slice(0, 60))
+      setSummaries((m.summaries || []).slice(0, 30))
       setStats({ pinned: (m.pinnedFacts || []).length, facts: (m.facts || []).length, summaries: (m.summaries || []).length })
     }
-    catch { setPinnedFacts([]) }
+    catch { setPinnedFacts([]); setFacts([]); setSummaries([]) }
     finally { setLoading(false) }
   }, [])
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    try { window.huangquan.memory.semanticStatus().then(s => setSemantic(s)).catch(() => {}) } catch { /* ignore */ }
+  }, [load])
 
   // 记忆读写失败不再产生未处理 rejection
   const addPinned = async () => {
@@ -39,13 +47,20 @@ export default function MemoryView() {
     } catch { showToast('保存失败') }
   }
 
-  const deletePinned = async (index: number) => {
+  // 撤回即不复活：物理删除 + 进遗忘清单；无 SQLite 时回退 JSON 删除
+  const forgetItem = async (content: string) => {
     try {
-      const m = await window.huangquan.memory.load()
-      ;const pf = m.pinnedFacts || []; pf.splice(index, 1); m.pinnedFacts = pf
-      await window.huangquan.memory.save(m)
-      setPinnedFacts([...(m.pinnedFacts || [])]); showToast('已删除')
-    } catch { showToast('删除失败') }
+      const ok = await window.huangquan.memory.forget(content)
+      if (!ok) {
+        const m = await window.huangquan.memory.load()
+        m.facts = (m.facts || []).filter(x => x !== content)
+        m.pinnedFacts = (m.pinnedFacts || []).filter(x => x !== content)
+        m.summaries = (m.summaries || []).filter(s => s.content !== content)
+        await window.huangquan.memory.save(m)
+      }
+      await load()
+      showToast('已忘却，不会再被想起')
+    } catch { showToast('操作失败') }
   }
 
   const s = {
@@ -75,6 +90,9 @@ export default function MemoryView() {
         <span style={U.textMuted}>在对话里说「记住…」就会自动写入</span>
       </div>
       <p style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)', marginBottom: 16 }}>唯一持久存储载体 — 系统规则、角色配置、个人偏好均存于此</p>
+      <p style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: semantic.on ? 'var(--success, #22c55e)' : 'var(--warning)', marginBottom: 16 }}>
+        {semantic.on ? '● 语义向量检索已启用（关键词 + 向量双路）' : '● ' + (semantic.note || '语义向量检索未启用，仅按关键词召回')}
+      </p>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <input style={s.inp} value={newPinned} onChange={e => setNewPinned(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPinned()} placeholder="添加置顶记忆..." />
@@ -85,10 +103,32 @@ export default function MemoryView() {
         pinnedFacts.map((f, i) => (
           <div key={i} style={s.card}>
             <span style={s.factText}>{f.length > 200 ? f.slice(0, 200) + '...' : f}</span>
-            <button style={s.btn('var(--danger)')} onClick={() => deletePinned(i)}>删除</button>
+            <button style={s.btn('var(--danger)')} onClick={() => forgetItem(f)}>忘却</button>
           </div>
         ))
       }
+
+      <div style={s.section}>
+        <div style={s.sectionTitle}>长期记忆（按相关度取用）</div>
+        {facts.length === 0 ? <div style={s.empty}>暂无长期记忆</div> :
+          facts.map((f, i) => (
+            <div key={i} style={s.card}>
+              <span style={s.factText}>{f.length > 220 ? f.slice(0, 220) + '...' : f}</span>
+              <button style={s.btn('var(--danger)')} onClick={() => forgetItem(f)}>忘却</button>
+            </div>
+          ))}
+      </div>
+
+      <div style={s.section}>
+        <div style={s.sectionTitle}>情景摘要（随时间衰减）</div>
+        {summaries.length === 0 ? <div style={s.empty}>暂无摘要</div> :
+          summaries.map((s2, i) => (
+            <div key={i} style={s.card}>
+              <span style={s.factText}>{s2.content.length > 220 ? s2.content.slice(0, 220) + '...' : s2.content}</span>
+              <button style={s.btn('var(--danger)')} onClick={() => forgetItem(s2.content)}>忘却</button>
+            </div>
+          ))}
+      </div>
 
       {toast && <div style={s.toast}>{toast}</div>}
     </div>

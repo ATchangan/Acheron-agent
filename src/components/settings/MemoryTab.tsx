@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import { useSettingsStore } from '../../store/settings'
-import { C, S, Toggle } from '../settings-ui'
-import type { MemoryData } from '../../global'
+import { S, Toggle } from '../settings-ui'
 import { U } from '../ui-styles'
 
 
@@ -10,20 +9,9 @@ export default function MemoryTab() {
   const g = useSettingsStore(s => s.general) || {}
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const save = (patch: Partial<import('../../types').GeneralSettings>) => { useSettingsStore.setState(s2 => ({ general: { ...(s2.general || {}), ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
-  const [memF, setMemF] = useState<string[]>([])
-  const [factsCount, setFactsCount] = useState(0)
-  const [summariesCount, setSummariesCount] = useState(0)
-  useEffect(() => {
-    window.huangquan.memory.load().then((m) => { setMemF(m?.pinnedFacts || []); setFactsCount((m?.facts || []).length); setSummariesCount((m?.summaries || []).length) }).catch(() => {})
-  }, [])
   return (
     <div style={U.pageBody}>
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, fontSize: 'calc(var(--ui-font-size) - 2px)', color: 'var(--text-secondary)' }} title="记忆占用：置顶永久保留，长期按相关度取用，摘要随时间衰减">
-        <span>置顶 <b style={{ color: C.accent }}>{memF.length}</b>/10</span>
-        <span>长期 <b style={{ color: C.accent }}>{factsCount}</b>/500</span>
-        <span>摘要 <b style={{ color: C.accent }}>{summariesCount}</b>/200</span>
-        <span style={{ color: C.muted }}>写满后旧内容会自动清理</span>
-      </div>
+      <div style={S.hint}>记忆内容（置顶 / 长期 / 摘要）在 <b>侧栏 → 记忆</b> 查看与编辑，此处仅调整记忆行为。</div>
       <div style={S.card}>
         <div style={S.section}>对话记忆（当前会话）</div>
         <div style={U.mt8}>
@@ -38,32 +26,6 @@ export default function MemoryTab() {
           <option value="clear">自动清理（节省资源）</option>
           <option value="keep24h">保留 24 小时以便恢复</option>
         </select>
-      </div>
-      <div style={S.card}><div style={S.section}>置顶记忆</div>
-        <div style={S.hint}>跨会话保存的事实，每次对话都会带上。按回车键添加。</div>
-        <input style={{ ...S.inp, marginTop: 10, marginBottom: 12 }} placeholder="添加置顶事实..." onKeyDown={async e => { if (e.key !== 'Enter') return; const v = (e.target as HTMLInputElement).value; if (!v) return; const m = await window.huangquan.memory.load(); m.pinnedFacts = [...(m.pinnedFacts || []), v]; await window.huangquan.memory.save(m); setMemF([...(m.pinnedFacts || [])]); (e.target as HTMLInputElement).value = '' }} />
-        {memF.length === 0 ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 2px)', textAlign: 'center', padding: 20 }}>暂无置顶记忆</div> : memF.map((f, i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: C.input, borderRadius: 7, marginBottom: 6 }}>
-          <span style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', color: C.text, flex: 1 }}>{f}</span>
-          <button style={{ ...S.btn('danger'), height: 26, padding: '0 10px', fontSize: 'calc(var(--ui-font-size) - 3px)' }} onClick={async () => { const m = await window.huangquan.memory.load(); const pf = m.pinnedFacts || []; pf.splice(i, 1); m.pinnedFacts = pf; await window.huangquan.memory.save(m); setMemF([...(m.pinnedFacts || [])]) }}>删除</button>
-        </div>)}
-      </div>
-      <div style={S.card}>
-        <div style={S.section}>长期记忆</div>
-        <div style={S.hint}>自动积累的事实和偏好，可浏览、搜索、删除。</div>
-        <div style={U.rightMb8}>
-          <button style={S.btn('ghost')} onClick={async () => {
-            const m = await window.huangquan.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [] }))
-            const facts = m.facts || []
-            if (!facts.length) { alert('暂无长期记忆') }
-            else { alert(facts.map((f: string, i: number) => (i + 1) + '. ' + f.slice(0, 200)).join('\n')) }
-          }}>浏览全部 ({factsCount})</button>
-          <button style={{ ...S.btn('danger'), marginLeft: 8 }} onClick={async () => {
-            if (!confirm('清空全部长期记忆？此操作不可撤销。')) return
-            const m = await window.huangquan.memory.load()
-            m.facts = []; await window.huangquan.memory.save(m)
-            alert('已清空')
-          }}>清空全部</button>
-        </div>
       </div>
       <div style={S.card}>
         <div style={S.section}>程序记忆（技能固化）</div>

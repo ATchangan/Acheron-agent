@@ -1,5 +1,5 @@
 // KnowledgeView.tsx —— 藏书阁（状态编排；导入/检索/列表/问答已拆至子组件）
-import React, { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { errMsg } from '../utils/safe'
 import { ScrollMark } from './themed-icons'
 import { DocMeta, SearchResult, DOC_TAG, SUPPORTED_FORMATS, baseName, parentDir } from './knowledge-utils'

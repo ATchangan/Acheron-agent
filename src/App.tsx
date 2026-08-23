@@ -5,10 +5,6 @@ import { useChatStore } from './store/chat'
 import { CUSTOM_CSS_MAX } from './store/display'
 import Sidebar from './components/Sidebar'
 import ChatView from './components/ChatView'
-import SettingsView from './components/SettingsView'
-import AgentsView from './components/AgentsView'
-import MemoryView from './components/MemoryView'
-import BrowserView from './components/BrowserView'
 import FloatBadge from './components/FloatBadge'
 import StatusBar from './components/StatusBar'
 import RiskConfirmCard from './components/RiskConfirmCard'
@@ -16,18 +12,25 @@ import TitleBar from './components/TitleBar'
 import RightRail from './components/RightRail'
 import CommandPalette from './components/CommandPalette'
 import OverlayView from './components/OverlayView'
-import SkillsPage from './components/SkillsPage'
-import ArtifactsView from './components/ArtifactsView'
-import CronPage from './components/CronPage'
-import ProfilesView from './components/ProfilesView'
-import CommandCenterView from './components/CommandCenterView'
-import KeysView from './components/KeysView'
 import ReadonlyThread from './components/ReadonlyThread'
 import FirstRunOverlay from './components/FirstRunOverlay'
 import WatchView from './components/WatchView'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Download } from 'lucide-react'
 import { matchCombo, loadKeybinds } from './store/keybinds'
+
+// v0.4.3: 重页面懒加载(进到对应视图才拉取), 缩小首屏 bundle
+const SettingsView = React.lazy(() => import('./components/SettingsView'))
+const AgentsView = React.lazy(() => import('./components/AgentsView'))
+const MemoryView = React.lazy(() => import('./components/MemoryView'))
+const BrowserView = React.lazy(() => import('./components/BrowserView'))
+const SkillsPage = React.lazy(() => import('./components/SkillsPage'))
+const ArtifactsView = React.lazy(() => import('./components/ArtifactsView'))
+const CronPage = React.lazy(() => import('./components/CronPage'))
+const ProfilesView = React.lazy(() => import('./components/ProfilesView'))
+const CommandCenterView = React.lazy(() => import('./components/CommandCenterView'))
+const KeysView = React.lazy(() => import('./components/KeysView'))
+const LazyFallback = () => <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 1px)' }}>加载中…</div>
 
 export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser' | 'files'
   | 'skills' | 'artifacts' | 'cron' | 'profiles' | 'command-center' | 'keys'
@@ -47,13 +50,13 @@ const LEGACY_THEME: Record<string, string> = { 'system': 'auto', 'dark-tech': 'b
 function resolveTheme(g: GeneralSettings): string {
   const t = g.theme
   // v0.4.2: 跟随系统 —— 深浅色实时跟随系统外观
-  if (t === 'auto') {
+  if (t === 'auto' || !t) {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   }
   if (THEME_WHITELIST.includes(t)) return t
   const legacy = LEGACY_THEME[g.theme] || LEGACY_THEME[g.themePreset || '']
   if (legacy) return legacy
-  return (g.customColors || g.customTheme) ? 'dark' : 'dark'
+  return (g.customColors || g.customTheme) ? 'dark' : 'auto'
 }
 
 function applyAppearance(g: GeneralSettings) {
@@ -269,6 +272,17 @@ export default function App() {
   }, [])
 
   // hash 路由 —— #browser = 独立无头浏览器窗口; #float = 悬浮窗; 其余 = 主窗口
+  // v0.4.3 系统级"随叫随到"/选中即问: 全局热键把剪贴板选中带进聊天草稿
+  useEffect(() => {
+    try {
+      const off = window.huangquan.hotkey.onAsk(text => {
+        if (!text) return
+        useChatStore.getState().setAskDraft(text)
+      })
+      return off
+    } catch { /* 非 Electron / 未暴露时忽略 */ }
+  }, [])
+
   const [routeHash, setRouteHash] = useState<string>(window.location.hash || '')
   useEffect(() => {
     const onHash = () => setRouteHash(window.location.hash || '')
@@ -302,7 +316,7 @@ export default function App() {
     const sid = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).get('sid') || ''
     return <WatchView sid={sid} />
   }
-  if (routeHash === '#browser') return <BrowserView />
+  if (routeHash === '#browser') return <React.Suspense fallback={<LazyFallback />}><BrowserView /></React.Suspense>
 
   useEffect(() => {
     useSettingsStore.getState().load()
@@ -377,9 +391,9 @@ export default function App() {
       <div className={'app-shell' + (panesFlipped ? ' hq-panes-flipped' : '') + (sidebarOpen ? '' : ' hq-sidebar-collapsed')}>
         {sidebarOpen && <Sidebar currentView={view} onNavigate={navigate} />}
         <div className="chat-main" style={{ paddingTop: 0 }}>
-          {view === 'browser' ? <BrowserView embedded />
-            : view === 'skills' ? <SkillsPage />
-            : view === 'artifacts' ? <ArtifactsView />
+          {view === 'browser' ? <React.Suspense fallback={<LazyFallback />}><BrowserView embedded /></React.Suspense>
+            : view === 'skills' ? <React.Suspense fallback={<LazyFallback />}><SkillsPage /></React.Suspense>
+            : view === 'artifacts' ? <React.Suspense fallback={<LazyFallback />}><ArtifactsView /></React.Suspense>
             : splitDir && splitSessionId ? (
               <div className={'hq-split hq-split-' + splitDir}>
                 <div className="hq-split-pane" style={{ flex: `${splitRatio} 1 0%` }}>
@@ -410,6 +424,7 @@ export default function App() {
       </div>
       <StatusBar hidden={statusHidden} onToggleHidden={() => setStatusHidden(v => !v)} />
       {/* v0.4.2 路由浮层：设置/角色编队/记忆 覆盖在聊天之上 */}
+      <React.Suspense fallback={<LazyFallback />}>
       {view === 'settings' && (
         <OverlayView title="设置" onClose={() => setView('chat')}>
           <SettingsView onNavigate={(v) => navigate(v as View)} initialTab={settingsTab || undefined} />
@@ -445,6 +460,7 @@ export default function App() {
           <KeysView />
         </OverlayView>
       )}
+      </React.Suspense>
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -481,6 +497,8 @@ export default function App() {
       {/* 固定定位浮层(风险确认/浏览器横幅)渲染在 flex 容器之外, 避免参与布局挤窄聊天区 */}
       <FloatBadge />
       <RiskConfirmCard />
+      {/* 角色角标: 右下角小黄泉(纯装饰, 不拦截点击), 低透明度避免喧宾夺主; 可点 设置→界面→自定义 CSS 隐藏 */}
+      <img src="huangquan.png" alt="" aria-hidden style={{ position: 'fixed', right: 16, bottom: 46, width: 54, height: 54, objectFit: 'contain', opacity: .45, pointerEvents: 'none', zIndex: 60, filter: 'drop-shadow(0 6px 16px rgba(0,0,0,.4))' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
     </>
   )
 }

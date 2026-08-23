@@ -1,5 +1,4 @@
 // CronPage.tsx —— v0.4.2 独立定时任务页（从设置 tab 提升）
-import React from 'react'
 import { HourglassMark } from './themed-icons'
 import CronView from './CronView'
 

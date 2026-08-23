@@ -1,12 +1,13 @@
 // electron/memory/decay.ts — 三档记忆衰减(v0.4.0 M3)
 // 每日 04:00 运行(可配): pinned 永存; important 60/360 天; normal 30/180 天(有访问历史延长)
 // 半衰期: normal 超一半天数时 confidence 减半(下限 1), 不删除
-import { getMemoriesForDecay, softDeleteMemory, setMeta, getMeta, setConfidenceValue, pruneToolOutputs, pruneAudit, optimizeDb, vacuumDb } from '../db'
+import { getMemoriesForDecay, softDeleteMemory, setMeta, getMeta, setConfidenceValue, pruneToolOutputs, pruneAudit, pruneSessionChunks, optimizeDb, vacuumDb } from '../db'
 
 const DAY = 24 * 3600 * 1000
 export const DECAY_LIMITS = { normal: 30, normalActive: 180, important: 60, importantActive: 360 }
 const TOOL_OUTPUT_RETENTION_DAYS = 30
 const AUDIT_RETENTION_DAYS = 180
+const SESSION_INDEX_RETENTION_DAYS = 180
 const VACUUM_INTERVAL_DAYS = 7
 
 export function decayLimit(level: 'normal' | 'important' | 'pinned', accessCount: number): number {
@@ -50,6 +51,7 @@ export function maybeRunDailyDecay(now = Date.now()): DecayResult | null {
   // 追加表的保留期清理(时间+条数双上限)与索引优化, 与衰减共用每日一次的机会
   pruneToolOutputs(TOOL_OUTPUT_RETENTION_DAYS * DAY)
   pruneAudit(AUDIT_RETENTION_DAYS * DAY)
+  pruneSessionChunks(SESSION_INDEX_RETENTION_DAYS * DAY)
   optimizeDb()
   const lastVacuum = getMeta('vacuum_last_run')
   const lastVacuumTs = lastVacuum ? Number(lastVacuum) || 0 : 0

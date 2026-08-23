@@ -21,6 +21,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      # v0.4.3: 版本号从 git tag 注入(仅 tag 推送), 保证 electron-updater 的 latest.yml 与 Release 版本一致
+      - name: 版本号同步到 git tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $ver = "$env:GITHUB_REF_NAME" -replace '^v',''
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$ver';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('version ->',p.version)"
+
       - name: 安装依赖
         run: npm ci
 
@@ -102,4 +110,4 @@ jobs:
             release/*.blockmap
             release/latest.yml
           overwrite: true
-          # 不用 generate_release_notes: 需要额外权限,且 release 说明由项目维护
+          generate_release_notes: true   # 自动生成发版说明(从 PR/commit); 需 contents:write, 已授予

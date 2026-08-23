@@ -1,5 +1,4 @@
 // src/components/settings/UiTab.tsx — 界面自定义(结构化显隐开关 + 信息密度 + 自定义 CSS)
-import React from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle } from '../settings-ui'
 import { U } from '../ui-styles'

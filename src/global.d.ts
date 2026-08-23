@@ -1,5 +1,5 @@
 ﻿export {}
-import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, LLMChatParams, ToolCallDelta, SearchResult, CronJob, McpServerInfo, TaskRecord, TraceEntry } from './types/domain'
+import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, LLMChatParams, ToolCallDelta, SearchResult, CronJob, McpServerInfo, TaskRecord, TraceEntry, AuditRow, ContextSnapshot } from './types/domain'
 
 declare global {
   interface Window {
@@ -51,6 +51,8 @@ declare global {
       },
       diagnostics: {
         check: () => Promise<{ name: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }[]>
+        audit: (filter?: { agent?: string; tool?: string; sid?: string; taskId?: string; limit?: number }) => Promise<AuditRow[]>
+        auditTasks: (limit?: number) => Promise<{ sid: string; taskId: string; agent: string; ts: number; tools: number }[]>
       },
       ishiki: { load: () => Promise<string> }
       skills: {
@@ -61,6 +63,11 @@ declare global {
         installLocal: (src: string) => Promise<string>
         pickLocal: () => Promise<string | null>
         delete: (name: string) => Promise<boolean | string>
+        suggest: (minCount?: number) => Promise<{ signature: string; count: number; tools: string[]; example: string; recent: number }[]>
+        createFromWorkflow: (signature: string, name: string) => Promise<boolean | string>
+        validate: (content: string) => Promise<{ ok: boolean; problems: { level: 'error' | 'warn'; msg: string }[] }>
+        write: (name: string, content: string) => Promise<boolean | string>
+        stats: (days?: number) => Promise<{ name: string; hit: number; trigger: number; ok: number; triggerRate: number; okRate: number }[]>
       }
       memory: {
         load: () => Promise<MemoryData>
@@ -69,6 +76,13 @@ declare global {
         addVector: (content: string) => Promise<boolean>
         importFile: (path: string) => Promise<boolean>
         clearVector: () => Promise<boolean>
+        forget: (content: string) => Promise<boolean>
+        semanticStatus: () => Promise<{ on: boolean; note: string }>
+      }
+      hotkey: {
+        set: (acc: string) => Promise<boolean>
+        get: () => Promise<string>
+        onAsk: (cb: (text: string) => void) => () => void
       }
       cron: {
         add: (expr: string, prompt: string) => Promise<{ ok: boolean; error?: string; id?: string }>
@@ -115,14 +129,12 @@ declare global {
         reject: (sid: string) => Promise<boolean>
         clarifyRespond: (sid: string, answer: string) => Promise<boolean>
         resume: (taskId: string) => Promise<boolean>
+        contextSnapshot: (sid: string) => Promise<ContextSnapshot | null>
         subscribe: () => Promise<boolean>
         onEvent: (cb: (ev: unknown) => void) => () => void
       }
       mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => Promise<string>
       mediaGen: (opts: { kind: 'img' | 'video'; prompt: string; providerId?: string; model?: string; ratio?: string; duration?: number }) => Promise<{ ok: boolean; path?: string; error?: string }>
-      tts: {
-        speak: (text: string, rate?: number) => Promise<boolean>
-      }
       getPaths: () => Promise<{ skillsDir: string; pluginsDir: string; workDir: string }>
       update: {
         check: () => Promise<{ ok: boolean; error?: string; version?: string; hasUpdate?: boolean; url?: string; assets?: { name: string; size: number; url: string; digest?: string }[]; notes?: string; current?: string }>,

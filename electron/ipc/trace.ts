@@ -93,7 +93,7 @@ export function registerTraceIpc(deps: { tracePath: string }): void {
       flushTrace()
       if (!fs.existsSync(tracePath)) return { ok: false, error: '轨迹文件不存在' }
       const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-      const defaultPath = join(os.homedir(), 'Downloads', 'Acheron-agent-轨迹-' + stamp + '.jsonl')
+      const defaultPath = join(os.homedir(), 'Downloads', 'Acheron-Agent-轨迹-' + stamp + '.jsonl')
       const r = await dialog.showSaveDialog({
         title: '导出引擎轨迹',
         defaultPath,
@@ -109,7 +109,7 @@ export function registerTraceIpc(deps: { tracePath: string }): void {
       const counts: Record<string, number> = {}
       for (const e of entries) counts[e.event] = (counts[e.event] || 0) + 1
       const summaryPath = r.filePath.replace(/\.jsonl$/i, '.md')
-      const md = '# Acheron-agent 引擎轨迹导出\n\n' +
+      const md = '# Acheron-Agent 引擎轨迹导出\n\n' +
         '- 导出时间: ' + new Date().toLocaleString('zh-CN') + '\n' +
         '- 事件总数: ' + entries.length + '\n' +
         '- 时间范围: ' + (entries[0]?.ts ? new Date(entries[0].ts).toLocaleString('zh-CN') : '-') + ' → ' + (entries[entries.length - 1]?.ts ? new Date(entries[entries.length - 1].ts).toLocaleString('zh-CN') : '-') + '\n\n' +

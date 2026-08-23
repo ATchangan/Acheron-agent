@@ -54,6 +54,15 @@ const STEPS: MigrationStep[] = [
       )
     },
   },
+  {
+    // v0.4.3 审计回放: 为既有库的 audit 表补 sid/task_id(用于按任务/会话还原决策时间线)
+    version: 3,
+    up: (db) => {
+      for (const col of ['sid TEXT', 'task_id TEXT']) {
+        try { db.exec('ALTER TABLE audit ADD COLUMN ' + col) } catch { /* 已存在则忽略 */ }
+      }
+    },
+  },
 ]
 
 function currentVersion(db: DbLike): number {

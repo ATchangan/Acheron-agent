@@ -1,5 +1,5 @@
 // zoom.tsx —— 图片点击缩放共享 store（ZoomableImage）
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 let zoomSrc: string | null = null
 const zoomListeners = new Set<() => void>()

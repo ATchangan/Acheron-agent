@@ -108,3 +108,36 @@ export function matchSkills(skillsDirs: string[], query: string, limit = 2): Ski
   }).filter(x => x.score > 0).sort((a, b) => b.score - a.score)
   return scored.slice(0, limit).map(x => x.d)
 }
+
+// v0.4.3 技能校验(4 规则): 必填/长度/正文结构/triggers 正则; 可选 tools 已知性(warn)
+export interface SkillProblem { level: 'error' | 'warn'; msg: string }
+export interface SkillValidation { ok: boolean; problems: SkillProblem[] }
+export function validateSkill(content: string, knownTools?: Set<string>): SkillValidation {
+  const problems: SkillProblem[] = []
+  const fm = /^---\s*\n([\s\S]*?)\n---\s*\n/.exec(String(content || ''))
+  if (!fm) {
+    problems.push({ level: 'error', msg: 'frontmatter 缺失或格式错误（需以 --- 包裹）' })
+    return { ok: false, problems }
+  }
+  const md = fm[1]
+  const field = (k: string) => { const m = new RegExp('^' + k + '\\s*:\\s*(.+)$', 'm').exec(md); return m ? m[1].trim() : '' }
+  const name = field('name'); const desc = field('description'); const triggers = field('triggers')
+  if (!desc) problems.push({ level: 'error', msg: '缺少必填字段: description' })
+  if (desc.length > 100) problems.push({ level: 'error', msg: 'description 超 100 字（当前 ' + desc.length + '）' })
+  if (name && /[^A-Za-z0-9\-\u4e00-\u9ff5 ]/.test(name)) problems.push({ level: 'warn', msg: 'name 建议用字母/数字/-/中文' })
+  if (!triggers) problems.push({ level: 'warn', msg: '缺少 triggers（不会按关键词自动匹配，只能手动或 read_skill 读取）' })
+  else {
+    for (const t of String(triggers || '').split('|').map(s => s.trim()).filter(Boolean)) {
+      try { new RegExp(t) } catch { problems.push({ level: 'error', msg: 'triggers 非法正则: ' + t }) }
+    }
+  }
+  const body = content.slice(fm[0].length)
+  if (!/##\s*(步骤|执行步骤|操作|触发条件|指令|使用说明)/.test(body)) problems.push({ level: 'warn', msg: '正文建议含 "## 步骤/操作" 等结构标题' })
+  const tools = field('tools')
+  if (tools && knownTools) {
+    for (const t of tools.split(/[|,]/).map(s => s.trim()).filter(Boolean)) {
+      if (!knownTools.has(t)) problems.push({ level: 'warn', msg: '未知工具: ' + t + '（注入后可能无法调用）' })
+    }
+  }
+  return { ok: !problems.some(p => p.level === 'error'), problems }
+}

@@ -1,5 +1,5 @@
 // KeysView.tsx —— v0.4.2  API Keys 管理页：服务商密钥脱敏展示/复制/删除 + 新增
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { KeyRound, Eye, EyeOff, Copy, Check, Trash2, Plus, X } from 'lucide-react'
 import { useSettingsStore } from '../store/settings'
 

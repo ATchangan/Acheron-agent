@@ -46,9 +46,11 @@ export interface AuditRow {
   resultSummary?: string | null
   durationMs?: number | null
   tokens?: number | null
+  sid?: string | null
+  taskId?: string | null
 }
 
-export interface AuditFilter { agent?: string; tool?: string; from?: number; to?: number; limit?: number }
+export interface AuditFilter { agent?: string; tool?: string; sid?: string; taskId?: string; from?: number; to?: number; limit?: number }
 
 export interface SessionMetaRow { sid: string; agent?: string | null; title?: string | null; stateJson?: string | null; createdAt?: number | null; updatedAt?: number | null }
 
@@ -170,6 +172,8 @@ function rowToMemory(r: Record<string, unknown>): MemoryRow {
 export function insertMemory(m: MemoryRow): number {
   if (!db) return 0
   try {
+    // 撤回即不复活: 已遗忘的相同内容禁止再次落库
+    if (isForgotten(m.content)) return 0
     const r = db.prepare(`INSERT INTO memories(agent, scope, level, layer, content, subject, relation, object, embedding, source_id, ts, last_access, access_count, superseded, confidence)
       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(m.agent, m.scope, m.level, m.layer, m.content, m.subject, m.relation, m.object,
@@ -205,6 +209,44 @@ export function markSuperseded(id: number): void {
   if (!db) return
   try { db.prepare('UPDATE memories SET superseded=1 WHERE id=?').run(id) } catch { /* 忽略 */ }
   vectorCache.delete(id)
+}
+
+// ─── 记忆"撤回即不复活"── ───
+// 用户主动遗忘: 记录 content 到遗忘清单(阻止复活) + 物理删除该记忆及其所有同内容副本(置顶/摘要/事实)。
+export function forgetMemory(id: number): boolean {
+  if (!db) return false
+  try {
+    const row = getMemoryById(id)
+    if (!row) return false
+    db.prepare('INSERT OR IGNORE INTO forgetting(content, ts) VALUES (?,?)').run(row.content, Date.now())
+    db.prepare('DELETE FROM memories WHERE content=?').run(row.content)
+    vectorCache.delete(id)
+    vectorCacheLoaded = false
+    return true
+  } catch { return false }
+}
+
+// 按内容遗忘(UI 只有 content 字符串): 进遗忘清单 + 物理删除所有同内容行
+export function forgetMemoryText(content: string): boolean {
+  if (!db) return false
+  try {
+    const c = String(content || '')
+    if (!c) return false
+    db.prepare('INSERT OR IGNORE INTO forgetting(content, ts) VALUES (?,?)').run(c, Date.now())
+    db.prepare('DELETE FROM memories WHERE content=?').run(c)
+    vectorCacheLoaded = false
+    return true
+  } catch { return false }
+}
+
+export function isForgotten(content: string): boolean {
+  if (!db) return false
+  try { return !!db.prepare('SELECT 1 FROM forgetting WHERE content=? LIMIT 1').get(String(content || '')) } catch { return false }
+}
+
+export function listForgotten(limit = 500): { content: string; ts: number }[] {
+  if (!db) return []
+  try { return db.prepare('SELECT content, ts FROM forgetting ORDER BY ts DESC LIMIT ?').all(Math.max(1, Math.min(2000, limit))) as { content: string; ts: number }[] } catch { return [] }
 }
 
 export function bumpConfidence(id: number): void {
@@ -392,8 +434,8 @@ export function getToolOutput(id: number): string | null {
 export function insertAudit(a: AuditRow): void {
   if (!db) return
   try {
-    db.prepare('INSERT INTO audit(ts, agent, tool, args_summary, result_summary, duration_ms, tokens) VALUES(?, ?, ?, ?, ?, ?, ?)')
-      .run(a.ts || Date.now(), a.agent ?? null, a.tool ?? null, a.argsSummary ?? null, a.resultSummary ?? null, a.durationMs ?? null, a.tokens ?? null)
+    db.prepare('INSERT INTO audit(ts, agent, tool, args_summary, result_summary, duration_ms, tokens, sid, task_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(a.ts || Date.now(), a.agent ?? null, a.tool ?? null, a.argsSummary ?? null, a.resultSummary ?? null, a.durationMs ?? null, a.tokens ?? null, a.sid ?? null, a.taskId ?? null)
   } catch { /* 忽略 */ }
 }
 
@@ -406,6 +448,8 @@ export interface AuditResult {
   resultSummary: string
   durationMs: number | null
   tokens: number | null
+  sid: string
+  taskId: string
 }
 
 export function queryAudit(filter: AuditFilter = {}): AuditResult[] {
@@ -415,10 +459,12 @@ export function queryAudit(filter: AuditFilter = {}): AuditResult[] {
     const args: unknown[] = []
     if (filter.agent) { conds.push('agent=?'); args.push(filter.agent) }
     if (filter.tool) { conds.push('tool=?'); args.push(filter.tool) }
+    if (filter.sid) { conds.push('sid=?'); args.push(filter.sid) }
+    if (filter.taskId) { conds.push('task_id=?'); args.push(filter.taskId) }
     if (filter.from) { conds.push('ts>=?'); args.push(filter.from) }
     if (filter.to) { conds.push('ts<=?'); args.push(filter.to) }
     const where = conds.length ? ' WHERE ' + conds.join(' AND ') : ''
-    const rows = db.prepare('SELECT id, ts, agent, tool, args_summary, result_summary, duration_ms, tokens FROM audit' + where + ' ORDER BY ts DESC LIMIT ?')
+    const rows = db.prepare('SELECT id, ts, agent, tool, args_summary, result_summary, duration_ms, tokens, sid, task_id FROM audit' + where + ' ORDER BY ts DESC LIMIT ?')
       .all(...args, Math.max(1, Math.min(2000, Number(filter.limit) || 100))) as Record<string, unknown>[]
     return rows.map(r => ({
       id: Number(r.id),
@@ -429,6 +475,8 @@ export function queryAudit(filter: AuditFilter = {}): AuditResult[] {
       resultSummary: String(r.result_summary || ''),
       durationMs: r.duration_ms == null ? null : Number(r.duration_ms),
       tokens: r.tokens == null ? null : Number(r.tokens),
+      sid: String(r.sid || ''),
+      taskId: String(r.task_id || ''),
     }))
   } catch { return [] }
 }
@@ -517,6 +565,29 @@ export function listSkillsStats(): SkillHitRow[] {
   try {
     const rows = db.prepare('SELECT name, description, hits FROM skills ORDER BY hits DESC LIMIT 200').all() as { name: string; description: string; hits: number }[]
     return rows.map(r => ({ name: r.name, description: String(r.description || ''), hits: Number(r.hits || 0) }))
+  } catch { return [] }
+}
+
+export interface SkillStatRow { name: string; hit: number; trigger: number; ok: number; triggerRate: number; okRate: number }
+// v0.4.3 命中统计: 按日聚合(service 0.7.0 评估数据源)。统计只增不改历史。
+export function recordSkillStat(name: string, field: 'hit' | 'trigger' | 'ok'): void {
+  if (!db) return
+  try {
+    const d = new Date()
+    const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    const col = field === 'trigger' ? 'trigger' : field === 'ok' ? 'ok' : 'hit'
+    db.prepare(`INSERT INTO skill_stats(name, ts, ${col}) VALUES(?, ?, 1) ON CONFLICT(name, ts) DO UPDATE SET ${col}=${col}+1`).run(name, ts)
+  } catch { /* 忽略 */ }
+}
+export function skillStats(days = 30): SkillStatRow[] {
+  if (!db) return []
+  try {
+    const cutoff = Date.now() - Number(days) * 86400 * 1000
+    const rows = db.prepare('SELECT name, SUM(hit) AS hit, SUM(trigger) AS trigger, SUM(ok) AS ok FROM skill_stats WHERE ts>=? GROUP BY name ORDER BY hit DESC').all(cutoff) as { name: string; hit: number; trigger: number; ok: number }[]
+    return rows.map(r => {
+      const hit = Number(r.hit || 0); const trigger = Number(r.trigger || 0); const ok = Number(r.ok || 0)
+      return { name: String(r.name || ''), hit, trigger, ok, triggerRate: hit ? trigger / hit : 0, okRate: hit ? ok / hit : 0 }
+    })
   } catch { return [] }
 }
 
@@ -648,6 +719,30 @@ export function pruneAudit(olderThanMs: number, keepMax = 50000): number {
     if (over > 0) {
       removed += Number((db.prepare('DELETE FROM audit WHERE id IN (SELECT id FROM audit ORDER BY ts ASC LIMIT ?)').run(over) as { changes: number }).changes)
     }
+    return removed
+  } catch { return 0 }
+}
+
+// 会话全文索引(搜索缓存)按时间 + 总量双重上限清理(它只在删会话时按 sid 删, 此前无增长治理)
+export function pruneSessionChunks(olderThanMs: number, keepMax = 50000): number {
+  if (!db) return 0
+  try {
+    const cutoff = Date.now() - olderThanMs
+    const delFts = db.prepare("INSERT INTO session_chunks_fts(session_chunks_fts, rowid, snippet) VALUES('delete', ?, ?)")
+    const del = db.prepare('DELETE FROM session_chunks WHERE rowid=?')
+    let removed = 0
+    db.exec('BEGIN')
+    try {
+      const old = db.prepare('SELECT rowid, snippet FROM session_chunks WHERE ts < ?').all(cutoff) as { rowid: number; snippet: string }[]
+      for (const r of old) { try { delFts.run(r.rowid, r.snippet) } catch { /* 忽略 */ } try { del.run(r.rowid) } catch { /* 忽略 */ } removed++ }
+      const row = db.prepare('SELECT COUNT(*) AS c FROM session_chunks').get() as { c?: number } | undefined
+      const over = Math.max(0, Number(row?.c || 0) - keepMax)
+      if (over > 0) {
+        const rows = db.prepare('SELECT rowid, snippet FROM session_chunks ORDER BY ts ASC LIMIT ?').all(over) as { rowid: number; snippet: string }[]
+        for (const r of rows) { try { delFts.run(r.rowid, r.snippet) } catch { /* 忽略 */ } try { del.run(r.rowid) } catch { /* 忽略 */ } removed++ }
+      }
+      db.exec('COMMIT')
+    } catch (e) { try { db.exec('ROLLBACK') } catch { /* 忽略 */ } throw e }
     return removed
   } catch { return 0 }
 }

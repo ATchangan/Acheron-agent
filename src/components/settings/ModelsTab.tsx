@@ -98,11 +98,11 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
         {(() => {
           const allNames = Object.values(GROUPS).flat()
           const allMediaNames = Object.keys(MEDIA_PRESETS)
-          const capOrder = ['多模态', '文字', '图片', '视频', '语音']
+          const capOrder = ['多模态', '文字', '图片', '视频']
           const cfgProvs = providers.filter(pp => !!pp.apiKey)
           const cfgMedias = mediaProviders.filter(mp => !!mp.apiKey)
           const capsOf = (kind: 'provider' | 'media', item: ProviderConfig | MediaProvider): string[] => {
-            const models = kind === 'provider' ? ('models' in item ? (item.models || []) : []) : [...((item as MediaProvider).imgModels || []), ...((item as MediaProvider).videoModels || []), ...((item as MediaProvider).audioModels || [])]
+            const models = kind === 'provider' ? ('models' in item ? (item.models || []) : []) : [...((item as MediaProvider).imgModels || []), ...((item as MediaProvider).videoModels || [])]
             return detectCaps(models)
           }
           const mainCap = (caps: string[]) => capOrder.find(c => caps.includes(c)) || '文字'
@@ -119,7 +119,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
                   if (pre && !existing.baseUrl && pre.url) useSettingsStore.getState().updateMediaProvider(existing.id, { baseUrl: pre.url })
                   setMediaSelIdx(mediaProviders.indexOf(existing))
                 }
-                else { const pre = MEDIA_PRESETS[name]; if (pre) { const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: [] as string[], videoModels: [] as string[], audioModels: [] as string[] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) } }
+                else { const pre = MEDIA_PRESETS[name]; if (pre) { const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: [] as string[], videoModels: [] as string[] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) } }
               }
             }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
               <span style={U.ellipsis}>{name}</span>
@@ -245,7 +245,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
               <button style={S.btn('ghost')} onClick={() => setDetectSel([])}>清空</button>
             </div>
             <div style={U.scrollMb14}>
-              {['多模态', '文字', '图片', '视频', '语音'].filter(g => detectModal.items.some(x => x.caps[0] === g)).map(g => (
+              {['多模态', '文字', '图片', '视频'].filter(g => detectModal.items.some(x => x.caps[0] === g)).map(g => (
                 <div key={g}>
                   <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', fontWeight: 700, color: CAP_COLORS[g] || C.text, margin: '8px 0 4px' }}>{g}</div>
                   {detectModal.items.filter(x => x.caps[0] === g).map(x => (

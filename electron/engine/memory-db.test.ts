@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import { join } from 'path'
-import { initDb, closeDb, listMemories, searchFts } from '../db'
+import { initDb, closeDb, listMemories, searchFts, forgetMemoryText, isForgotten } from '../db'
 import { loadMemory, saveMemory, upsertFactDb, recallMemoryDb, type EngineMemory } from './memory'
 
 const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'hq-memdb-test-'))
@@ -58,6 +58,20 @@ describe('SQLite 记忆主路径', () => {
     const rows = listMemories({ agent: '助手', scope: 'global', layer: 'L1' }).filter(m => m.content === '用户喜欢咖啡')
     expect(rows.length).toBe(1)
     expect(rows[0].confidence).toBe(2)
+  })
+
+  it('忘记后不再复活: forgetMemoryText 进遗忘清单并阻止再次落库', () => {
+    const content = '用户最讨厌香菜'
+    const id = upsertFactDb('助手', 'global', content, false)
+    expect(id).toBeGreaterThan(0)
+    expect(forgetMemoryText(content)).toBe(true)
+    // 物理删除
+    expect(listMemories({ agent: '助手', scope: 'global', layer: 'L1' }).some(m => m.content === content)).toBe(false)
+    // 进遗忘清单, 再次写入应被跳过(不复活)
+    expect(isForgotten(content)).toBe(true)
+    const again = upsertFactDb('助手', 'global', content, false)
+    expect(again).toBe(0)
+    expect(listMemories({ agent: '助手', scope: 'global', layer: 'L1' }).some(m => m.content === content)).toBe(false)
   })
 
   it('recallMemoryDb 无嵌入配置时仍走 FTS 关键词路', async () => {

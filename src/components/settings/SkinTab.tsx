@@ -21,7 +21,7 @@ const THEME_META = [
   { id: 'light', label: '浅色', dots: ['#f8faff', '#0053fd', '#17171a'] },
 ]
 const toHex = (v: string): string => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v) ? v : '#17181c'
-const currentTheme = (g: { theme?: string; themePreset?: string }): string => g.themePreset || g.theme || 'dark'
+const currentTheme = (g: { theme?: string; themePreset?: string }): string => g.themePreset || g.theme || 'auto'
 
 export default function SkinTab() {
   const g = useSettingsStore(s => s.general) || {}

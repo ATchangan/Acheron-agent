@@ -6,6 +6,7 @@ import { join } from 'path'
 import * as os from 'os'
 import { execFile } from 'child_process'
 import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
+import { queryAudit, type AuditFilter } from '../db'
 
 export interface DiagItem {
   name: string
@@ -258,4 +259,23 @@ export async function runEnvironmentCheck(deps: DiagDeps): Promise<DiagItem[]> {
 
 export function registerDiagnosticsIpc(deps: DiagDeps): void {
   ipcMain.handle('diagnostics:check', () => runEnvironmentCheck(deps))
+
+  // v0.4.3 审计回放: 按会话/任务/工具拉取结构化操作时间线(决策可回放)
+  ipcMain.handle('diagnostics:audit', (_e, filter?: { agent?: string; tool?: string; sid?: string; taskId?: string; limit?: number }) => {
+    return queryAudit((filter || {}) as AuditFilter)
+  })
+
+  // 审计回放: 按 sid 聚合最近一批任务, 供 UI 选任务后回放
+  ipcMain.handle('diagnostics:auditTasks', (_e, limit?: number) => {
+    const rows = queryAudit({ limit: Math.max(1, Math.min(1000, Number(limit) || 50)) })
+    const seen = new Map<string, { sid: string; taskId: string; agent: string; ts: number; tools: number }>()
+    for (const r of rows) {
+      if (!r.sid) continue
+      const key = r.sid + '::' + r.taskId
+      const cur = seen.get(key)
+      if (cur) { cur.tools += 1; cur.ts = Math.max(cur.ts, r.ts); if (!cur.agent) cur.agent = r.agent }
+      else seen.set(key, { sid: r.sid, taskId: r.taskId, agent: r.agent, ts: r.ts, tools: 1 })
+    }
+    return [...seen.values()].sort((a, b) => b.ts - a.ts)
+  })
 }

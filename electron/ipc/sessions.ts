@@ -156,7 +156,7 @@ export function registerSessionIpc(deps: {
         return out
       }
       // md
-      const lines: string[] = ['# Acheron-agent 对话历史', '']
+      const lines: string[] = ['# Acheron-Agent 对话历史', '']
       for (const s of all) { lines.push(`## ${s.title || '对话'}`, ''); for (const m of s.messages || []) { if (m.role === 'user' || (m.role === 'assistant' && m.content)) lines.push(`**${m.role === 'user' ? '用户' : '助手'}**：${(m.content || '').replace(/\n+/g, '\n\n')}`, '') } }
       const out = join(dir, `huangquan-history-${stamp}.md`)
       fs.writeFileSync(out, lines.join('\n'), 'utf-8')

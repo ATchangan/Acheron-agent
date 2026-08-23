@@ -56,9 +56,10 @@ const releaseRemoteSessions = (keepId: string): void => {
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '',
+  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '', askDraft: '',
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
+  setAskDraft: (text: string) => set({ askDraft: text }),
 
   load: async () => {
     if (!(window as unknown as { __engineBound?: boolean }).__engineBound) {

@@ -10,7 +10,7 @@ export interface SubResult {
 }
 
 // 子代理系统提示: 角色 + 任务要求 + 私有记忆(可选) + 交付 JSON 硬性约束
-export function buildSubSystemPrompt(ag: AgentDef, agentName: string, task: string, memoryText: string): string {
+export function buildSubSystemPrompt(ag: AgentDef, agentName: string, _task: string, memoryText: string): string {
   const mem = memoryText ? '\n\n## 私有记忆\n' + memoryText : ''
   return '## 当前身份\n' + ag.icon + ' ' + agentName + ' — ' + ag.role + '\n' + ag.prompt +
     '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作。' +

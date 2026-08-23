@@ -260,8 +260,89 @@ ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
     })
   })
 })
+
+// ─── 桌面/系统级输入(视觉 Agent 的"手": 截图让模型看, 键鼠让它动手) ───────────
+// 高风险: 会真实移动/点击/输入到任何前台应用 —— 一律 L3 确认(可「本次任务都批准/始终允许」)。
+const runPsFile = (script: string): Promise<string> => {
+  const tmpDir = join(userDataPath, 'desktop')
+  try { if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true }) } catch { /* 忽略 */ }
+  const fp = join(tmpDir, 'desktop_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '.ps1')
+  try { fs.writeFileSync(fp, script, 'utf-8') } catch { return Promise.resolve('E:无法写入临时脚本') }
+  return new Promise<string>(resolve => {
+    exec(getPowerShellCmdQuoted() + ' -NoProfile -NonInteractive -File "' + fp.replace(/"/g, '\\"') + '"', {
+      timeout: 30000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    }, (e, out) => {
+      try { fs.unlinkSync(fp) } catch { /* 忽略 */ }
+      resolve(e ? (out || e.message || '') : (out || ''))
+    })
+  })
+}
+const psUser32 = `$sig = @'
+using System;
+using System.Runtime.InteropServices;
+public class W {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+}
+'@; Add-Type -TypeDefinition $sig`
+const desktopConfirm = (detail: string, sid?: string, taskId?: string) => confirmRisk('L3', '桌面操作', detail, sid, taskId)
+
+ipcMain.handle('computer:desktopClick', async (_e, x: number, y: number, button: number, sid?: string, taskId?: string) => {
+  const sx = Math.max(0, Math.round(Number(x) || 0)); const sy = Math.max(0, Math.round(Number(y) || 0))
+  const cr = await desktopConfirm(`移动并点击 (${sx},${sy})${Number(button) === 2 ? '（右键）' : '（左键）'}`, sid, taskId)
+  if (cr !== 'allow') return 'E:permission denied: 已取消桌面点击' + (cr === 'timeout' ? '（确认超时）' : '')
+  const down = Number(button) === 2 ? '0x8' : '0x2'; const up = Number(button) === 2 ? '0x10' : '0x4'
+  return runPsFile(psUser32 + `; [W]::SetCursorPos(${sx}, ${sy}); [W]::mouse_event(${down},0,0,0,[UIntPtr]::Zero); [W]::mouse_event(${up},0,0,0,[UIntPtr]::Zero); 'ok'`)
+})
+
+ipcMain.handle('computer:desktopMove', async (_e, x: number, y: number, sid?: string, taskId?: string) => {
+  const sx = Math.max(0, Math.round(Number(x) || 0)); const sy = Math.max(0, Math.round(Number(y) || 0))
+  const cr = await desktopConfirm(`移动鼠标到 (${sx},${sy})`, sid, taskId)
+  if (cr !== 'allow') return 'E:permission denied: 已取消桌面移动' + (cr === 'timeout' ? '（确认超时）' : '')
+  return runPsFile(psUser32 + `; [W]::SetCursorPos(${sx}, ${sy}); 'ok'`)
+})
+
+ipcMain.handle('computer:desktopScroll', async (_e, x: number, y: number, delta: number, sid?: string, taskId?: string) => {
+  const sx = Math.max(0, Math.round(Number(x) || 0)); const sy = Math.max(0, Math.round(Number(y) || 0))
+  const d = Math.max(-1200, Math.min(1200, Math.round(Number(delta) || 0)))
+  const cr = await desktopConfirm(`滚轮 (${sx},${sy}) 滚动 ${d}`, sid, taskId)
+  if (cr !== 'allow') return 'E:permission denied: 已取消桌面滚动' + (cr === 'timeout' ? '（确认超时）' : '')
+  return runPsFile(psUser32 + `; [W]::SetCursorPos(${sx}, ${sy}); [W]::mouse_event(0x800,0,0,${d},[UIntPtr]::Zero); 'ok'`)
+})
+
+ipcMain.handle('computer:desktopType', async (_e, text: string, sid?: string, taskId?: string) => {
+  const t = String(text || '').slice(0, 2000)
+  if (!t) return 'E:need text'
+  const cr = await desktopConfirm(`向当前聚焦窗口输入文本（${t.slice(0, 40)}${t.length > 40 ? '…' : ''}）`, sid, taskId)
+  if (cr !== 'allow') return 'E:permission denied: 已取消文本输入' + (cr === 'timeout' ? '（确认超时）' : '')
+  try { require('electron').clipboard.writeText(t) } catch { /* 忽略 */ }
+  return runPsFile(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v'); 'ok'`)
+})
+
+ipcMain.handle('computer:desktopKey', async (_e, key: string, sid?: string, taskId?: string) => {
+  const k = String(key || '').slice(0, 40)
+  if (!k) return 'E:need key'
+  const cr = await desktopConfirm(`发送按键组合「${k}」(SendKeys 语法, 如 ^c=Ctrl+C, {ENTER}, %{F4})`, sid, taskId)
+  if (cr !== 'allow') return 'E:permission denied: 已取消按键' + (cr === 'timeout' ? '（确认超时）' : '')
+  return runPsFile(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${k.replace(/'/g, "''")}'); 'ok'`)
+})
+
+ipcMain.handle('computer:desktopScreenshot', async (_e, sid?: string, taskId?: string) => {
+  const cr = await desktopConfirm('截取全屏画面（截图供视觉分析）', sid, taskId)
+  if (cr !== 'allow') return 'E:permission denied: 已取消截图' + (cr === 'timeout' ? '（确认超时）' : '')
+  return new Promise<string>(resolve => {
+    const wd = getEffectiveWorkDir() || workspaceDir
+    const outDir = join(wd || userDataPath, '_aq_shots')
+    try { if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true }) } catch { /* 忽略 */ }
+    const fp = join(outDir, 'shot_' + Date.now() + '.png')
+    const script = `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left,$b.Top,0,0,$bmp.Size); $bmp.Save('${fp.replace(/'/g, "''")}',[System.Drawing.Imaging.ImageFormat]::Png); '${fp.replace(/'/g, "''")}'`
+    exec(getPowerShellCmdQuoted() + ' -NoProfile -NonInteractive -Command "' + script.replace(/"/g, '\\"') + '"', { timeout: 30000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (e, out) => resolve(e ? 'E:截图失败 ' + (e.message || '') : (out || fp)))
+  })
+})
+
 ipcMain.handle('computer:processList', async () => {
-  return new Promise<string>(resolve=>{ exec('tasklist /FO CSV /NH',{timeout:5000},(e,o)=>resolve(o||'')) })
+  return new Promise<string>(resolve=>{ exec('tasklist /FO CSV /NH',{timeout:5000},(_e,o)=>resolve(o||'')) })
 })
 ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
   return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })

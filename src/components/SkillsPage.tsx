@@ -1,5 +1,4 @@
 // SkillsPage.tsx —— v0.4.2 独立技能页（从设置 tab 提升为工作区页面）
-import React from 'react'
 import { BookOpen } from 'lucide-react'
 import SkillsTab from './settings/SkillsTab'
 

@@ -150,3 +150,12 @@ export interface EngineStartParams {
   agent?: string
   agentManual?: boolean
 }
+
+// v0.4.3 上下文内容可见(用户看到"它心里装着什么")
+export interface ContextSection { label: string; chars: number; tokens: number }
+export interface ContextSnapshot {
+  sections: ContextSection[]
+  memory: { chars: number; tokens: number; items: number }
+  history: { count: number; chars: number; tokens: number }
+  totalTokens: number
+}

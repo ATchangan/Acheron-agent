@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { C, S } from '../settings-ui'
-import type { TraceEntry } from '../../global'
+import type { TraceEntry, AuditRow } from '../../global'
 import { U } from '../ui-styles'
 
 
@@ -14,6 +14,10 @@ export default function DiagnosticsTab() {
   const [exportMsg, setExportMsg] = useState('')
   const [diag, setDiag] = useState<{ name: string; status: 'ok' | 'warn' | 'fail'; detail: string; fix?: string }[] | null>(null)
   const [diagBusy, setDiagBusy] = useState(false)
+  const [tasks, setTasks] = useState<{ sid: string; taskId: string; agent: string; ts: number; tools: number }[]>([])
+  const [selTask, setSelTask] = useState('')
+  const [replay, setReplay] = useState<AuditRow[]>([])
+  const [replayBusy, setReplayBusy] = useState(false)
 
   const runDiag = async () => {
     setDiagBusy(true)
@@ -36,6 +40,21 @@ export default function DiagnosticsTab() {
     } catch { setItems([]) }
   }
   useEffect(() => { load() }, [])
+
+  // v0.4.3 审计回放: 拉取最近任务批次, 选中某任务后还原其工具调用时间线
+  const loadTasks = async () => {
+    try { setTasks(await window.huangquan.diagnostics.auditTasks(50)) } catch { setTasks([]) }
+  }
+  useEffect(() => { loadTasks() }, [])
+  useEffect(() => {
+    if (!selTask) { setReplay([]); return }
+    const [sid, taskId] = selTask.split('::')
+    setReplayBusy(true)
+    window.huangquan.diagnostics.audit({ sid, taskId, limit: 300 })
+      .then(rows => setReplay([...rows].sort((a, b) => a.ts - b.ts)))
+      .catch(() => setReplay([]))
+      .finally(() => setReplayBusy(false))
+  }, [selTask])
 
   const shown = filter ? items.filter(x => x.level === filter || x.event.includes(filter) || (x.detail || '').includes(filter)) : items
 
@@ -68,6 +87,36 @@ export default function DiagnosticsTab() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+      <div style={S.card}>
+        <div style={S.section}>审计回放</div>
+        <div style={S.hint}>按任务还原"它当时做了什么": 每次工具调用的参数、结果、耗时与 token，逐步回看决策链，可追责、可复现。</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select style={{ ...S.sel, flex: 1, minWidth: 220 }} value={selTask} onChange={e => setSelTask(e.target.value)}>
+            <option value="">选择最近任务 / 会话…</option>
+            {tasks.map(t => {
+              const key = t.sid + '::' + t.taskId
+              return <option key={key} value={key}>{new Date(t.ts).toLocaleString('zh-CN')} · {t.agent || t.sid.slice(0, 6)} · {t.tools} 次工具</option>
+            })}
+          </select>
+          <button style={S.btn('ghost')} onClick={async () => { await loadTasks(); setSelTask('') }}>刷新</button>
+        </div>
+        {selTask && (
+          <div style={{ marginTop: 10, maxHeight: 300, overflowY: 'auto', border: '1px solid ' + C.border, borderRadius: 8 }}>
+            {replayBusy ? <div style={{ padding: 16, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>加载中…</div> :
+              replay.length === 0 ? <div style={{ padding: 16, color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)' }}>该任务尚无审计记录（多为核心模式，仅常用工具落审计）。</div> :
+              replay.map((re, i) => (
+                <div key={i} style={{ padding: '7px 12px', borderBottom: '1px solid ' + C.border, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 3px)', width: 52, flexShrink: 0, fontFamily: 'monospace' }}>{new Date(re.ts).toLocaleTimeString('zh-CN')}</span>
+                  <div style={U.flex1min0}>
+                    <div style={U.fs2b600}>{re.tool} <span style={{ fontWeight: 400, color: C.muted }}>· {re.durationMs != null ? (re.durationMs / 1000).toFixed(2) + 's' : ''}{re.tokens ? ' · ' + re.tokens + ' tok' : ''}</span></div>
+                    {re.argsSummary && <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>参数: {re.argsSummary}</div>}
+                    <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: re.resultSummary.startsWith('ERR') ? 'var(--danger)' : 'var(--text-secondary)', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>结果: {re.resultSummary}</div>
+                  </div>
+                </div>
+              ))}
           </div>
         )}
       </div>

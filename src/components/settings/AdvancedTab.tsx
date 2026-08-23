@@ -167,10 +167,6 @@ export default function AdvancedTab() {
         </div>
       </div>
       <div style={S.card}>
-        <div style={S.section}>语音合成 / 语音识别</div>
-        <Toggle checked={g.ttsEnabled === true} onChange={v => save({ ttsEnabled: v })} label="语音合成（TTS）" hint="消息下方的朗读按钮会读出回复（Windows 内置语音引擎，离线可用）" />
-      </div>
-      <div style={S.card}>
         <div style={S.section}>日志与调试</div>
         <div style={S.label}>日志级别</div>
         <select style={{ ...S.sel, width: '100%', marginTop: 6 }} value={g.logLevel || 'info'} onChange={e => save({ logLevel: e.target.value })}>

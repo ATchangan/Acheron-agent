@@ -17,7 +17,7 @@ export default function StrategyTab() {
     <div style={U.pageBody}>
       <div style={S.card}>
         <div style={S.section}>模型选择</div>
-        <div style={S.hint}>为对话、视觉、图片、视频、语音分别选择使用的模型；未配置时自动用默认供应商</div>
+        <div style={S.hint}>为对话、视觉、图片、视频分别选择使用的模型；未配置时自动用默认供应商</div>
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '10px 0 6px' }}>文字模型（联动供应商）</div>
         <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>主对话模型</div><div style={S.hint}>由聊天输入框右侧模型选择器指定（选择即生效），此处不再单独设置</div></div>
         <div style={S.row}><div style={S.label}>长文本模型</div><select style={S.sel} value={g.longTextModel || ''} onChange={e => save({ longTextModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>文档分析 / 长上下文任务</div></div>
@@ -39,7 +39,7 @@ export default function StrategyTab() {
             hits.forEach((m: string) => { const id = pname + '::' + m; if (!visCands.some(c => c.id === id)) visCands.push({ id, label: pname + ' · ' + m, pname, mname: m, keyed }) })
           }
           providers.forEach(pr => pushFrom(pr.name, pr.models || [], !!pr.apiKey))
-          mediaProviders.forEach(mp => pushFrom(mp.name, [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])], !!mp.apiKey))
+          mediaProviders.forEach(mp => pushFrom(mp.name, [...(mp.imgModels || []), ...(mp.videoModels || [])], !!mp.apiKey))
           providers.forEach(pr => { if (pr.apiKey && (pr.models || []).length && !visCands.some(c => c.pname === pr.name)) visCands.push({ id: pr.name + '::' + (pr.models || [])[0], label: pr.name + ' · ' + (pr.models || [])[0] + '（自动）', pname: pr.name, mname: (pr.models || [])[0], keyed: true }) })
           // 只保留当前仍有效的候选 —— 过期条目(供应商已删/模型已清/绘图模型)不再占排序位, 勾选后从 #1 开始
           const curList: string[] = (Array.isArray(g.visionModels) ? [...g.visionModels] : (g.visionModel ? [g.visionModel] : []))
@@ -63,7 +63,7 @@ export default function StrategyTab() {
               {visCands.map(c => {
                 const idx = curList.indexOf(c.id)
                 const on = idx >= 0
-                const alive = providers.some(pr => pr.name === c.pname && (pr.models || []).includes(c.mname)) || mediaProviders.some(mp => mp.name === c.pname && [...(mp.imgModels || []), ...(mp.videoModels || []), ...(mp.audioModels || [])].includes(c.mname))
+                const alive = providers.some(pr => pr.name === c.pname && (pr.models || []).includes(c.mname)) || mediaProviders.some(mp => mp.name === c.pname && [...(mp.imgModels || []), ...(mp.videoModels || [])].includes(c.mname))
                 return (
                   <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 2px', fontSize: 'calc(var(--ui-font-size) - 2px)', color: on ? C.text : C.label }}>
                     <input type="checkbox" checked={on} onChange={() => toggleVis(c.id)} style={{ accentColor: C.accent }} />
@@ -105,11 +105,6 @@ export default function StrategyTab() {
   <div style={S.row}><div style={S.label}>默认模式</div><select style={S.sel} value={g.mediaVideoMode || 'text2video'} onChange={e => save({ mediaVideoMode: e.target.value })}><option value="text2video">文生视频</option><option value="image2video">图生视频</option></select></div>
         <StepSetting label="默认时长" hint="视频生成默认时长" value={g.mediaVideoDuration || 5} min={4} max={15} unit=" 秒" onChange={v => save({ mediaVideoDuration: v })} />
         <Toggle checked={g.autoMediaVideo !== false} onChange={v => save({ autoMediaVideo: v })} label="自动生视频" hint="对话中遇到「生成/制作一个视频」等需求时自动调用生成工具(关闭后仅用户明确要求才生成)" />
-      </div>
-      <div style={S.card}>
-        <div style={S.section}>语音识别 / 合成（联动供应商）</div>
-        <div style={S.row}><div style={S.label}>默认平台</div><select style={S.sel} value={g.mediaAudioProvider || ''} onChange={e => save({ mediaAudioProvider: e.target.value })}><option value="">自动探测</option>{mediaProviders.filter(mp2 => (mp2.audioModels || []).length).map(mp2 => <option key={mp2.id} value={mp2.id}>{mp2.name}</option>)}</select></div>
-        <div style={S.row}><div style={S.label}>默认模型</div><select style={S.sel} value={g.mediaAudioModel || ''} onChange={e => save({ mediaAudioModel: e.target.value })}><option value="">跟随平台默认</option>{mediaProviders.filter(mp2 => (mp2.audioModels || []).length).flatMap(mp2 => (mp2.audioModels || []).map(m => ({ id: mp2.id + '::' + m, label: mp2.name + ' · ' + m }))).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select></div>
       </div>
     </div>
   )

@@ -32,18 +32,21 @@ export const GROUPS: Record<string, string[]> = {
   图片: ['Agnes', '即梦Jimeng'],
   视频: ['即梦Jimeng'],
 }
-export const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean }> = {
-  'Agnes': { type: 'OpenAI Compatible', url: 'https://apihub.agnes-ai.com/v1' },
-  '即梦Jimeng': { type: 'OpenAI Compatible', url: 'https://ark.cn-beijing.volces.com/api/v3' },
-  '可灵Kling': { type: 'OpenAI Compatible', url: 'https://api.klingai.com' },
-  'Runway': { type: 'OpenAI Compatible', url: 'https://api.runwayml.com/v1' },
-  'Pika': { type: 'OpenAI Compatible', url: 'https://api.pika.art/v1' },
+// 媒体供应商预置唯一来源(新增需同时维护 img/video 能力数组)
+export const MEDIA_PRESETS: Record<string, { type: string; url: string; noKey?: boolean; img?: string[]; video?: string[] }> = {
+  '即梦Jimeng': { type: 'multi', url: 'https://ark.cn-beijing.volces.com/api/v3', img: ['seedream-4.0', 'seedream-3.0', 'cogview-4'], video: ['seedance2.0', 'seedance2.0fast', 'doubao-seedance'] },
+  'Agnes': { type: 'multi', url: 'https://apihub.agnes-ai.com/v1', img: ['agnes-image', 'agnes-flux'], video: ['agnes-video'] },
+  '可灵Kling': { type: 'multi', url: 'https://api.klingai.com/v1', img: ['kling-v1', 'kolors'], video: ['kling-v2', 'kling-v2.1'] },
+  'Runway': { type: 'video', url: 'https://api.runwayml.com/v1', video: ['gen3a_turbo', 'gen4'] },
+  'Pika': { type: 'video', url: 'https://api.pika.art/v1', video: ['pika-2.0', 'pika-1.5'] },
   'Suno': { type: 'OpenAI Compatible', url: 'https://api.suno.ai/v1' },
-  'Whisper本地': { type: 'OpenAI Compatible', url: 'http://127.0.0.1:1234/v1', noKey: true },
-  'ChatTTS本地': { type: 'OpenAI Compatible', url: 'http://127.0.0.1:9880/v1' },
   '豆包(火山方舟)': { type: 'OpenAI Compatible', url: 'https://ark.cn-beijing.volces.com/api/v3' },
+  'Midjourney': { type: 'image', url: 'https://api.midjourney.com/v1', img: ['mj-v7', 'mj-v6.1'] },
+  'Stable Diffusion': { type: 'image', url: 'http://127.0.0.1:7860', noKey: true, img: ['sd-1.5', 'sd-xl', 'flux.1-dev'] },
+  '通义万相': { type: 'multi', url: 'https://dashscope.aliyuncs.com/api/v1', img: ['wanx-v1', 'wanx2.1-t2i-turbo'], video: ['wanx2.1-t2v-turbo'] },
+  '文心一格': { type: 'image', url: 'https://aip.baidubce.com', img: ['ernie-vilg-v3'] },
 }
-export const CAP_COLORS: Record<string, string> = { '多模态': '#a78bfa', '文字': '#60a5fa', '图片': '#34d399', '视频': '#fbbf24', '语音': '#f472b6' }
+export const CAP_COLORS: Record<string, string> = { '多模态': '#a78bfa', '文字': '#60a5fa', '图片': '#34d399', '视频': '#fbbf24' }
 export const detectCaps = (models: string[]): string[] => {
   const caps = new Set<string>()
   for (const m of models || []) {
@@ -54,8 +57,6 @@ export const detectCaps = (models: string[]): string[] => {
     if (/(image|img|flux|dall|sdxl|stable-diffusion|seedream|cogview|wanx|kolors|ernie-vilg|midjourney|draw|文生图|图生图|text2img|t2i|image-gen|imagegen|photogen|qwen-image|hunyuan-image|recraft|ideogram|fooocus|comfyui|imagen)/.test(ml)) caps.add('图片')
     // 视频生成
     if (/(video|vid|sora|kling|runway|pika|veo|seedance|gen-?[345]|keling|lumina|cosmos|hunyuan-video|qwen-video|t2v|i2v|text2video|文生视频|图生视频)/.test(ml)) caps.add('视频')
-    // 语音/音频
-    if (/(asr|tts|whisper|voice|speech|audio|transcribe|chattts|cosyvoice|funasr|sensevoice|spark-tts|doubao-tts|minimax-speech|qwen-audio|语音|音频|朗读)/.test(ml)) caps.add('语音')
   }
   if (!caps.size) caps.add('文字')
   return [...caps]

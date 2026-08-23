@@ -1,5 +1,5 @@
 // ReadonlyThread.tsx —— v0.4.2 分栏会话的只读线程：复用回合结构与 Markdown 管线，无编辑/发送交互
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, X, ChevronDown } from 'lucide-react'
 import { StreamMarkdown } from './StreamMarkdown'
 import type { Message } from '../global'

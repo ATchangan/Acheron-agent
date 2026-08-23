@@ -12,10 +12,12 @@ export default defineConfig({
     rollupOptions: {
       input: resolve(__dirname, 'src/index.html'),
       output: {
-        // 分包: 框架/渲染库/图标 独立 chunk, 首屏与更新后缓存更友好
+        // 分包: 框架/图标/流式渲染栈/状态 独立 chunk, 首屏与更新后缓存更友好
         manualChunks: {
           react: ['react', 'react-dom'],
           icons: ['lucide-react'],
+          stream: ['@streamdown/code', '@streamdown/math', '@assistant-ui/react-streamdown', 'katex'],
+          state: ['zustand'],
         },
       },
     },

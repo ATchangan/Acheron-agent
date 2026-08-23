@@ -223,10 +223,10 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
       {/* 品牌区(: logo + 名称 + 在线状态) */}
       <div className="sidebar-top-bar">
         <div className="sidebar-brand">
-          <div className="sidebar-brand-logo">泉</div>
+          <img className="sidebar-brand-logo" src="huangquan.png" alt="黄泉" style={{ background: 'var(--bg-elevated)', objectFit: 'cover', objectPosition: 'center 28%' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
           <div className="sidebar-brand-text">
             <div className="sidebar-brand-row">
-              <span className="sidebar-brand-name">黄泉 Agent</span>
+              <span className="sidebar-brand-name">Acheron-Agent</span>
               <span className="sidebar-status-dot" title="在线" />
             </div>
           </div>
@@ -287,6 +287,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             </div>
             <span className="hq-sb-count">{filtered.length}</span>
             <span className="hq-sb-spacer" />
+            <span className="sb-session-tools">
             <button
               type="button"
               className={'hq-sb-mini' + (showArchived ? ' active' : '')}
@@ -324,6 +325,7 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
             >
               <LayoutList size={12} />
             </button>
+            </span>
           </div>
 
           {/* 会话搜索 */}

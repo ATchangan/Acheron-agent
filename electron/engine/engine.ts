@@ -1,4 +1,4 @@
-// electron/engine/engine.ts — Acheron-agent 独立内核(v0.3.3)
+// electron/engine/engine.ts — Acheron-Agent 独立内核(v0.3.3)
 // Agent 主循环完全运行在主进程: LLM 直连(不经渲染层)、工具直接分发、任务可落盘断点恢复。
 // 渲染层只负责: 发送启动请求、消费事件流、展示结果。
 import { v4 as uuidv4 } from 'uuid'
@@ -8,12 +8,12 @@ import { Notification } from 'electron'
 import type { EngineEvent, EngineMessage, EngineProvider, EngineSettings, EngineStartParams, EngineToolCall, EngineToolSpec, EngineUsage, PlanStep } from './types'
 import { getAgents, type AgentDef } from './agents'
 import { normalizeAgentName } from '../shared/agents-data'
-import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult, extractKeyInfo } from './context'
+import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult, extractKeyInfo, summarizeContext } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
 import { loadMemory, saveMemory, memoryBlockText, addLesson, scanMemoryText, type EngineMemory } from './memory'
 import { streamChat, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
-import { planNeedsVerify as planNeedsVerifyCore, planHasVerification as planHasVerificationCore, type PlanStepData } from './plan-core'
+import { planNeedsVerify as planNeedsVerifyCore, type PlanStepData } from './plan-core'
 import { pickInitialModel, resolveModel as resolveModelOf, resolveThinkLevel as resolveThinkLevelOf, visionCandidates } from './model-router'
 import { listSkills, matchSkills } from './skill-files'
 import { runHooks } from './hooks'
@@ -31,7 +31,7 @@ import { invokeHandler } from './registry'
 import { saveToolOutput, insertAudit } from '../db'
 import { detectTaskType, routeProfile } from '../llm/gateway'
 import { enqueueLocalVision } from '../llm/vision'
-import { recordSkillHit } from '../db'
+import { recordSkillHit, recordSkillStat } from '../db'
 
 function agentMemoryScope(general: EngineSettings, agent?: string): 'global' | 'private' {
   if (!agent) return 'global'
@@ -78,6 +78,12 @@ export class AgentEngine {
       checkpoint: (task, round) => this.checkpoint(task, round),
       recordUsage: (task, rid, u, modelOverride) => this.recordUsage(task, rid, u, modelOverride),
     })
+  }
+
+  // v0.4.3 上下文内容可见: 返回某个会话最近一次请求的上下文组成(供 UI 报表)
+  getContextSnapshot(sid: string): unknown {
+    const t = this.tasks.get(String(sid || ''))
+    return t?.contextSnapshot ?? null
   }
 
   private nextGen(sid: string): number {
@@ -405,9 +411,13 @@ export class AgentEngine {
       task.skillsCache = listSkills(this.deps.skillsDirs || []).filter(s => !hiddenSkills.has(s.name))
       // v0.4.0 M8: 按用户消息匹配技能(triggers 正则 > description 关键词), top2 注入, 命中计数落库
       if (task.g.perf?.skillInject !== false) {
-        const matched = matchSkills(this.deps.skillsDirs || [], task.content, 2).filter(s => !hiddenSkills.has(s.name))
+        const allMatches = matchSkills(this.deps.skillsDirs || [], task.content, 99).filter(s => !hiddenSkills.has(s.name))
+        const matched = allMatches.slice(0, 2) // 预算: 最多注入 2 个技能(与 0.4.0 一致)
         task.matchedSkills = matched.map(s => ({ name: s.name, body: s.body }))
-        for (const s of matched) recordSkillHit(s.name)
+        for (const s of matched) { recordSkillHit(s.name); recordSkillStat(s.name, 'hit') }
+        if (allMatches.length > matched.length) {
+          this.trace('warn', 'skill.budget-truncate', `命中 ${allMatches.length} 个技能，按预算注入 top ${matched.length}，截断 ${allMatches.length - matched.length} 个`, task.sid, task.taskId)
+        }
       } else {
         task.matchedSkills = []
       }
@@ -679,11 +689,6 @@ export class AgentEngine {
     return planNeedsVerifyCore(task.planSteps as PlanStepData[])
   }
 
-  // 修改之后是否有验证步骤(read 确认 / exec_command / codebox)
-  private planHasVerification(task: TaskState, firstWriteIdx = -1): boolean {
-    return planHasVerificationCore(task.planSteps as PlanStepData[], firstWriteIdx)
-  }
-
   // 消息模型: 任务流只允许「用户消息 / 步骤卡 / 最终回复」三种消息。
   // 流式文字走临时通道(不落消息), 步骤文字随步骤卡落一条, 最终回复作为独立消息追加。
   // 不创建占位消息 → 不存在“卡片前重复”的架构性可能。
@@ -770,6 +775,8 @@ export class AgentEngine {
     task.messages = task.messages.map(m => m._inject ? { ...m, _inject: false } : m)
     // v0.3.7: Goal 生命周期收尾
     task.goal = { ...task.goal, status: status === 'done' ? 'completed' : status === 'failed' ? 'failed' : 'aborted' }
+    // v0.4.3 命中统计: 本轮任务成功 → 为命中的技能记 ok(成功率真实生效)
+    if (status === 'done') { for (const s of task.matchedSkills || []) try { recordSkillStat(s.name, 'ok') } catch { /* 忽略 */ } }
     // v0.3.7: 收尾未完成步骤 —— 中止标 aborted, 失败标 failed
     if (status !== 'done') this.planCloseAll(task, status === 'failed' ? 'failed' : 'aborted', status === 'failed' ? (error || '任务失败') : (error || '任务中止'))
     else {
@@ -816,7 +823,7 @@ export class AgentEngine {
     // 自省整改 #13: 后台/并行任务完成通知(设置→引擎 开启 notifyTaskDone 后生效)
     if (task.g.notifyTaskDone === true && status === 'done') {
       try {
-        new Notification({ title: 'Acheron-agent 任务完成', body: String(task.content || '').slice(0, 80) }).show()
+        new Notification({ title: 'Acheron-Agent 任务完成', body: String(task.content || '').slice(0, 80) }).show()
       } catch { /* 通知失败不影响任务 */ }
     }
   }
@@ -1033,11 +1040,12 @@ export class AgentEngine {
 
   private buildMsgs(task: TaskState, withImages: boolean, forceWithImages: boolean): unknown[] {
     const agents = getAgents(task.g.agentOverrides as Record<string, Partial<AgentDef>> | undefined)
+    const sp = buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', task.skillsCache || listSkills(this.deps.skillsDirs || []), task.g.planGate === true && !task.planApproved)
     const messages = buildContextualMessages(task.messages, forceWithImages || withImages, {
       g: task.g,
       cl: getModelContextLimit(task.model),
       spIshiki: String(task.g.ishiki || ''),
-      sp: buildPrompt(task.g.mode || 'work', String(task.g.ishiki || ''), task.g, agents, task.g.workDir || '', task.skillsCache || listSkills(this.deps.skillsDirs || []), task.g.planGate === true && !task.planApproved),
+      sp,
       agent: task.agent,
       handoffFrom: task.handoffAt,
       memoryText: task.memoryText,
@@ -1050,6 +1058,8 @@ export class AgentEngine {
       keyInfo: task.g.mode !== 'chat' ? extractKeyInfo(task.goal.objective, task.planSteps, task.toolLog) : '',
       skillBodies: task.matchedSkills,
     })
+    // v0.4.3 上下文内容可见: 记录本次请求"心里装着什么", 供前端回看
+    task.contextSnapshot = summarizeContext(sp, task.memoryText, task.messages)
     return messages as unknown[]
   }
 
@@ -1163,6 +1173,8 @@ export class AgentEngine {
         resultSummary: (r.startsWith('E:') ? 'ERR ' : '') + r.slice(0, 200),
         durationMs: Date.now() - t0,
         tokens: null,
+        sid: task.sid,
+        taskId: task.taskId,
       })
     } catch { /* 审计失败不影响任务 */ }
     runHooks(task.g, 'tool-after', { tool: tc.name, sid: task.sid, taskId: task.taskId, result: r.slice(0, 200), agent: agentVar })

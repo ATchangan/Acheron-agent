@@ -46,8 +46,8 @@ export class AppShell {
   createMenu(): void {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {
-        label: 'Acheron-agent', submenu: [
-          { label: '关于Acheron-agent', role: 'about' }, { type: 'separator' },
+        label: 'Acheron-Agent', submenu: [
+          { label: '关于Acheron-Agent', role: 'about' }, { type: 'separator' },
           { label: '退出', accelerator: 'CmdOrCtrl+Q', click: () => { this.deps.setQuitting(true); app.quit() } },
         ],
       },
@@ -107,9 +107,12 @@ export class AppShell {
       const s = JSON.parse(fs.readFileSync(this.deps.settingsPath, 'utf-8'))
       savedTheme = s?.general?.theme || s?.general?.themePreset
     } catch { /* ignore */ }
+    // v0.4.3: 开发热更新 —— 设置 HQ_DEV_URL 时(dev.cjs)主窗口加载 Vite dev server, 与生产 dist 隔离
+    const devUrl = process.env.HQ_DEV_URL ? String(process.env.HQ_DEV_URL) : ''
+    const localOrigin = devUrl || ('http://127.0.0.1:' + this.deps.serverPort())
     const win = new BrowserWindow({
       width: 1280, height: 860, minWidth: 900, minHeight: 600,
-      title: 'Acheron-agent', icon: join(this.deps.resourcesDir, 'icon.png'),
+      title: 'Acheron-Agent', icon: join(this.deps.resourcesDir, 'icon.ico'),
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
       backgroundColor: '#08080f', show: false, frame: false,
       titleBarStyle: 'hidden',
@@ -118,8 +121,7 @@ export class AppShell {
     this.mainWindow = win
     // 聊天 Markdown 外链/任何 window.open 都不能让主窗口离开本地应用页, 一律交给系统默认浏览器打开
     win.webContents.on('will-navigate', (e, url) => {
-      const local = 'http://127.0.0.1:' + this.deps.serverPort()
-      if (url.startsWith(local)) return
+      if (url.startsWith(localOrigin)) return
       e.preventDefault()
       if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => {})
     })
@@ -156,7 +158,7 @@ export class AppShell {
       const recent = this.countRecentCrashes()
       if (recent >= 3) {
         try {
-          new Notification({ title: 'Acheron-agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
+          new Notification({ title: 'Acheron-Agent 渲染进程频繁崩溃', body: '近 7 天已崩溃 ' + recent + ' 次。建议在 设置→外观 中将渲染方式切换为 CPU 模式。' }).show()
         } catch { /* 忽略 */ }
       }
       // 延迟重建窗口: 等旧渲染进程完全退出后再创建全新 BrowserWindow。
@@ -172,7 +174,7 @@ export class AppShell {
         }, 1200)
       }
     })
-    win.loadURL('http://127.0.0.1:' + this.deps.serverPort() + '/index.html')
+    win.loadURL(devUrl || ('http://127.0.0.1:' + this.deps.serverPort() + '/index.html'))
     win.once('ready-to-show', () => this.mainWindow?.show())
     win.on('closed', () => {
       if (this.reloadTimer) { clearTimeout(this.reloadTimer); this.reloadTimer = null }
@@ -205,7 +207,7 @@ export class AppShell {
   createTray(): void {
     const icon = nativeImage.createFromPath(join(this.deps.resourcesDir, 'icon.png'))
     this.tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-    this.tray.setToolTip('Acheron-agent')
+    this.tray.setToolTip('Acheron-Agent')
     this.tray.setContextMenu(Menu.buildFromTemplate([
       { label: '打开主窗口', click: () => this.mainWindow?.show() },
       { type: 'separator' },

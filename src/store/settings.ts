@@ -84,6 +84,28 @@ export function extractSkinColors(dataUrl: string): Promise<{ primary: { r: numb
   })
 }
 
+// 背景图平均亮度(0..1): 采样整图不透明像素, 比只看主色更代表整体明暗, 用于"动态适配"的稳健判断
+export function computeImageLuma(dataUrl: string): Promise<number> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const size = 48
+        const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { resolve(0.5); return }
+        ctx.drawImage(img, 0, 0, size, size)
+        const d = ctx.getImageData(0, 0, size, size).data
+        let sum = 0; let n = 0
+        for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 125) continue; sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; n++ }
+        resolve(n ? sum / n / 255 : 0.5)
+      } catch { resolve(0.5) }
+    }
+    img.onerror = () => resolve(0.5)
+    img.src = dataUrl
+  })
+}
+
 
 // 背景图压缩 —— Chromium 对 CSS 自定义属性值有大小限制（~1MB 量级），
 // 超长 dataURL 写入 --bg-image 会静默失败导致背景图不显示；同时压缩避免 settings.json 膨胀
@@ -142,10 +164,12 @@ export function clearSkinInlineVars() {
 }
 
 // 字体颜色按图片亮度自适应 —— 亮图深色字, 暗图浅色字
-function applySkinTextColor(c: { r: number; g: number; b: number }) {
+function applySkinTextColor(c: { r: number; g: number; b: number }, avgLuma?: number) {
   const r = document.documentElement
-  const luma = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255
-  if (luma > 0.55) {
+  // 用整图平均亮度判断(未传时回退主色亮度); 阈值 0.62 偏保守 —— 只有很亮的图才切深字方案,
+  // 否则一律用安全的"浅字 + 深色蒙层", 避免"深字压深底"这种看不清(多数背景都应走安全分支)。
+  const luma = avgLuma ?? (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255
+  if (luma > 0.62) {
     // 亮图: 深色文字 + 浅色界面底(输入框/卡片/界面盖层同步变浅, 避免深字深底看不清)
     r.style.setProperty('--text-primary', '#1c1d21')
     r.style.setProperty('--text-secondary', 'rgba(20,21,25,0.78)')
@@ -157,6 +181,9 @@ function applySkinTextColor(c: { r: number; g: number; b: number }) {
     r.style.setProperty('--bg-root', 'rgba(248,248,250,0.5)')
     r.style.setProperty('--bg-surface', 'rgba(244,245,248,0.85)')
     r.style.setProperty('--skin-overlay', 'rgba(255,255,255,0.40)')
+    r.style.setProperty('--bg-mask', 'rgba(255,255,255,0.22)')
+    r.style.setProperty('--bg-scrim', 'rgba(255,255,255,0.42)')
+    r.style.setProperty('--bg-scrim-strong', 'rgba(250,250,252,0.72)')
   } else {
     // 暗图: 浅色文字 + 深色界面底
     r.style.setProperty('--text-primary', '#e9e9eb')
@@ -167,6 +194,9 @@ function applySkinTextColor(c: { r: number; g: number; b: number }) {
     r.style.setProperty('--bg-card', 'rgba(23,24,28,0.92)')
     r.style.setProperty('--bg-input', 'rgba(20,21,25,0.92)')
     r.style.setProperty('--skin-overlay', 'rgba(8,8,15,0.50)')
+    r.style.setProperty('--bg-mask', 'rgba(0,0,0,0.40)')
+    r.style.setProperty('--bg-scrim', 'rgba(10,8,18,0.45)')
+    r.style.setProperty('--bg-scrim-strong', 'rgba(16,13,24,0.62)')
   }
 }
 
@@ -224,7 +254,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   return {
   providers: [],
   general: {
-    theme: 'black', mode: 'work',
+    theme: 'auto', mode: 'work',
     // 无头浏览器网页解析工具配置
   webReadEnabled: true,        // 总开关: 关闭后无法调用网页读取
     webReadHeadless: true,       // 强制无头模式(取消勾选则可视化弹出浏览器窗口调试)
@@ -275,7 +305,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
         // 辅色恢复 + 解耦(不再覆盖 --accent/--accent-dim/--border-glow)
         if (g.skinSecondary) document.documentElement.style.setProperty('--skin-secondary', g.skinSecondary)
         // 启动时也应用文字色自适应(亮图深字/暗图浅字)
-        applySkinTextColor(sc)
+        const bgLuma = g.bgImage ? await computeImageLuma(g.bgImage) : undefined
+        applySkinTextColor(sc, bgLuma)
       } else {
         // 无皮肤时兜底清理内联残留(历史版本清除皮肤后未清理, 导致主题切换被内联覆盖)
         clearSkinInlineVars()
@@ -300,7 +331,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   removeProvider: (id) => { set((s) => ({ providers: s.providers.filter((p) => p.id !== id) })); debouncedSave() },
   updateProvider: (id, data) => { set((s) => ({ providers: s.providers.map((p) => (p.id === id ? { ...p, ...data } : p)) })); debouncedSave() },
   // 主题白名单(与 App.tsx THEME_WHITELIST 一致, 校验非法主题名)
-  setTheme: (theme) => { if (!['dark', 'light', 'black', 'violet', 'bloodmoon', 'dawn', 'custom'].includes(theme)) return; set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
+  setTheme: (theme) => { if (!['auto', 'dark', 'light', 'black', 'violet', 'bloodmoon', 'dawn', 'custom'].includes(theme)) return; set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
   setMode: (mode) => { set((s) => ({ general: { ...s.general, mode } })); debouncedSave() },
   setWorkDir: (dir) => { set((s) => ({ general: { ...s.general, workDir: dir } })); debouncedSave() },
   setOpacity: (v) => { set((s) => ({ general: { ...s.general, opacity: v } })); debouncedSave(); window.huangquan?.window?.setOpacity?.(v) },
@@ -322,7 +353,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
       const r = document.documentElement
       r.style.setProperty('--skin-accent', `${c.primary.r},${c.primary.g},${c.primary.b}`)
       r.style.setProperty('--skin-secondary', `${c.secondary.r},${c.secondary.g},${c.secondary.b}`)
-      applySkinTextColor(c.primary)
+      applySkinTextColor(c.primary, await computeImageLuma(finalUrl))
       set((s) => ({ general: { ...s.general, skinColors: { r: c.primary.r, g: c.primary.g, b: c.primary.b }, skinSecondary: `${c.secondary.r},${c.secondary.g},${c.secondary.b}` } })); debouncedSave()
     } else {
       applySkin(null)

@@ -1,5 +1,5 @@
 // electron/engine/task-types.ts — 任务状态与运行类型(0.3.9 结构清理: 从 engine.ts 抽出)
-import type { EngineMessage, EngineProvider, EngineSettings, EngineToolCall, EngineUsage, PlanStep } from './types'
+import type { EngineMessage, EngineProvider, EngineSettings, EngineToolCall, EngineUsage, PlanStep, ContextSnapshot } from './types'
 import type { EngineMemory } from './memory'
 import type { InstructionFile } from './project-instructions'
 import type { TaskType } from '../llm/gateway'
@@ -78,6 +78,7 @@ export interface TaskState {
   lastPromptTokens?: number
   compactCount?: number
   pendingText?: string
+  contextSnapshot?: ContextSnapshot
 }
 
 export type { InstructionFile }

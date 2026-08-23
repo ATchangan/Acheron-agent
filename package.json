@@ -1,11 +1,11 @@
 {
   "name": "huangquan-agent",
-  "productName": "Acheron-agent",
-  "version": "0.4.2",
+  "productName": "Acheron-Agent",
+  "version": "0.4.3",
   "description": "Acheron-agent - 桌面级 AI 助手",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "node scripts/check-theme-tokens.mjs && vite build && tsc -p electron/tsconfig.json && concurrently -k \"vite build --watch\" \"electron .\"",
+    "dev": "node scripts/check-theme-tokens.mjs && node scripts/dev.cjs",
     "build": "node scripts/check-theme-tokens.mjs && tsc -p tsconfig.json --noEmit && vite build && tsc -p electron/tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json",
     "lint": "eslint src electron",
@@ -36,7 +36,6 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/coverage-v8": "^4.1.10",
-    "concurrently": "^9.0.0",
     "electron": "^43.4.1",
     "electron-builder": "^26.15.3",
     "eslint": "^10.8.1",

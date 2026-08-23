@@ -8,6 +8,7 @@ import {
   setMemoryEmbedding, traceSourceChain, softDeleteMemory, saveToolOutput, getToolOutput,
   insertAudit, queryAudit, getMemoriesForDecay, markSuperseded,
   replaceSessionChunks, deleteSessionChunks, searchSessionIndex, pruneToolOutputs, pruneAudit,
+  pruneSessionChunks, recordSkillStat, skillStats,
 } from '../db'
 
 const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'hq-db-test-'))
@@ -116,5 +117,28 @@ describe('索引与维护(v0.4.0 定稿)', () => {
     expect(getToolOutput(id)).toBeNull()
     pruneAudit(0)
     expect(queryAudit({ agent: '助手', limit: 10 })).toHaveLength(0)
+  })
+
+  it('会话索引按时间清理(保留期外移除, 近期仍在)', () => {
+    const now = Date.now()
+    replaceSessionChunks('sPrune', [
+      { role: 'user', snippet: '很旧的一条会议纪要', ts: now - 1000 * 86400 * 200 },
+      { role: 'user', snippet: '较新的一条部署记录', ts: now - 1000 * 86400 * 10 },
+    ])
+    expect(searchSessionIndex('会议纪要').some(h => h.sid === 'sPrune')).toBe(true)
+    const removed = pruneSessionChunks(1000 * 86400 * 180, 1000)
+    expect(removed).toBeGreaterThanOrEqual(1)
+    expect(searchSessionIndex('会议纪要')).toHaveLength(0)
+    expect(searchSessionIndex('部署记录').some(h => h.sid === 'sPrune')).toBe(true)
+    deleteSessionChunks('sPrune')
+  })
+
+  it('skill_stats 按日聚合命中统计(只增不改)', () => {
+    recordSkillStat('demo', 'hit'); recordSkillStat('demo', 'hit'); recordSkillStat('demo', 'trigger')
+    const rows = skillStats(30).filter(r => r.name === 'demo')
+    expect(rows.length).toBe(1)
+    expect(rows[0].hit).toBe(2)
+    expect(rows[0].trigger).toBe(1)
+    expect(rows[0].triggerRate).toBeCloseTo(0.5)
   })
 })

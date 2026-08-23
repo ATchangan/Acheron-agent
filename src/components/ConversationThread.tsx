@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Copy, RefreshCw, Volume2, Quote, Square, Pencil, ChevronDown, Terminal, Check, X, Loader2, Globe, GitBranch } from 'lucide-react'
+import { Copy, RefreshCw, Quote, Square, Pencil, ChevronDown, Terminal, Check, X, Loader2, Globe, GitBranch } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import type { Message } from '../global'
@@ -42,7 +42,6 @@ const TimelineStamp: React.FC<{ ts: number; className?: string }> = ({ ts, class
 const fmtElapsed = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
 
 // 消息回应（文字标签，不使用 emoji）
-const REACTION_LABELS = ['赞', '心', '妙', '疑惑', '鼓掌']
 const REACTIONS_KEY = 'hq_message_reactions'
 const readReactions = (id: string): string[] => {
   try {
@@ -60,37 +59,17 @@ const writeReactions = (id: string, list: string[]) => {
 
 const MessageReactions: React.FC<{ messageId: string }> = ({ messageId }) => {
   const [list, setList] = useState<string[]>(() => readReactions(messageId))
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuUp, setMenuUp] = useState(true)
-  const addRef = useRef<HTMLDivElement>(null)
   const toggle = (label: string) => {
     const next = list.includes(label) ? list.filter(x => x !== label) : [...list, label]
     setList(next)
     writeReactions(messageId, next)
   }
-  const toggleMenu = () => {
-    if (!menuOpen) {
-      // 空间不足(消息靠近顶部)时向下弹出, 避免菜单被标题栏/滚动容器裁掉
-      const el = addRef.current
-      setMenuUp(!el || el.getBoundingClientRect().top > 70)
-    }
-    setMenuOpen(v => !v)
-  }
+  // v0.4.3 低密度: 移除"添加回应"加号(点击弹层定位曾有问题), 已存的回应仅只读展示
   return (
     <div className="hq-reactions">
       {list.map(label => (
         <button key={label} type="button" className="hq-react-chip" title="点击取消" onClick={() => toggle(label)}>{label}</button>
       ))}
-      <div className="hq-react-add" ref={addRef}>
-        <button type="button" className="hq-react-chip" title="添加回应" onClick={toggleMenu}>+</button>
-        {menuOpen && (
-          <div className={'hq-react-menu' + (menuUp ? '' : ' down')}>
-            {REACTION_LABELS.filter(l => !list.includes(l)).map(label => (
-              <button key={label} type="button" onClick={() => { toggle(label); setMenuOpen(false) }}>{label}</button>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -299,9 +278,6 @@ const AssistantBlock: React.FC<{
 }> = ({ message, toolResults, executing, showStamp = true }) => {
   const [copied, setCopied] = useState(false)
   const regen = useChatStore(s => s.regen)
-  const ttsEnabled = useSettingsStore(s => (s.general).ttsEnabled !== false)
-  const ttsRate = useSettingsStore(s => (s.general).ttsRate || 1)
-  const [ttsBusy, setTtsBusy] = useState(false)
   const content = String(message.content || '')
   const isStreaming = !!message._streaming
   const reasoning = String(message.reasoning_content || '')
@@ -351,13 +327,6 @@ const AssistantBlock: React.FC<{
     for (const x of (message._toolLog || [])) if (x.toolCallId) map.set(x.toolCallId, { ms: x.ms, error: x.error, result: x.result })
     return map
   }, [message._toolLog])
-
-  const speak = async () => {
-    if (ttsBusy || !content) return
-    setTtsBusy(true)
-    try { await api.tts.speak(content.replace(/[#*`>|\-\[\](){}]/g, '').slice(0, 300), ttsRate) } catch { /* ignore */ }
-    setTtsBusy(false)
-  }
 
   const quote = () => {
     if (content) window.dispatchEvent(new CustomEvent('huangquan-quote', { detail: content }))
@@ -426,7 +395,6 @@ const AssistantBlock: React.FC<{
             {!disp.hideTimestamps && <span className="hq-msg-age">{fmtAgo(message.timestamp)}</span>}
             {!disp.hideTokenMeta && message.meta?.taskMs !== undefined && <span className="hq-msg-meta" title="任务总时长">耗时 {fmtDur(message.meta.taskMs)}</span>}
             {!disp.hideTokenMeta && message.meta?.taskTokens != null && <span className="hq-msg-meta" title="本任务总消耗(全 agent)">{message.meta.taskTokens} token</span>}
-            {ttsEnabled && <button title={ttsBusy ? '朗读中…' : '语音朗读'} onClick={speak}><Volume2 size={13} /></button>}
             {!disp.hideRegenerate && <button title="重新生成" onClick={regen}><RefreshCw size={13} /></button>}
             {!disp.hideCopyButtons && <button title={copied ? '已复制' : '复制回复'} onClick={handleCopy}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>}
             <button title="引用到输入框" onClick={quote}><Quote size={13} /></button>

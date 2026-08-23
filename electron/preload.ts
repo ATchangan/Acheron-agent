@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('huangquan', {
   },
   diagnostics: {
     check: () => ipcRenderer.invoke('diagnostics:check'),
+    audit: (filter?: { agent?: string; tool?: string; sid?: string; taskId?: string; limit?: number }) => ipcRenderer.invoke('diagnostics:audit', filter || {}),
+    auditTasks: (limit?: number) => ipcRenderer.invoke('diagnostics:auditTasks', limit),
   },
   ishiki: { load: () => ipcRenderer.invoke('ishiki:load') },
   skills: {
@@ -91,6 +93,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     installLocal: (src: string) => ipcRenderer.invoke('skills:installLocal', src),
     pickLocal: () => ipcRenderer.invoke('skills:pickLocal'),
     delete: (name: string) => ipcRenderer.invoke('skills:delete', name),
+    suggest: (minCount?: number) => ipcRenderer.invoke('skills:suggest', minCount),
+    createFromWorkflow: (signature: string, name: string) => ipcRenderer.invoke('skills:createFromWorkflow', signature, name),
+    validate: (content: string) => ipcRenderer.invoke('skills:validate', content),
+    write: (name: string, content: string) => ipcRenderer.invoke('skills:write', name, content),
+    stats: (days?: number) => ipcRenderer.invoke('skills:stats', days),
   },
   memory: {
     load: () => ipcRenderer.invoke('memory:load'),
@@ -99,6 +106,17 @@ contextBridge.exposeInMainWorld('huangquan', {
     addVector: (content: string) => ipcRenderer.invoke('memory:addVector', content),
     importFile: (path: string) => ipcRenderer.invoke('memory:importFile', path),
     clearVector: () => ipcRenderer.invoke('memory:clearVector'),
+    forget: (content: string) => ipcRenderer.invoke('memory:forget', content),
+    semanticStatus: () => ipcRenderer.invoke('memory:semanticStatus'),
+  },
+  hotkey: {
+    set: (acc: string) => ipcRenderer.invoke('hotkey:set', acc),
+    get: () => ipcRenderer.invoke('hotkey:get'),
+    onAsk: (cb: (text: string) => void) => {
+      const h = (_: unknown, t: string) => cb(t || '')
+      ipcRenderer.on('hotkey:ask', h)
+      return () => ipcRenderer.removeListener('hotkey:ask', h)
+    },
   },
   cron: {
     add: (expr: string, prompt: string) => ipcRenderer.invoke('cron:add', expr, prompt),
@@ -151,6 +169,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     reject: (sid: string) => ipcRenderer.invoke('engine:reject', sid),
     clarifyRespond: (sid: string, answer: string) => ipcRenderer.invoke('engine:clarifyRespond', sid, answer),
     resume: (taskId: string) => ipcRenderer.invoke('engine:resume', taskId),
+    contextSnapshot: (sid: string) => ipcRenderer.invoke('engine:contextSnapshot', sid),
     subscribe: () => ipcRenderer.invoke('engine:subscribe'),
     onEvent: (cb: (ev: unknown) => void) => {
       const h = (_: unknown, ev: unknown) => cb(ev)
@@ -160,7 +179,6 @@ contextBridge.exposeInMainWorld('huangquan', {
   },
   mediaDescribe: (opts?: { local?: boolean; localUrl?: string }) => ipcRenderer.invoke('media:describe', opts),
     mediaGen: (opts: { kind: 'img' | 'video'; prompt: string; providerId?: string; model?: string; ratio?: string; duration?: number }) => ipcRenderer.invoke('media:gen', opts),
-  tts: { speak: (text: string, rate?: number) => ipcRenderer.invoke('tts:speak', text, rate) },
   getPaths: () => ipcRenderer.invoke('get:paths'),
   update: {
     check: () => ipcRenderer.invoke('update:check'),

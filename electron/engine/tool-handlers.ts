@@ -187,7 +187,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const cmd = 'git ' + action + (args ? ' ' + args : '')
     return String(await invokeHandler('computer:exec', [cmd, ctx.sid, ctx.taskId, ctx.workDir], ctx.sender))
   } },
-  { name: 'init_project_docs', writeOp: true, run: (A, ctx) => {
+  { name: 'init_project_docs', writeOp: true, run: (_A, ctx) => {
     const wd = ctx.workDir || ''
     if (!wd) return 'E:未设置工作目录'
     const target = join(wd, 'AGENTS.md')
@@ -297,7 +297,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const items = await invokeHandler('computer:readDir', [A.dirPath || ctx.workDir || '.'], ctx.sender) as { name: string; isDirectory: boolean; size: number }[]
     return Array.isArray(items) ? items.map(i => (i.isDirectory ? '[DIR]' : '[FILE]') + ' ' + i.name + ' (' + i.size + 'B)').join('\n') : '(empty directory)'
   } },
-  { name: 'system_info', run: async (A, ctx) => JSON.stringify(await invokeHandler('computer:systemInfo', [], ctx.sender), null, 2) },
+  { name: 'system_info', run: async (_A, ctx) => JSON.stringify(await invokeHandler('computer:systemInfo', [], ctx.sender), null, 2) },
   { name: 'web_search', run: async (A, ctx) => {
     if (!A.query) return 'E:need query'
     return String(await invokeHandler('web:search', [A.query], ctx.sender)) || '(none)'
@@ -324,14 +324,14 @@ export const TOOL_HANDLERS: ToolHandler[] = [
   { name: 'browser_scroll', run: async (A, ctx) => String(await invokeHandler('browser:scroll', [A.direction, ctx.sid + '::' + ctx.taskId], ctx.sender)) },
   { name: 'browser_console', run: async (A, ctx) => String(await invokeHandler('browser:console', [A.expression, ctx.sid + '::' + ctx.taskId], ctx.sender)) },
   { name: 'browser_vision', run: () => 'E:browser_vision 由引擎视觉通道处理' },
-  { name: 'screenshot', run: async (A, ctx) => String(await invokeHandler('computer:screenshot', [], ctx.sender)) },
-  { name: 'clipboard_read', run: async (A, ctx) => String(await invokeHandler('computer:clipboardRead', [], ctx.sender)) },
+  { name: 'screenshot', run: async (_A, ctx) => String(await invokeHandler('computer:screenshot', [], ctx.sender)) },
+  { name: 'clipboard_read', run: async (_A, ctx) => String(await invokeHandler('computer:clipboardRead', [], ctx.sender)) },
   { name: 'clipboard_write', run: async (A, ctx) => {
     if (!A.text) return 'E:need text'
     await invokeHandler('computer:clipboardWrite', [A.text], ctx.sender)
     return 'ok:clipped'
   } },
-  { name: 'process_list', run: async (A, ctx) => String(await invokeHandler('computer:processList', [], ctx.sender)) },
+  { name: 'process_list', run: async (_A, ctx) => String(await invokeHandler('computer:processList', [], ctx.sender)) },
   { name: 'kill_process', run: async (A, ctx) => {
     if (!A.pid) return 'E:need pid'
     return String(await invokeHandler('computer:killProcess', [A.pid], ctx.sender))
@@ -411,6 +411,12 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (!A.lang || !A.code) return 'E:need lang+code'
     return String(await invokeHandler('computer:codebox', [A.lang, A.code], ctx.sender))
   } },
+  { name: 'desktop_screenshot', run: async (_A, ctx) => String(await invokeHandler('computer:desktopScreenshot', [ctx.sid, ctx.taskId], ctx.sender)) },
+  { name: 'desktop_click', run: async (A, ctx) => String(await invokeHandler('computer:desktopClick', [Number(A.x) || 0, Number(A.y) || 0, Number(A.button) || 1, ctx.sid, ctx.taskId], ctx.sender)) },
+  { name: 'desktop_move', run: async (A, ctx) => String(await invokeHandler('computer:desktopMove', [Number(A.x) || 0, Number(A.y) || 0, ctx.sid, ctx.taskId], ctx.sender)) },
+  { name: 'desktop_scroll', run: async (A, ctx) => String(await invokeHandler('computer:desktopScroll', [Number(A.x) || 0, Number(A.y) || 0, Number(A.delta) || 0, ctx.sid, ctx.taskId], ctx.sender)) },
+  { name: 'desktop_type', run: async (A, ctx) => String(await invokeHandler('computer:desktopType', [String(A.text || ''), ctx.sid, ctx.taskId], ctx.sender)) },
+  { name: 'desktop_key', run: async (A, ctx) => String(await invokeHandler('computer:desktopKey', [String(A.key || ''), ctx.sid, ctx.taskId], ctx.sender)) },
   { name: 'import_doc', run: async (A, ctx) => {
     if (!A.path) return 'E:need path'
     const ok = await invokeHandler('memory:importFile', [A.path], ctx.sender)
@@ -421,7 +427,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     const cr = await invokeHandler('cron:add', [A.expression, A.prompt], ctx.sender)
     return JSON.stringify(cr)
   } },
-  { name: 'list_schedules', run: async (A, ctx) => {
+  { name: 'list_schedules', run: async (_A, ctx) => {
     const items = await invokeHandler('cron:list', [], ctx.sender) as { enabled?: boolean; expression: string; prompt: string }[]
     return Array.isArray(items) && items.length ? items.map((j, i) => (i + 1) + '. [' + (j.enabled ? 'on' : 'off') + '] ' + j.expression + ' - ' + j.prompt).join(' | ') : '(empty)'
   } },
@@ -453,7 +459,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     ctx.onThemeChange?.(A.theme)
     return '主题已切换: ' + A.theme
   } },
-  { name: 'get_ui_display', run: (A, ctx) => {
+  { name: 'get_ui_display', run: (_A, ctx) => {
     try { return JSON.stringify(ctx.g.uiDisplay || {}, null, 2) } catch { return '{}' }
   } },
   { name: 'set_ui_display', run: (A, ctx) => {
@@ -567,7 +573,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     ctx.onAgentChange(A.agent_name)
     return `已交接给 ${A.agent_name}(${ag.role})。原因: ${A.reason || '能力边界外'}。现在你以 ${A.agent_name} 的身份继续执行。\n\n【${A.agent_name} 身份】${ag.prompt}`
   } },
-  { name: 'list_agents', run: (A, ctx) => {
+  { name: 'list_agents', run: (_A, ctx) => {
     const disabled = ctx.g.disabledAgents || []
     return Object.entries(ctx.agents).filter(([n]) => !disabled.includes(n)).map(([n, ag]) => `${ag.icon} **${n}** (${ag.role}): ${ag.prompt.slice(0, 80)}... | 工具: ${ag.tools.join(', ')}`).join('\n\n')
   } },
@@ -606,7 +612,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     return '<!--CARD' + (A.title ? ':' + A.title : '') + '-->' + A.html + '<!--/CARD-->'
   } },
   { name: 'bridge_notify', run: (A) => {
-    try { new Notification({ title: A.title || 'Acheron-agent', body: A.body || '' }).show() } catch { /* 忽略 */ }
+    try { new Notification({ title: A.title || 'Acheron-Agent', body: A.body || '' }).show() } catch { /* 忽略 */ }
     return 'ok:notified'
   } },
   { name: 'workflow', run: (A, ctx) => {
@@ -667,7 +673,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (ctx.onGoalUpdate) ctx.onGoalUpdate(String(A.goal || '').slice(0, 500))
     return 'ok:goal_saved (' + goals.length + ' goals total)'
   } },
-  { name: 'list_goals', run: (A, ctx) => {
+  { name: 'list_goals', run: (_A, ctx) => {
     const goals = ctx.getMemory().goals || []
     return goals.length ? goals.map((g, i) => `${i + 1}. [${g.status}] ${g.goal} (${(g.steps || []).length} steps, ${new Date(g.created || 0).toLocaleDateString('zh-CN')})`).join('\n') : '(无持久化目标)'
   } },
@@ -700,7 +706,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     try { ctx.sender?.send('plugins:changed') } catch { /* 无窗口忽略 */ }
     return `ok:插件已安装 v${r.version} 并热加载(无需重启), 新工具下一轮即可调用:\n${toolNames}\n提示: 首次调用每个插件工具会弹出权限确认, 可选择「始终允许」。`
   } },
-  { name: 'list_plugins', run: (A, ctx) => {
+  { name: 'list_plugins', run: (_A, ctx) => {
     const list = listPluginDetails(join(ctx.userDataPath, 'plugins'))
     if (!list.length) return '(未安装任何插件; 可用 install_plugin 给自己写一个)'
     const disabled = (n: string) => isPluginDisabled(join(ctx.userDataPath, 'settings.json'), n) ? ' [已禁用]' : ''
@@ -718,7 +724,7 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     try { ctx.sender?.send('plugins:changed') } catch { /* 无窗口忽略 */ }
     return 'ok:已删除插件 ' + name
   } },
-  { name: 'reload_plugins', run: (A, ctx) => {
+  { name: 'reload_plugins', run: (_A, ctx) => {
     bustAllPluginCaches(join(ctx.userDataPath, 'plugins'))
     invalidatePluginToolSpecCache()
     const list = listPluginDetails(join(ctx.userDataPath, 'plugins'))

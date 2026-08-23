@@ -27,15 +27,8 @@ describe('detectCaps 模型能力识别', () => {
     expect(detectCaps(['doubao-seedance-1-0'])).toContain('视频')
   })
 
-  it('语音模型归为语音', () => {
-    expect(detectCaps(['qwen-audio-asr-flash'])).toContain('语音')
-    expect(detectCaps(['gpt-4o-transcribe'])).toContain('语音')
-    expect(detectCaps(['chattts'])).toContain('语音')
-  })
-
-  it('OCR 模型归多模态而不是语音', () => {
+  it('OCR 模型归多模态', () => {
     const caps = detectCaps(['qwen3-ocr'])
     expect(caps).toContain('多模态')
-    expect(caps).not.toContain('语音')
   })
 })

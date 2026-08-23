@@ -1,7 +1,7 @@
 // AgentsView.tsx —— v0.4.2 子代理活动面板（对齐参考 app/agents/index.tsx）
 // 默认单 Agent 直接执行：没有分派活动时显示空状态；有 dispatch/任务时按行展示
 // 状态图标 / 目标 / 副标题(角色·耗时·步数·更新) / 可展开步骤流
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useChatStore } from '../store/chat'
 import { Bot, CheckCircle2, AlertCircle, ChevronRight, Loader2, Activity, Eye } from 'lucide-react'
 import { fmtDur } from './work-steps'

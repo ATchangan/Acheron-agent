@@ -33,7 +33,7 @@ export class CompactionRunner {
         apiKey: task.curP.apiKey,
         baseUrl: task.curP.baseUrl,
         messages: [
-          { role: 'system', content: '你是Acheron-agent。请把下面的早期对话压缩成 200 字以内的要点总结，保留事实、路径、结论。只输出总结。' },
+          { role: 'system', content: '你是Acheron-Agent。请把下面的早期对话压缩成 200 字以内的要点总结，保留事实、路径、结论。只输出总结。' },
           { role: 'user', content: text.slice(0, 12000) },
         ],
       })

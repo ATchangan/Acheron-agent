@@ -22,6 +22,7 @@ const CORE_TOOLS = new Set([
   'exec_command', 'git', 'terminal_open', 'terminal_run', 'terminal_close',
   'web_search', 'web_fetch', 'web_read', 'read_skill', 'skill_manage', 'init_project_docs', 'update_plan',
   'system_info', 'session_search', 'save_memory', 'recall_memory', 'recall_events', 'recall_tool_output',
+  'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key',
   'list_agents', 'dispatch', 'handoff', 'list_workflows', 'run_workflow',
   'install_plugin', 'list_plugins', 'read_plugin', 'remove_plugin', 'reload_plugins',
   'set_ui_display', 'get_ui_display',

@@ -1,5 +1,5 @@
 // ClarifyCard.tsx —— v0.4.2  clarify 交互：模型提问时展示可点选选项，选择/回答回传引擎
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { HelpCircle, Send, X } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 

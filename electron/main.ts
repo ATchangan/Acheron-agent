@@ -16,6 +16,7 @@ import { registerWatchIpc } from './ipc/watch'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
 import { registerMiscIpc, cleanChromiumCaches } from './ipc/misc'
+import { registerHotkeyIpc, registerGlobalHotkey, unregisterGlobalHotkey } from './ipc/hotkey'
 import { registerModelsIpc } from './ipc/models'
 import { registerUpdateIpc } from './ipc/update'
 import { registerMediaIpc } from './ipc/media'
@@ -37,12 +38,12 @@ import { maybeRunDailyDecay } from './memory/decay'
 import { stopLocalVisionProcesses } from './llm/vision'
 import * as fs from 'fs'
 
-// 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → Acheron-agent),
+// 固定 userData 路径 —— app.setName 会改变 Electron 默认 userData 目录(huangquan-agent → Acheron-Agent),
 // 不显式指回原目录会丢失全部配置/会话
 // 自省整改: 支持 HQ_USER_DATA 环境变量做测试隔离(测试数据不污染真实用户数据)
 app.setPath('userData', process.env.HQ_USER_DATA ? process.env.HQ_USER_DATA : join(app.getPath('appData'), 'huangquan-agent'))
 // 任务栏/系统托盘显示应用名与 AppUserModelID —— 不设置时 Windows 任务栏右键显示 "Electron"
-app.setName('Acheron-agent')
+app.setName('Acheron-Agent')
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.huangquan.agent')
 }
@@ -51,7 +52,7 @@ if (process.platform === 'win32') {
 function safeLog(...args: unknown[]): void { try { console.log(...args) } catch { /* 管道已关闭 */ } }
 function safeError(...args: unknown[]): void { try { console.error(...args) } catch { /* 管道已关闭 */ } }
 // 退出前把缓冲中的诊断轨迹写盘(否则最后 ~500ms 的轨迹可能丢失)
-app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } try { closeDb() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
+app.on('will-quit', () => { try { flushTrace() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } try { closeDb() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } try { unregisterGlobalHotkey() } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } })
 
 // 使用 Electron net.fetch（Chromium 网络栈，自动跟随 Windows 系统代理）——
 // Node 全局 fetch(undici) 不读系统代理，导致浏览器能访问的 API 在应用内超时
@@ -229,6 +230,7 @@ registerModelStatsIpc()
 registerMcpIpc({ settingsPath })
 registerCacheIpc()
 registerMiscIpc({ settingsPath, userDataPath, resourcesDir, skillsDir, workspaceDir, dirSize, fmtSize })
+registerHotkeyIpc({ getWindow: () => appShell.getWindow() })
 registerModelsIpc({ netFetch })
 registerUpdateIpc({ netFetch })
 registerMediaIpc({ settingsPath, userDataPath, netFetch, getEffectiveWorkDir })
@@ -318,7 +320,8 @@ app.whenReady().then(async () => {
       } catch (e2: unknown) { safeError('[RENDER] gpu detect error:', e2 instanceof Error ? e2.message : String(e2)) }
     }, 3000)
   } catch (e: unknown) { safeError('[RENDER] gpu detect error:', e instanceof Error ? e.message : String(e)) }
-  serverPort = await startServer(distDir)
+  // v0.4.3: 开发热更新时(HQ_DEV_URL)主窗口走 Vite dev server, 不再起内部静态服务器(避免 dist 未构建时误服/报错)
+  if (!process.env.HQ_DEV_URL) { serverPort = await startServer(distDir) }
   appShell.createMenu()
   cleanOldPlanDocs()
   // v0.3.3: Chromium 缓存自动清理(设置→高级→缓存管理可关/改阈值, 默认开启)
@@ -330,10 +333,18 @@ app.whenReady().then(async () => {
       if (r.freedMb > 0) safeLog('[cache] 启动自动清理 Chromium 缓存: 释放 ' + r.freedMb + 'MB')
     }
   } catch (e: unknown) { /* 设置缺失/损坏时跳过清理 */ console.debug('[swallow]', e) }
+  // v0.4.3 Windows 任务栏/分组图标: 绑定 AppUserModelID(与打包 appId 一致), 让窗口图标生效
+  try { app.setAppUserModelId('com.huangquan.agent') } catch (e: unknown) { console.debug('[swallow]', e) }
   appShell.createWindow()
   const win0 = appShell.getWindow()
   if (win0) initBrowserViews(win0, { live: rendererMode !== 'cpu' })
   appShell.createTray()
+  // v0.4.3 系统级"随叫随到"热键(设置→快捷键 可改)
+  try {
+    const s0 = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    const hk = String(s0?.general?.globalHotkey || '')
+    if (hk) registerGlobalHotkey(() => appShell.getWindow(), hk)
+  } catch (e: unknown) { /* 设置缺失时用默认禁用手动触发 */ console.debug('[swallow]', e) }
   // v0.4.x: 设置文件热重载韧性——
   // 外部有效修改即时传导渲染层; 无效修改保留最后可用配置并记录, 绝不拖垮/重启应用
   try {

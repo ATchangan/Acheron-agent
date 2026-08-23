@@ -5,9 +5,10 @@ import { useSettingsStore } from '../store/settings'
 import { useModelItems } from './useModelItems'
 import { resolveDisplay, compileStatusLine } from '../store/display'
 import { Command, X, Zap } from 'lucide-react'
+import type { ContextSnapshot } from '../global'
 
 export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean; onToggleHidden: () => void }) {
-  const { curModelName, modelItems, currentModel, setModelSel } = useModelItems()
+  const { curModelName } = useModelItems()
   const mode = useSettingsStore(s => s.general.mode || 'work')
   const workDir = useSettingsStore(s => s.general.workDir)
   const sessionCount = useChatStore(s => s.sessions.length)
@@ -22,12 +23,11 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
   const [ver, setVer] = useState('')
   const [ctxOpen, setCtxOpen] = useState(false)
   const ctxRef = useRef<HTMLDivElement>(null)
+  const [ctxSnap, setCtxSnap] = useState<ContextSnapshot | null>(null)
   const [hiddenIds, setHiddenIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('hq_statusbar_hidden') || '[]') } catch { return [] }
   })
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
-  const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const modelMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     try {
@@ -44,25 +44,12 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
     return () => document.removeEventListener('mousedown', onDown)
   }, [ctxOpen])
 
+  // v0.4.3 上下文内容可见: 点开明细时拉取"它心里装着什么"
   useEffect(() => {
-    if (!modelMenuOpen) return
-    const onDown = (e: MouseEvent) => {
-      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) setModelMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [modelMenuOpen])
-
-  const pickModel = (v: string) => {
-    setModelMenuOpen(false)
-    setModelSel(v)
-    const item = modelItems.find(x => x.key === v)
-    if (!item) return
-    if (item.group === 'text') {
-      useSettingsStore.getState().updateGeneral({ mainModel: v })
-      useSettingsStore.getState().updateProvider(item.pid, { selectedModel: item.model })
-    }
-  }
+    if (ctxOpen && cid) {
+      window.huangquan.engine.contextSnapshot(cid).then(s => setCtxSnap(s as ContextSnapshot | null)).catch(() => setCtxSnap(null))
+    } else { setCtxSnap(null) }
+  }, [ctxOpen, cid])
 
   const ratio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
   const ctxColor = ratio > 0.9 ? 'var(--danger)' : ratio > 0.7 ? 'var(--warning)' : 'var(--accent)'
@@ -150,11 +137,6 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
             {mode === 'work' ? '工作模式' : '聊天模式'}
           </span>
         )}
-        {vis('model') && (
-          <span className="sb-item" title="当前模型">
-            模型 {curModelName || '未配置'}
-          </span>
-        )}
         {vis('sessions') && (
           <span className="sb-item" title="会话数量">
             会话 {sessionCount}
@@ -171,25 +153,11 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
 
       {/* 右簇 */}
       <div className="hq-sb-cluster">
-        {/* 模型目录菜单（model-catalog-menu） */}
-        <div className="hq-sb-model" ref={modelMenuRef}>
-          <button type="button" className="sb-item hq-sb-ctx-btn" title="切换模型" onClick={() => setModelMenuOpen(v => !v)}>
-            <span className="sb-dot" style={{ background: 'var(--accent)' }} />
-            {curModelName || '模型'}
-          </button>
-          {modelMenuOpen && (
-            <div className="hq-statusbar-menu hq-sb-model-menu">
-              <div className="hq-statusbar-menu-title">切换模型</div>
-              {modelItems.filter(x => x.group === 'text').map(x => (
-                <button key={x.key} type="button" className={'hq-statusbar-menu-item' + (currentModel === x.key ? ' active' : '')} onClick={() => pickModel(x.key)}>
-                  <span className={'hq-check' + (currentModel === x.key ? ' on' : '')} />
-                  {x.label}
-                </button>
-              ))}
-              {modelItems.filter(x => x.group === 'text').length === 0 && <div className="hq-split-menu-empty">未配置模型</div>}
-            </div>
-          )}
-        </div>
+        {/* 当前模型（只读指示；切换在输入框右下角） */}
+        <span className="sb-item hq-sb-ctx-btn" title="当前模型（在输入框右下角切换）">
+          <span className="sb-dot" style={{ background: 'var(--accent)' }} />
+          {curModelName || '模型'}
+        </span>
         {/* Token 输出速度（上下文左侧） */}
         {streaming && outSpeed > 0 && !disp.hideTokenUsage && vis('speed') && (
           <span className="sb-item" title="Token 输出速度（按字符估算）">
@@ -224,8 +192,21 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
                 <div className="hq-ctx-pop-row"><span>上限</span><b>{contextLimit > 0 ? fmtK(contextLimit) : '—'}</b></div>
                 <div className="hq-ctx-pop-row"><span>占比</span><b style={{ color: ctxColor }}>{Math.round(ratio * 100)}%</b></div>
                 <div className="hq-ctx-pop-row"><span>输入</span><b>{fmtK(tokSum.input)}</b></div>
-                <div className="hq-ctx-pop-row"><span>输出</span><b>{fmtK(tokSum.output)}</b></div>
+              <div className="hq-ctx-pop-row"><span>输出</span><b>{fmtK(tokSum.output)}</b></div>
               </div>
+              {ctxSnap && (
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+                  <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>内容组成（它心里装着什么）</div>
+                  <div className="hq-ctx-pop-grid">
+                    {ctxSnap.sections.map((s, i) => (
+                      <div key={i} className="hq-ctx-pop-row"><span>{s.label}</span><b>{fmtK(s.tokens)} tok</b></div>
+                    ))}
+                    <div className="hq-ctx-pop-row"><span>记忆</span><b>{fmtK(ctxSnap.memory.tokens)} tok · {ctxSnap.memory.items} 条</b></div>
+                    <div className="hq-ctx-pop-row"><span>历史</span><b>{ctxSnap.history.count} 条 · {fmtK(ctxSnap.history.tokens)} tok</b></div>
+                    <div className="hq-ctx-pop-row"><span>合计</span><b style={{ color: ctxColor }}>{fmtK(ctxSnap.totalTokens)} tok</b></div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

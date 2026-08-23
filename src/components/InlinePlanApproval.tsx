@@ -1,5 +1,4 @@
 // InlinePlanApproval.tsx —— v0.4.2 行内计划审批：渲染在回合内，替代原顶部计划卡
-import React from 'react'
 import { ClipboardList, Check, X } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 

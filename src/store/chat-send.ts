@@ -31,6 +31,7 @@ export interface S {
   orphanTasks: { id: string; sid: string; content: string; images?: string[]; attachments?: Message['attachments']; at: number; planProgress?: string }[]
   plans: Record<string, PlanState>
   clarifyReq: { sid: string; requestId: string; question: string; choices: string[]; multiSelect: boolean } | null
+  askDraft: string // 系统级全局热键带进来的"选中即问"草稿(由 ChatInput 消费后清空)
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>
   create: () => void
@@ -42,6 +43,7 @@ export interface S {
   regen: () => Promise<void>
   stop: () => void
   restoreTask: (id: string) => Promise<void>
+  setAskDraft: (text: string) => void
   cur: () => SessionData | undefined
 }
 

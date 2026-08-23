@@ -1,5 +1,4 @@
 // WatchView.tsx —— v0.4.2 任务监视窗（watch windows）：独立小窗实时查看会话
-import React from 'react'
 import ReadonlyThread from './ReadonlyThread'
 
 export default function WatchView({ sid }: { sid: string }) {

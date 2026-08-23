@@ -56,7 +56,8 @@ export function resolveDisplay(cfg?: UiDisplayConfig): ResolvedDisplay {
     hideTokenUsage: cfg?.hideTokenUsage === true,
     hideTimestamps: cfg?.hideTimestamps === true,
     hideToolCalls: cfg?.hideToolCalls === true,
-    hideTokenMeta: cfg?.hideTokenMeta === true,
+    // v0.4.3 低密度默认: 隐藏每条消息的 耗时/token 徽标(状态栏与设置页仍可看), 可显式开启
+    hideTokenMeta: cfg?.hideTokenMeta !== false,
     hideCopyButtons: cfg?.hideCopyButtons === true,
     hideRegenerate: cfg?.hideRegenerate === true,
     statusLine: typeof cfg?.statusLine === 'string' ? cfg.statusLine.slice(0, 500) : '',

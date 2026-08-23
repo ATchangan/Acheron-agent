@@ -9,7 +9,7 @@ import { U } from '../ui-styles'
 // v0.3.1 块 H: 工具 tab(从 SettingsView 拆分, 行为零变化)
 
 // 工具级权限管理列表(常用内置工具): 点击循环 放行 → 询问 → 禁用
-const PERM_TOOLS = ['read', 'write', 'edit', 'exec_command', 'mkdir', 'grep', 'find', 'ls', 'codebox', 'web_search', 'web_fetch', 'web_read', 'browse', 'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process', 'save_memory', 'recall_memory', 'import_doc', 'schedule_task', 'mcp_connect', 'mcp_call']
+const PERM_TOOLS = ['read', 'write', 'edit', 'exec_command', 'mkdir', 'grep', 'find', 'ls', 'codebox', 'web_search', 'web_fetch', 'web_read', 'browse', 'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key', 'save_memory', 'recall_memory', 'import_doc', 'schedule_task', 'mcp_connect', 'mcp_call']
 
 export default function ToolsTab() {
   const g = useSettingsStore(s => s.general) || {}
@@ -224,7 +224,7 @@ export default function ToolsTab() {
         <div style={S.section}>系统信息</div>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
-            ['平台', 'Acheron-agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
+            ['平台', 'Acheron-Agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
             ['Node', sys?.node || '…'], ['工具数', String(TOOLS.length)], ['角色数', String(Object.keys(agentsMap).length)],
             ['技能数', skillCount ? String(skillCount) : '…']
           ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}

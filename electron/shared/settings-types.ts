@@ -75,8 +75,6 @@ export interface GeneralSettings {
   ragChunkSize?: number
   ragThreshold?: number
   ragAutoSave?: boolean
-  ttsEnabled?: boolean
-  ttsRate?: number
   // 调度绑定(所有模型公用, 含自定义模型)
   smallModel?: string
   largeModel?: string
@@ -104,6 +102,7 @@ export interface GeneralSettings {
   notifyError?: boolean
   customSystemPrompt?: string
   promptInjectPos?: string
+  globalHotkey?: string   // 系统级"随叫随到"热键(Electron accelerator, 如 CommandOrControl+Alt+Y); 空=禁用
   thinkLevel?: string
   thinkOverrides?: Record<string, string>
   sp?: string
@@ -184,8 +183,6 @@ export interface GeneralSettings {
   mediaVideoModel?: string
   mediaVideoMode?: string
   mediaVideoDuration?: number
-  mediaAudioProvider?: string
-  mediaAudioModel?: string
   proxyMode?: string
   proxyUrl?: string
   outputFormat?: string

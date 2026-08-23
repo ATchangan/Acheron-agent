@@ -2,7 +2,6 @@
 import { ipcMain, app } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
-import { exec } from 'child_process'
 import { writeFileAtomic } from '../fs-atomic'
 
 // v0.3.3: Chromium 缓存自动清理 —— 超过阈值时清空 Cache/Code Cache/GPU 缓存目录
@@ -86,16 +85,6 @@ export function registerMiscIpc(deps: {
   ipcMain.handle('ishiki:load', () => {
     try { const p = join(resourcesDir, 'ishiki.md'); return fs.existsSync(p) ? fs.readFileSync(p, 'utf-8') : '' }
     catch { return '' }
-  })
-  ipcMain.handle('tts:speak', async (_e, text: string, rate?: number) => {
-    const t = String(text || '').trim().replace(/['"\\]/g, '').slice(0, 300)
-    if (!t) return false
-    const r = Math.max(0.5, Math.min(3, Number(rate) || 1))
-    const speed = Math.round((r - 1) * 10) // SAPI Rate: -10..10
-    const ps = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Rate = ${speed}; $s.Speak('${t}'); $s.Dispose()`
-    return new Promise<boolean>(resolve => {
-      exec(`powershell -NoProfile -Command "${ps}"`, { timeout: 60000, windowsHide: true, maxBuffer: 1024 * 64 }, (err) => resolve(!err))
-    })
   })
   ipcMain.handle('get:paths', () => ({ skillsDir, pluginsDir: join(userDataPath, 'plugins'), workDir: workspaceDir }))
   // ─── 项目约定文件注入 ───

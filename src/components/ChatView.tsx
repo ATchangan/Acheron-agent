@@ -1,4 +1,3 @@
-import React from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import ChatInput from './ChatInput'
@@ -57,12 +56,13 @@ export default function ChatView({ onNavigate }: { onNavigate: (v: string) => vo
 
       {!hasProvider ? (
         <div className="chat-center-empty">
-          <h1>黄泉 Agent</h1><p>请先在「模型服务」中配置一个服务商</p>
+          <h1>Acheron-Agent</h1><p>请先在「模型服务」中配置一个服务商</p>
           <button className="btn-primary" style={U.mt8} onClick={() => onNavigate('settings')}>前往设置</button>
         </div>
       ) : empty ? (
         <div className="chat-center-empty">
-          <h1>黄泉 Agent</h1>
+          <img src="huangquan.png" alt="黄泉" style={{ width: 190, height: 190, objectFit: 'contain', pointerEvents: 'none', opacity: .92, filter: 'drop-shadow(0 10px 26px rgba(0,0,0,.4))' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          <h1>Acheron-Agent</h1>
           <p>{mode === 'chat' ? '雨停了没多久。你是循着声音来的，还是碰巧路过？' : '说吧，这次要处理什么？'}</p>
           <span className="memory-badge">{mode === 'chat' ? '● 聊天模式' : '● 工作模式'}</span>
         </div>
