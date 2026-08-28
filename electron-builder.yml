@@ -11,7 +11,7 @@ publish:
 files:
   - dist/**/*
   - dist-electron/**/*
-  - resources/**/*        # SOP红线: 必须含 resources/**,否则人设 ishiki.md + 4 组技能不进包
+  - resources/**/*        # 必须含 resources/**: 人设 ishiki.md 与图标
 electronLanguages:
   - zh-CN
 win:
