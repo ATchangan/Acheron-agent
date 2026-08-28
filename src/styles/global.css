@@ -1,4 +1,4 @@
-﻿/* ═══════════ Acheron-agent 全局样式 · v0.4.2 扁平风设计令牌体系 ═══════════
+/* ═══════════ Acheron-agent 全局样式 · v0.4.2 扁平风设计令牌体系 ═══════════
    设计原则（对齐参考 DESIGN.md）：
    - 扁平不套盒：无渐变文字 / 无发光 / 无位移动画；分组靠留白与 hairline
    - 分层背景：root(chrome) → surface(sidebar) → elevated(悬浮/代码) → card(卡片)
@@ -38,12 +38,14 @@
   --border-soft: color-mix(in srgb, var(--border) 55%, transparent);
   --chat-font-size: var(--ui-font-size);
   --code-font-size: calc(var(--ui-font-size) - 1px);
-  --msg-gap: 18px;
-  --hq-turn-gap: 10px;
+  --msg-gap: 12px;
+  /* v0.4.4 默认紧凑: 轮次/消息间距收紧; 信息密度可调 */
+  --hq-turn-gap: 6px;
   font-family: 'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   font-size: var(--ui-font-size);
   color: var(--text-primary);
   background: var(--bg-root);
+  /* 信息密度: 轮次间距默认紧凑 6px, 舒适/宽松见文件内 data-density 覆盖 */
   /* 层级 —— 分层柔和阴影（contact + ambient） */
   --shadow-1: 0 1px 2px rgba(0,0,0,.12);
   --shadow-2: 0 2px 6px rgba(0,0,0,.14), 0 10px 28px -8px rgba(0,0,0,.30);
@@ -77,6 +79,9 @@
   --overlay-strong: rgba(0,0,0,.7);
   --skin-accent-bright: rgba(var(--skin-accent), .8);
 }
+/* v0.4.4 信息密度: 轮次间距 —— 紧凑默认 6px; 舒适/宽松按 data-density 放宽 */
+[data-density="comfortable"] { --hq-turn-gap: 10px; }
+[data-density="spacious"] { --hq-turn-gap: 16px; }
 .chat-textarea { width: 100%; min-width: 0; flex: 1 1 auto; background: none; border: none; outline: none; color: var(--text-primary); font-size: var(--chat-font-size); line-height: 1.5; resize: none; max-height: 120px; font-family: inherit; padding: 6px 0 }
 /* 皮肤主色调自动适配 */
 [data-bg] .menu-item.active { background: var(--bg-hover-strong) }

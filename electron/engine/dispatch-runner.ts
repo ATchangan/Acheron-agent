@@ -83,12 +83,15 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
         const meltLimit = Number(task.g.meltdownLimit) || 3
         const stallMs = Math.max(90000, toolTimeoutS * 1000 + 30000)
         let lastActivity = Date.now()
+        let toolBusy = false
         let finished = false
         let watchdog: ReturnType<typeof setInterval> | null = null
         const finish = (v: string) => { if (finished) return; finished = true; if (watchdog) clearInterval(watchdog); resolveSub(v) }
         const touch = () => { lastActivity = Date.now() }
         // 活动看门狗: 只在“长时间无任何数据/工具产出”时判超时, 不设总时长上限; 超时顺手中止在跑命令
+        // v0.4.4: 工具在跑(await runToolGuarded 期间)视为活跃, 不把合法长工具/长命令误判为无进展
         watchdog = setInterval(() => {
+          if (toolBusy) { lastActivity = Date.now(); return }
           if (Date.now() - lastActivity > stallMs) {
             void invokeHandler('computer:abort', [task.sid], null)
             finish(subText || '(子任务无进展超时)')
@@ -153,7 +156,9 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
               // 子代理工具统一走 runToolGuarded —— 文件快照/事件钩子/子目录指令/审计与主循环一致
               const t0 = Date.now()
               deps.emit({ type: 'stage', sid: task.sid, phase: 'tool', label: '[' + t.agent + '] 执行 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
+              toolBusy = true
               const rr = await deps.runToolGuarded(task, tc, subCtx, { subAgent: t.agent })
+              toolBusy = false
               const subMs = Date.now() - t0
               task.toolLog.push({ name: tc.name, args: tc.args, result: rr, error: rr.startsWith('E:'), ms: subMs, toolCallId: tc.id, agent: t.agent })
               deps.trace(rr.startsWith('E:') ? 'warn' : 'info', 'subtool', tc.name + ' ' + subMs + 'ms', task.sid, task.taskId)

@@ -1,4 +1,4 @@
-﻿export {}
+export {}
 import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, LLMChatParams, ToolCallDelta, SearchResult, CronJob, McpServerInfo, TaskRecord, TraceEntry, AuditRow, ContextSnapshot } from './types/domain'
 
 declare global {
@@ -127,6 +127,7 @@ declare global {
         interject: (sid: string, content: string, images?: string[], attachments?: { name: string; path: string; size: number; kind: 'video' | 'audio' | 'file' }[], kind?: string, prefix?: string) => Promise<boolean>
         approve: (sid: string) => Promise<boolean>
         reject: (sid: string) => Promise<boolean>
+        continue: (sid: string) => Promise<boolean>
         clarifyRespond: (sid: string, answer: string) => Promise<boolean>
         resume: (taskId: string) => Promise<boolean>
         contextSnapshot: (sid: string) => Promise<ContextSnapshot | null>

@@ -19,6 +19,10 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
   const activeAgents = useChatStore(s => s.activeAgents)
   const streaming = useChatStore(s => s.streaming)
   const streamText = useChatStore(s => s.streamText)
+  const progress = useChatStore(s => s.progress)
+  const stall = useChatStore(s => s.stall)
+  const stop = useChatStore(s => s.stop)
+  const continueStalled = useChatStore(s => s.continueStalled)
   const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
   const [ver, setVer] = useState('')
   const [ctxOpen, setCtxOpen] = useState(false)
@@ -54,6 +58,24 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
   const ratio = contextLimit > 0 ? Math.min(contextUsed / contextLimit, 1) : 0
   const ctxColor = ratio > 0.9 ? 'var(--danger)' : ratio > 0.7 ? 'var(--warning)' : 'var(--accent)'
   const fmtK = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n))
+
+  // v0.4.4 长任务进度: 记录最近一次进度事件时间戳, 每秒重算"已运行", 避免长工具期间冻结
+  const setProgTick = useState(0)[1]
+  const progAt = useRef(0)
+  const prog = cid ? progress[cid] : undefined
+  const st = cid ? stall[cid] : undefined
+  useEffect(() => { if (prog) { progAt.current = Date.now(); setProgTick(t => t + 1) } }, [prog, cid])
+  useEffect(() => {
+    if (!prog) return
+    const id = setInterval(() => setProgTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [prog, cid])
+  const progElapsed = prog ? prog.elapsedMs + (Date.now() - progAt.current) : 0
+  const fmtHms = (ms: number) => {
+    const s = Math.max(0, Math.floor(ms / 1000))
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`
+  }
 
   // 当前会话输入/输出 token 统计
   const tokSum = React.useMemo(() => {
@@ -153,6 +175,23 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
 
       {/* 右簇 */}
       <div className="hq-sb-cluster">
+        {/* v0.4.4 长任务进度（运行中）：已完成步数为单调计数, 不显示会随新步骤增长的"总步数" */}
+        {vis('progress') && prog && (
+          <span className="sb-item hq-sb-prog" title="当前任务运行进度（第N轮·已完成步数·token·耗时）">
+            <span className="sb-dot" style={{ background: prog.stalled ? 'var(--warning)' : 'var(--accent)' }} />
+            第{prog.round}轮 · 已完成{prog.stepsDone}步 · {fmtK(prog.tokensUsed)}tok · {fmtHms(progElapsed)}
+            {prog.currentTool && <span className="hq-sb-prog-tool"> · {prog.currentTool}</span>}
+          </span>
+        )}
+        {/* v0.4.4 无进展停滞提示：继续/中止 */}
+        {st && st.active && (
+          <span className="sb-item hq-sb-stall" title="检测到无进展停滞，请选择继续或中止">
+            <span className="sb-dot" style={{ background: 'var(--warning)' }} />
+            疑似停滞 {fmtHms(st.elapsedMs)}
+            <button type="button" className="hq-stall-btn" onClick={() => continueStalled()}>继续</button>
+            <button type="button" className="hq-stall-btn hq-stall-stop" onClick={() => stop()}>中止</button>
+          </span>
+        )}
         {/* 当前模型（只读指示；切换在输入框右下角） */}
         <span className="sb-item hq-sb-ctx-btn" title="当前模型（在输入框右下角切换）">
           <span className="sb-dot" style={{ background: 'var(--accent)' }} />
@@ -225,7 +264,7 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
           <div className="hq-statusbar-menu-title">自定义状态栏</div>
           {([
             ['mode', '模式'], ['model', '模型'], ['sessions', '会话数'], ['dir', '工作目录'],
-            ['statusline', '自定义状态行'], ['speed', '输出速度'], ['cmd', '命令面板提示'], ['version', '版本'],
+            ['statusline', '自定义状态行'], ['speed', '输出速度'], ['progress', '任务进度'], ['cmd', '命令面板提示'], ['version', '版本'],
           ] as const).map(([id, label]) => (
             <button key={id} type="button" className="hq-statusbar-menu-item" onClick={() => toggleHidden(id)}>
               <span className={'hq-check' + (vis(id) ? ' on' : '')} />

@@ -7,34 +7,21 @@ import { resolveDisplay } from '../store/display'
 import type { View } from '../App'
 import ResizeBar from './ResizeBar'
 import { U } from './ui-styles'
-import { Search, SquarePen, ChevronRight, Pin, BookOpen, Package, Hourglass, Command, Users, Archive, ArrowDownUp, KeyRound, Activity, LayoutList } from 'lucide-react'
+import { Search, SquarePen, ChevronRight, Pin, Archive, ArrowDownUp, Activity, LayoutList } from 'lucide-react'
 
 interface Props { currentView: View; onNavigate: (v: View) => void }
 
 const ChatIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-const AgentIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.4 7 11 8 11s8-5.6 8-11a8 8 0 0 0-8-8z"/></svg>
 const SettingsIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
 const BrowserIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>
 const FolderIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-const MemoryIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44A2.5 2.5 0 0 1 4 17.5v-2A2.5 2.5 0 0 1 6.5 13a2.5 2.5 0 0 1-2-3.55A2.5 2.5 0 0 1 7.5 5.5H8A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44A2.5 2.5 0 0 0 20 17.5v-2a2.5 2.5 0 0 0-2.5-2.5 2.5 2.5 0 0 0 2-3.55A2.5 2.5 0 0 0 16.5 5.5H16A2.5 2.5 0 0 0 14.5 2z"/></svg>
 
+// v0.4.4 精简: 导航仅保留 会话/浏览器/文件/设置(技能/记忆/编队/定时/命令中心/配置档案/API Keys 已收敛)
 const NAV_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
   { id: 'chat', icon: <ChatIcon />, label: '对话' },
-  { id: 'agents', icon: <AgentIcon />, label: '子代理' },
-  { id: 'memory', icon: <MemoryIcon />, label: '记忆' },
   { id: 'browser', icon: <BrowserIcon />, label: '浏览器' },
   { id: 'files', icon: <FolderIcon />, label: '文件' },
   { id: 'settings', icon: <SettingsIcon />, label: '设置' },
-]
-
-// 页面导航：技能/产物为工作区页面，定时任务/命令中心/配置档案为 Overlay
-const PAGE_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
-  { id: 'skills', icon: <BookOpen size={14} />, label: '技能' },
-  { id: 'artifacts', icon: <Package size={14} />, label: '产物' },
-  { id: 'cron', icon: <Hourglass size={14} />, label: '定时任务' },
-  { id: 'command-center', icon: <Command size={14} />, label: '命令中心' },
-  { id: 'profiles', icon: <Users size={14} />, label: '配置档案' },
-  { id: 'keys', icon: <KeyRound size={14} />, label: 'API Keys' },
 ]
 
 type GroupKey = 'pinned' | 'today' | 'yesterday' | 'earlier'
@@ -238,21 +225,6 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
         <SquarePen size={14} />
         <span>新对话</span>
       </button>
-
-      {/* 页面导航(导航行, 常驻侧栏上部, 底部只留图标导航) */}
-      <div className="hq-sb-pages">
-        {PAGE_ITEMS.map(item => (
-          <button
-            key={item.id}
-            type="button"
-            className={'hq-nav-item hq-sb-page' + (currentView === item.id ? ' active' : '')}
-            onClick={() => onNavigate(item.id)}
-          >
-            <span className="nav-icon">{item.icon}</span>
-            <span className="hq-sb-page-label">{item.label}</span>
-          </button>
-        ))}
-      </div>
 
       {/* 项目区(projects: git 仓库 + 分支) */}
       {projects.length > 0 && (

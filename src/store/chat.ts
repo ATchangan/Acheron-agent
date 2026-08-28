@@ -56,7 +56,7 @@ const releaseRemoteSessions = (keepId: string): void => {
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '', askDraft: '',
+  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '', askDraft: '', progress: {}, stall: {},
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
   setAskDraft: (text: string) => set({ askDraft: text }),
@@ -241,6 +241,16 @@ export const useChatStore = create<S>((set, get) => ({
     }
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false, resumeTimer: undefined } : x) }))
     set({ executing: false, error: null })
+    // v0.4.4 按 sid 清除该会话的进度与停滞态(不影响其他并发会话)
+    set(s => { const p = { ...s.progress }; delete p[sid]; const st = { ...s.stall }; delete st[sid]; return { progress: p, stall: st } })
+  },
+
+  // v0.4.4 无进展停滞"继续": 通知引擎清除停滞态重新计时, 本地清掉该会话提示
+  continueStalled: () => {
+    const sid = get().cid
+    if (!sid) return
+    window.huangquan.engine.continue(sid).catch(() => {})
+    set(s => { const st = { ...s.stall }; delete st[sid]; return { stall: st } })
   },
 
   // 从指定用户消息重新发送（编辑后重发 / 刷新重发）

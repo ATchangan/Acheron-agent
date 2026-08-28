@@ -1,6 +1,6 @@
 // CommandPalette.tsx —— v0.4.2 命令面板：Ctrl+K 唤起，键盘导航，快速跳转/操作
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, CornerDownLeft, MessageSquare, Users, Database, Folder, Settings, Globe, SquarePen, Moon, Sun, PanelLeft, PanelRight, Minus, Command, BookOpen, Package, Hourglass, Activity, KeyRound } from 'lucide-react'
+import { Search, CornerDownLeft, MessageSquare, Folder, Settings, Globe, SquarePen, Moon, Sun, PanelLeft, PanelRight, Minus, Command } from 'lucide-react'
 import { useSettingsStore } from '../store/settings'
 
 interface Cmd {
@@ -50,23 +50,18 @@ export default function CommandPalette({ open, onClose, onNavigate, onNewChat, o
 
   const commands: Cmd[] = useMemo(() => [
     { id: 'nav-chat', label: '对话', group: '跳转', icon: <MessageSquare size={14} />, run: () => onNavigate('chat') },
-    { id: 'nav-agents', label: '角色编队', group: '跳转', icon: <Users size={14} />, run: () => onNavigate('agents') },
-    { id: 'nav-memory', label: '记忆', group: '跳转', icon: <Database size={14} />, run: () => onNavigate('memory') },
     { id: 'nav-files', label: '文件（右栏）', group: '跳转', icon: <Folder size={14} />, run: () => onNavigate('files') },
     { id: 'nav-browser', label: '浏览器', group: '跳转', icon: <Globe size={14} />, run: () => onNavigate('browser') },
     { id: 'nav-settings', label: '设置', group: '跳转', icon: <Settings size={14} />, run: () => onNavigate('settings') },
-    { id: 'nav-skills', label: '技能', group: '跳转', icon: <BookOpen size={14} />, run: () => onNavigate('skills') },
-    { id: 'nav-artifacts', label: '产物', group: '跳转', icon: <Package size={14} />, run: () => onNavigate('artifacts') },
-    { id: 'nav-cron', label: '定时任务', group: '跳转', icon: <Hourglass size={14} />, run: () => onNavigate('cron') },
-    { id: 'nav-command-center', label: '命令中心', group: '跳转', icon: <Activity size={14} />, run: () => onNavigate('command-center') },
-    { id: 'nav-profiles', label: '配置档案', group: '跳转', icon: <Users size={14} />, run: () => onNavigate('profiles') },
-    { id: 'nav-keys', label: 'API Keys', group: '跳转', icon: <KeyRound size={14} />, run: () => onNavigate('keys') },
     { id: 'set-providers', label: '设置 → 供应商', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('models') },
     { id: 'set-strategy', label: '设置 → 策略', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('strategy') },
+    { id: 'set-persona', label: '设置 → 人格', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('persona') },
+    { id: 'set-tools', label: '设置 → 工具', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('tools') },
+    { id: 'set-mcp', label: '设置 → MCP', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('mcp') },
+    { id: 'set-plugins', label: '设置 → 插件', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('plugin') },
     { id: 'set-skin', label: '设置 → 外观', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('skin') },
     { id: 'set-ui', label: '设置 → 界面', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('ui') },
     { id: 'set-keybinds', label: '设置 → 快捷键', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('keybinds') },
-    { id: 'set-memory', label: '设置 → 记忆', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('memory') },
     { id: 'set-advanced', label: '设置 → 引擎', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('advanced') },
     { id: 'set-about', label: '设置 → 关于', group: '设置', icon: <Settings size={14} />, run: () => onOpenSettingsTab('about') },
     { id: 'act-new', label: '新对话', group: '操作', hint: 'Ctrl+N', icon: <SquarePen size={14} />, run: onNewChat },

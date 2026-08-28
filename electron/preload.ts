@@ -1,4 +1,4 @@
-﻿import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // ─── 安全参数清洗——消除 Proxy、循环引用等不可序列化对象导致的 IPC 报错 ──
 function safeArg(obj: unknown): unknown {
@@ -167,6 +167,7 @@ contextBridge.exposeInMainWorld('huangquan', {
     interject: (sid: string, content: string, images?: string[], attachments?: unknown, kind?: string, prefix?: string) => ipcRenderer.invoke('engine:interject', sid, content, images, attachments, kind, prefix),
     approve: (sid: string) => ipcRenderer.invoke('engine:approve', sid),
     reject: (sid: string) => ipcRenderer.invoke('engine:reject', sid),
+    continue: (sid: string) => ipcRenderer.invoke('engine:continue', sid),
     clarifyRespond: (sid: string, answer: string) => ipcRenderer.invoke('engine:clarifyRespond', sid, answer),
     resume: (taskId: string) => ipcRenderer.invoke('engine:resume', taskId),
     contextSnapshot: (sid: string) => ipcRenderer.invoke('engine:contextSnapshot', sid),

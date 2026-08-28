@@ -4,7 +4,7 @@ import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import type { Message } from '../global'
 import { api } from '../services/ipc'
-import { TOOL_LABELS, fmtDur } from './work-steps'
+import { fmtDur } from './work-steps'
 import { resolveDisplay } from '../store/display'
 import { StreamMarkdown } from './StreamMarkdown'
 
@@ -38,8 +38,9 @@ const TimelineStamp: React.FC<{ ts: number; className?: string }> = ({ ts, class
   </span>
 )
 
-// 秒表格式：<60s 显示 "12s"，否则 "1:23"
-const fmtElapsed = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`)
+// v0.4.4 对齐 DSH 推理块: 摘要行 —— 流式取末行, 定稿取首行
+const firstLine = (s: string) => { const t = s.trim(); const i = t.indexOf('\n'); return i < 0 ? t : t.slice(0, i) }
+const lastLine = (s: string) => { const t = s.trimEnd(); const i = t.lastIndexOf('\n'); return i < 0 ? t : t.slice(i + 1) }
 
 // 消息回应（文字标签，不使用 emoji）
 const REACTIONS_KEY = 'hq_message_reactions'
@@ -221,6 +222,20 @@ const UserBubbleMemo = React.memo(UserBubble)
 
 // ------------------------------------------------------------
 // 工具脚手架行 (扁平一行, 点击展开参数/结果)
+// v0.4.4 对齐 DSH 工具行标题(TOOL_TITLES/VARIANT_TITLES 为英文): 按工具名映射成英文标题
+const dsToolTitle = (name: string): string => {
+  const n = (name || '').toLowerCase()
+  if (n === 'pwsh' || n === 'powershell') return 'Pwsh'
+  if (['list', 'ls', 'read', 'find', 'web_fetch', 'web_read', 'recall_tool_output'].includes(n)) return 'Read'
+  if (['grep', 'web_search', 'search', 'glob'].includes(n)) return 'Search'
+  if (['exec_command', 'terminal_run', 'bash', 'shell'].includes(n)) return 'Bash'
+  if (['write', 'apply_patch', 'mkdir'].includes(n)) return 'Write'
+  if (n === 'edit') return 'Edit'
+  if (['codebox', 'run_code', 'code'].includes(n)) return 'Code'
+  if (n) return n.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return 'Tool call'
+}
+
 // ------------------------------------------------------------
 const ToolRow: React.FC<{
   tc: { id?: string; type?: string; function?: { name?: string; arguments?: string } }
@@ -230,11 +245,26 @@ const ToolRow: React.FC<{
 }> = ({ tc, result, executing, run }) => {
   const [open, setOpen] = useState(false)
   const fn = tc.function || { name: '', arguments: '' }
-  const label = fn.name ? (TOOL_LABELS[fn.name] || fn.name) : '工具'
+  const label = fn.name ? dsToolTitle(fn.name) : 'Tool call'
   let args = ''
   try { args = JSON.stringify(JSON.parse(fn.arguments || '{}'), null, 2) } catch { args = fn.arguments || '' }
   const argsCapped = args.length > 4000 ? args.slice(0, 4000) + '\n…参数过长已截断' : args
-  const inline = args.replace(/\n/g, ' ').trim()
+  // v0.4.4 对齐 DSH 工具行摘要: 只取关键参数值(路径/查询/URL/命令等), 而非整段 JSON
+  const SUM_KEYS = ['path', 'file_path', 'filePath', 'dirPath', 'targetPath', 'url', 'query', 'pattern', 'command', 'cmd', 'name', 'file', 'lang']
+  const toolSummary = (() => {
+    let parsed: Record<string, unknown> | null = null
+    try { parsed = JSON.parse(fn.arguments || '{}') } catch { parsed = null }
+    if (parsed) {
+      for (const k of SUM_KEYS) {
+        const v = parsed[k]
+        if (typeof v === 'string' && v.trim()) return v.trim()
+        if (Array.isArray(v) && v.length && typeof v[0] === 'string') return v[0]
+      }
+      // 退路: 取第一个字符串参数
+      for (const v of Object.values(parsed)) if (typeof v === 'string' && v.trim()) return v.trim()
+    }
+    return args.replace(/\n/g, ' ').trim()
+  })()
   const isError = run?.error === true || (!!result && result.content.startsWith('E:'))
   const status = run?.error ? 'error' : result ? (isError ? 'error' : 'done') : (executing ? 'running' : 'pending')
   const shownResult = result ? result.content : (run?.result || '')
@@ -246,7 +276,7 @@ const ToolRow: React.FC<{
         </span>
         <Terminal size={12} className="hq-tool-icon" />
         <span className="hq-tool-name">{label}</span>
-        {inline && <span className="hq-tool-args">{inline.length > 52 ? inline.slice(0, 52) + '…' : inline}</span>}
+        {toolSummary && <span className="hq-tool-args">{toolSummary.length > 52 ? toolSummary.slice(0, 52) + '…' : toolSummary}</span>}
         {run?.ms != null && <span className="hq-tool-dur">{fmtDur(run.ms)}</span>}
         <ChevronDown size={12} className={`hq-tool-chevron${open ? ' open' : ''}`} />
       </div>
@@ -282,30 +312,11 @@ const AssistantBlock: React.FC<{
   const isStreaming = !!message._streaming
   const reasoning = String(message.reasoning_content || '')
   const [reasonOpen, setReasonOpen] = useState(() => !!message._streaming)
-  const [reasonStart, setReasonStart] = useState<number | null>(null)
-  const [reasonDur, setReasonDur] = useState<number | null>(null)
-  const [elapsed, setElapsed] = useState(0)
-  // 思考标签状态机：思考中(计时) → 思考了 Xs / 快速思考 / 思考
+  // v0.4.4 DSH 风格: 固定 "思考" 标题, 无耗时计数; 流式自动展开, 定稿自动收起
   useEffect(() => {
-    if (reasoning && message._streaming) {
-      setReasonOpen(true)
-      if (reasonStart === null) setReasonStart(Date.now())
-    } else if (reasoning && !message._streaming) {
-      setReasonOpen(false)
-      if (reasonStart !== null && reasonDur === null) setReasonDur(Math.max(1, Math.round((Date.now() - reasonStart) / 1000)))
-    }
-  }, [reasoning, message._streaming, reasonStart, reasonDur])
-  useEffect(() => {
-    if (!message._streaming || !reasoning) return
-    setElapsed(0)
-    const id = window.setInterval(() => setElapsed(s => s + 1), 1000)
-    return () => window.clearInterval(id)
+    if (reasoning && message._streaming) setReasonOpen(true)
+    else if (reasoning && !message._streaming) setReasonOpen(false)
   }, [reasoning, message._streaming])
-  const reasonLabel = !reasoning ? null
-    : message._streaming ? '思考中'
-    : reasonDur === null ? '思考'
-    : reasonDur < 1 ? '快速思考'
-    : `思考了 ${fmtElapsed(reasonDur)}`
   // 思考过程自动跟随滚动：流式输出时贴近底部才自动滚到底，用户上滑后暂停跟随
   const reasonRef = useRef<HTMLDivElement | null>(null)
   const reasonFollow = useRef(true)
@@ -349,12 +360,15 @@ const AssistantBlock: React.FC<{
 
   return (
     <div className="hq-assistant-block group" data-role="assistant" data-message-id={message.id}>
+      {/* v0.4.4 对齐 DSH: 推理/正文/工具包进 body, 块间用统一间距; 页脚/链接卡/反馈在 body 外 */}
+      <div className="hq-assistant-body">
       {reasoning && (
-        <div className="hq-reasoning-block" data-conversation-scaffold="">
+        <div className={'hq-reasoning-block' + (message._streaming ? ' hq-reasoning-running' : '')} data-conversation-scaffold="">
           <button className="hq-reasoning-toggle" onClick={() => setReasonOpen(o => !o)} aria-expanded={reasonOpen}>
             <span className="hq-reasoning-arrow">{reasonOpen ? '▾' : '▸'}</span>
-            <span className={'hq-reasoning-label' + (message._streaming ? ' hq-shimmer' : '')}>{reasonLabel}</span>
-            {message._streaming && <span className="hq-reasoning-timer">{fmtElapsed(elapsed)}</span>}
+            <span className={'hq-reasoning-label' + (message._streaming ? ' hq-shimmer' : '')}>思考</span>
+            <span className="hq-reasoning-sep" aria-hidden />
+            <span className="hq-reasoning-summary" data-follow-end={message._streaming || undefined}>{message._streaming ? lastLine(reasoning) : firstLine(reasoning)}</span>
           </button>
           {reasonOpen && (
             <div className={'hq-reasoning-body' + (message._streaming ? ' hq-reasoning-live' : '')} ref={reasonRef} onScroll={syncReasonScroll}>
@@ -389,12 +403,13 @@ const AssistantBlock: React.FC<{
           ))}
         </div>
       )}
+      </div>
       {hasText && (
         <div className="hq-msg-footer">
           <div className="hq-msg-actions">
             {!disp.hideTimestamps && <span className="hq-msg-age">{fmtAgo(message.timestamp)}</span>}
             {!disp.hideTokenMeta && message.meta?.taskMs !== undefined && <span className="hq-msg-meta" title="任务总时长">耗时 {fmtDur(message.meta.taskMs)}</span>}
-            {!disp.hideTokenMeta && message.meta?.taskTokens != null && <span className="hq-msg-meta" title="本任务总消耗(全 agent)">{message.meta.taskTokens} token</span>}
+            {!disp.hideTokenMeta && message.meta?.taskTokens != null && <span className="hq-msg-meta" title="本任务总消耗">{message.meta.taskTokens} token</span>}
             {!disp.hideRegenerate && <button title="重新生成" onClick={regen}><RefreshCw size={13} /></button>}
             {!disp.hideCopyButtons && <button title={copied ? '已复制' : '复制回复'} onClick={handleCopy}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>}
             <button title="引用到输入框" onClick={quote}><Quote size={13} /></button>

@@ -32,6 +32,9 @@ export interface S {
   plans: Record<string, PlanState>
   clarifyReq: { sid: string; requestId: string; question: string; choices: string[]; multiSelect: boolean } | null
   askDraft: string // 系统级全局热键带进来的"选中即问"草稿(由 ChatInput 消费后清空)
+  // v0.4.4 长任务感知性: 按 sid 键控的进度与停滞态(多会话并发时不互相覆盖)
+  progress: Record<string, { round: number; stepsDone: number; stepsTotal: number; tokensUsed: number; elapsedMs: number; currentTool?: string; stalled?: boolean }>
+  stall: Record<string, { active: boolean; elapsedMs: number }>
   load: () => Promise<void>
   setMode: (mode: string) => Promise<void>
   create: () => void
@@ -42,6 +45,7 @@ export interface S {
   resendFrom: (msgId: string, newContent?: string) => Promise<void>
   regen: () => Promise<void>
   stop: () => void
+  continueStalled: () => void
   restoreTask: (id: string) => Promise<void>
   setAskDraft: (text: string) => void
   cur: () => SessionData | undefined

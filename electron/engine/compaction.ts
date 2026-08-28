@@ -21,13 +21,20 @@ export interface CompactionDeps {
 export class CompactionRunner {
   constructor(private deps: CompactionDeps) {}
 
+  // v0.4.4: 压缩 LLM 调用期间标记 task.compacting, 让主循环看门狗视为活跃, 不把压缩耗时误判为停滞
+  private async withCompactActive<T>(task: TaskState, fn: () => Promise<T>): Promise<T> {
+    const prev = task.compacting
+    task.compacting = true
+    try { return await fn() } finally { task.compacting = prev }
+  }
+
   // 早期消息 LLM 摘要(实验): 长会话早期消息交给模型压缩, 替代规则截断
   async makeEarlySummary(task: TaskState): Promise<string> {
     try {
       const early = task.messages.slice(0, -30).filter(m => typeof m.content === 'string' && m.content).slice(0, 60)
       if (!early.length) return ''
       const text = early.map(m => `${m.role === 'user' ? '用户' : '助手'}: ${String(m.content).slice(0, 200)}`).join('\n')
-      const r = await chatOnce(this.deps.netFetch, {
+      const r = await this.withCompactActive(task, () => chatOnce(this.deps.netFetch, {
         provider: task.curP.type,
         model: task.model,
         apiKey: task.curP.apiKey,
@@ -36,7 +43,7 @@ export class CompactionRunner {
           { role: 'system', content: '你是Acheron-Agent。请把下面的早期对话压缩成 200 字以内的要点总结，保留事实、路径、结论。只输出总结。' },
           { role: 'user', content: text.slice(0, 12000) },
         ],
-      })
+      }))
       return r.startsWith('E:') ? '' : r
     } catch { return '' }
   }
@@ -52,7 +59,7 @@ export class CompactionRunner {
       runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'micro' })
       const rid = 'micro_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
       const qaText = pairs.map((p, i) => '问' + (i + 1) + '：' + p.user + '\n答' + (i + 1) + '：' + p.assistant).join('\n\n')
-      const summary = await chatOnce(this.deps.netFetch, {
+      const summary = await this.withCompactActive(task, () => chatOnce(this.deps.netFetch, {
         provider: task.curP.type,
         model: task.model,
         apiKey: task.curP.apiKey,
@@ -61,7 +68,7 @@ export class CompactionRunner {
           { role: 'system', content: '把下面的多组问答压缩成 300 字以内的要点，保留事实、路径、结论，不编造。只输出摘要。' },
           { role: 'user', content: qaText },
         ],
-      }, u => this.deps.recordUsage(task, rid, u as EngineUsage))
+      }, u => this.deps.recordUsage(task, rid, u as EngineUsage)))
       if (!summary || summary.startsWith('E:')) return
       const folded = String(summary).slice(0, 500)
       const foldedMsg: EngineMessage = { id: uuidv4(), role: 'user', content: '[早期对话摘要]\n' + folded, timestamp: Date.now() }
@@ -98,7 +105,7 @@ export class CompactionRunner {
       this.deps.emit({ type: 'stage', sid: task.sid, phase: 'thinking', label: '正在压缩历史', detail: cands.length + ' 条旧消息 → 摘要' })
       runHooks(task.g, 'compact-before', { sid: task.sid, taskId: task.taskId, kind: 'window' })
       const { system, user } = buildCompactPrompt(cands)
-      const summary = await chatOnce(this.deps.netFetch, {
+      const summary = await this.withCompactActive(task, () => chatOnce(this.deps.netFetch, {
         provider: task.curP.type,
         model: task.model,
         apiKey: task.curP.apiKey,
@@ -107,7 +114,7 @@ export class CompactionRunner {
           { role: 'system', content: system },
           { role: 'user', content: user },
         ],
-      })
+      }))
       if (!summary || summary.startsWith('E:')) return
       task.compactCount = (task.compactCount || 0) + 1
       const notice = buildCompactNotice(task.compactCount)

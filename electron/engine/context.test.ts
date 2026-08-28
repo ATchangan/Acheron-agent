@@ -17,11 +17,12 @@ describe('engine context', () => {
     expect(out).toContain('已截断')
   })
 
-  it('buildPrompt 包含身份与多角色编队', () => {
+  it('buildPrompt 包含身份与工作准则, 不含编队(0.4.4 单助手)', () => {
     const sp = buildPrompt('work', '测试人设', G, getAgents(), 'D:/test')
-    expect(sp).toContain('多角色编队')
-    expect(sp).toContain('助手')
+    expect(sp).toContain('任务执行（静默）')
     expect(sp).toContain('简单任务直接调工具')
+    expect(sp).not.toContain('多角色编队')
+    expect(sp).not.toContain('handoff')
   })
 
   it('routeAgent 简单消息不路由, 代码消息路由开发', () => {

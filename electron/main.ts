@@ -1,25 +1,20 @@
-﻿import { app, net } from 'electron'
+import { app, net } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
-import { registerMemoryIpc } from './ipc/memory'
-import { registerSkillsIpc } from './ipc/skills'
 import { registerPluginsIpc } from './ipc/plugins'
 import { registerModelStatsIpc } from './ipc/model-stats'
 import { registerMcpIpc } from './ipc/mcp'
-import { registerCronIpc } from './ipc/cron'
 import { registerBackupIpc } from './ipc/backup'
 import { registerRollbackIpc } from './ipc/rollback'
 import { registerDiagnosticsIpc } from './ipc/diagnostics'
 import { setCustomAgentsDir } from './engine/agents'
 import { registerWindowIpc } from './ipc/window'
-import { registerWatchIpc } from './ipc/watch'
 import { registerWebIpc } from './ipc/web'
 import { registerCacheIpc } from './ipc/cache'
 import { registerMiscIpc, cleanChromiumCaches } from './ipc/misc'
 import { registerHotkeyIpc, registerGlobalHotkey, unregisterGlobalHotkey } from './ipc/hotkey'
 import { registerModelsIpc } from './ipc/models'
 import { registerUpdateIpc } from './ipc/update'
-import { registerMediaIpc } from './ipc/media'
 import { registerBrowserIpc } from './ipc/browser'
 import { registerComputerIpc } from './ipc/computer'
 import { registerLlmIpc } from './ipc/llm'
@@ -28,7 +23,7 @@ import { registerTraceIpc, flushTrace } from './ipc/trace'
 import { registerEngineIpc } from './ipc/engine'
 import { registerRiskConfirm } from './ipc/risk-confirm'
 import { getBrowserSession, getBrowserSessionIfExists, closeBrowserSession, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen, initBrowserViews } from './browser-session'
-import { safeClone, decKey, encProviders, decProviders, dirSize, fmtSize, startServer } from './main-utils'
+import { decKey, encProviders, decProviders, dirSize, fmtSize, startServer } from './main-utils'
 import { join } from 'path'
 import { AppShell } from './app-shell'
 import { initDb, closeDb } from './db'
@@ -172,22 +167,18 @@ if (dbInit.ok) {
     } catch (e) { console.debug('[swallow]', e) }
   }
 }
-registerMemoryIpc({ memoryPath, settingsPath, userDataPath, safeClone, decKey })
+// v0.4.4 精简: 记忆/技能/定时/监视等用户界面已收敛, 对应 IPC 不再注册(引擎内部记忆基座保留)
 const workspaceDir = join(userDataPath, 'workspace')
 // v0.3.8: 自定义子代理目录(用户放 *.json 即注册自定义角色)
 setCustomAgentsDir(join(userDataPath, 'agents'))
-// skillsDir 必须在 userData —— 安装版 app.asar 内只读, mkdir 抛 ENOTDIR 导致启动崩溃
+// skillsDir 保留: resources/skills 只读目录探测 + misc:openSkillsDir 兼容
 const skillsDir = join(userDataPath, 'skills')
-registerSkillsIpc({ skillsDir, resourcesDir })
 
 // mkdir 循环全部 try-catch —— resources/skills 在 asar 内只读, 失败不能崩溃
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
   try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }) } catch (e) { /* 只读目录(asar 内)或权限受限: 跳过 */ console.debug('[swallow]', e) }
 }
-// 启动定时任务
-import('./scheduler/cron').then(m => m.initCron(join(userDataPath, 'cron.json'), (prompt: string) => {
-  appShell.getWindow()?.webContents.send('cron:trigger', prompt)
-})).catch(() => {})
+// v0.4.4 精简: 定时任务调度已移除(不再常驻轮询)
 // 多角色体系已统一为前端实现(chat.ts AGENTS), 主进程 agent 模块已移除
 // v0.2: 启动时加载MCP SSE
 import('./mcp/sse-transport').catch(() => {})
@@ -233,12 +224,9 @@ registerMiscIpc({ settingsPath, userDataPath, resourcesDir, skillsDir, workspace
 registerHotkeyIpc({ getWindow: () => appShell.getWindow() })
 registerModelsIpc({ netFetch })
 registerUpdateIpc({ netFetch })
-registerMediaIpc({ settingsPath, userDataPath, netFetch, getEffectiveWorkDir })
 registerWebIpc({ settingsPath, netFetch, decKey })
 registerWindowIpc({ getMainWindow: () => appShell.getWindow(), trayEnabled: () => appShell.trayEnabled(), setQuitting: (v) => { isQuitting = v } })
-registerWatchIpc({ serverPort: () => serverPort })
 registerRiskConfirm({ getMainWindow: () => appShell.getWindow(), settingsPath })
-registerCronIpc()
 registerBackupIpc({
   userDataPath,
   getWorkDir: () => getEffectiveWorkDir() || userDataPath,

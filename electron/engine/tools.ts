@@ -16,15 +16,18 @@ import { getPluginToolSpecs } from '../plugins/author'
 export { parseMcpToolName, TOOLS, getMcpToolSpecs, closeTerminalSessions }
 export type { ToolRunCtx }
 
-// v0.3.8: 主控核心工具集 —— 默认只给常用工具, 省 schema/上下文; 进阶工具可在 设置→工具 单独放行或关闭核心模式
+// v0.4.4 精简: 工具调用为三大保留能力之一 —— 主控核心工具集即全部内置工具(文件/命令/终端/网络/浏览器/桌面/插件/MCP), 技能/记忆/编队/定时/工作流已收敛
 const CORE_TOOLS = new Set([
   'read', 'write', 'edit', 'apply_patch', 'mkdir', 'ls', 'grep', 'find',
   'exec_command', 'git', 'terminal_open', 'terminal_run', 'terminal_close',
-  'web_search', 'web_fetch', 'web_read', 'read_skill', 'skill_manage', 'init_project_docs', 'update_plan',
-  'system_info', 'session_search', 'save_memory', 'recall_memory', 'recall_events', 'recall_tool_output',
-  'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key',
-  'list_agents', 'dispatch', 'handoff', 'list_workflows', 'run_workflow',
+  'web_search', 'web_fetch', 'web_read', 'browse', 'browse_screenshot',
+  'browser_click', 'browser_type', 'browser_press', 'browser_scroll', 'browser_console', 'browser_vision',
+  'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process',
+  'codebox', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key',
+  'read_image', 'system_info', 'init_project_docs', 'update_plan', 'clarify', 'show_card',
   'install_plugin', 'list_plugins', 'read_plugin', 'remove_plugin', 'reload_plugins',
+  'mcp_connect', 'mcp_call',
+  'set_workdir', 'set_theme',
   'set_ui_display', 'get_ui_display',
   'get_settings', 'set_settings',
 ])

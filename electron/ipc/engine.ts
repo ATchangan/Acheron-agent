@@ -102,6 +102,7 @@ export function registerEngineIpc(deps: {
   })
   ipcMain.handle('engine:approve', (_e, sid: string) => { engine.approve(sid); return true })
   ipcMain.handle('engine:reject', (_e, sid: string) => { engine.reject(sid); return true })
+  ipcMain.handle('engine:continue', (_e, sid: string) => { engine.continue(sid); return true })
   ipcMain.handle('engine:clarifyRespond', (_e, sid: string, answer: string) => { engine.clarifyRespond(sid, String(answer ?? '')); return true })
   ipcMain.handle('engine:resume', (_e, taskId: string) => { engine.resume(taskId); return true })
   ipcMain.handle('engine:contextSnapshot', (_e, sid: string) => engine.getContextSnapshot(String(sid || '')))

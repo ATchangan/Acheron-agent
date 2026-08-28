@@ -171,8 +171,9 @@ describe('runTool 分发器', () => {
     expect(def).toContain('read')
     expect(def).toContain('git')
     expect(def).toContain('update_plan')
-    expect(def).not.toContain('screenshot')
-    expect(def).not.toContain('browser_click')
+    // v0.4.4 精简: 核心工具集覆盖全部内置工具(工具调用为仅存能力之一), 截图/浏览器等不再默认隐藏
+    expect(def).toContain('screenshot')
+    expect(def).toContain('browser_click')
     const withPerm = names(makeCtx({ g: { filePermission: 'full', toolPerms: { screenshot: 'allow' } } }))
     expect(withPerm).toContain('screenshot')
     const full = names(makeCtx({ g: { filePermission: 'full', perf: { toolCore: false } } }))

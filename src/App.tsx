@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from './store/settings'
 import type { GeneralSettings } from './types'
 import { useChatStore } from './store/chat'
@@ -14,26 +14,16 @@ import CommandPalette from './components/CommandPalette'
 import OverlayView from './components/OverlayView'
 import ReadonlyThread from './components/ReadonlyThread'
 import FirstRunOverlay from './components/FirstRunOverlay'
-import WatchView from './components/WatchView'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { Download } from 'lucide-react'
 import { matchCombo, loadKeybinds } from './store/keybinds'
 
 // v0.4.3: 重页面懒加载(进到对应视图才拉取), 缩小首屏 bundle
+// v0.4.4 精简: 仅保留 会话/设置/浏览器 三个视图, 技能/记忆/编队/定时等已收敛
 const SettingsView = React.lazy(() => import('./components/SettingsView'))
-const AgentsView = React.lazy(() => import('./components/AgentsView'))
-const MemoryView = React.lazy(() => import('./components/MemoryView'))
 const BrowserView = React.lazy(() => import('./components/BrowserView'))
-const SkillsPage = React.lazy(() => import('./components/SkillsPage'))
-const ArtifactsView = React.lazy(() => import('./components/ArtifactsView'))
-const CronPage = React.lazy(() => import('./components/CronPage'))
-const ProfilesView = React.lazy(() => import('./components/ProfilesView'))
-const CommandCenterView = React.lazy(() => import('./components/CommandCenterView'))
-const KeysView = React.lazy(() => import('./components/KeysView'))
 const LazyFallback = () => <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 'calc(var(--ui-font-size) - 1px)' }}>加载中…</div>
 
-export type View = 'chat' | 'settings' | 'agents' | 'memory' | 'browser' | 'files'
-  | 'skills' | 'artifacts' | 'cron' | 'profiles' | 'command-center' | 'keys'
+export type View = 'chat' | 'settings' | 'browser' | 'files'
 
 // 聊天区局部崩溃降级: 外壳(标题栏/侧栏)保持可用, 只替换聊天内容区
 const chatFallback = (_err: Error) => (
@@ -44,7 +34,7 @@ const chatFallback = (_err: Error) => (
   </div>
 )
 
-// 主题解析 —— theme 优先(6 套预设), 旧 themePreset 自动迁移(PRESETS_THEME 内联机制已废弃), custom 回退 dark + 内联覆盖
+// 主题解析 —— theme 优先(多套预设), 旧 themePreset 自动迁移, custom 回退 dark + 内联覆盖
 const THEME_WHITELIST = ['auto', 'black', 'huangquan', 'ocean', 'dark', 'light', 'violet', 'bloodmoon', 'dawn', 'deepblue', 'forest', 'amber', 'pastel', 'graphite', 'aurora', 'midnight', 'ember', 'mono', 'cyberpunk', 'slate']
 const LEGACY_THEME: Record<string, string> = { 'system': 'auto', 'dark-tech': 'black', 'light-warm': 'light', 'deep-black': 'black', 'forest': 'black', 'high-contrast': 'black', 'huangquan': 'huangquan' }
 function resolveTheme(g: GeneralSettings): string {
@@ -66,7 +56,7 @@ function applyAppearance(g: GeneralSettings) {
     '--bg-card', '--bg-input', '--bg-root', '--bg-surface', '--skin-overlay', '--skin-accent', '--skin-secondary', '--accent',
     '--chat-font-size', '--code-font-size']
   for (const v of staleVars) r.removeProperty(v)
-  // 主题 = data-theme 6 套 CSS token 块(不再内联变量)
+  // 主题 = data-theme token 块(不再内联变量)
   document.documentElement.setAttribute('data-theme', resolveTheme(g))
   // Custom theme colors override (from settings)
   const customTheme = g.customColors || g.customTheme
@@ -124,10 +114,11 @@ function applyAppearance(g: GeneralSettings) {
   r.setProperty('--chat-max-width', chatWidth + 'px')
   r.setProperty('--hq-composer-width', chatWidth + 'px')
   // 界面自定义: 信息密度(消息间距) + 自定义 CSS(任意显示细节可覆写)
-  const uiDensity = g.uiDisplay?.density === 'compact' || g.uiDisplay?.density === 'spacious' ? g.uiDisplay.density : 'comfortable'
+  // v0.4.4 默认紧凑: 未显式设置时用 compact(收紧消息间距)
+  const uiDensity = g.uiDisplay?.density === 'compact' || g.uiDisplay?.density === 'spacious' ? g.uiDisplay.density : 'compact'
   document.documentElement.setAttribute('data-density', uiDensity)
   const DENSITY_GAP: Record<string, string> = { compact: '4px', comfortable: '12px', spacious: '24px' }
-  r.setProperty('--msg-gap', DENSITY_GAP[uiDensity] || '12px')
+  r.setProperty('--msg-gap', DENSITY_GAP[uiDensity] || '4px')
   let cssEl = document.getElementById('hq-custom-css') as HTMLStyleElement | null
   if (!cssEl) {
     cssEl = document.createElement('style')
@@ -195,8 +186,6 @@ export default function App() {
   const cid = useChatStore(s => s.cid)
   const [settingsTab, setSettingsTab] = useState<string | null>(null)
   const [onboarded, setOnboarded] = useState(() => localStorage.getItem('hq_onboarded_v1') === '1')
-  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate?: boolean; version?: string; assets?: { name: string; url: string; digest?: string }[] } | null>(null)
-  const [updateDl, setUpdateDl] = useState(0)
   const [splitRatio, setSplitRatio] = useState(0.5)
   const splitDrag = React.useRef<{ x: number; y: number; ratio: number } | null>(null)
 
@@ -204,15 +193,6 @@ export default function App() {
     if (tab) setSettingsTab(tab)
     setView('settings')
   }
-
-  // 启动检查更新 → 轻量横幅（updates overlay 简化版）
-  useEffect(() => {
-    let alive = true
-    window.huangquan.update.check().then(r => { if (alive && r?.hasUpdate) setUpdateInfo(r) }).catch(() => {})
-    let off: (() => void) | undefined
-    try { off = window.huangquan.update.onProgress?.(d => { if (d.total > 0) setUpdateDl(Math.round((d.received / d.total) * 100)) }) } catch { /* 忽略 */ }
-    return () => { alive = false; try { off?.() } catch { /* 忽略 */ } }
-  }, [])
 
   // 分栏拖拽调宽
   useEffect(() => {
@@ -271,7 +251,7 @@ export default function App() {
     return () => document.removeEventListener('keydown', onKey)
   }, [])
 
-  // hash 路由 —— #browser = 独立无头浏览器窗口; #float = 悬浮窗; 其余 = 主窗口
+  // hash 路由 —— #browser = 独立无头浏览器窗口; 其余 = 主窗口
   // v0.4.3 系统级"随叫随到"/选中即问: 全局热键把剪贴板选中带进聊天草稿
   useEffect(() => {
     try {
@@ -311,11 +291,6 @@ export default function App() {
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
   }, [])
-  if (routeHash.startsWith('#watch')) {
-    const q = routeHash.replace('#watch', '')
-    const sid = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).get('sid') || ''
-    return <WatchView sid={sid} />
-  }
   if (routeHash === '#browser') return <React.Suspense fallback={<LazyFallback />}><BrowserView /></React.Suspense>
 
   useEffect(() => {
@@ -392,8 +367,6 @@ export default function App() {
         {sidebarOpen && <Sidebar currentView={view} onNavigate={navigate} />}
         <div className="chat-main" style={{ paddingTop: 0 }}>
           {view === 'browser' ? <React.Suspense fallback={<LazyFallback />}><BrowserView embedded /></React.Suspense>
-            : view === 'skills' ? <React.Suspense fallback={<LazyFallback />}><SkillsPage /></React.Suspense>
-            : view === 'artifacts' ? <React.Suspense fallback={<LazyFallback />}><ArtifactsView /></React.Suspense>
             : splitDir && splitSessionId ? (
               <div className={'hq-split hq-split-' + splitDir}>
                 <div className="hq-split-pane" style={{ flex: `${splitRatio} 1 0%` }}>
@@ -423,41 +396,11 @@ export default function App() {
         {rightRailOpen && <RightRail />}
       </div>
       <StatusBar hidden={statusHidden} onToggleHidden={() => setStatusHidden(v => !v)} />
-      {/* v0.4.2 路由浮层：设置/角色编队/记忆 覆盖在聊天之上 */}
+      {/* v0.4.2 路由浮层：设置 覆盖在聊天之上 */}
       <React.Suspense fallback={<LazyFallback />}>
       {view === 'settings' && (
         <OverlayView title="设置" onClose={() => setView('chat')}>
           <SettingsView onNavigate={(v) => navigate(v as View)} initialTab={settingsTab || undefined} />
-        </OverlayView>
-      )}
-      {view === 'agents' && (
-        <OverlayView title="子代理" onClose={() => setView('chat')}>
-          <AgentsView />
-        </OverlayView>
-      )}
-      {view === 'memory' && (
-        <OverlayView title="记忆" onClose={() => setView('chat')}>
-          <MemoryView />
-        </OverlayView>
-      )}
-      {view === 'cron' && (
-        <OverlayView title="定时任务" onClose={() => setView('chat')} width={1000}>
-          <CronPage />
-        </OverlayView>
-      )}
-      {view === 'profiles' && (
-        <OverlayView title="配置档案" onClose={() => setView('chat')} width={720}>
-          <ProfilesView />
-        </OverlayView>
-      )}
-      {view === 'command-center' && (
-        <OverlayView title="命令中心" onClose={() => setView('chat')} width={860}>
-          <CommandCenterView />
-        </OverlayView>
-      )}
-      {view === 'keys' && (
-        <OverlayView title="API Keys" onClose={() => setView('chat')} width={860}>
-          <KeysView />
         </OverlayView>
       )}
       </React.Suspense>
@@ -477,24 +420,9 @@ export default function App() {
           onOpenSettings={openSettings}
         />
       )}
-      {updateInfo && (
-        <div className="hq-update-banner">
-          <div className="hq-update-banner-head"><Download size={14} />发现新版本 v{updateInfo.version}</div>
-          <div className="hq-update-banner-actions">
-            <button type="button" className="hq-btn hq-btn-accent" disabled={updateDl > 0 && updateDl < 100} onClick={async () => {
-              const asset = updateInfo.assets?.find(a => /\.exe$/i.test(a.name)) || updateInfo.assets?.[0]
-              if (!asset) return
-              await window.huangquan.update.download(asset.url, asset.name, asset.digest).catch(() => {})
-              setUpdateInfo(null)
-            }}>{updateDl > 0 && updateDl < 100 ? '下载中 ' + updateDl + '%' : '下载'}</button>
-            <button type="button" className="hq-btn" onClick={() => setUpdateInfo(null)}>忽略</button>
-          </div>
-          {updateDl > 0 && updateDl < 100 && <div className="hq-update-progress"><div className="hq-update-progress-fill" style={{ width: updateDl + '%' }} /></div>}
-        </div>
-      )}
       </div>
       {/* v0.3.6: 右上角按钮组 —— 固定在窗口控制按钮(最小化/最大化/关闭)正下方 */}
-      {/* 固定定位浮层(风险确认/浏览器横幅)渲染在 flex 容器之外, 避免参与布局挤窄聊天区 */}
+      {/* 固定定位浮层(风险确认)渲染在 flex 容器之外, 避免参与布局挤窄聊天区 */}
       <FloatBadge />
       <RiskConfirmCard />
       {/* 角色角标: 右下角小黄泉(纯装饰, 不拦截点击), 低透明度避免喧宾夺主; 可点 设置→界面→自定义 CSS 隐藏 */}

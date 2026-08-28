@@ -121,6 +121,10 @@ export type EngineEvent =
   | { type: 'tool-log'; sid: string; stepId: string; log: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }[] }
   | { type: 'stage'; sid: string; phase: 'thinking' | 'tool'; label: string; detail: string }
   | { type: 'stage-clear'; sid: string }
+  // v0.4.4 长任务感知性: 轮次/步骤进度/token/耗时/当前工具(节流发射); stalled 表示是否处于疑似停滞态
+  | { type: 'task-progress'; sid: string; round: number; stepsDone: number; stepsTotal: number; tokensUsed: number; elapsedMs: number; currentTool?: string; stalled?: boolean }
+  // v0.4.4 无进展停滞提示: active=true 表示检测到"连续无产出", 由 UI 决定继续/中止
+  | { type: 'stall'; sid: string; active: boolean; elapsedMs: number }
   | { type: 'final'; sid: string; id: string; content: string; reasoning?: string; toolLog: { name: string; args: Record<string, unknown>; result: string; error: boolean; ms: number; toolCallId?: string; agent?: string }[]; taskTokens: number; taskMs: number }
   | { type: 'stream'; sid: string; streaming: boolean; executing: boolean }
   | { type: 'busy'; sid: string; busy: boolean }

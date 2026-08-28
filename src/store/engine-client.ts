@@ -46,6 +46,14 @@ interface EngineEvent {
   limit?: number
   taskTokens?: number
   taskMs?: number
+  round?: number
+  stepsDone?: number
+  stepsTotal?: number
+  tokensUsed?: number
+  elapsedMs?: number
+  currentTool?: string
+  stalled?: boolean
+  active?: boolean
   status?: 'done' | 'failed' | 'aborted'
   error?: string
   failedStep?: { label?: string; tool?: string; detail?: string; messageId?: string }
@@ -177,6 +185,19 @@ function applyEngineEventInner(raw: unknown): void {
     }
     case 'stage-clear': {
       if (st.stage?.sid === ev.sid) useChatStore.setState({ stage: null })
+      break
+    }
+    case 'task-progress': {
+      // v0.4.4 长任务感知性: 轮次/步骤进度/token/耗时/当前工具(按 sid 键控, 并发会话不互相覆盖)
+      useChatStore.setState(s => ({ progress: { ...s.progress, [ev.sid]: { round: ev.round || 0, stepsDone: ev.stepsDone || 0, stepsTotal: ev.stepsTotal || 0, tokensUsed: ev.tokensUsed || 0, elapsedMs: ev.elapsedMs || 0, currentTool: ev.currentTool, stalled: ev.stalled === true } } }))
+      break
+    }
+    case 'stall': {
+      // v0.4.4 无进展停滞提示: active=true 显示"疑似停滞"; 用户继续/该任务恢复时只清本会话
+      useChatStore.setState(s => {
+        if (ev.active) return { stall: { ...s.stall, [ev.sid]: { active: true, elapsedMs: ev.elapsedMs || 0 } } }
+        const st = { ...s.stall }; delete st[ev.sid]; return { stall: st }
+      })
       break
     }
     case 'final': {
@@ -326,7 +347,7 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'task-done': {
-      useChatStore.setState({ streamText: '', streamId: '' })
+      useChatStore.setState(s => { const p = { ...s.progress }; delete p[ev.sid]; const st = { ...s.stall }; delete st[ev.sid]; return { streamText: '', streamId: '', progress: p, stall: st } })
       const finalPlan = useChatStore.getState().plans[ev.sid]
       patchSession(ev.sid, s => ({ ...s, busy: false, streaming: false, messages: stripStreaming(s.messages || []), plan: finalPlan || s.plan }))
       if (st.cid === ev.sid) {
@@ -346,7 +367,7 @@ function applyEngineEventInner(raw: unknown): void {
       break
     }
     case 'error': {
-      useChatStore.setState({ streamText: '', streamId: '' })
+      useChatStore.setState(s => { const p = { ...s.progress }; delete p[ev.sid]; const st = { ...s.stall }; delete st[ev.sid]; return { streamText: '', streamId: '', progress: p, stall: st } })
       patchSession(ev.sid, s => ({ ...s, messages: stripStreaming(s.messages || []) }))
       if (st.cid === ev.sid) useChatStore.setState({ error: ev.message || '任务执行出错' })
       break

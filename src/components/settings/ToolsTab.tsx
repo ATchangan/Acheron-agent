@@ -2,27 +2,24 @@ import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
 import { TOOLS } from '../../store/tools'
-import { useAgents } from '../../store/agents'
 import { U } from '../ui-styles'
 
 
 // v0.3.1 块 H: 工具 tab(从 SettingsView 拆分, 行为零变化)
 
 // 工具级权限管理列表(常用内置工具): 点击循环 放行 → 询问 → 禁用
-const PERM_TOOLS = ['read', 'write', 'edit', 'exec_command', 'mkdir', 'grep', 'find', 'ls', 'codebox', 'web_search', 'web_fetch', 'web_read', 'browse', 'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key', 'save_memory', 'recall_memory', 'import_doc', 'schedule_task', 'mcp_connect', 'mcp_call']
+// v0.4.4 精简: 技能/记忆/定时/通知等已收敛, 权限列表保留工具调用核心集
+const PERM_TOOLS = ['read', 'write', 'edit', 'exec_command', 'mkdir', 'grep', 'find', 'ls', 'codebox', 'web_search', 'web_fetch', 'web_read', 'browse', 'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key', 'mcp_connect', 'mcp_call']
 
 export default function ToolsTab() {
   const g = useSettingsStore(s => s.general) || {}
-  const agentsMap = useAgents()
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const save = (patch: Partial<import('../../types').GeneralSettings>) => { useSettingsStore.setState(s2 => ({ general: { ...(s2.general || {}), ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
   const [sys, setSys] = useState<{ version: string; electron: string; node: string } | null>(null)
-  const [skillCount, setSkillCount] = useState(0)
   useEffect(() => {
     window.huangquan.appInfo().then(setSys).catch(() => {})
-    window.huangquan.skills.list().then((l) => setSkillCount(Array.isArray(l) ? l.length : 0)).catch(() => {})
   }, [])
   const [pluginList, setPluginList] = useState<{ plugin: string; name: string; description: string }[]>([])
   useEffect(() => { window.huangquan.plugins.tools().then((l) => setPluginList(Array.isArray(l) ? l : [])).catch(() => setPluginList([])) }, [])
@@ -40,18 +37,14 @@ export default function ToolsTab() {
         <div style={S.section}>工具总览仪表盘</div>
         <div style={U.grid3}>
           {([
-            ['文件', 'filesystem', ['read', 'write', 'edit', 'mkdir', 'ls', 'grep', 'find']],
-            ['Shell', 'shell', ['exec_command', 'codebox']],
-            ['浏览器', 'browser', ['browse', 'browse_screenshot', 'web_search', 'web_fetch']],
-            ['桌面', 'desktop', ['screenshot', 'clipboard_read', 'clipboard_write', 'system_info', 'process_list', 'kill_process', 'read_image']],
-            ['办公', 'office', ['import_doc']],
-            ['媒体', 'media', ['show_card']],
-            ['数据库', 'database', []],
-            ['网络', 'network', ['web_search', 'web_fetch']],
+            ['文件', 'filesystem', ['read', 'write', 'edit', 'apply_patch', 'mkdir', 'ls', 'grep', 'find', 'init_project_docs']],
+            ['Shell', 'shell', ['exec_command', 'codebox', 'terminal_open', 'terminal_run', 'terminal_close', 'git']],
+            ['浏览器', 'browser', ['browse', 'browse_screenshot', 'browser_click', 'browser_type', 'browser_press', 'browser_scroll', 'browser_console', 'browser_vision', 'web_search', 'web_fetch', 'web_read']],
+            ['桌面', 'desktop', ['screenshot', 'clipboard_read', 'clipboard_write', 'system_info', 'process_list', 'kill_process', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key', 'read_image']],
+            ['对话', 'chat', ['clarify', 'show_card', 'update_plan', 'set_workdir', 'set_theme']],
             ['MCP', 'mcp', ['mcp_connect', 'mcp_call']],
             ['插件', 'plugins', []],
-            ['定时', 'schedule', ['schedule_task', 'list_schedules', 'watch_file', 'list_workflows', 'run_workflow']],
-            ['通知', 'notify', ['bridge_notify', 'save_goal', 'list_goals', 'save_memory', 'recall_memory', 'audit_log']],
+            ['界面', 'ui', ['set_ui_display', 'get_ui_display', 'get_settings', 'set_settings']],
           ] as [string, string, string[]][]).map(([label, cat, tools]) => {
             const disabled = ((g.disabledTools || []) as string[])
             const enabled = tools.filter(t => !disabled.includes(t))
@@ -70,7 +63,7 @@ export default function ToolsTab() {
           })}
         </div>
         <div style={{ textAlign: 'right', marginTop: 8, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-          <button style={S.btn('danger')} onClick={() => save({ disabledTools: ['read', 'write', 'edit', 'mkdir', 'ls', 'grep', 'find', 'exec_command', 'codebox', 'browse', 'browse_screenshot', 'web_search', 'web_fetch', 'screenshot', 'clipboard_read', 'clipboard_write', 'system_info', 'process_list', 'kill_process', 'read_image', 'import_doc', 'show_card', 'mcp_connect', 'mcp_call', 'schedule_task', 'list_schedules', 'watch_file', 'list_workflows', 'run_workflow', 'bridge_notify', 'save_goal', 'list_goals', 'save_memory', 'recall_memory', 'audit_log'] })}>全部禁用</button>
+          <button style={S.btn('danger')} onClick={() => save({ disabledTools: ['read', 'write', 'edit', 'apply_patch', 'mkdir', 'ls', 'grep', 'find', 'exec_command', 'git', 'terminal_open', 'terminal_run', 'terminal_close', 'codebox', 'browse', 'browse_screenshot', 'browser_click', 'browser_type', 'browser_press', 'browser_scroll', 'browser_console', 'browser_vision', 'web_search', 'web_fetch', 'web_read', 'screenshot', 'clipboard_read', 'clipboard_write', 'system_info', 'process_list', 'kill_process', 'read_image', 'show_card', 'mcp_connect', 'mcp_call', 'init_project_docs', 'update_plan', 'clarify', 'set_workdir', 'set_theme', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key'] })}>全部禁用</button>
           <button style={S.btn('ghost')} onClick={() => save({ disabledTools: [] })}>恢复默认</button>
         </div>
       </div>
@@ -170,19 +163,17 @@ export default function ToolsTab() {
         <div style={S.section}>可用工具</div>
       <div style={S.hint}>关闭不需要的工具可减少词元消耗，加速响应</div>
         {[
-          ['read', '读取文件'], ['write', '写入文件'], ['edit', '编辑文件'], ['exec_command', '命令执行'],
+          ['read', '读取文件'], ['write', '写入文件'], ['edit', '编辑文件'], ['apply_patch', '结构化补丁'],
           ['mkdir', '创建目录'], ['ls', '列出目录'], ['grep', '文本搜索'], ['find', '文件查找'],
-          ['web_search', '网页搜索'], ['web_fetch', '网页抓取'], ['browse', '浏览器'], ['browse_screenshot', '网页截图'],
+          ['exec_command', '命令执行'], ['git', 'Git 操作'], ['terminal_open', '打开终端'], ['terminal_run', '终端输入'], ['terminal_close', '关闭终端'],
+          ['web_search', '网页搜索'], ['web_fetch', '网页抓取'], ['web_read', '网页解析'], ['browse', '浏览器'], ['browse_screenshot', '网页截图'],
+          ['browser_click', '页面点击'], ['browser_type', '页面输入'], ['browser_press', '按键'], ['browser_scroll', '页面滚动'], ['browser_console', '页面脚本'], ['browser_vision', '页面视觉'],
           ['screenshot', '屏幕截图'], ['clipboard_read', '读取剪贴板'], ['clipboard_write', '写入剪贴板'],
           ['system_info', '系统信息'], ['process_list', '进程列表'], ['kill_process', '结束进程'],
-          ['codebox', '代码沙箱'], ['save_memory', '保存记忆'], ['recall_memory', '语义搜索'],
-          ['schedule_task', '定时任务'], ['list_schedules', '查看定时'],
+          ['codebox', '代码沙箱'], ['desktop_screenshot', '桌面截图'], ['desktop_click', '屏幕点击'], ['desktop_move', '鼠标移动'], ['desktop_scroll', '滚轮'], ['desktop_type', '屏幕输入'], ['desktop_key', '按键组合'],
           ['mcp_connect', 'MCP连接'], ['mcp_call', 'MCP调用'],
-          ['handoff', 'Agent交接'], ['list_agents', '查看Agent'], ['list_workflows', '查看工作流'], ['run_workflow', '执行工作流'],
           ['read_image', '读取图片'], ['set_workdir', '切换目录'], ['set_theme', '切换主题'],
-          ['show_card', '交互卡片'], ['bridge_notify', '桌面通知'], ['workflow', '工作流脚本'],
-          ['audit_log', '审计日志'], ['watch_file', '文件监控'], ['save_goal', '持久目标'], ['list_goals', '查看目标'],
-          ['import_doc', '导入文档'],
+          ['show_card', '交互卡片'], ['update_plan', '任务计划'], ['clarify', '追问澄清'], ['init_project_docs', '项目指令'],
         ].map(([name, desc]) => {
           const disabled = (g.disabledTools || []) as string[]
           const on = !disabled.includes(name)
@@ -225,8 +216,7 @@ export default function ToolsTab() {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           {[
             ['平台', 'Acheron-Agent'], ['Electron', sys?.electron || '…'], ['React', React.version],
-            ['Node', sys?.node || '…'], ['工具数', String(TOOLS.length)], ['角色数', String(Object.keys(agentsMap).length)],
-            ['技能数', skillCount ? String(skillCount) : '…']
+            ['Node', sys?.node || '…'], ['工具数', String(TOOLS.length)]
           ].map(([k, v]) => <div key={k} style={{ minWidth: 100 }}><div style={S.hint}>{k}</div><div style={{ fontSize: 'var(--ui-font-size)', fontWeight: 600, color: C.text }}>{v}</div></div>)}
         </div>
       </div>

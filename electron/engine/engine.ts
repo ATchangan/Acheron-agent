@@ -10,7 +10,7 @@ import { getAgents, type AgentDef } from './agents'
 import { normalizeAgentName } from '../shared/agents-data'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult, extractKeyInfo, summarizeContext } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
-import { loadMemory, saveMemory, memoryBlockText, addLesson, scanMemoryText, type EngineMemory } from './memory'
+import { loadMemory, saveMemory, type EngineMemory } from './memory'
 import { streamChat, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { planNeedsVerify as planNeedsVerifyCore, type PlanStepData } from './plan-core'
@@ -26,7 +26,7 @@ import { UsageTracker } from './usage-tracker'
 import type { TaskState, TokenStat, CallResult, TaskGoal } from './task-types'
 import { logTraceFile } from '../ipc/trace'
 import { startTask, updateTask, finishTask, getTask } from '../ipc/tasks'
-import { backoffDelay } from './reliability'
+import { backoffDelay, resolveStallMs } from './reliability'
 import { invokeHandler } from './registry'
 import { saveToolOutput, insertAudit } from '../db'
 import { detectTaskType, routeProfile } from '../llm/gateway'
@@ -108,6 +108,26 @@ export class AgentEngine {
 
   private emit(ev: EngineEvent): void {
     try { this.deps.sendEvent(ev) } catch { /* 忽略 */ }
+  }
+
+  // v0.4.4 长任务感知性: 记录一次"活动"(LLM产出/工具完成等); 若刚从停滞中恢复, 下发 stall active:false 让界面横幅消失
+  private touch(task: TaskState): void {
+    task.lastActivity = Date.now()
+    if (task.stalled) {
+      task.stalled = false
+      this.emit({ type: 'stall', sid: task.sid, active: false, elapsedMs: 0 })
+    }
+  }
+
+  // v0.4.4 长任务进度事件(节流 ~500ms): 轮次/步骤进度/token/耗时/当前工具
+  private emitProgress(task: TaskState, currentTool?: string): void {
+    const now = Date.now()
+    if (task.progressLast != null && now - task.progressLast < 500) return
+    task.progressLast = now
+    const total = task.planSteps.length
+    const done = task.planSteps.filter(s => s.status === 'done').length
+    const startedAt = task.runStartedAt || task.userMsg?.timestamp || task.goal?.startedAt || now
+    this.emit({ type: 'task-progress', sid: task.sid, round: task.roundNum, stepsDone: done, stepsTotal: total, tokensUsed: this.taskTokensUsed(task), elapsedMs: Math.max(0, now - startedAt), currentTool, stalled: !!task.stalled })
   }
 
   start(params: EngineStartParams): void {
@@ -206,6 +226,10 @@ export class AgentEngine {
       interjects: [],
       withImages: !!(params.images && params.images.length),
       switchedVision: false,
+      lastActivity: Date.now(),
+      stalled: false,
+      toolActiveCount: 0,
+      runStartedAt: Date.now(),
     }
     this.tasks.set(params.sid, task)
     this.emit({ type: 'busy', sid: params.sid, busy: true })
@@ -300,6 +324,10 @@ export class AgentEngine {
       interjects: [],
       withImages: !!(rec.images && rec.images.length),
       switchedVision: false,
+      lastActivity: Date.now(),
+      stalled: false,
+      toolActiveCount: 0,
+      runStartedAt: Date.now(),
     }
     this.tasks.set(rec.sid, task)
     this.emit({ type: 'restore', sid: rec.sid, messages: cp.messages, agent: cp.agent, activeAgents: cp.activeAgents || [], model: task.model })
@@ -355,6 +383,17 @@ export class AgentEngine {
     if (task?.planPending) { task.planApproved = false; task.planPending.resolve(false) }
   }
 
+  // v0.4.4 无进展停滞"继续": 清除停滞态并重置活动时间, 看门狗重新计时(不改变任务行为)
+  continue(sid: string): void {
+    const task = this.tasks.get(sid)
+    if (!task) return
+    task.stalled = false
+    task.lastActivity = Date.now()
+    this.emit({ type: 'stall', sid, active: false, elapsedMs: 0 })
+    this.trace('info', 'task.stall-continue', '用户选择继续', sid, task.taskId)
+    this.planAddDecision(task, '用户选择继续(清除停滞提示)')
+  }
+
   // v0.4.2: clarify 交互 —— 模型提问并等待用户选择
   clarifyRespond(sid: string, answer: string): boolean {
     const task = this.tasks.get(sid)
@@ -403,9 +442,11 @@ export class AgentEngine {
 
   private async runTask(task: TaskState): Promise<void> {
     const { sid } = task
+    let stallWatchdog: ReturnType<typeof setInterval> | null = null
     try {
       const g = task.g
-      task.memoryText = memoryBlockText(task.memory, task.content)
+      // v0.4.4 精简: 长效记忆(回忆/事实/教训)已从产品收敛 —— 不再向上下文注入记忆块
+      task.memoryText = ''
       // 自省整改: 内置技能隐藏名单 —— 隐藏的技能不注入系统提示, 但仍可 read_skill 读取
       const hiddenSkills = new Set((task.g.hiddenSkills || []).map(String))
       task.skillsCache = listSkills(this.deps.skillsDirs || []).filter(s => !hiddenSkills.has(s.name))
@@ -457,11 +498,39 @@ export class AgentEngine {
       // v0.3.4: 微压缩默认开启(可在 设置→引擎 关闭)
       if (g.microCompact !== false) await this.microCompact(task)
 
+      // v0.4.4 无进展停滞看门狗(仅停滞判定, 不设总时长上限; 工具在跑视为活跃不误判)
+      const stallMs = resolveStallMs(task.g.toolTimeout)
+      // 看门狗创建前可能已跑过早期摘要/微压缩(不 touch lastActivity), 先重置活动时间, 避免首个 tick 对"还没进主循环"误报
+      task.lastActivity = Date.now()
+      const stallWatchdogInner = setInterval(() => {
+        if (task.stopped || task.taskFinished || this.curGen(task.sid) !== task.myGen) return
+        // 等待用户确认(计划门禁/澄清提问)视为活跃, 不判停滞
+        if (task.planPending || task.clarifyPending) { task.lastActivity = Date.now(); return }
+        if ((task.toolActiveCount || 0) > 0) { task.lastActivity = Date.now(); return }
+        // 上下文压缩 LLM 调用进行中视为活跃(其耗时与模型有关, 不应被当作停滞)
+        if (task.compacting) { task.lastActivity = Date.now(); return }
+        const nowTick = Date.now()
+        const idle = nowTick - task.lastActivity
+        if (idle <= stallMs) return
+        if (task.stalled) return
+        task.stalled = true
+        const stepsTotal = task.planSteps.length
+        const stepsDone = task.planSteps.filter(s => s.status === 'done').length
+        this.emit({ type: 'stall', sid: task.sid, active: true, elapsedMs: idle })
+        // elapsedMs 与 emitProgress 保持一致(任务已运行总时长), 避免状态栏时长跳变; 无产出秒数只放 stall 事件
+        this.emit({ type: 'task-progress', sid: task.sid, round: task.roundNum, stepsDone, stepsTotal, tokensUsed: this.taskTokensUsed(task), elapsedMs: Math.max(0, nowTick - task.runStartedAt), stalled: true })
+        this.trace('warn', 'task.stall', '连续 ' + Math.round(idle / 1000) + 's 无产出', task.sid, task.taskId)
+        this.planAddDecision(task, '无进展停滞提示: 连续 ' + Math.round(idle / 1000) + 's 无任何产出，请判断继续或中止')
+      }, 15000)
+      stallWatchdog = stallWatchdogInner
+      this.emitProgress(task)
+
       while (true) {
         task.roundNum++
         if (this.curGen(sid) !== task.myGen) break
         task.interjects = []
         this.emit({ type: 'stage', sid, phase: 'thinking', label: '思考中', detail: '' })
+        this.emitProgress(task)
         // 窗口阈值压缩：每轮请求前按真实输入用量判断是否批量压缩旧历史
         await this.maybeCompact(task)
 
@@ -552,6 +621,7 @@ export class AgentEngine {
       this.emit({ type: 'error', sid, message: errText.slice(0, 500) })
       this.finishTask(task, 'failed', errText)
     } finally {
+      if (stallWatchdog) clearInterval(stallWatchdog)
       task.running = false
       this.runningTasks = Math.max(0, this.runningTasks - 1)
       // 只有当前任务才能清状态；被新任务替换的旧任务不能覆盖新任务忙碌态
@@ -615,15 +685,24 @@ export class AgentEngine {
           task.toolLog.push({ name: 'retarget-meltdown', args: {}, result: 'E:改向指令熔断', error: true, ms: 0 })
           return { tc, r: 'E:改向指令熔断', ms: 0 }
         }
+        task.toolActiveCount = (task.toolActiveCount || 0) + 1
+        this.emitProgress(task, tc.name)
         let r2 = ''
         let ms = 0
-        for (let a = 0; a <= maxRetry; a++) {
-          const t0 = Date.now()
-          this.emit({ type: 'stage', sid, phase: 'tool', label: '执行 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
-          r2 = await this.runToolFor(task, tc)
-          ms = Date.now() - t0
-          if (!r2.startsWith('E:')) break
-          if (a < maxRetry) await new Promise(r => setTimeout(r, backoffDelay(a, 500, 8000)))
+        try {
+          for (let a = 0; a <= maxRetry; a++) {
+            const t0 = Date.now()
+            this.emit({ type: 'stage', sid, phase: 'tool', label: '执行 ' + tc.name, detail: JSON.stringify(tc.args || {}).slice(0, 40) })
+            r2 = await this.runToolFor(task, tc)
+            ms = Date.now() - t0
+            this.touch(task)
+            if (!r2.startsWith('E:')) break
+            if (a < maxRetry) await new Promise(r => setTimeout(r, backoffDelay(a, 500, 8000)))
+          }
+        } finally {
+          task.toolActiveCount = Math.max(0, (task.toolActiveCount || 0) - 1)
+          this.touch(task)
+          this.emitProgress(task)
         }
         task.toolLog.push({ name: tc.name, args: tc.args, result: r2, error: r2.startsWith('E:'), ms, toolCallId: tc.id })
         this.trace(r2.startsWith('E:') ? 'warn' : 'info', 'tool', tc.name + ' ' + ms + 'ms', sid, tc.id)
@@ -789,15 +868,11 @@ export class AgentEngine {
         }
       }
     }
-    // v0.3.9: 失败教训自动沉淀 —— 失败时写入(原因, 场景, 建议), 后续任务按时效注入
+    // v0.4.4 精简: 失败教训自动沉淀(记忆功能)已收敛
     if (status === 'failed') {
       const reason = String(error || '').slice(0, 160)
       const scene = String(task.content || '').slice(0, 120)
-      const lesson = '失败复盘：' + reason + '。场景：' + scene + '。建议：先复现并定位第一个失败步骤，再决定重试或回滚文件改动。'
-      if (scanMemoryText(lesson).ok && addLesson(task.memory, lesson)) {
-        saveMemory(this.deps.memoryPath, task.memory, { agent: task.agent ?? '助手', scope: agentMemoryScope(task.g, task.agent) })
-        this.trace('info', 'memory.lesson', '失败教训已沉淀', task.sid, task.taskId)
-      }
+      this.trace('info', 'task.failed', '失败任务: ' + reason + ' (场景: ' + scene + ')', task.sid, task.taskId)
     }
     this.flushPlan(task)
     this.flushPlanDoc(task)
@@ -998,6 +1073,7 @@ export class AgentEngine {
         sid,
       }, {
         onChunk: d => {
+          this.touch(task)
           if (d.done) { if (d.finishReason) finishReason = d.finishReason; settle(); return }
           if (d.content) {
             if (!firstChunkAt) firstChunkAt = Date.now()
@@ -1014,6 +1090,7 @@ export class AgentEngine {
           }
         },
         onToolCall: tc => {
+          this.touch(task)
           try {
             if (tc?.function?.name) {
               const raw = (tc.function.arguments || '').trim()
@@ -1025,6 +1102,7 @@ export class AgentEngine {
           }
         },
         onUsage: u => {
+          this.touch(task)
           lastUsage = u
           this.recordUsage(task, rid, u)
         },

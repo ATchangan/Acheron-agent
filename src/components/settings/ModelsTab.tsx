@@ -1,28 +1,21 @@
-﻿import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S } from '../settings-ui'
-import MediaForm from './MediaForm'
-import { AI_TYPES, PRESETS, GROUPS, MEDIA_PRESETS, CAP_COLORS, detectCaps } from './consts'
-import type { MediaProvider, ProviderConfig } from '../../global'
+import { AI_TYPES, PRESETS, GROUPS, CAP_COLORS, detectCaps } from './consts'
+import type { ProviderConfig } from '../../global'
 import { U } from '../ui-styles'
 
 
-// v0.3.1 块 H: 供应商 tab(从 SettingsView 拆分, 行为零变化)
-
-
-// 媒体平台配置表单(供应商页内联显示, 不跳转) —— 样式与供应商表单对齐(DeepSeek 模板)
+// v0.4.4 精简: 供应商页 —— 仅保留对话模型供应商(多媒体供应商已收敛)
 export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   const { showToast } = props
   const providers = useSettingsStore(s => s.providers || [])
-  const mediaProviders = useSettingsStore(s => s.mediaProviders || [])
   const updateProvider = useSettingsStore(s => s.updateProvider)
   const removeProvider = useSettingsStore(s => s.removeProvider)
   const addProvider = useSettingsStore(s => s.addProvider)
-  const addMediaProvider = useSettingsStore(s => s.addMediaProvider)
   const saveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const save = (patch: Partial<import('../../types').GeneralSettings>) => { useSettingsStore.setState(s2 => ({ general: { ...(s2.general || {}), ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
   const [selIdx, setSelIdx] = useState(-1)
-  const [mediaSelIdx, setMediaSelIdx] = useState(-1)
   const p = providers[selIdx] || null
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState(''); const [newKey, setNewKey] = useState(''); const [newUrl, setNewUrl] = useState(''); const [newType, setNewType] = useState('OpenAI Compatible')
@@ -50,7 +43,6 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   }
   const selectProvider = (name: string) => {
     useSettingsStore.getState().save()
-    setMediaSelIdx(-1)
     let idx = providers.findIndex(x => x.name === name)
     // 未配置过的供应商: 自动创建条目(预填 PRESETS 默认 baseUrl/type), 让用户直接填 Key 即可应用
     if (idx < 0) {
@@ -97,50 +89,23 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
       <div style={{ width: 160, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto' }}>
         {(() => {
           const allNames = Object.values(GROUPS).flat()
-          const allMediaNames = Object.keys(MEDIA_PRESETS)
           const capOrder = ['多模态', '文字', '图片', '视频']
           const cfgProvs = providers.filter(pp => !!pp.apiKey)
-          const cfgMedias = mediaProviders.filter(mp => !!mp.apiKey)
-          const capsOf = (kind: 'provider' | 'media', item: ProviderConfig | MediaProvider): string[] => {
-            const models = kind === 'provider' ? ('models' in item ? (item.models || []) : []) : [...((item as MediaProvider).imgModels || []), ...((item as MediaProvider).videoModels || [])]
-            return detectCaps(models)
-          }
+          const capsOf = (item: ProviderConfig): string[] => detectCaps(item.models || [])
           const mainCap = (caps: string[]) => capOrder.find(c => caps.includes(c)) || '文字'
-          const row = (name: string, kind: 'provider' | 'media', cfg: boolean, caps: string[]) => {
-            const active = kind === 'provider' ? (providers.findIndex(x => x.name === name) === selIdx && cfg) : (mediaProviders.findIndex(x => x.name === name) === mediaSelIdx && cfg)
-            return <div key={kind + '::' + name} onClick={() => {
-              if (kind === 'provider') selectProvider(name)
-              else {
-                useSettingsStore.getState().save()
-                setSelIdx(-1)
-                const existing = mediaProviders.find(m => m.name === name)
-                if (existing) {
-                  const pre = MEDIA_PRESETS[name]
-                  if (pre && !existing.baseUrl && pre.url) useSettingsStore.getState().updateMediaProvider(existing.id, { baseUrl: pre.url })
-                  setMediaSelIdx(mediaProviders.indexOf(existing))
-                }
-                else { const pre = MEDIA_PRESETS[name]; if (pre) { const np = { id: 'media_' + Date.now(), name, type: pre.type, baseUrl: pre.url, imgModels: [] as string[], videoModels: [] as string[] }; addMediaProvider(np); setMediaSelIdx(mediaProviders.length) } }
-              }
-            }} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
+          const row = (name: string, cfg: boolean, caps: string[]) => {
+            const active = providers.findIndex(x => x.name === name) === selIdx && cfg
+            return <div key={name} onClick={() => selectProvider(name)} style={{ padding: '7px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 2px)', color: active ? C.accent : C.text, background: active ? C.accentBg : 'transparent', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
               <span style={U.ellipsis}>{name}</span>
               <span style={{ display: 'flex', gap: 3, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{cfg ? caps.slice(0, 3).map(c => <span key={c} style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: CAP_COLORS[c] || C.text, background: 'rgba(150,150,160,0.13)', padding: '1px 5px', borderRadius: 8 }}>{c}</span>) : <span style={{ fontSize: 'calc(var(--ui-font-size) - 4px)', color: C.muted, background: 'rgba(150,150,160,0.13)', padding: '1px 6px', borderRadius: 8 }}>未设置</span>}</span>
             </div>
           }
           const groupTitle = (txt: string) => <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, paddingLeft: 4, marginTop: 10 }}>{txt}</div>
           const subTitle = (txt: string) => <div style={{ fontSize: 'calc(var(--ui-font-size) - 3px)', color: C.accent, fontWeight: 600, margin: '8px 0 4px', paddingLeft: 4 }}>{txt}</div>
-          const cfgByName = new Map<string, { name: string; kind: 'provider' | 'media'; caps: string[] }>()
-          cfgProvs.forEach(pp => cfgByName.set(pp.name, { name: pp.name, kind: 'provider', caps: capsOf('provider', pp) }))
-          cfgMedias.forEach(mp => {
-            const existing = cfgByName.get(mp.name)
-            const mcaps = capsOf('media', mp)
-            if (existing) existing.caps = [...new Set([...existing.caps, ...mcaps])]
-            else cfgByName.set(mp.name, { name: mp.name, kind: 'media', caps: mcaps })
-          })
-          const cfgItems = [...cfgByName.values()]
+          const cfgItems = cfgProvs.map(pp => ({ name: pp.name, caps: capsOf(pp) }))
           const customUncfg = providers.filter(pp => !allNames.includes(pp.name) && !pp.apiKey).map(pp => pp.name)
           const uncfgNames = [...new Set([
             ...allNames.filter(n => n !== '自定义' && !providers.some(pp => pp.name === n && pp.apiKey)),
-            ...allMediaNames.filter(n => !mediaProviders.some(mp => mp.name === n && mp.apiKey)),
             ...customUncfg,
           ])]
           return (
@@ -150,21 +115,18 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
               {capOrder.map(g => cfgItems.filter(x => mainCap(x.caps) === g).length > 0 && (
                 <div key={g}>
                   {subTitle(g)}
-                  {cfgItems.filter(x => mainCap(x.caps) === g).map(x => row(x.name, x.kind, true, x.caps))}
+                  {cfgItems.filter(x => mainCap(x.caps) === g).map(x => row(x.name, true, x.caps))}
                 </div>
               ))}
               {groupTitle('未设置')}
-              {uncfgNames.map(n => {
-                const kind = providers.some(pp => pp.name === n) ? 'provider' : mediaProviders.some(mp => mp.name === n) ? 'media' : (allNames.includes(n) ? 'provider' : 'media')
-                return row(n, kind, false, [])
-              })}
+              {uncfgNames.map(n => row(n, false, []))}
               <button style={{ ...S.btn('primary'), width: '100%', marginTop: 6 }} onClick={() => setShowNew(true)}>+ 自定义</button>
             </>
           )
         })()}
       </div>
       <div style={U.pageBody}>
-        {mediaSelIdx >= 0 ? <MediaForm mediaSelIdx={mediaSelIdx} showToast={showToast} /> : !p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>从左侧选择一个供应商开始配置</div> : <>
+        {!p ? <div style={{ color: C.muted, fontSize: 'calc(var(--ui-font-size) - 1px)', padding: 40, textAlign: 'center' }}>从左侧选择一个供应商开始配置</div> : <>
           <div style={S.card}>
             <div style={U.betweenMb18}>
               <span style={{ fontSize: 'var(--ui-font-size)', fontWeight: 700, color: C.text }}>服务配置</span>

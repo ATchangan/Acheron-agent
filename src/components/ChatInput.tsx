@@ -285,7 +285,7 @@ export default function ChatInput() {
       {/* 建议 pills：空输入时显示快捷建议 */}
       {!curBusy && curMsgCount === 0 && !text.trim() && !images.length && !attachments.length && !extraText.trim() && (
         <div className="hq-suggestion-pills">
-          {['继续当前任务', '总结本次对话', '生成今日工作日报', '检查项目代码问题', '把常用操作整理成技能'].map(s => (
+          {['继续当前任务', '总结本次对话', '生成今日工作日报', '检查项目代码问题', '新建一个插件'].map(s => (
             <button key={s} type="button" className="hq-suggestion-pill" onClick={() => { setText(s); taRef.current?.focus() }}>{s}</button>
           ))}
         </div>

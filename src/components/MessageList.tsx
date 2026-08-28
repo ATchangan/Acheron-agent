@@ -34,6 +34,10 @@ export default function MessageList(): JSX.Element {
   const streaming = useChatStore(s => s.streaming)
   const executing = useChatStore(s => s.executing)
   const stage = useChatStore(s => s.stage)
+  const stall = useChatStore(s => s.stall)
+  const myStall = session?.id ? stall[session.id] : undefined
+  const continueStalled = useChatStore(s => s.continueStalled)
+  const stop = useChatStore(s => s.stop)
   const streamText = useChatStore(s => s.streamText)
   const streamingText = useChatStore(s => !!s.streamText)
   const fileChanges = useChatStore(s => s.fileChanges)
@@ -237,6 +241,15 @@ export default function MessageList(): JSX.Element {
                 }}>回滚文件改动</button>
                 <button type="button" className="hq-btn" onClick={() => useChatStore.setState({ fileChanges: 0, lastTaskId: '' })}>忽略</button>
               </div>
+            </div>
+          )}
+          {/* v0.4.4 无进展停滞横幅：继续/中止 */}
+          {myStall && myStall.active && (
+            <div className="hq-stall-banner" role="status">
+              <span className="hq-status-pulse" />
+              <span className="hq-stall-label">疑似停滞（{Math.floor(myStall.elapsedMs / 1000)}s 无产出）</span>
+              <button type="button" className="hq-btn" onClick={() => continueStalled()}>继续</button>
+              <button type="button" className="hq-btn hq-btn-accent" onClick={() => stop()}>中止</button>
             </div>
           )}
           {renderThinkingRow()}

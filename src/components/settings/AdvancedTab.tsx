@@ -26,17 +26,23 @@ export default function AdvancedTab() {
       </div>
       <div style={S.card}>
         <div style={S.section}>执行控制</div>
-        <NumSetting label="工具调用上限" hint="初始上限，任务仍在推进时自动顺延，直到任务完成" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
         <NumSetting label="失败重试次数" hint="单个工具失败后重试次数（0=不重试）" value={g.retryCount ?? 3} min={0} max={10} unit="次" onChange={v => save({ retryCount: v })} />
+        <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读取类工具（读取/列出/搜索等）并发执行，减少等待时间" />
+      </div>
+      <div style={S.card}>
+        <div style={S.section}>长任务</div>
+        <div style={S.hint}>长程执行（多轮工具 / 并行子任务）的轮次、超时与预算护栏；无进展停滞仅提示、可手动继续/中止，不自动停止。</div>
+        <NumSetting label="工具调用上限" hint="初始上限，任务仍在推进时自动顺延，直到任务完成" value={g.maxToolRounds || 50} min={5} max={200} unit="轮" onChange={v => save({ maxToolRounds: v })} />
         <NumSetting label="工具超时" hint="单工具/子任务无进展判定阈值，不设总时长上限" value={g.toolTimeout || 120} min={10} max={600} unit="秒" onChange={v => save({ toolTimeout: v })} />
         <NumSetting label="熔断阈值" hint="同一操作反复触发到上限时自动停止" value={g.meltdownLimit || 3} min={1} max={10} unit="次" onChange={v => save({ meltdownLimit: v })} />
-        <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读取类工具（读取/列出/搜索等）并发执行，减少等待时间" />
+        <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后本轮提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
+        <Toggle checked={g.longTaskAutoContinue === true} onChange={v => save({ longTaskAutoContinue: v })} label="长任务预算耗尽后自动继续" hint="开启后达到预算自动重置已用量续跑；关闭则达到预算直接结束本轮" />
+        <NumSetting label="自动继续次数上限" hint="自动续跑的轮数上限，超过后结束本轮" value={g.longTaskAutoMax || 5} min={1} max={20} unit="次" onChange={v => save({ longTaskAutoMax: v })} />
       </div>
       <div style={S.card}>
         <div style={S.section}>任务可靠性</div>
         <Toggle checked={g.riskConfirm !== false} onChange={v => save({ riskConfirm: v })} label="风险操作确认" hint="执行命令/删除文件等 L2-L3 操作前弹原生确认框；关闭后静默放行" />
         <NumSetting label="项目指令上限" hint="AGENTS.md 等按目录链合并注入的字节上限（KB，默认 32）；超限截断并打标记，可拆到子目录绕开" value={g.projectDocMaxKb || 32} min={4} max={512} unit="KB" onChange={v => save({ projectDocMaxKb: v })} />
-        <NumSetting label="单任务 token 预算" hint="0=不限；任务累计输入/输出/缓存写入 token 达到上限后本轮提前结束，防止失控花费" value={g.maxTaskTokens || 0} min={0} max={1000000} unit="token" onChange={v => save({ maxTaskTokens: v })} />
         <NumSetting label="同时运行任务上限" hint="多会话并发保护：同时运行的任务数达到上限后新任务会提示等待（默认 3）" value={g.maxConcurrentTasks || 3} min={1} max={10} unit="个" onChange={v => save({ maxConcurrentTasks: v })} />
         <div style={S.row}>
           <div style={{ flex: 1 }}>
@@ -50,8 +56,6 @@ export default function AdvancedTab() {
             />
           </div>
         </div>
-        <Toggle checked={g.longTaskAutoContinue === true} onChange={v => save({ longTaskAutoContinue: v })} label="长任务预算耗尽后自动继续" hint="开启后达到预算自动重置已用量续跑；关闭则达到预算直接结束本轮" />
-        <NumSetting label="自动继续次数上限" hint="自动续跑的轮数上限，超过后结束本轮" value={g.longTaskAutoMax || 5} min={1} max={20} unit="次" onChange={v => save({ longTaskAutoMax: v })} />
         <Toggle checked={g.traceEnabled !== false} onChange={v => save({ traceEnabled: v })} label="本地诊断轨迹" hint="记录任务/LLM/工具调用链，可在 设置→诊断 查看；仅存本地" />
         <Toggle checked={g.mcpAutoInject !== false} onChange={v => save({ mcpAutoInject: v })} label="MCP 工具自动注入" hint="连接过的 MCP 服务器工具 schema 自动并入模型工具列表，无需手动 mcp_call" />
         <Toggle checked={g.planGate === true} onChange={v => save({ planGate: v })} label="计划确认门（实验）" hint="首次调用工具前先展示执行计划，等你批准后再动手" />
@@ -75,12 +79,10 @@ export default function AdvancedTab() {
       <div style={S.card}>
         <div style={S.section}>流量与性能</div>
         <div style={S.hint}>以下优化默认开启，可单独关闭；关闭后相关功能回到旧行为。</div>
-        <div style={S.hint}>当前开启 {11 - Object.values(g.perf || {}).filter(v => v === false).length}/11 项</div>
+        <div style={S.hint}>当前开启 {9 - Object.values(g.perf || {}).filter(v => v === false).length}/9 项</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 14px', alignItems: 'start' }}>
           <Toggle checked={g.perf?.toolWhitelist !== false} onChange={v => save({ perf: { ...(g.perf || {}), toolWhitelist: v } })} label="按任务精简工具" hint="不同任务只展示用得到的工具" />
           <Toggle checked={g.perf?.resultSlim !== false} onChange={v => save({ perf: { ...(g.perf || {}), resultSlim: v } })} label="长内容精简" hint="过长结果只保留开头结尾和关键信息" />
-          <Toggle checked={g.perf?.memoryTrim !== false} onChange={v => save({ perf: { ...(g.perf || {}), memoryTrim: v } })} label="记忆按需取用" hint="只取与当前话题相关的记忆" />
-          <Toggle checked={g.perf?.workflowLazy !== false} onChange={v => save({ perf: { ...(g.perf || {}), workflowLazy: v } })} label="工作流按需显示" hint="提到工作流时才显示完整模板" />
           <Toggle checked={g.perf?.compactSummary !== false} onChange={v => save({ perf: { ...(g.perf || {}), compactSummary: v } })} label="窗口阈值压缩" hint="真实用量接近模型窗口上限时，把旧轮次总结成摘要保留关键信息" />
           <Toggle checked={g.perf?.outputCap !== false} onChange={v => save({ perf: { ...(g.perf || {}), outputCap: v } })} label="简短回复限长" hint="简单闲聊限制回答长度" />
           <Toggle checked={g.perf?.imgDowngrade !== false} onChange={v => save({ perf: { ...(g.perf || {}), imgDowngrade: v } })} label="旧图片不重复发送" hint="历史图片只发一次，需要时再取" />
@@ -122,9 +124,7 @@ export default function AdvancedTab() {
         </div>
       </div>
       <div style={S.card}>
-        <div style={S.section}>交互与通知</div>
-        <Toggle checked={g.notifyEnabled !== false} onChange={v => save({ notifyEnabled: v })} label="桌面通知" hint="任务完成或出错时弹出系统通知" />
-        <Toggle checked={g.episodicMemory !== false} onChange={v => save({ episodicMemory: v })} label="操作记录" hint="自动记录文件操作，可随时查看历史" />
+        <div style={S.section}>交互与显示</div>
         <Toggle checked={g.singleBubble !== false} onChange={v => save({ singleBubble: v })} label="合并为一条回复" hint="整轮任务合并为一条消息；关闭后每一步单独显示" />
         <NumSetting label="卡片最大高度" hint="卡片类内容的最大高度" value={g.cardMaxHeight || 500} min={100} max={2000} unit="px" onChange={v => save({ cardMaxHeight: v })} />
       </div>
@@ -143,28 +143,6 @@ export default function AdvancedTab() {
           <option value="readonly">只读 — 仅允许读取，禁止写入/删除/执行</option>
           <option value="sandbox">工作区沙箱 — 仅限工作目录内操作</option>
         </select>
-      </div>
-      <div style={S.card}>
-        <div style={S.section}>语义检索向量库</div>
-        <div style={S.hint}>语义记忆存储配置（导入文档、回忆记忆时使用）</div>
-        <div style={{ marginTop: 10, padding: 10, border: '1px solid ' + C.border, borderRadius: 8, background: C.input }}>
-          <div style={S.label}>向量嵌入引擎（语义检索）</div>
-          <div style={S.hint}>填入兼容 OpenAI 的向量接口（例如本地服务加载向量模型，或官方接口）。留空则使用内置关键词检索。</div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-            <div style={{ flex: 2 }}><div style={S.label}>接口地址（Base URL）</div><input style={S.inp} placeholder="http://127.0.0.1:1234/v1" value={g.embeddingBaseUrl || ''} onChange={e => save({ embeddingBaseUrl: e.target.value })} /></div>
-            <div style={{ flex: 1.2 }}><div style={S.label}>模型名</div><input style={S.inp} placeholder="text-embedding-3-small / bge-m3" value={g.embeddingModel || ''} onChange={e => save({ embeddingModel: e.target.value })} /></div>
-          </div>
-          <div style={U.mt8}><div style={S.label}>密钥（API Key，本地服务可留空）</div><input type="password" style={S.inp} placeholder="sk-..." value={g.embeddingApiKey || ''} onChange={e => save({ embeddingApiKey: e.target.value })} /></div>
-          <div style={S.hint}>保存后, 新写入的语义记忆将自动生成向量, 检索优先使用向量相似度; 未配置或服务不可用时自动回退关键词检索。</div>
-        </div>
-        <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-          <div style={U.flex1}><div style={S.label}>分块大小</div><input type="number" style={S.inp} value={g.ragChunkSize || 500} min={100} max={2000} onChange={e => save({ ragChunkSize: parseInt(e.target.value) || 500 })} /></div>
-          <div style={U.flex1}><div style={S.label}>相似度阈值</div><input type="number" style={S.inp} value={Math.round((g.ragThreshold || 0.3) * 100)} min={5} max={95} onChange={e => save({ ragThreshold: (parseInt(e.target.value) || 30) / 100 })} /></div>
-        </div>
-        <Toggle checked={g.ragAutoSave !== false} onChange={v => save({ ragAutoSave: v })} label="自动保存向量库" hint="每次导入文档后自动持久化到磁盘" />
-        <div style={U.rightMt8}>
-          <button style={S.btn('danger')} onClick={async () => { try { await window.huangquan.memory.clearVector(); alert('向量库已清空') } catch { alert('操作失败') } }}>清空向量库</button>
-        </div>
       </div>
       <div style={S.card}>
         <div style={S.section}>日志与调试</div>
@@ -202,8 +180,6 @@ export default function AdvancedTab() {
           <button style={S.btn('danger')} onClick={async () => { if (!confirm('确定清空全部对话历史？此操作不可恢复')) return; try { await window.huangquan.sessions.clearAll(); showToast('对话历史已清空'); window.location.reload() } catch { showToast('操作失败') } }}>清除对话历史</button>
           <button style={S.btn('danger')} onClick={async () => { if (!confirm('恢复出厂设置将重置全部配置（保留对话历史），确定？')) return; try { const ok = await window.huangquan.settings.reset(); showToast(ok ? '已恢复出厂设置，请重启应用' : '操作失败'); } catch { showToast('操作失败') } }}>恢复出厂设置</button>
           <button style={S.btn('primary')} onClick={async () => { try { const workDir = g.workDir || ''; const path = await window.huangquan.sessions.export(g.exportFormat || 'md', workDir); showToast(path.startsWith('E:') ? path : ('已导出：' + path)) } catch { showToast('导出失败') } }}>导出对话历史</button>
-          <button style={S.btn('primary')} onClick={async () => { try { const r = await window.huangquan.backup.create(); showToast(r.ok ? ('已备份：' + (r.path || '')) : (r.canceled ? '已取消' : ('备份失败：' + (r.error || '')))) } catch { showToast('备份失败') } }}>备份数据</button>
-          <button style={S.btn('danger')} onClick={async () => { try { const r = await window.huangquan.backup.restore(); showToast(r.ok ? '已从备份恢复，请重启应用' : (r.canceled ? '已取消' : ('恢复失败：' + (r.error || '')))) } catch { showToast('恢复失败') } }}>从备份恢复</button>
         </div>
         <div style={S.row}><div style={S.label}>导出格式</div><select style={S.sel} value={g.exportFormat || 'md'} onChange={e => save({ exportFormat: e.target.value })}><option value="md">Markdown</option><option value="json">JSON</option><option value="txt">纯文本</option></select></div>
         <Toggle checked={g.trayEnabled !== false} onChange={v => save({ trayEnabled: v })} label="关闭时缩至系统托盘" hint="默认开启：点击关闭按钮窗口隐藏到托盘继续运行，从托盘菜单「退出」才真正退出；最小化则正常缩到任务栏" />

@@ -58,12 +58,11 @@ describe('parseSkillDescription', () => {
 })
 
 describe('listSkills', () => {
-  it('只列出含 SKILL.md 的目录', () => {
+  it('v0.4.4 精简: 技能生态已移除, listSkills 恒返回空集', () => {
     const dir = makeTmpSkills()
     try {
       const skills = listSkills([dir])
-      expect(skills.map(s => s.name)).toEqual(['demo'])
-      expect(skills[0].description).toBe('演示技能')
+      expect(skills).toEqual([])
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }

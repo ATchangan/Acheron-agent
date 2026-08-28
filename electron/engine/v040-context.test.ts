@@ -33,9 +33,9 @@ describe('matchSkills 技能匹配(M8)', () => {
     fs.writeFileSync(join(dir, 'code-review', 'SKILL.md'), '---\nname: code-review\ndescription: 代码审查与风险扫描\ntriggers: 审查|review|检查代码\n---\n## 步骤\n1. 读代码\n', 'utf-8')
     fs.mkdirSync(join(dir, 'writing'), { recursive: true })
     fs.writeFileSync(join(dir, 'writing', 'SKILL.md'), '---\nname: writing\ndescription: 写作助手\ntriggers: 写作|文章\n---\n## 步骤\n1. 列提纲\n', 'utf-8')
+    // v0.4.4 精简: 技能生态已移除 —— matchSkills 恒返回空集(解析层 scanSkillDetails 保留)
     const hit = matchSkills([dir], '帮我审查这段代码', 2)
-    expect(hit.map(s => s.name)).toContain('code-review')
-    expect(hit[0].body).toContain('读代码')
+    expect(hit).toHaveLength(0)
     expect(scanSkillDetails([dir]).length).toBe(2)
   })
 

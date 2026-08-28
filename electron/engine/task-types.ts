@@ -79,6 +79,13 @@ export interface TaskState {
   compactCount?: number
   pendingText?: string
   contextSnapshot?: ContextSnapshot
+  // v0.4.4 长任务感知性/停滞兜底: 最近一次活动(LLM产出/工具完成)时间戳、停滞态、在跑工具计数、进度发射节流; runStartedAt=本次任务开始(恢复则现在)用于耗时
+  lastActivity: number
+  stalled?: boolean
+  toolActiveCount: number
+  progressLast?: number
+  runStartedAt: number
+  compacting?: boolean // v0.4.4: 上下文压缩 LLM 调用进行中(看门狗视为活跃, 不判停滞)
 }
 
 export type { InstructionFile }

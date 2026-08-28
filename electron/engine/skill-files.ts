@@ -37,9 +37,18 @@ export function parseSkillDetail(name: string, content: string): SkillDetail {
 }
 
 // 扫描技能目录: 每个含 SKILL.md 的子目录视为一个技能
-export function listSkills(skillsDirs: string[]): SkillMeta[] {
-  // 同名技能: 后扫描的目录优先(引擎目录顺序为 内置→用户, 用户同名覆盖内置)
-  const byName = new Map<string, SkillMeta>()
+// v0.4.4 精简: 技能生态已从产品移除 —— 引擎侧不再装载/注入技能(工具调用/插件/会话流式回复为仅存能力)
+// 扫描实现保留(scanSkillDetailCore)供迁移复用; 引擎调用点 listSkills/matchSkills 一律返回空集
+export function listSkills(_skillsDirs: string[]): SkillMeta[] {
+  return []
+}
+
+export function scanSkillDetails(skillsDirs: string[]): SkillDetail[] {
+  return scanSkillDetailCore(skillsDirs)
+}
+
+function scanSkillDetailCore(skillsDirs: string[]): SkillDetail[] {
+  const byName = new Map<string, SkillDetail>()
   for (const dir of skillsDirs || []) {
     if (!dir || !fs.existsSync(dir)) continue
     let entries: string[] = []
@@ -49,8 +58,8 @@ export function listSkills(skillsDirs: string[]): SkillMeta[] {
       if (!fs.existsSync(mdPath)) continue
       try {
         const content = fs.readFileSync(mdPath, 'utf-8')
-        byName.set(entry, { name: entry, description: parseSkillDescription(content, entry) })
-      } catch { byName.set(entry, { name: entry, description: entry }) }
+        byName.set(entry, parseSkillDetail(entry, content))
+      } catch { byName.set(entry, { name: entry, description: entry, triggers: [], body: '' }) }
     }
   }
   return [...byName.values()]
@@ -74,39 +83,10 @@ export function resolveSkillFile(skillsDirs: string[], name: string, file: strin
   return null
 }
 
-// 扫描全部技能详情(名称/描述/triggers/正文); 同名后扫目录优先(用户覆盖内置)
-export function scanSkillDetails(skillsDirs: string[]): SkillDetail[] {
-  const byName = new Map<string, SkillDetail>()
-  for (const dir of skillsDirs || []) {
-    if (!dir || !fs.existsSync(dir)) continue
-    let entries: string[] = []
-    try { entries = fs.readdirSync(dir) } catch { continue }
-    for (const entry of entries) {
-      const mdPath = join(dir, entry, 'SKILL.md')
-      if (!fs.existsSync(mdPath)) continue
-      try {
-        const content = fs.readFileSync(mdPath, 'utf-8')
-        byName.set(entry, parseSkillDetail(entry, content))
-      } catch { byName.set(entry, { name: entry, description: entry, triggers: [], body: '' }) }
-    }
-  }
-  return [...byName.values()]
-}
-
 // 按用户消息匹配技能: triggers 正则命中(权重2) > description 关键词命中(权重1); 返回 top N
-export function matchSkills(skillsDirs: string[], query: string, limit = 2): SkillDetail[] {
-  const q = String(query || '').trim()
-  if (!q) return []
-  const details = scanSkillDetails(skillsDirs)
-  const scored = details.map(d => {
-    let score = 0
-    for (const t of d.triggers) {
-      try { if (new RegExp(t, 'i').test(q)) { score += 2; break } } catch { /* 非法正则忽略 */ }
-    }
-    if (d.description && q && d.description.includes(q)) score += 1
-    return { d, score }
-  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score)
-  return scored.slice(0, limit).map(x => x.d)
+// v0.4.4 精简: 技能生态已移除, 恒返回空集(不注入技能正文)
+export function matchSkills(_skillsDirs: string[], _query: string, _limit = 2): SkillDetail[] {
+  return []
 }
 
 // v0.4.3 技能校验(4 规则): 必填/长度/正文结构/triggers 正则; 可选 tools 已知性(warn)

@@ -26,8 +26,15 @@ describe('TOOLS schema 完整性', () => {
 
   it('包含核心工具集', () => {
     const names = new Set(TOOLS.map(t => t.function.name))
-    for (const n of ['read', 'write', 'edit', 'apply_patch', 'exec_command', 'update_plan', 'terminal_open', 'terminal_run', 'terminal_close', 'grep', 'ls', 'codebox', 'save_goal']) {
+    for (const n of ['read', 'write', 'edit', 'apply_patch', 'exec_command', 'update_plan', 'terminal_open', 'terminal_run', 'terminal_close', 'grep', 'ls', 'codebox', 'browse', 'browser_click', 'install_plugin', 'mcp_call']) {
       expect(names.has(n), `缺少工具 ${n}`).toBe(true)
+    }
+  })
+
+  it('v0.4.4 精简: 技能/记忆/编队/定时/工作流/多媒体工具已移除', () => {
+    const names = new Set(TOOLS.map(t => t.function.name))
+    for (const n of ['read_skill', 'skill_manage', 'save_memory', 'recall_memory', 'session_search', 'recall_events', 'recall_tool_output', 'handoff', 'dispatch', 'list_agents', 'schedule_task', 'list_schedules', 'list_workflows', 'run_workflow', 'media_img', 'media_video', 'workflow', 'bridge_notify', 'audit_log', 'watch_file', 'save_goal', 'list_goals', 'import_doc']) {
+      expect(names.has(n), `不应存在工具 ${n}`).toBe(false)
     }
   })
 })
