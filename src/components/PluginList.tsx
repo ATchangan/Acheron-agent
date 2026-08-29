@@ -23,7 +23,7 @@ const PluginDetail: React.FC<{ p: PluginInfo; onSetCategory: (name: string, cat:
       <DetailSection icon={<InfoMark size={12} />} title="基本信息">
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 1px)', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
           {p.manifest.author && (<span>作者：{p.manifest.author}</span>)}
-          {p.manifest.homepage && (
+          {p.manifest.homepage && /^https?:\/\//i.test(p.manifest.homepage) && (
             <span>
               {' '}
               <a href={p.manifest.homepage} style={U.accent} onClick={(e) => e.stopPropagation()} target="_blank" rel="noreferrer">

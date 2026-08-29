@@ -9,12 +9,11 @@ export interface SubResult {
   note?: string
 }
 
-// 子代理系统提示: 角色 + 任务要求 + 私有记忆(可选) + 交付 JSON 硬性约束
-export function buildSubSystemPrompt(ag: AgentDef, agentName: string, _task: string, memoryText: string): string {
-  const mem = memoryText ? '\n\n## 私有记忆\n' + memoryText : ''
+// 子代理系统提示: 角色 + 任务要求 + 交付 JSON 硬性约束
+export function buildSubSystemPrompt(ag: AgentDef, agentName: string, _task: string): string {
   return '## 当前身份\n' + ag.icon + ' ' + agentName + ' — ' + ag.role + '\n' + ag.prompt +
     '\n（你是本次分发的一个子任务执行者，直接完成分配给你的子任务并输出成果。你可以调用工具（文件读写/命令执行/网络检索等）来真正完成工作。' +
-    '不要询问。' + mem +
+    '不要询问。' +
     '\n\n## 交付格式（硬性约束）\n完成工作后，最后输出一段 JSON（放在行首 ```json 与行尾 ``` 之间），字段：' +
     '{"goal":"任务目标","status":"done|partial|failed","outputs":["产出物1(文件路径或结论)"],"open":["未决问题(没有则为[])"],"note":"一句话说明"}。' +
     'JSON 之前可以有一两句简要说明。'

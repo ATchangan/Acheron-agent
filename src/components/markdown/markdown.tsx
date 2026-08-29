@@ -1,6 +1,6 @@
-// src/components/markdown/markdown.tsx —— v0.4.4 对齐 DSH 自研 mdast 渲染管线(真增量版)
+// src/components/markdown/markdown.tsx —— v0.4.4 自研 mdast 渲染管线(真增量版)
 // 解析: mdast-util-from-markdown + gfm(+ math 定稿), 数学兼容 TeX \\(...\\)/\\[...\\]
-// 流式: DSH 式 StreamingRenderer —— 只重解析 text.slice(tailStart) 尾部、累积 frozen(源偏移稳定 key)、
+// 流式: 增量 StreamingRenderer —— 只重解析 text.slice(tailStart) 尾部、累积 frozen(源偏移稳定 key)、
 //       只增量渲染新冻结块、按 text 幂等; 合并式脚注区; 安全链接(协议白名单+禁相对); 行内 code 恰为绝对URL→链接。
 import { useMemo, useRef, type ReactNode } from 'react'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -21,13 +21,13 @@ export interface MarkdownOpts {
   streaming?: boolean
   copyLabel?: string
   copiedLabel?: string
-  // DSH fileMentions: 调用方注入的解析器(返回真实文件则渲染"打开文件"按钮)
+  // fileMentions: 调用方注入的解析器(返回真实文件则渲染"打开文件"按钮)
   fileMentions?: { resolve: (value: string) => FileMention | undefined }
 }
 
 const valid = (b: MDNode): boolean => b.type !== 'definition' && b.type !== 'footnoteDefinition'
 
-// ── DSH 安全链接: new URL 协议白名单(http/https/mailto); 不安全/相对/片段锚点 → 纯文本 ──
+// ── 安全链接: new URL 协议白名单(http/https/mailto); 不安全/相对/片段锚点 → 纯文本 ──
 function sanitizeUrl(url?: string): string {
   if (!url) return ''
   try {
@@ -62,14 +62,14 @@ function mathCompatPreprocess(text: string): string {
     .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$')
 }
 
-// ── 代码块: shiki 高亮(流式期间 lang 未定 → 不高亮) ──
-function CodeBlock({ code, lang }: { code: string; lang?: string }) {
-  const html = shiki.highlight(code, lang)
+// ── 代码块: shiki 高亮(冻结块立即高亮; 流式尾部 lang 未定/增长中 → 不高亮) ──
+function CodeBlock({ code, lang, streaming }: { code: string; lang?: string; streaming?: boolean }) {
+  const html = streaming ? null : shiki.highlight(code, lang)
   const trimmed = code.endsWith('\n') ? code.slice(0, -1) : code
   return (
     <div className={'md-code-block' + (lang ? ' md-code-block-lang' : '')}>
       <div className="md-code-banner">
-        <span className="md-code-lang">{lang || ''}</span>
+        <span className="md-code-lang">{lang || (streaming ? '代码' : '')}</span>
         <button type="button" className="md-code-copy" onClick={() => void navigator.clipboard?.writeText(trimmed).catch(() => {})}>复制</button>
       </div>
       {html !== null
@@ -79,7 +79,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   )
 }
 
-// ── 表格: DSH 宽表(≥4 列)横向滚动 ──
+// ── 表格: 宽表(≥4 列)横向滚动 ──
 function Table({ node }: { node: Table }) {
   const cols = node.children[0]?.children?.length || 0
   const wide = cols >= 4
@@ -119,20 +119,36 @@ function renderNode(node: MDNode, key: string | number, opts: MarkdownOpts, foot
       if (mention !== undefined) return <code key={key} className="md-inline-code"><button type="button" className="md-file-mention" title={mention.title} aria-label={mention.label} onClick={mention.open}>{value}</button></code>
       return <code key={key} className="md-inline-code" dir="ltr">{value}</code>
     }
-    case 'code': return <CodeBlock key={key} code={node.value} lang={(!opts.streaming && node.lang) || undefined} />
+    case 'code': return <CodeBlock key={key} code={node.value} lang={node.lang || undefined} streaming={opts.streaming} />
+    case 'table': return <Table key={key} node={node} />
     case 'math': return <div key={key} className="md-math-block"><MathBlock value={node.value} /></div>
     case 'inlineMath': return <InlineMath key={key} value={node.value} />
     case 'blockquote': return <blockquote key={key} className="md-quote">{renderChildren(node.children, opts, footnotes)}</blockquote>
     case 'list': {
       const ordered = node.ordered
       const start = ordered && typeof node.start === 'number' && node.start !== 1 ? node.start : undefined
-      const items = node.children.map((li, i) => (
-        <li key={i} className="md-li">
-          {li.type === 'listItem' ? (li.checked !== null && li.checked !== undefined
-            ? <><span className="md-task"><input type="checkbox" readOnly checked={li.checked} disabled /></span>{renderChildren(li.children, opts, footnotes)}</>
-            : renderChildren(li.children, opts, footnotes)) : null}
-        </li>
-      ))
+      const items = node.children.map((li, i) => {
+        if (li.type !== 'listItem') return <li key={i} className="md-li" />
+        const task = li.checked !== null && li.checked !== undefined
+        const checkbox = task
+          ? <span className="md-task"><input type="checkbox" readOnly checked={!!li.checked} disabled /></span>
+          : null
+        // 单段落项直接平铺进 li(复选框与文字同行, 消除块级 p 造成的两行断裂)
+        const kids = li.children
+        const first = kids[0]
+        if (first && first.type === 'paragraph' && kids.length === 1) {
+          return <li key={i} className="md-li">{checkbox}{renderChildren(first.children, opts, footnotes)}</li>
+        }
+        if (first && first.type === 'paragraph') {
+          return (
+            <li key={i} className="md-li">
+              <p className="md-li-p">{checkbox}{renderChildren(first.children, opts, footnotes)}</p>
+              {renderChildren(kids.slice(1), opts, footnotes)}
+            </li>
+          )
+        }
+        return <li key={i} className="md-li">{checkbox}{renderChildren(kids, opts, footnotes)}</li>
+      })
       return ordered ? <ol key={key} start={start as number | undefined}>{items}</ol> : <ul key={key}>{items}</ul>
     }
     case 'thematicBreak': return <hr key={key} />
@@ -165,7 +181,7 @@ function renderNode(node: MDNode, key: string | number, opts: MarkdownOpts, foot
   }
 }
 
-// ── 合并式脚注区(DSH footnote section): 收集 footnoteDefinition, 末尾渲染 ──
+// ── 合并式脚注区: 收集 footnoteDefinition, 末尾渲染 ──
 function FootnoteSection({ defs }: { defs: FootnoteDefinition[] }) {
   if (!defs.length) return null
   return (
@@ -194,7 +210,7 @@ function blockKey(node: MDNode, base: number, index: number): string {
   return offset === undefined ? `-${index + 1}` : `${base + offset}`
 }
 
-// ── 真增量 StreamingRenderer(对齐 DSH): 累积 frozen + 只渲染新冻结块 + 幂等 ──
+// ── 真增量 StreamingRenderer: 累积 frozen + 只渲染新冻结块 + 幂等 ──
 interface Frozen { node: MDNode; key: string }
 class StreamingRenderer {
   private frozen: Frozen[] = []

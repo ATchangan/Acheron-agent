@@ -1,7 +1,7 @@
 // electron/shared/settings-patch.ts — 聊天改设置的白名单校验与脱敏(纯函数, 可单测)
 // 目的: 自然语言可以调节"所有安全可改的设置", 但密钥/风险开关/超大字段必须走设置页, 防止提示注入与密钥进上下文。
 
-const STRING_KEYS = new Set(['theme', 'mode', 'agentName', 'language', 'region', 'messageSpacing', 'showTimestamps', 'customSystemPrompt', 'promptInjectPos', 'thinkLevel', 'sp', 'ishiki', 'mainModel', 'fastModel', 'longTextModel', 'codeModel', 'mediaImgProvider', 'mediaVideoProvider', 'browserHomeUrl', 'compactStrategy', 'workDir', 'skinSecondary'])
+const STRING_KEYS = new Set(['theme', 'mode', 'agentName', 'language', 'region', 'showTimestamps', 'customSystemPrompt', 'promptInjectPos', 'thinkLevel', 'sp', 'ishiki', 'mainModel', 'fastModel', 'longTextModel', 'codeModel', 'mediaImgProvider', 'mediaVideoProvider', 'browserHomeUrl', 'compactStrategy', 'workDir', 'skinSecondary'])
 const BOOL_KEYS = new Set(['autoFastModel', 'autoMediaImg', 'autoMediaVideo', 'mcpAutoConnectOnStart', 'mcpAutoReconnect', 'autoCopy', 'useTables', 'useLists', 'useEmoji', 'expressUncertainty', 'askWhenMissing', 'showConfidence', 'explainRefusal', 'neutralOnControversial', 'noClosingPhrase', 'briefClosing', 'notifyTaskDone', 'notifyError', 'keepUserGoals', 'keepPendingTasks', 'keepDecisions', 'keepRecentRaw', 'taskArchive', 'animation'])
 const NUMBER_KEYS = new Set(['uiFontSize', 'codeFontSize', 'chatMaxWidth', 'opacity', 'mcpTimeout', 'compactMsgCount', 'compactTokenLimit', 'compactStrength', 'ragChunkSize', 'ragThreshold'])
 const OBJECT_KEYS = new Set(['thinkOverrides', 'toolPerms', 'perf', 'customColors', 'customTheme', 'skinColors', 'uiDisplay', 'pluginSettings'])

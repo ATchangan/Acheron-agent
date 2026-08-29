@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { SessionData, SettingsData, ProviderConfig, SessionMeta } from '../global'
 import { useSettingsStore } from './settings'
 import { invalidateSid } from './session-state'
-import { clientSend, taskGenBySid, type PlanState } from './chat-send'
+import { clientSend, makeQueueActions, taskGenBySid, type PlanState } from './chat-send'
 import { clearInterjectForSid } from './interject'
 import type { S } from './chat-send'
 import { bindEngineEvents } from './engine-client'
@@ -56,7 +56,7 @@ const releaseRemoteSessions = (keepId: string): void => {
 
 
 export const useChatStore = create<S>((set, get) => ({
-  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '', askDraft: '', progress: {}, stall: {},
+  sessions: [], cid: null, streaming: false, executing: false, error: null, errorStep: null, fileChanges: 0, lastTaskId: '', stage: null, terminal: [], cu: 0, cl: 65536, curModel: '', sessCache: {}, modelCache: {}, sessTok: {}, orphanTasks: [], plans: {}, clarifyReq: null, streamText: '', streamId: '', askDraft: '', progress: {}, stall: {}, queued: {},
   activeAgents: [],
   cur: () => get().sessions.find(s => s.id === get().cid),
   setAskDraft: (text: string) => set({ askDraft: text }),
@@ -70,7 +70,6 @@ export const useChatStore = create<S>((set, get) => ({
       window.huangquan.settings.load().catch(() => ({ providers: [] as ProviderConfig[], general: { mode: 'work', theme: 'dark' } } as SettingsData)),
       window.huangquan.ishiki.load().catch(() => ''),
       window.huangquan.sessions.list().catch(() => []),
-      window.huangquan.skills.list().catch(() => []),
     ])
     const mode = cfg.general?.mode || 'work'
     // 自动创建工作台目录（默认使用主进程 workspace 目录, 不再硬编码用户路径）
@@ -87,11 +86,15 @@ export const useChatStore = create<S>((set, get) => ({
       if (Number(m.messageCount || 0) === 0) loadedSessionIds.add(m.id)
     }
     // 启动巡检 —— 磁盘↔内存对账: 删除"磁盘存在但列表无归属"的孤立会话文件(删除会话未同步清理的孤儿消息)
+    // 安全兜底: 会话列表读取失败或为空时跳过对账 —— 否则瞬时故障会把全部磁盘会话误判为孤儿删光
     try {
-      const diskIds: string[] = (await window.huangquan.sessions.audit?.()) || [] as string[]
-      const storeIds = new Set<string>(sessions.map(s => s.id))
-      for (const did of diskIds) {
-        if (!storeIds.has(did)) { try { await window.huangquan.sessions.delete(did) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
+      if (metas.length > 0) {
+        const diskIds: string[] = (await window.huangquan.sessions.audit?.()) || [] as string[]
+        if (diskIds.length > 0) {
+          const storeIds = new Set(sessions.map(s => s.id))
+          const orphans = diskIds.filter(did => !storeIds.has(did))
+          for (const did of orphans) { try { await window.huangquan.sessions.delete(did) } catch (e) { /* 忽略 */ console.debug('[swallow]', e) } }
+        }
       }
     } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     // 每次启动创建新的空会话（显示欢迎界面），历史会话保留在侧边栏供点击查看
@@ -125,6 +128,14 @@ export const useChatStore = create<S>((set, get) => ({
         return { id: t.id, sid: t.sid, content: t.content, images: t.images, attachments: t.attachments, at: t.startedAt, planProgress }
       })
     set({ sessions: list, cid: ns.id, orphanTasks })
+    // v0.4.5: 启动恢复上次会话(设置开关) —— 回到最近更新的历史会话, 新对话仍保留在列表
+    const restore = Boolean((cfg.general as { restoreLastSession?: boolean } | undefined)?.restoreLastSession)
+    if (restore) {
+      const candidates = list.filter(x => x.id !== ns.id && x.updatedAt)
+      candidates.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+      const last = candidates[0]
+      if (last) { set({ cid: last.id }); void get().switchS(last.id) }
+    }
   },
 
   setMode: async (m) => {
@@ -209,6 +220,10 @@ export const useChatStore = create<S>((set, get) => ({
     await clientSend({ set, get }, content, images, attachments)
   },
 
+  enqueueQueued: (sid, item) => makeQueueActions(set as never).enqueueQueued(sid, item),
+  removeQueued: (sid, id) => makeQueueActions(set as never).removeQueued(sid, id),
+  clearQueued: (sid) => makeQueueActions(set as never).clearQueued(sid),
+
   // v0.3.3: 恢复中断任务 —— 切到原会话(会话已删则新建)并重新发送
   restoreTask: async (id: string) => {
     const t = get().orphanTasks.find(x => x.id === id)
@@ -231,6 +246,7 @@ export const useChatStore = create<S>((set, get) => ({
   stop: () => {
     const sid = get().cid
     if (!sid) return
+    get().clearQueued(sid) // v0.6.0: 手动中止时丢弃排队消息(用户已改变主意)
     window.huangquan.engine.stop(sid).catch(() => {})
     invalidateSid(taskGenBySid, sid)          // 只杀当前会话
     window.huangquan.llm.abort(sid)            // abort 带会话过滤
@@ -276,5 +292,28 @@ export const useChatStore = create<S>((set, get) => ({
     await get().send(lu.content || '', lu.images, lu.attachments) // v0.3.1 C5: 补 attachments(附件描述不丢)
   },
 }))
+
+// ── v0.6.0 排队输入: 会话由忙转闲时, 取出队首排队消息重新走完整发送流程 ──
+// 延迟 600ms: 等引擎 task-done 的收尾(落盘/进度清理)完成, 且用户没有立刻点停止
+let prevBusyMap: Record<string, boolean> = {}
+useChatStore.subscribe(s => {
+  const curBusy: Record<string, boolean> = {}
+  for (const x of s.sessions) curBusy[x.id] = !!x.busy
+  for (const id of Object.keys(curBusy)) {
+    if (prevBusyMap[id] && !curBusy[id] && (s.queued[id] || []).length > 0) {
+      window.setTimeout(() => {
+        const st = useChatStore.getState()
+        const sess = st.sessions.find(x => x.id === id)
+        if (!sess || sess.busy) return
+        const q = st.queued[id] || []
+        if (!q.length) return
+        const next = q[0]
+        useChatStore.setState(prev => ({ queued: { ...prev.queued, [id]: (prev.queued[id] || []).filter(x => x.id !== next.id) } }))
+        void st.send(next.text, next.images, next.attachments)
+      }, 600)
+    }
+  }
+  prevBusyMap = curBusy
+})
 
 export { updateContextLimit, getModelContextLimit } from './context'

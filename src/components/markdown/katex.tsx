@@ -1,13 +1,17 @@
-// src/components/markdown/katex.tsx —— KaTeX 数学渲染(对齐 DSH renderTexToReact)
+// src/components/markdown/katex.tsx —— KaTeX 数学渲染
 import { useMemo } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+
+// 安全: 兜底路径内插进 innerHTML 前必须转义(模型可控的原始 LaTeX 可能携带 HTML)
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
 function renderTex(value: string, displayMode: boolean): string {
   try { return katex.renderToString(value, { displayMode, throwOnError: true }) }
   catch {
     try { return katex.renderToString(value, { displayMode, strict: 'ignore', throwOnError: false }) }
-    catch { return `<span class="katex-error" style="color:#cc0000">${value}</span>` }
+    catch { return `<span class="katex-error" style="color:#cc0000">${escapeHtml(value)}</span>` }
   }
 }
 

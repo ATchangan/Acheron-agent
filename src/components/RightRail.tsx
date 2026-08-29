@@ -1,9 +1,10 @@
 // RightRail.tsx —— v0.4.2 右侧面板：文件 / 预览 双 tab，可拖拽调宽
 import React, { useEffect, useRef, useState } from 'react'
+import type { JSX } from 'react'
 import { useSettingsStore } from '../store/settings'
 import FileTree from './FileTree'
 import ResizeBar from './ResizeBar'
-import { Folder, Eye, RefreshCw, FileText, Terminal as TerminalIcon, GitPullRequest } from 'lucide-react'
+import { Folder, Eye, RefreshCw, FileText, Terminal as TerminalIcon, GitPullRequest, Columns2 } from 'lucide-react'
 
 // 终端 pane：工作目录执行命令，输出滚动日志
 function TerminalPane() {
@@ -130,6 +131,56 @@ function ReviewPane() {
   )
 }
 
+// 文件面板(自持状态, 双面板模式下可独立实例化)
+function FilesPaneBody(): JSX.Element {
+  const workDir = useSettingsStore(s => s.general.workDir)
+  const [treeKey, setTreeKey] = useState(0)
+  const [projectCtx, setProjectCtx] = useState<{ file: string; content: string; path: string }>({ file: '', content: '', path: '' })
+  useEffect(() => {
+    window.huangquan.projectContext().then(setProjectCtx).catch(() => setProjectCtx({ file: '', content: '', path: '' }))
+  }, [workDir])
+  return (
+    <>
+            <div className="hq-rail-toolbar">
+              <span className="hq-rail-dir" title={workDir || '未设置工作目录'}>
+                <Folder size={12} style={{ flexShrink: 0 }} />
+                <span className="hq-rail-dir-name">{workDir ? workDir.split(/[/\\]/).pop() : '工作目录'}</span>
+              </span>
+              <button type="button" className="hq-icon-btn" title="刷新文件树" aria-label="刷新文件树" onClick={() => setTreeKey(k => k + 1)}>
+                <RefreshCw size={12} />
+              </button>
+              <button
+                type="button"
+                className="hq-icon-btn"
+                title={projectCtx.file ? '项目约定已加载，点击打开' : '无项目约定文件'}
+                aria-label="项目约定"
+                style={{ color: projectCtx.file ? 'var(--success)' : undefined }}
+                onClick={() => { if (projectCtx.path) { try { window.huangquan.computer.openFile(projectCtx.path) } catch { /* 忽略 */ } } }}
+              >
+                <FileText size={12} />
+              </button>
+            </div>
+            {workDir ? (
+              <div className="hq-rail-tree">
+                <FileTree
+                  key={treeKey}
+                  root={workDir}
+                  onChanged={() => setTreeKey(k => k + 1)}
+                  onNewDir={() => { /* 右栏不做内联新建 */ }}
+                  onNewFile={() => { /* 右栏不做内联新建 */ }}
+                />
+              </div>
+            ) : (
+              <div className="hq-rail-empty">
+                <div className="hq-rail-empty-icon"><Folder size={30} /></div>
+                <div className="hq-rail-empty-title">未设置工作目录</div>
+                <div className="hq-rail-empty-desc">在设置中配置工作目录后，这里会显示项目文件树</div>
+              </div>
+            )}
+    </>
+  )
+}
+
 // 文件预览阅读器：文本 / 图片 / PDF
 function PreviewPane() {
   const workDir = useSettingsStore(s => s.general.workDir)
@@ -154,8 +205,10 @@ function PreviewPane() {
         const b = await window.huangquan.computer.readImageBase64(p)
         setImg(b || '')
       } else if (ext === 'pdf') {
-        const d = await window.huangquan.computer.readFileAsDataUrl(p)
-        if (d) { setImg(''); setText(''); window.open(d, '_blank') }
+        // 修复: window.open(dataURL) 会被主进程 setWindowOpenHandler 一律拒绝(静默无效),
+        // 改为调用系统默认程序打开该文件(文件本就在工作目录)
+        setImg(''); setText('')
+        try { await window.huangquan.computer.openFile(p) } catch (e) { setErr('PDF 打开失败: ' + String(e)) }
       } else {
         const t = await window.huangquan.computer.readFile(p, 0, 200000)
         setText(String(t ?? ''))
@@ -196,101 +249,104 @@ function PreviewPane() {
   )
 }
 
+export type RailTab = 'files' | 'preview' | 'terminal' | 'review'
+const RAIL_TABS: { key: RailTab; label: string; icon: React.ReactNode }[] = [
+  { key: 'files', label: '文件', icon: <Folder size={13} /> },
+  { key: 'preview', label: '预览', icon: <Eye size={13} /> },
+  { key: 'terminal', label: '终端', icon: <TerminalIcon size={13} /> },
+  { key: 'review', label: '评审', icon: <GitPullRequest size={13} /> },
+]
+
+function railPaneBody(tab: RailTab): JSX.Element {
+  if (tab === 'files') return <FilesPaneBody />
+  if (tab === 'preview') return <PreviewPane />
+  if (tab === 'terminal') return <TerminalPane />
+  return <ReviewPane />
+}
+
+// 单个面板单元: 迷你 tab 行 + 内容体(双面板模式每格独立切页)
+const RailPaneUnit: React.FC<{ tab: RailTab; onTab: (t: RailTab) => void; style?: React.CSSProperties }> = ({ tab, onTab, style }) => (
+  <div className="hq-rail-pane" style={style}>
+    <div className="hq-rail-pane-tabs">
+      {RAIL_TABS.map(x => (
+        <button key={x.key} type="button" className={'hq-rail-tab-sm' + (tab === x.key ? ' active' : '')} onClick={() => onTab(x.key)} title={x.label}>
+          {x.icon}
+        </button>
+      ))}
+    </div>
+    <div className="hq-rail-pane-body">{railPaneBody(tab)}</div>
+  </div>
+)
+
 export default function RightRail() {
-  const workDir = useSettingsStore(s => s.general.workDir)
-  const [tab, setTab] = useState<'files' | 'preview' | 'terminal' | 'review'>('files')
-  const [treeKey, setTreeKey] = useState(0)
-  const [projectCtx, setProjectCtx] = React.useState<{ file: string; content: string; path: string }>({ file: '', content: '', path: '' })
-  React.useEffect(() => {
-    window.huangquan.projectContext().then(setProjectCtx).catch(() => setProjectCtx({ file: '', content: '', path: '' }))
-  }, [workDir])
+  const [tab, setTab] = useState<RailTab>('files')
+  // v0.4.5 多窗格工作区(一期): 右栏双面板 —— 可同时看 文件+终端 等组合, 分隔条可拖
+  const [dual, setDual] = useState(() => localStorage.getItem('hq_rail_dual') === '1')
+  const [tabA, setTabA] = useState<RailTab>(() => (localStorage.getItem('hq_rail_tabA') as RailTab) || 'files')
+  const [tabB, setTabB] = useState<RailTab>(() => (localStorage.getItem('hq_rail_tabB') as RailTab) || 'terminal')
+  const [splitPct, setSplitPct] = useState(() => Math.min(80, Math.max(20, Number(localStorage.getItem('hq_rail_split')) || 55)))
+  const dualBodyRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => { localStorage.setItem('hq_rail_dual', dual ? '1' : '0') }, [dual])
+  useEffect(() => { localStorage.setItem('hq_rail_tabA', tabA) }, [tabA])
+  useEffect(() => { localStorage.setItem('hq_rail_tabB', tabB) }, [tabB])
+  useEffect(() => { localStorage.setItem('hq_rail_split', String(splitPct)) }, [splitPct])
+
+  const onSplitterDown = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const el = dualBodyRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const move = (ev: PointerEvent) => {
+      const pct = Math.min(80, Math.max(20, ((ev.clientY - rect.top) / rect.height) * 100))
+      setSplitPct(Math.round(pct))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
 
   return (
     <aside className="hq-right-rail" style={{ position: 'relative' }}>
-      {/* 栏头: tab 切换 */}
+      {/* 栏头: 单面板模式显示大 tab; 双面板模式每格有自己的迷你 tab */}
       <div className="hq-right-rail-head">
+        {!dual && RAIL_TABS.map(x => (
+          <button
+            key={x.key}
+            type="button"
+            className={'hq-rail-tab' + (tab === x.key ? ' active' : '')}
+            onClick={() => setTab(x.key)}
+          >
+            {x.icon}
+            <span>{x.label}</span>
+          </button>
+        ))}
+        <span style={{ flex: 1 }} />
         <button
           type="button"
-          className={'hq-rail-tab' + (tab === 'files' ? ' active' : '')}
-          onClick={() => setTab('files')}
+          className={'hq-rail-tab' + (dual ? ' active' : '')}
+          title={dual ? '切回单面板' : '双面板工作区'}
+          aria-label="切换双面板"
+          onClick={() => setDual(v => !v)}
         >
-          <Folder size={13} />
-          <span>文件</span>
-        </button>
-        <button
-          type="button"
-          className={'hq-rail-tab' + (tab === 'preview' ? ' active' : '')}
-          onClick={() => setTab('preview')}
-        >
-          <Eye size={13} />
-          <span>预览</span>
-        </button>
-        <button
-          type="button"
-          className={'hq-rail-tab' + (tab === 'terminal' ? ' active' : '')}
-          onClick={() => setTab('terminal')}
-        >
-          <TerminalIcon size={13} />
-          <span>终端</span>
-        </button>
-        <button
-          type="button"
-          className={'hq-rail-tab' + (tab === 'review' ? ' active' : '')}
-          onClick={() => setTab('review')}
-        >
-          <GitPullRequest size={13} />
-          <span>评审</span>
+          <Columns2 size={13} />
         </button>
       </div>
 
-      <div className="hq-right-rail-body">
-        {tab === 'files' ? (
-          <>
-            <div className="hq-rail-toolbar">
-              <span className="hq-rail-dir" title={workDir || '未设置工作目录'}>
-                <Folder size={12} style={{ flexShrink: 0 }} />
-                <span className="hq-rail-dir-name">{workDir ? workDir.split(/[/\\]/).pop() : '工作目录'}</span>
-              </span>
-              <button type="button" className="hq-icon-btn" title="刷新文件树" aria-label="刷新文件树" onClick={() => setTreeKey(k => k + 1)}>
-                <RefreshCw size={12} />
-              </button>
-              <button
-                type="button"
-                className="hq-icon-btn"
-                title={projectCtx.file ? '项目约定已加载，点击打开' : '无项目约定文件'}
-                aria-label="项目约定"
-                style={{ color: projectCtx.file ? 'var(--success)' : undefined }}
-                onClick={() => { if (projectCtx.path) { try { window.huangquan.computer.openFile(projectCtx.path) } catch { /* 忽略 */ } } }}
-              >
-                <FileText size={12} />
-              </button>
-            </div>
-            {workDir ? (
-              <div className="hq-rail-tree">
-                <FileTree
-                  key={treeKey}
-                  root={workDir}
-                  onChanged={() => setTreeKey(k => k + 1)}
-                  onNewDir={() => { /* 右栏不做内联新建 */ }}
-                  onNewFile={() => { /* 右栏不做内联新建 */ }}
-                />
-              </div>
-            ) : (
-              <div className="hq-rail-empty">
-                <div className="hq-rail-empty-icon"><Folder size={30} /></div>
-                <div className="hq-rail-empty-title">未设置工作目录</div>
-                <div className="hq-rail-empty-desc">在设置中配置工作目录后，这里会显示项目文件树</div>
-              </div>
-            )}
-          </>
-        ) : tab === 'preview' ? (
-          <PreviewPane />
-        ) : tab === 'terminal' ? (
-          <TerminalPane />
-        ) : (
-          <ReviewPane />
-        )}
-      </div>
+      {dual ? (
+        <div className="hq-right-rail-body hq-rail-dual" ref={dualBodyRef}>
+          <RailPaneUnit tab={tabA} onTab={setTabA} style={{ flex: '0 0 calc(' + splitPct + '% - 3px)' }} />
+          <div className="hq-rail-splitter" onPointerDown={onSplitterDown} role="separator" aria-orientation="horizontal" />
+          <RailPaneUnit tab={tabB} onTab={setTabB} style={{ flex: '1 1 auto' }} />
+        </div>
+      ) : (
+        <div className="hq-right-rail-body">
+          {railPaneBody(tab)}
+        </div>
+      )}
 
       <ResizeBar varName="--right-w" storeKey="hq_right_w" min={220} max={420} edge="left" />
     </aside>

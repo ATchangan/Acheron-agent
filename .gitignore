@@ -10,3 +10,8 @@ _archive/userdata-20260811/
 .test-data/
 .DS_Store
 .playwright-cli/
+
+vendor/memory-core/node_modules/
+.dev-userdata/
+.dev-workdir/
+release-build/

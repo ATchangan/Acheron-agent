@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSettingsStore } from '../../store/settings'
 import { C, S, Toggle, NumSetting } from '../settings-ui'
 import { MoreHorizontal } from 'lucide-react'
@@ -12,8 +12,110 @@ export default function AdvancedTab() {
   const save = (patch: Partial<import('../../types').GeneralSettings>) => { useSettingsStore.setState(s2 => ({ general: { ...(s2.general || {}), ...patch } })); if (saveTimer.current) clearTimeout(saveTimer.current); saveTimer.current = setTimeout(() => useSettingsStore.getState().save(), 300) }
   const [toast, setToast] = useState<string | null>(null)
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
+  const hidden = (name: string) => (g.hiddenSkills || []).includes(name)
+  const [cronJobs, setCronJobs] = useState<{ id: string; trigger?: 'cron' | 'watch'; expression?: string; watchPath?: string; prompt: string; enabled: boolean }[] | null>(null)
+  const [cronExpr, setCronExpr] = useState('')
+  const [cronPrompt, setCronPrompt] = useState('')
+  const [watchPath, setWatchPath] = useState('')
+  const [watchPrompt, setWatchPrompt] = useState('')
+  const [skills, setSkills] = useState<{ name: string; path: string; description: string; builtin: boolean }[]>([])
+  const [skillStat, setSkillStat] = useState('')
+  const [newSkillName, setNewSkillName] = useState('')
+  const [newSkillDesc, setNewSkillDesc] = useState('')
+  const [installUrl, setInstallUrl] = useState('')
+  const refreshSkills = () => {
+    void window.huangquan.skills.list().then(s => setSkills(s || [])).catch(() => setSkills([]))
+    void window.huangquan.skills.stats(30).then(rows => {
+      const top = rows.filter(r => r.hit + r.trigger > 0).slice(0, 3).map(r => r.name + ' 命中' + r.hit).join(' · ')
+      setSkillStat(top)
+    }).catch(() => setSkillStat(''))
+  }
+  useEffect(() => { refreshSkills() }, [])
+  const refreshCron = () => { void window.huangquan.cron.list().then(j => setCronJobs(j)).catch(() => setCronJobs([])) }
+  useEffect(() => {
+    refreshCron()
+  }, [])
   return (
     <div style={U.pageBody}>
+      <div style={S.card}>
+        <div style={S.section}>记忆系统</div>
+        <div style={S.hint}>本地记忆网关(MemoryCore)：任务完成后自动沉淀对话经验；模型按需调用 记忆检索/对话检索/技能检索 工具。数据保存在本应用数据目录，不会上传。</div>
+        <Toggle checked={g.memoryCoreEnabled !== false} onChange={v => save({ memoryCoreEnabled: v })} label="启用记忆系统" hint="关闭后模型无法使用 记忆/对话/技能 检索工具，也不再自动沉淀对话经验" />
+
+      <div style={S.card}>
+        <div style={S.section}>定时任务</div>
+        <div style={S.hint}>到点自动执行指定任务（应用运行中有效，含托盘）。也可以直接对模型说“每天早上9点…”让它创建。表达式为 5 段 cron（分 时 日 月 周）。</div>
+        {(cronJobs || []).map(j => (
+          <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid ' + C.border }}>
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: C.accent, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.trigger === 'watch' ? j.watchPath : j.expression}>{j.trigger === 'watch' ? '📂 ' + (j.watchPath || '') : j.expression}</span>
+            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'calc(var(--ui-font-size) - 1px)', color: C.text }}>{j.prompt}</span>
+            <Toggle checked={j.enabled} onChange={async () => { await window.huangquan.cron.toggle(j.id); refreshCron() }} label={j.enabled ? '启用' : '停用'} />
+            <button style={S.btn('ghost')} onClick={async () => { await window.huangquan.cron.remove(j.id); refreshCron() }}>删除</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <input value={cronExpr} onChange={e => setCronExpr(e.target.value)} placeholder="0 9 * * *" style={{ width: 110, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', outline: 'none' }} />
+          <input value={cronPrompt} onChange={e => setCronPrompt(e.target.value)} placeholder="要执行的任务内容…" style={{ flex: 1, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, outline: 'none' }} />
+          <button style={S.btn('ghost')} disabled={!cronExpr.trim() || !cronPrompt.trim()} onClick={async () => { const r = await window.huangquan.cron.add(cronExpr, cronPrompt); showToast(r.ok ? '已创建定时任务' : (r.error || '创建失败')); if (r.ok) { setCronExpr(''); setCronPrompt(''); refreshCron() } }}>添加</button>
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <input value={watchPath} onChange={e => setWatchPath(e.target.value)} placeholder="监控路径（文件夹或文件）…" style={{ flex: 1, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, outline: 'none' }} />
+          <input value={watchPrompt} onChange={e => setWatchPrompt(e.target.value)} placeholder="变化时要执行的任务…" style={{ flex: 1, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, outline: 'none' }} />
+          <button style={S.btn('ghost')} disabled={!watchPath.trim() || !watchPrompt.trim()} onClick={async () => { const r = await window.huangquan.cron.addWatch(watchPath, watchPrompt); showToast(r.ok ? '已创建文件监控' : (r.error || '创建失败')); if (r.ok) { setWatchPath(''); setWatchPrompt(''); refreshCron() } }}>添加监控</button>
+        </div>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={S.section}>技能</div>
+        <div style={S.hint}>技能在命中触发词时注入系统提示；取消勾选即隐藏（引擎不再注入，但仍可通过技能工具读取）。</div>
+        {(skills || []).map(s2 => {
+          const hidden = (g.hiddenSkills || []).includes(s2.name)
+          return (
+            <div key={s2.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+              <Toggle checked={!hidden} onChange={v => save({ hiddenSkills: v ? (g.hiddenSkills || []).filter(x => x !== s2.name) : [...(g.hiddenSkills || []), s2.name] })} label={s2.name + (s2.builtin ? '（内置）' : '')} hint={s2.description.slice(0, 120)} />
+            </div>
+          )
+        })}
+        {skillStat && <div style={S.hint}>近 30 天使用：{skillStat}</div>}
+        {skills.map(s2 => (
+          <div key={s2.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+            <Toggle checked={!hidden(s2.name)} onChange={v => save({ hiddenSkills: v ? (g.hiddenSkills || []).filter(x => x !== s2.name) : [...(g.hiddenSkills || []), s2.name] })} label={s2.name + (s2.builtin ? '（内置）' : '')} hint={s2.description.slice(0, 120)} />
+            {!s2.builtin && <button style={S.btn('ghost')} title="删除技能" onClick={async () => { await window.huangquan.skills.remove(s2.name); showToast('已删除 ' + s2.name); refreshSkills() }}>删除</button>}
+          </div>
+        ))}
+        {!skills.length && <div style={S.hint}>暂无技能。可从 Git 仓库安装，或在数据目录 skills/ 放置含 SKILL.md 的文件夹。</div>}
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+          <input value={installUrl} onChange={e => setInstallUrl(e.target.value)} placeholder="Git 仓库地址（https://…/skill.git）" style={{ flex: 1, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, outline: 'none' }} />
+          <button style={S.btn('ghost')} disabled={!installUrl.trim()} onClick={async () => { showToast('安装中…'); const r = await window.huangquan.skills.install(installUrl); showToast(String(r)); setInstallUrl(''); refreshSkills() }}>安装</button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+          <input value={newSkillName} onChange={e => setNewSkillName(e.target.value)} placeholder="技能名（字母数字-）" style={{ width: 160, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, outline: 'none' }} />
+          <input value={newSkillDesc} onChange={e => setNewSkillDesc(e.target.value)} placeholder="用途描述…" style={{ flex: 1, height: 28, padding: '0 8px', background: C.card, border: '1px solid ' + C.border, borderRadius: 7, color: C.text, fontSize: 12, outline: 'none' }} />
+          <button style={S.btn('ghost')} disabled={!newSkillName.trim() || !newSkillDesc.trim()} onClick={async () => {
+            const name = newSkillName.trim()
+            const content = [
+              '---',
+              'name: ' + name,
+              'description: ' + newSkillDesc.trim(),
+              'triggers: []',
+              'tools: []',
+              '---',
+              '',
+              '## 步骤',
+              '1. （在此补充执行步骤）',
+              '',
+            ].join('\n')
+            const r = await window.huangquan.skills.create(name, content)
+            showToast(String(r))
+            if (String(r).startsWith('ok')) { setNewSkillName(''); setNewSkillDesc(''); refreshSkills() }
+          }}>创建</button>
+        </div>
+      </div>
+        <NumSetting label="网关端口" hint="默认 8420；修改后需重启应用生效" value={g.memoryCorePort ?? 8420} min={1024} max={65535} unit="" onChange={v => save({ memoryCorePort: v })} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+          <button style={S.btn('ghost')} onClick={async () => { try { const st = await window.huangquan?.memoryCore?.status(); if (st) alert('记忆网关状态：\n' + st.status + (st.detail ? '\n' + st.detail : '') + (st.baseUrl ? '\n' + st.baseUrl : '')) } catch { /* 忽略 */ } }}>查看网关状态</button>
+        </div>
+      </div>
       <div style={S.card}>
         <div style={S.section}>渲染加速</div>
         <div style={S.hint}>自动识别电脑显卡：能用硬件加速就用，不能用就改用软件渲染，无需手动设置。切换后需重启应用生效。</div>
@@ -28,6 +130,7 @@ export default function AdvancedTab() {
         <div style={S.section}>执行控制</div>
         <NumSetting label="失败重试次数" hint="单个工具失败后重试次数（0=不重试）" value={g.retryCount ?? 3} min={0} max={10} unit="次" onChange={v => save({ retryCount: v })} />
         <Toggle checked={g.parallelTools !== false} onChange={v => save({ parallelTools: v })} label="并行工具执行" hint="读取类工具（读取/列出/搜索等）并发执行，减少等待时间" />
+        <Toggle checked={g.restoreLastSession === true} onChange={v => save({ restoreLastSession: v })} label="启动时恢复上次会话" hint="开启后启动直接回到上次使用的会话；关闭则每次新建对话（历史会话仍在侧栏）" />
       </div>
       <div style={S.card}>
         <div style={S.section}>长任务</div>

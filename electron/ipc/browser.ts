@@ -258,6 +258,8 @@ export function registerBrowserIpc(deps: {
   })
   // agent 工具调用 —— 打开页面并返回文本内容（保持旧 browse 语义）
   ipcMain.handle('browser:open', async (_e, url: string) => {
+    // 安全: 与 browser:navigate 同规格, 仅 http/https —— 防 file:// 等协议读回本地文件内容
+    if (!isSafeBrowserUrl(url)) return 'E:仅支持 http/https 网址'
     showBrowserFloat() // agent 使用浏览器时弹出悬浮提示
     const bw = getBrowserWin(); const wc = bw.webContents
     try { await wc.loadURL(url) } catch (e) { /* 继续 */ console.debug('[swallow]', e) }

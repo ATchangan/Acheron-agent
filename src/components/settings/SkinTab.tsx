@@ -10,6 +10,7 @@ import { U } from '../ui-styles'
 // v0.4.2: 内置主题预设
 const THEME_META = [
   { id: 'auto', label: '跟随系统', dots: ['#0e0e0e', '#9a9a9a', '#f8faff'] },
+  { id: 'archeron', label: 'Archeron', dots: ['#1d1d28', '#c6cae0', '#c8cbda'] },
   { id: 'black', label: '极黑', dots: ['#0e0e0e', '#9a9a9a', '#eaeaea'] },
   { id: 'huangquan', label: '黄泉', dots: ['#121014', '#a78bfa', '#ede9f4'] },
   { id: 'ocean', label: '深蓝', dots: ['#0d2f86', '#ffe6cb', '#0053fd'] },
@@ -124,7 +125,6 @@ export default function SkinTab() {
         <div style={S.row}><div style={S.label}>会话模式</div><select style={S.sel} value={g.mode || 'work'} onChange={e => save({ mode: e.target.value })}><option value="chat">聊天</option><option value="work">工作</option></select></div>
         <div style={S.hint}>聊天模式使用助手人设闲聊，工作模式使用高效执行人设；也可在左侧会话区顶部快速切换</div>
         <div style={S.hint}>控制交互会话（聊天正文、输入框、消息内代码与工具输出）的字号，默认跟随界面字号</div>
-        <div style={S.row}><div style={S.label}>消息间距</div><select style={S.sel} value={g.messageSpacing || 'comfortable'} onChange={e => save({ messageSpacing: e.target.value })}><option value="compact">紧凑</option><option value="comfortable">舒适</option><option value="loose">宽松</option></select></div>
       </div>
       <div style={S.card}><div style={S.section}>布局</div>
         <StepSetting label="会话区宽度" hint="消息区与输入框宽度（默认 780px）" value={g.chatMaxWidth || 780} min={480} max={1400} step={20} unit=" px" onChange={v => save({ chatMaxWidth: v })} />

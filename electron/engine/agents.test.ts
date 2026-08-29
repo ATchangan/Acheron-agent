@@ -21,7 +21,6 @@ describe('agents 自定义子代理', () => {
     expect(a.role).toBe('测试')
     expect(a.prompt).toBe('自定义提示')
     expect(a.tools).toEqual(['read', 'grep'])
-    expect(a.memoryScope).toBe('private')
     expect(a.icon).toBeTruthy()
   })
 
@@ -32,7 +31,6 @@ describe('agents 自定义子代理', () => {
     expect(a.role).toBe('覆盖角色')
     expect(a.tools).toEqual(['read'])
     expect(a.handoff_to.length).toBeGreaterThan(0)
-    expect(a.memoryScope).toBe('private')
   })
 
   it('坏 JSON 文件跳过, 不影响其他自定义代理', () => {

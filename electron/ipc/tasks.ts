@@ -5,13 +5,16 @@ import * as fs from 'fs'
 import { writeFileAtomic } from '../fs-atomic'
 
 // v0.4.2: 系统通知 —— 懒加载避免非 Electron 测试环境炸裂
-type NotificationCtor = { new(opts: { title: string; body: string }): { show(): void } }
+type NotificationCtor = { new(opts: { title: string; body: string }): { show(): void; on(event: string, cb: () => void): void } }
 let NotificationCtor: NotificationCtor | null = null
 try {
   const electronMod = require('electron') as { Notification?: NotificationCtor }
   if (electronMod.Notification) NotificationCtor = electronMod.Notification
 } catch { /* 非 electron */ }
 let getNotifyEnabled: () => boolean = () => false
+let onActivate: (() => void) | null = null
+let getSender: (() => Electron.WebContents | null) | null = null
+let lastNotify: InstanceType<NotificationCtor> | null = null
 
 export interface TaskRecord {
   id: string
@@ -104,10 +107,19 @@ export function finishTask(id: string, status: TaskRecord['status'], error?: str
     try {
       const rec = list[i]
       const done = status === 'done'
-      new NotificationCtor({
+      const n = new NotificationCtor({
         title: done ? '任务完成' : status === 'failed' ? '任务失败' : '任务已中止',
         body: String(rec.content || '（无描述任务）').slice(0, 120),
-      }).show()
+      })
+      // v0.4.5: 点击通知 → 聚焦窗口并跳转到任务所属会话
+      n.on('click', () => {
+        try { onActivate?.() } catch { /* 忽略 */ }
+        try { getSender?.()?.send('task:activate', { sid: rec.sid }) } catch { /* 忽略 */ }
+      })
+      n.on('close', () => { if (lastNotify === n) lastNotify = null })
+      lastNotify = n
+      lastNotify = n
+      n.show()
     } catch { /* 忽略 */ }
   }
   return true
@@ -119,9 +131,11 @@ export function clearTask(id?: string): boolean {
   return true
 }
 
-export function registerTaskIpc(deps: { tasksPath: string; getNotifyEnabled?: () => boolean }): void {
+export function registerTaskIpc(deps: { tasksPath: string; getNotifyEnabled?: () => boolean; onActivate?: () => void; getSender?: () => Electron.WebContents | null }): void {
   initTaskStore(deps.tasksPath)
   if (deps.getNotifyEnabled) getNotifyEnabled = deps.getNotifyEnabled
+  if (deps.onActivate) onActivate = deps.onActivate
+  if (deps.getSender) getSender = deps.getSender
 
   ipcMain.handle('task:list', () => listTasks())
   ipcMain.handle('task:start', (_e, t: Partial<TaskRecord> & { id: string; sid: string; content: string }) => {

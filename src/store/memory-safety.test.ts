@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scanMemoryText } from './memory'
+import { scanMemoryText } from '../../electron/shared/memory-utils'
 
 describe('记忆安全扫描', () => {
   it('识别 API Key 模式', () => {

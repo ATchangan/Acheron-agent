@@ -16,17 +16,71 @@ export default function StrategyTab() {
   return (
     <div style={U.pageBody}>
       <div style={S.card}>
-        <div style={S.section}>模型选择</div>
-        <div style={S.hint}>为对话、视觉、图片、视频分别选择使用的模型；未配置时自动用默认供应商</div>
-        <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '10px 0 6px' }}>文字模型（联动供应商）</div>
-        <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>主对话模型</div><div style={S.hint}>由聊天输入框右侧模型选择器指定（选择即生效），此处不再单独设置</div></div>
-        <div style={S.row}><div style={S.label}>长文本模型</div><select style={S.sel} value={g.longTextModel || ''} onChange={e => save({ longTextModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>文档分析 / 长上下文任务</div></div>
-        <div style={S.row}><div style={S.label}>代码模型</div><select style={S.sel} value={g.codeModel || ''} onChange={e => save({ codeModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>代码生成 / 审查</div></div>
-        <div style={S.row}><div style={S.label}>快速响应模型</div><select style={S.sel} value={g.fastModel || ''} onChange={e => save({ fastModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>简单任务 / 工具调度</div></div>
+        <div style={S.section}>辅助模型</div>
+        <div style={S.hint}>辅助任务默认使用主模型，你可以为任意任务指定专用模型；当前会话可在输入框的模型选择器里临时切换。</div>
+        <div style={{ height: 10 }} />
+        <div className="aux-row">
+          <div className="aux-row-main">
+            <div className="aux-row-name">长文本<span className="aux-row-badge">文档分析</span></div>
+            <div className="aux-row-sub">长上下文 / 文档理解任务</div>
+          </div>
+          <div className="aux-row-actions">
+            <select style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', minWidth: 180 }} value={g.longTextModel || ''} onChange={e => save({ longTextModel: e.target.value })}>
+              <option value="">自动 · 使用主模型</option>
+              {modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="aux-row">
+          <div className="aux-row-main">
+            <div className="aux-row-name">代码<span className="aux-row-badge">代码生成</span></div>
+            <div className="aux-row-sub">代码生成 / 审查任务</div>
+          </div>
+          <div className="aux-row-actions">
+            <select style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', minWidth: 180 }} value={g.codeModel || ''} onChange={e => save({ codeModel: e.target.value })}>
+              <option value="">自动 · 使用主模型</option>
+              {modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="aux-row">
+          <div className="aux-row-main">
+            <div className="aux-row-name">快速响应<span className="aux-row-badge">轻量任务</span></div>
+            <div className="aux-row-sub">简单提问 / 工具调度</div>
+          </div>
+          <div className="aux-row-actions">
+            <select style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', minWidth: 180 }} value={g.fastModel || ''} onChange={e => save({ fastModel: e.target.value })}>
+              <option value="">自动 · 使用主模型</option>
+              {modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+        </div>
         <Toggle checked={g.autoFastModel !== false} onChange={v => save({ autoFastModel: v })} label="简单问题用更快模型" hint="简单提问自动换更快的模型，省时省流量" />
         <div style={{ fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: 700, color: C.accent, margin: '16px 0 6px' }}>调度绑定（所有模型公用，含自定义）</div>
-        <div style={S.row}><div style={S.label}>小模型</div><select style={S.sel} value={g.smallModel || ''} onChange={e => save({ smallModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>轻量任务（简单问答 / 单步工具）</div></div>
-        <div style={{ ...S.row, marginBottom: 0 }}><div style={S.label}>大模型</div><select style={S.sel} value={g.largeModel || ''} onChange={e => save({ largeModel: e.target.value })}><option value="">跟随主模型</option>{modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</select><div style={S.hint}>复杂任务（多步骤 / 代码 / 文档）</div></div>
+        <div className="aux-row">
+          <div className="aux-row-main">
+            <div className="aux-row-name">小模型</div>
+            <div className="aux-row-sub">轻量任务（简单问答 / 单步工具）</div>
+          </div>
+          <div className="aux-row-actions">
+            <select style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', minWidth: 180 }} value={g.smallModel || ''} onChange={e => save({ smallModel: e.target.value })}>
+              <option value="">跟随主模型</option>
+              {modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="aux-row">
+          <div className="aux-row-main">
+            <div className="aux-row-name">大模型</div>
+            <div className="aux-row-sub">复杂任务（多步骤 / 代码 / 文档）</div>
+          </div>
+          <div className="aux-row-actions">
+            <select style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', minWidth: 180 }} value={g.largeModel || ''} onChange={e => save({ largeModel: e.target.value })}>
+              <option value="">跟随主模型</option>
+              {modelOpts.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </div>
+        </div>
       </div>
       <div style={S.card}>
         <div style={S.section}>视觉理解（联动供应商）</div>

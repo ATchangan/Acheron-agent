@@ -1,5 +1,4 @@
 // electron/engine/tool-types.ts — 工具执行上下文与 handler 声明(供 tools.ts / tool-handlers.ts 共用, 避免循环依赖)
-import type { EngineMemory } from './memory'
 import type { EngineSettings } from './types'
 import type { AgentDef } from './agents'
 import type { UiDisplayConfig } from '../shared/settings-types'
@@ -13,19 +12,16 @@ export interface ToolRunCtx {
   isSubtask?: boolean
   activeAgents: string[]
   workDir: string
-  memoryPath: string
   userDataPath: string
+  memoryHubUrl?: string
   skillsDirs?: string[]
   sender?: Electron.WebContents | null
   latestUserText?: string
-  getMemory: () => EngineMemory
-  saveMemory: (m: EngineMemory) => void
   onAgentChange: (agent: string) => void
   onWorkDirChange?: (dir: string) => void
   onThemeChange?: (theme: string) => void
   onUiDisplayChange?: (d: UiDisplayConfig) => void
   onPlanUpdate?: (steps: { label?: string; status?: string; expected?: string; id?: string; tool?: string }[]) => string
-  onGoalUpdate?: (goal: string) => void
   runDispatch: (tasks: { agent: string; task: string }[]) => Promise<string>
   getHandoffCounts?: () => Record<string, number>
   onHandoffRecord?: (agent: string) => void

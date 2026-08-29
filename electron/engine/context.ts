@@ -94,7 +94,6 @@ export interface ContextBuildOpts {
   sp: string
   agent?: string
   handoffFrom?: number
-  memoryText: string
   projectCtx?: { file: string; content: string; truncated?: boolean }
   model: string
   workflowsFull: boolean
@@ -139,7 +138,7 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   // 正常路径由微压缩/窗口压缩/任务归档处理, 此处仅防单次 API 请求超限
   if (list.length > MAX_HISTORY_MSGS * 5) {
     const early = list.slice(0, -MAX_HISTORY_MSGS)
-    earlySummary = '\n[早期历史省略] 共 ' + early.length + ' 条早期消息已折叠，如需细节请用 recall_memory 或会话搜索检索\n'
+    earlySummary = '\n[早期历史省略] 共 ' + early.length + ' 条早期消息已折叠，如需细节请用会话搜索检索\n'
     list = list.slice(-MAX_HISTORY_MSGS)
   }
   const injectMsgs = list.filter(m => m._inject)
@@ -214,7 +213,11 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   let sp = buildPrompt(currentMode, ishiki, opts.g, opts.agents, opts.g.workDir || '') + earlySummary
   if (opts.keyInfo) sp += '\n\n' + opts.keyInfo
   if (opts.skillBodies && opts.skillBodies.length) {
-    sp += '\n\n' + opts.skillBodies.map(s => `【技能: ${s.name}】\n${s.body.slice(0, 800)}\n【技能结束】`).join('\n\n')
+        sp += '\n\n' + opts.skillBodies.map(s => {
+          const truncated = s.body.length > 800
+          const body = truncated ? s.body.slice(0, 800) + '…[技能正文已省略，可用 read_skill 查看全文]' : s.body
+          return `【技能: ${s.name}】\n${body}\n【技能结束】`
+        }).join('\n\n')
   }
   if (opts.projectCtx?.file && opts.projectCtx.content) {
     sp += '\n## 项目约定\n' + opts.projectCtx.content + '\n' +
@@ -223,7 +226,6 @@ export function buildContextualMessages(msgs: EngineMessage[], withImages: boole
   if (currentMode === 'work') {
     sp += '\n## 工作流\n支持 update_plan 声明执行步骤并持续更新状态; 复杂任务用 plan 步骤跟踪进度。\n'
   }
-  sp += '\n' + opts.memoryText
   if (archives.length) {
     sp += '\n## 任务归档\n' + archives.slice(-5).map(a => `- 目标: ${a.goal} | 结论: ${a.conclusion} | 产出物: ${a.outputs.join(', ') || '无'} | 工具: ${a.tools}`).join('\n') + '\n(如需早期细节请用工具重新读取)\n'
   }
@@ -238,7 +240,7 @@ export function filterToolsByAgent(tools: EngineToolSpec[], agentName: string, a
 }
 
 // v0.4.3 上下文内容可见: 把"它心里装着什么"拆成可读报表(按 ## 小节目 + 记忆块 + 历史)
-export function summarizeContext(sp: string, memoryText: string, history: { role?: string; content?: unknown }[] = []): ContextSnapshot {
+export function summarizeContext(sp: string, history: { role?: string; content?: unknown }[] = []): ContextSnapshot {
   const sections: { label: string; chars: number; tokens: number }[] = []
   let curLabel = 'System'
   let buf: string[] = []
@@ -248,15 +250,11 @@ export function summarizeContext(sp: string, memoryText: string, history: { role
     if (m) { flush(); curLabel = m[1].trim() } else buf.push(ln)
   }
   flush()
-  const memText = String(memoryText || '')
-  const memItems = memText.split('\n').filter(l => /^[-•·]\s/.test(l) || /^\d+[.、)]/.test(l)).length
   const histText = (history || []).map(h => String((h as { content?: unknown }).content || '').slice(0, 2000)).join('\n')
-  const memTokens = estimateTokens(memText)
   const sectionsTok = sections.reduce((s, x) => s + x.tokens, 0)
   return {
     sections,
-    memory: { chars: memText.length, tokens: memTokens, items: memItems },
     history: { count: (history || []).length, chars: histText.length, tokens: estimateTokens(histText) },
-    totalTokens: sectionsTok + memTokens + estimateTokens(histText),
+    totalTokens: sectionsTok + estimateTokens(histText),
   }
 }

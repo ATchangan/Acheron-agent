@@ -1,14 +1,12 @@
-// TitleBar.tsx —— v0.4.2 标题栏：34px，左工具簇 + 会话标题 + 右工具簇
-// 对齐参考 titlebar：左侧(侧栏开关/面板翻转/新对话)，右侧(命令面板/右栏开关/设置)
-// 上下文用量只在底部状态栏展示（与参考实现一致），标题栏不重复
-// 原生窗口控制按钮(WCO)由 titleBarOverlay 渲染在右上角，标题栏为其预留 150px
+// TitleBar.tsx —— v0.4.4 标题栏（对齐参考 图标位）：
+// 左: 隐藏侧边栏 / 交换侧边栏位置 · 中: 会话标题(有消息才显示) · 右: 布局编辑器 / HUD 模式 / 动效反馈 / 打开设置 / 显示右侧栏
 import React, { useEffect, useRef, useState } from 'react'
-import { PanelLeft, ArrowLeftRight, SquarePen, Settings, PanelRight, Command, Columns2 } from 'lucide-react'
+import { PanelLeft, ArrowLeftRight, Settings, PanelRight, Command, LayoutTemplate, AppWindow, Vibrate } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import { keybindHint } from '../store/keybinds'
 
-const TITLEBAR_TOOL_SIZE = 24
+const TITLEBAR_TOOL_SIZE = 26
 
 function ToolButton({ title, onClick, children, active }: {
   title: string
@@ -30,7 +28,7 @@ function ToolButton({ title, onClick, children, active }: {
   )
 }
 
-export default function TitleBar({ sidebarOpen, onToggleSidebar, rightRailOpen, onToggleRightRail, panesFlipped, onFlipPanes, onOpenSettings, onTogglePalette, onNewChat, splitSessionId, onSplit, onCloseSplit }: {
+export default function TitleBar({ sidebarOpen, onToggleSidebar, rightRailOpen, onToggleRightRail, panesFlipped, onFlipPanes, onOpenSettings, statusHidden, onToggleStatusHidden }: {
   sidebarOpen: boolean
   onToggleSidebar: () => void
   rightRailOpen: boolean
@@ -38,87 +36,100 @@ export default function TitleBar({ sidebarOpen, onToggleSidebar, rightRailOpen, 
   panesFlipped: boolean
   onFlipPanes: () => void
   onOpenSettings: () => void
-  onTogglePalette: () => void
-  onNewChat: () => void
-  splitSessionId: string | null
-  onSplit: (dir: 'row' | 'column', sessionId: string) => void
-  onCloseSplit: () => void
+  statusHidden: boolean
+  onToggleStatusHidden: () => void
 }) {
-  const title = useChatStore(s => s.cur()?.title || '新对话')
+  const title = useChatStore(s => s.cur()?.title || '')
+  const msgCount = useChatStore(s => s.cur()?.messages.length ?? 0)
   const mode = useSettingsStore(s => s.general.mode || 'work')
-  const sessions = useChatStore(s => s.sessions)
-  const cid = useChatStore(s => s.cid)
-  const [splitOpen, setSplitOpen] = useState(false)
-  const splitRef = useRef<HTMLDivElement>(null)
+  const animOn = useSettingsStore(s => s.general.animation !== false)
+  const [layoutOpen, setLayoutOpen] = useState(false)
+  const layoutRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!splitOpen) return
+    if (!layoutOpen) return
     const onDown = (e: MouseEvent) => {
-      if (splitRef.current && !splitRef.current.contains(e.target as Node)) setSplitOpen(false)
+      if (layoutRef.current && !layoutRef.current.contains(e.target as Node)) setLayoutOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [splitOpen])
+  }, [layoutOpen])
+
+  const toggleLs = (key: string, current: boolean): boolean => {
+    const next = !current
+    localStorage.setItem(key, next ? '1' : '0')
+    window.dispatchEvent(new Event('hq-layout-changed'))
+    return next
+  }
+  const lsOn = (key: string): boolean => localStorage.getItem(key) === '1'
 
   return (
     <header className="hq-titlebar">
-      {/* 左工具簇(titlebarTools left) */}
+      {/* 左工具簇: 侧栏开关 + 面板翻转 */}
       <div className="hq-titlebar-cluster hq-titlebar-cluster-left">
         <ToolButton title={sidebarOpen ? '隐藏侧边栏' : '显示侧边栏'} onClick={onToggleSidebar}>
-          <PanelLeft size={14} />
+          <PanelLeft size={15} />
         </ToolButton>
-        <ToolButton title="交换侧栏与右栏位置" onClick={onFlipPanes} active={panesFlipped}>
-          <ArrowLeftRight size={14} />
+        <ToolButton title="交换侧边栏位置" onClick={onFlipPanes} active={panesFlipped}>
+          <ArrowLeftRight size={15} />
         </ToolButton>
-        <ToolButton title={'新对话 (' + keybindHint('new-chat') + ')'} onClick={onNewChat}>
-          <SquarePen size={14} />
-        </ToolButton>
-        {/* 分栏：主区并排只读会话 */}
-        <div className="hq-split-wrap" ref={splitRef}>
-          <ToolButton title={splitSessionId ? '关闭分栏' : '分栏查看会话'} onClick={() => { if (splitSessionId) { onCloseSplit(); return } setSplitOpen(v => !v) }} active={!!splitSessionId}>
-            <Columns2 size={14} />
-          </ToolButton>
-          {splitOpen && !splitSessionId && (
-            <div className="hq-split-menu">
-              <div className="hq-split-menu-label">选择要并排查看的会话</div>
-              {sessions.filter(s => s.id !== cid && !s.archived).slice(0, 12).map(s => (
-                <div key={s.id} className="hq-split-menu-item-wrap">
-                  <button type="button" className="hq-split-menu-item" onClick={() => { onSplit('row', s.id); setSplitOpen(false) }}>
-                    <span className="hq-split-menu-item-title">{s.title || '（无标题）'}</span>
-                    <span className="hq-split-menu-dir">右侧</span>
-                  </button>
-                  <button type="button" className="hq-split-menu-item" onClick={() => { onSplit('column', s.id); setSplitOpen(false) }}>
-                    <span className="hq-split-menu-item-title">{s.title || '（无标题）'}</span>
-                    <span className="hq-split-menu-dir">下方</span>
-                  </button>
-                </div>
-              ))}
-              {sessions.filter(s => s.id !== cid && !s.archived).length === 0 && (
-                <div className="hq-split-menu-empty">没有其它会话</div>
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* 会话标题 + 模式徽标 */}
+      {/* 会话标题: 空会话不显示, 保持首页干净 */}
       <div className="hq-titlebar-title-wrap">
-        <span className="hq-titlebar-title" title={title}>{title}</span>
-        <span className="hq-titlebar-mode">{mode === 'work' ? '工作' : '聊天'}</span>
+        {msgCount > 0 && title && <span className="hq-titlebar-title" title={title}>{title}</span>}
+        {msgCount > 0 && title && <span className="hq-titlebar-mode">{mode === 'work' ? '工作' : '聊天'}</span>}
       </div>
 
       <div className="hq-titlebar-spacer" />
 
-      {/* 右工具簇(titlebarTools right) */}
+      {/* 右工具簇: 布局编辑器 / HUD 模式 / 动效反馈 / 打开设置 / 显示右侧栏 */}
       <div className="hq-titlebar-cluster hq-titlebar-cluster-right">
-        <ToolButton title={'命令面板 (' + keybindHint('command-palette') + ')'} onClick={onTogglePalette}>
-          <Command size={14} />
+        <div className="hq-layout-wrap" ref={layoutRef}>
+          <ToolButton title="布局编辑器" onClick={() => setLayoutOpen(v => !v)} active={layoutOpen}>
+            <LayoutTemplate size={15} />
+          </ToolButton>
+          {layoutOpen && (
+            <div className="hq-layout-menu">
+              <div className="hq-layout-menu-title">显示 / 隐藏界面区域</div>
+              <button type="button" className="hq-layout-menu-item" onClick={() => { onToggleSidebar(); }}>
+                <span className={'hq-check' + (sidebarOpen ? ' on' : '')} />侧边栏
+                <span className="hq-layout-menu-sub">会话列表与功能入口</span>
+              </button>
+              <button type="button" className="hq-layout-menu-item" onClick={() => { onToggleRightRail(); }}>
+                <span className={'hq-check' + (rightRailOpen ? ' on' : '')} />右侧栏
+                <span className="hq-layout-menu-sub">文件 / 预览 / 终端 / 评审</span>
+              </button>
+              <button type="button" className="hq-layout-menu-item" onClick={() => { onToggleStatusHidden(); }}>
+                <span className={'hq-check' + (!statusHidden ? ' on' : '')} />状态栏
+                <span className="hq-layout-menu-sub">底部设备与上下文状态</span>
+              </button>
+              <button type="button" className="hq-layout-menu-item" onClick={() => { toggleLs('hq_daysummary_hidden', lsOn('hq_daysummary_hidden')); }}>
+                <span className={'hq-check' + (!lsOn('hq_daysummary_hidden') ? ' on' : '')} />当日总结
+                <span className="hq-layout-menu-sub">右缘今日动态入口</span>
+              </button>
+              <button type="button" className="hq-layout-menu-item" onClick={() => { toggleLs('hq_profilestrip_hidden', lsOn('hq_profilestrip_hidden')); }}>
+                <span className={'hq-check' + (!lsOn('hq_profilestrip_hidden') ? ' on' : '')} />配置档案条
+                <span className="hq-layout-menu-sub">侧栏底部档案切换</span>
+              </button>
+              <div className="hq-layout-menu-sep" />
+              <button type="button" className="hq-layout-menu-item" onClick={() => { window.dispatchEvent(new Event('hq-open-palette')); setLayoutOpen(false) }}>
+                <span className={'hq-check' + ''} /><Command size={13} />命令面板 <span className="hq-layout-menu-sub">{keybindHint('command-palette')}</span>
+              </button>
+            </div>
+          )}
+        </div>
+        <ToolButton title="HUD 模式（迷你常驻输入条）" onClick={() => { void window.huangquan.hud.toggle() }}>
+          <AppWindow size={15} />
         </ToolButton>
-        <ToolButton title={rightRailOpen ? '隐藏右栏' : '显示右栏'} onClick={onToggleRightRail} active={rightRailOpen}>
-          <PanelRight size={14} />
+        <ToolButton title="动效反馈" onClick={() => { const g = useSettingsStore.getState(); g.updateGeneral({ animation: !(g.general.animation !== false) }) }} active={animOn}>
+          <Vibrate size={15} />
         </ToolButton>
-        <ToolButton title="设置" onClick={onOpenSettings}>
-          <Settings size={14} />
+        <ToolButton title="打开设置" onClick={onOpenSettings}>
+          <Settings size={15} />
+        </ToolButton>
+        <ToolButton title={rightRailOpen ? '隐藏右侧栏' : '显示右侧栏'} onClick={onToggleRightRail} active={rightRailOpen}>
+          <PanelRight size={15} />
         </ToolButton>
       </div>
     </header>

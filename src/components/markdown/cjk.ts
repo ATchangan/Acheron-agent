@@ -1,6 +1,6 @@
-// src/components/markdown/cjk.ts —— 对齐 DSH 的 cjkFriendlyStrong 语法扩展
+// src/components/markdown/cjk.ts —— cjkFriendlyStrong 语法扩展
 // 让 `**加粗**` 的星号强调在"前有中文标点、后紧跟中文字符"时也能闭合(CommonMark 默认不闭合)。
-// 依赖 micromark 内部 parser 状态, 与 DSH 源码一致。
+// 依赖 micromark 内部 parser 状态。
 import { codes, constants } from 'micromark-util-symbol'
 import { classifyCharacter } from 'micromark-util-classify-character'
 import { unicodePunctuation } from 'micromark-util-character'

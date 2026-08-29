@@ -159,7 +159,6 @@ export interface EngineStartParams {
 export interface ContextSection { label: string; chars: number; tokens: number }
 export interface ContextSnapshot {
   sections: ContextSection[]
-  memory: { chars: number; tokens: number; items: number }
   history: { count: number; chars: number; tokens: number }
   totalTokens: number
 }

@@ -3,6 +3,8 @@ import { ipcMain } from 'electron'
 import * as fs from 'fs'
 import { join } from 'path'
 import { exec } from 'child_process'
+// 安全修复: 磁盘上的 apiKey 是 DPAPI 密文(__ENC__ 前缀), 必须解密后再放进 Authorization
+import { decProviders } from '../main-utils'
 
 export function registerMediaIpc(deps: {
   settingsPath: string
@@ -48,7 +50,7 @@ export function registerMediaIpc(deps: {
   // v0.3.0: 媒体生成 —— 生图走 OpenAI 兼容 images API(REST), 生视频走 CLI 适配器(jimeng/agnes/kling 等)
   ipcMain.handle('media:gen', async (_e, opts: { kind: 'img' | 'video'; prompt: string; providerId?: string; model?: string; ratio?: string; duration?: number }) => {
     try {
-      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { general?: Record<string, unknown>; mediaProviders?: { id: string; name: string; apiKey?: string; baseUrl?: string; headers?: string; imgModels?: string[]; videoModels?: string[] }[] }
+      const s = decProviders(JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as Parameters<typeof decProviders>[0]) as { general?: Record<string, unknown>; mediaProviders?: { id: string; name: string; apiKey?: string; baseUrl?: string; headers?: string; imgModels?: string[]; videoModels?: string[] }[] }
       const g = (s.general || {}) as Record<string, unknown>
       const mps = (s.mediaProviders || [])
       const wd = getEffectiveWorkDir() || userDataPath
@@ -85,8 +87,10 @@ export function registerMediaIpc(deps: {
       const cliMap: Record<string, string> = { '即梦Jimeng': 'jimeng', 'Agnes': 'agnes', '可灵Kling': 'kling', 'Runway': 'runway', 'Pika': 'pika' }
       const cli = cliMap[mp2?.name || ''] || 'jimeng'
       const fpath2 = join(mediaDir, 'video_' + Date.now() + '.mp4')
-      const dur = opts.duration || Number(g.mediaVideoDuration || 5)
-      const cmd = cli + ' --prompt "' + String(opts.prompt).replace(/"/g, '\\"') + '" --duration ' + dur + ' --output "' + fpath2 + '"'
+      const dur = Math.max(1, Math.min(600, Number(opts.duration || g.mediaVideoDuration || 5) || 5))
+      // 安全: prompt 会拼进 cmd 命令行, cmd 的 \" 不是转义 —— 剥离全部 shell 元字符防注入
+      const safePrompt = String(opts.prompt || '').replace(/["&|<>^%!]/g, ' ').slice(0, 2000)
+      const cmd = cli + ' --prompt "' + safePrompt + '" --duration ' + dur + ' --output "' + fpath2 + '"'
       return await new Promise<{ ok: boolean; path?: string; error?: string }>(resolve => {
         exec(cmd, { timeout: 300000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
           if (err) resolve({ ok: false, error: '生成失败: ' + String(err.message || '').slice(0, 200) + '（请确认已安装 ' + cli + ' CLI 并配置 API）' })

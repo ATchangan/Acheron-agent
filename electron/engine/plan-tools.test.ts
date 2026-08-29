@@ -3,7 +3,7 @@ import { isPlanReadonlyTool } from './plan-tools'
 
 describe('isPlanReadonlyTool 计划阶段只读判断', () => {
   it('只读/规划工具放行', () => {
-    for (const t of ['read', 'ls', 'grep', 'find', 'web_search', 'web_fetch', 'web_read', 'session_search', 'recall_memory', 'list_agents', 'list_workflows', 'list_goals', 'list_schedules', 'system_info', 'update_plan', 'read_skill']) {
+    for (const t of ['read', 'ls', 'grep', 'find', 'web_search', 'web_fetch', 'web_read', 'session_search', 'list_agents', 'list_workflows', 'list_schedules', 'system_info', 'update_plan', 'read_skill']) {
       expect(isPlanReadonlyTool(t)).toBe(true)
     }
   })

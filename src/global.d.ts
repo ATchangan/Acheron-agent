@@ -1,5 +1,5 @@
 export {}
-import type { SettingsData, SessionMeta, SessionData, SkillMeta, MemoryData, FileItem, SystemInfo, ChunkData, UsageData, LLMChatParams, ToolCallDelta, SearchResult, CronJob, McpServerInfo, TaskRecord, TraceEntry, AuditRow, ContextSnapshot } from './types/domain'
+import type { SettingsData, SessionMeta, SessionData, FileItem, SystemInfo, ChunkData, UsageData, LLMChatParams, ToolCallDelta, McpServerInfo, TaskRecord, TraceEntry, AuditRow, ContextSnapshot } from './types/domain'
 
 declare global {
   interface Window {
@@ -7,7 +7,6 @@ declare global {
     __lastSp?: string
         __huangquan_agent?: string
     __huangquan_agent_manual?: boolean
-    __watchState?: Record<string, string>
     huangquan: {
       getPathForFile: (f: File) => string
       window: {
@@ -18,8 +17,38 @@ declare global {
         setOpacity: (opacity: number) => Promise<void>
         setTitleBarOverlay: (opts: { color?: string; symbolColor?: string; height?: number }) => Promise<boolean>
       }
-      watch: {
-        open: (sid: string) => Promise<boolean>
+      find: {
+        start: (text: string, forward?: boolean) => Promise<boolean>
+        stop: () => Promise<boolean>
+        onResult: (cb: (r: { matches: number; active: number }) => void) => () => void
+      }
+      cron: {
+        add: (expr: string, prompt: string) => Promise<{ ok: boolean; id?: string; error?: string }>
+        addWatch: (path: string, prompt: string) => Promise<{ ok: boolean; id?: string; error?: string }>
+        list: () => Promise<{ id: string; trigger?: 'cron' | 'watch'; expression?: string; watchPath?: string; prompt: string; enabled: boolean; createdAt: number; lastRun?: number }[]>
+        remove: (id: string) => Promise<boolean>
+        toggle: (id: string) => Promise<boolean>
+        onFire: (cb: (r: { id: string; prompt: string }) => void) => () => void
+      }
+      msg: {
+        getConfig: () => Promise<{ config: { enabled: boolean; appId: string; appSecret: string; sandbox: boolean; groupEnabled: boolean; c2cEnabled: boolean }; state: string; detail?: string }>
+        setConfig: (patch: { enabled?: boolean; appId?: string; appSecret?: string; sandbox?: boolean; groupEnabled?: boolean; c2cEnabled?: boolean }) => Promise<boolean>
+        sendReply: (payload: { channel: string; chatType: string; openid: string; msgId: string; text: string }) => Promise<{ ok: boolean; error?: string }>
+        onIncoming: (cb: (r: { channel: string; chatType: string; openid: string; content: string; msgId: string; ts: number }) => void) => () => void
+        onStatus: (cb: (r: { channel: string; state: string; detail?: string }) => void) => () => void
+      }
+      hud: {
+        toggle: () => Promise<boolean>
+      }
+      skills: {
+        list: () => Promise<{ name: string; path: string; description: string; builtin: boolean }[]>
+        create: (name: string, content: string) => Promise<string>
+        install: (url: string) => Promise<string>
+        remove: (name: string) => Promise<boolean | string>
+        stats: (days?: number) => Promise<{ name: string; hit: number; trigger: number; ok: number }[]>
+      }
+      memoryCore: {
+        status: () => Promise<{ status: string; baseUrl: string; detail: string }>
       }
       risk: {
         respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string, always?: boolean) => Promise<boolean>
@@ -55,40 +84,10 @@ declare global {
         auditTasks: (limit?: number) => Promise<{ sid: string; taskId: string; agent: string; ts: number; tools: number }[]>
       },
       ishiki: { load: () => Promise<string> }
-      skills: {
-        list: () => Promise<SkillMeta[]>
-        load: (path: string) => Promise<string>
-        create: (name: string, content: string) => Promise<boolean | string>
-        install: (url: string) => Promise<string>
-        installLocal: (src: string) => Promise<string>
-        pickLocal: () => Promise<string | null>
-        delete: (name: string) => Promise<boolean | string>
-        suggest: (minCount?: number) => Promise<{ signature: string; count: number; tools: string[]; example: string; recent: number }[]>
-        createFromWorkflow: (signature: string, name: string) => Promise<boolean | string>
-        validate: (content: string) => Promise<{ ok: boolean; problems: { level: 'error' | 'warn'; msg: string }[] }>
-        write: (name: string, content: string) => Promise<boolean | string>
-        stats: (days?: number) => Promise<{ name: string; hit: number; trigger: number; ok: number; triggerRate: number; okRate: number }[]>
-      }
-      memory: {
-        load: () => Promise<MemoryData>
-        save: (m: MemoryData | Record<string, unknown>) => Promise<boolean>
-        search: (query: string) => Promise<SearchResult[]>
-        addVector: (content: string) => Promise<boolean>
-        importFile: (path: string) => Promise<boolean>
-        clearVector: () => Promise<boolean>
-        forget: (content: string) => Promise<boolean>
-        semanticStatus: () => Promise<{ on: boolean; note: string }>
-      }
       hotkey: {
         set: (acc: string) => Promise<boolean>
         get: () => Promise<string>
         onAsk: (cb: (text: string) => void) => () => void
-      }
-      cron: {
-        add: (expr: string, prompt: string) => Promise<{ ok: boolean; error?: string; id?: string }>
-        list: () => Promise<CronJob[]>
-        remove: (id: string) => Promise<{ ok: boolean; error?: string }>
-        toggle: (id: string) => Promise<{ ok: boolean; error?: string }>
       }
       plugins: {
         scan: () => Promise<{ name: string; version: string; description?: string; hasImpl?: boolean }[]>
@@ -114,6 +113,7 @@ declare global {
         update: (id: string, patch: Partial<TaskRecord>) => Promise<boolean>
         finish: (id: string, status: TaskRecord['status'], error?: string) => Promise<boolean>
         clear: (id?: string) => Promise<boolean>
+        onActivate: (cb: (sid: string) => void) => () => void
       }
       trace: {
         log: (entry: TraceEntry) => Promise<boolean>

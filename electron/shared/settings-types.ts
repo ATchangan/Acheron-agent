@@ -34,6 +34,14 @@ export interface GeneralSettings {
   episodicMemory?: boolean
   meltdownLimit?: number
   compactThreshold?: number
+  /** v0.4.4 压缩目标(压缩后保留占比, 默认 0.2) */
+  compactTarget?: number
+  /** v0.4.4 保护最近 N 条消息不参与压缩 */
+  compactProtect?: number
+  /** v0.4.4 记忆预算(token) */
+  memoryBudget?: number
+  /** v0.4.4 画像预算(token) */
+  profileBudget?: number
   compactKeepRounds?: number
   compactTokenCap?: number
   compactOverrides?: Record<string, number>
@@ -97,8 +105,14 @@ export interface GeneralSettings {
   webReadCleanAds?: boolean
   webReadCookies?: string
   rendererMode?: string
-  autoMemoryEnabled?: boolean
+  restoreLastSession?: boolean // v0.4.5 启动时恢复上次会话(默认关, 每次新建)
+  memoryCoreEnabled?: boolean // v0.4.5 新记忆系统(MemoryCore 网关)开关, 默认开
+  memoryCorePort?: number     // 网关端口, 默认 8420
   notifyTaskDone?: boolean
+  /** v0.4.4 消息平台来信时系统通知 */
+  notifyMsgIncoming?: boolean
+  /** v0.4.4 上下文窗口覆盖(0=自动按模型检测) */
+  contextLimitOverride?: number
   notifyError?: boolean
   customSystemPrompt?: string
   promptInjectPos?: string
@@ -232,7 +246,6 @@ export interface GeneralSettings {
   cvConflictAction?: string
   linkStyle?: string
   mathRender?: string // katex | mathjax | plain | none
-  messageSpacing?: string
   showTimestamps?: string // always | hover | never
   toneStyle?: string
   userAlias?: string

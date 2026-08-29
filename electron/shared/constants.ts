@@ -26,7 +26,6 @@ export const WORKFLOWS: Record<string, { name: string; triggers: string[]; steps
   'web-research': { name: '网络调研', triggers: ['调研', '研究', '查一下', '了解', 'research'], steps: [
     { tool: 'web_search', args_template: '{query}', desc: '搜索主题' },
     { tool: 'web_fetch', args_template: '{firstResultUrl}', desc: '抓取首条结果' },
-    { tool: 'save_memory', args_template: '{topic}: {summary}', desc: '保存到记忆' },
   ] },
   'file-organize': { name: '文件整理', triggers: ['整理文件', '分类文件', '组织文件', 'organize'], steps: [
     { tool: 'ls', args_template: '{targetPath}', desc: '列出所有文件' },

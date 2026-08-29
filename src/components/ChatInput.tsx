@@ -1,17 +1,15 @@
 // ChatInput.tsx —— 聊天输入框（面板/工具栏/附件/推理已拆至子组件）
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useChatStore, updateContextLimit } from '../store/chat'
 import { useSettingsStore, compressImage } from '../store/settings'
-import type { MemoryData } from '../global'
-import { ArrowUp, Square, ChevronDown, AtSign } from 'lucide-react'
+import { ArrowUp, Square, ChevronDown, AtSign, RefreshCw, Settings2, Search, Check } from 'lucide-react'
 import { api } from '../services/ipc'
 import { useChatPanels } from './useChatPanels'
 import { useModelItems } from './useModelItems'
-import { useThinkSelector } from './useThinkSelector'
 import { ChatAttachmentBar } from './ChatAttachmentBar'
 import { ChatToolbar } from './ChatToolbar'
-import { ChatThinkSelector } from './ChatThinkSelector'
 import { U } from './ui-styles'
+import { slashCompletions, execSlash } from '../store/slash'
 import { resolveDisplay } from '../store/display'
 
 
@@ -22,32 +20,37 @@ export default function ChatInput() {
   const [dragOver, setDragOver] = useState(false)
   const [quote, setQuote] = useState<string | null>(null)
   const [extraText, setExtraText] = useState('')
-  const [memText, setMemText] = useState('')
   const [perm, setPerm] = useState<string>(useSettingsStore.getState().general.filePermission || 'auto')
-  const { extraOpen, setExtraOpen, cmdOpen, setCmdOpen, memOpen, setMemOpen, permOpen, setPermOpen, thinkOpen, setThinkOpen } = useChatPanels()
+  const { extraOpen, setExtraOpen, cmdOpen, setCmdOpen, permOpen, setPermOpen } = useChatPanels()
   const fileRef = useRef<HTMLInputElement>(null)
   const attFileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const { mediaProviders, modelItems, models, currentModel, curModelName, setModelSel, supportsVision } = useModelItems()
+  const providers = useSettingsStore(s => s.providers || [])
   const visionAssist = !supportsVision
-  const { thinkOnly, effThink, thinkLabel, ovModel, setThinkMode, toggleThinkOnly, setThinkLevel } = useThinkSelector(currentModel, curModelName)
   const [modelOpen, setModelOpen] = useState(false)
   // v0.4.2: @文件引用 / 粘贴聚焦
   const [atOpen, setAtOpen] = useState(false)
   const [atQuery, setAtQuery] = useState('')
   const [atItems, setAtItems] = useState<string[]>([])
   const atSel = useRef(0)
+  const [slashSel, setSlashSel] = useState(0)
   const workDir = useSettingsStore(s => s.general.workDir)
   const [moreTools, setMoreTools] = useState(false)
+  // v0.4.5 统一斜杠命令: "/" 开头触发补全; 含空格(带参)时关闭补全, 回车走 execSlash
+  const slashQ = text.startsWith('/') && !text.includes(' ') ? text.slice(1) : null
+  const slashOpen = slashQ !== null
+  const slashItems = slashOpen ? slashCompletions(slashQ) : []
+  const slashIdx = slashItems.length ? slashSel % slashItems.length : 0
   // 关闭"实际下拉/面板"(模型/@引用/补充上下文/快捷指令/记忆/权限/推理)，保留更多工具(more)组展开
-  const closeAllPanels = () => { setModelOpen(false); setAtOpen(false); setExtraOpen(false); setCmdOpen(false); setMemOpen(false); setPermOpen(false); setThinkOpen(false) }
+  const closeAllPanels = () => { setModelOpen(false); setAtOpen(false); setExtraOpen(false); setCmdOpen(false); setPermOpen(false) }
   // 连更多工具组一起关(用于点外部关闭、打开模型选择器等非 more 区的入口)
   const closeAllInput = () => { closeAllPanels(); setMoreTools(false) }
   // v0.4.3 点击"下方菜单/触发器之外"的任何地方(含输入框、聊天区)→ 关闭所有输入区下拉
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element | null
-      if (t && typeof t.closest === 'function' && t.closest('.dropdown-menu, .hq-model-menu, .hq-at-pop, .context-extra-wrap, .dropdown-wrap, .input-left-icons, .hq-model-picker, .hq-think-selector')) return
+      if (t && typeof t.closest === 'function' && t.closest('.dropdown-menu, .hq-model-menu, .hq-at-pop, .context-extra-wrap, .dropdown-wrap, .input-left-icons, .hq-model-picker, .hq-think-selector, .composer-plus-wrap, .hq-perm-picker')) return
       closeAllInput()
     }
     document.addEventListener('mousedown', onDown, true)
@@ -122,7 +125,6 @@ export default function ChatInput() {
   const send = useChatStore(s => s.send)
   const cid = useChatStore(s => s.cid)
   const allSessions = useChatStore(s => s.sessions)
-  const curMsgCount = useChatStore(s => s.cur()?.messages.length ?? 0)
   const curBusy = allSessions.find(x => x.id === cid)?.busy || false
 
   useEffect(() => { if (currentModel && currentModel !== '未配置' && !currentModel.startsWith('img::') && !currentModel.startsWith('vid::') && !currentModel.startsWith('aud::')) updateContextLimit(curModelName) }, [currentModel, curModelName])
@@ -145,10 +147,8 @@ export default function ChatInput() {
     if (!t && !images.length && !attachments.length && !extraText.trim()) return
     window.dispatchEvent(new CustomEvent('huangquan-follow-scroll'))
     if (t.startsWith('/')) {
-      const cmd = t.slice(1); setText(''); closeAllInput()
-      if (cmd === 'diary') await send('请将本次对话整理为一篇日记。')
-      else if (cmd === 'xing') await send('请从本次对话中提取可复用的流程。')
-      else if (cmd === 'compact') await send('请精简压缩本次对话历史。')
+      setText(''); closeAllInput()
+      if (!execSlash(t)) window.alert('未知命令: ' + t.split(' ')[0] + '（输入 /help 查看全部命令）')
       return
     }
     setText('')
@@ -231,17 +231,6 @@ export default function ChatInput() {
     if (newAtts.length) setAttachments(p => [...p, ...newAtts])
   }
 
-  const saveMemory = async () => {
-    if (!memText.trim()) return
-    try {
-      const m = await api.memory.load().catch((): MemoryData => ({ facts: [], summaries: [], pinnedFacts: [], episodic: [], goals: [] }))
-      m.facts.push(memText.trim())
-      await api.memory.save(m)
-      setMemText('')
-      setMemOpen(false)
-    } catch { /* ignore */ }
-  }
-
   const handleStop = () => { useChatStore.getState().stop() }
 
   // 模型选择：pill 按钮 + 分组菜单
@@ -260,11 +249,42 @@ export default function ChatInput() {
     }
   }
 
+  // v0.4.4 模型选择器（对齐参考）: 搜索 + 按供应商分组 + 刷新/编辑
+  const [modelQuery, setModelQuery] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const modelGroups = useMemo(() => {
+    const nameOf = (pid: string): string => providers.find(x => x.id === pid)?.name || mediaProviders.find(x => x.id === pid)?.name || '其他'
+    const groups: { key: string; label: string; items: typeof modelItems }[] = []
+    for (const x of modelItems) {
+      const label = nameOf(x.pid)
+      let g = groups.find(y => y.key === label)
+      if (!g) { g = { key: label, label, items: [] }; groups.push(g) }
+      g.items.push(x)
+    }
+    return groups
+  }, [modelItems, providers, mediaProviders])
+  const refreshModels = async () => {
+    setRefreshing(true)
+    try {
+      for (const pr of providers.filter(x => x.apiKey && x.baseUrl)) {
+        try {
+          const r = await window.huangquan.models.detect(pr.baseUrl || '', pr.apiKey || '', { type: pr.type, anthropic: pr.type === 'Anthropic Claude' })
+          if (r.ok && r.models && r.models.length) {
+            const merged = [...new Set([...(pr.models || []), ...r.models])]
+            if (merged.length !== (pr.models || []).length) useSettingsStore.getState().updateProvider(pr.id, { models: merged })
+          }
+        } catch { /* 单个供应商失败不影响其余 */ }
+      }
+    } finally { setRefreshing(false) }
+  }
   const canSend = !!text.trim() || !!images.length || !!attachments.length || !!quote || !!extraText.trim()
   const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
+  // v0.6.0 排队输入 + 上下文用量
+  const queuedItems = useChatStore(s => (cid ? s.queued[cid] : undefined)) || []
+  const removeQueued = useChatStore(s => s.removeQueued)
   const basePlaceholder = images.length
     ? (visionAssist ? '描述图片...（将自动用视觉辅助模型分析）' : '描述图片...')
-    : attachments.length ? '描述或说明这些文件...' : '输入消息，Enter 发送，Shift+Enter 换行（可拖入图片/视频/文件）'
+    : attachments.length ? '描述或说明这些文件...' : (curBusy ? '继续输入以排队后续修改' : '从一个目标开始')
   const placeholder = curBusy ? '执行中：回车发送=补充指令插话 · ' + basePlaceholder : basePlaceholder
 
   return (
@@ -282,22 +302,24 @@ export default function ChatInput() {
         />
       )}
 
-      {/* 建议 pills：空输入时显示快捷建议 */}
-      {!curBusy && curMsgCount === 0 && !text.trim() && !images.length && !attachments.length && !extraText.trim() && (
-        <div className="hq-suggestion-pills">
-          {['继续当前任务', '总结本次对话', '生成今日工作日报', '检查项目代码问题', '新建一个插件'].map(s => (
-            <button key={s} type="button" className="hq-suggestion-pill" onClick={() => { setText(s); taRef.current?.focus() }}>{s}</button>
+      {/* v0.4.4 对齐参考: 首页不放快捷建议 chips（需要时可从设置→界面加回） */}
+
+      {/* v0.6.0 排队中的后续修改 */}
+      {curBusy && queuedItems.length > 0 && (
+        <div className="hq-queue-bar">
+          <span className="hq-queue-label">排队后续修改 {queuedItems.length}</span>
+          {queuedItems.map(q => (
+            <span key={q.id} className="hq-queue-chip" title={q.text}>
+              <span className="hq-queue-text">{q.text}</span>
+              <button type="button" className="hq-queue-remove" aria-label="移除" onClick={() => removeQueued(cid!, q.id)}>×</button>
+            </span>
           ))}
+          <span style={{ flex: 1 }} />
+          <button type="button" className="hq-queue-parallel" title="开一个新会话并行跑别的任务" onClick={() => useChatStore.getState().create()}>并行新任务</button>
         </div>
       )}
 
       <div className="input-card">
-        {curBusy && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 2px 6px', fontSize: 'calc(var(--ui-font-size) - 3px)', color: 'var(--text-muted)' }}>
-            <span>任务进行中：发送将作为补充指令插话；长任务可在新会话并行执行，互不阻塞。</span>
-            <button style={{ background: 'var(--border)', border: 'none', borderRadius: 4, color: 'var(--text-primary)', cursor: 'pointer', fontSize: 'calc(var(--ui-font-size) - 3px)', padding: '2px 8px' }} onClick={() => useChatStore.getState().create()}>并行新任务</button>
-          </div>
-        )}
         {extraOpen && (
           <div className="context-extra-wrap">
             <div className="context-extra-head">
@@ -309,10 +331,49 @@ export default function ChatInput() {
               value={extraText} onChange={e => setExtraText(e.target.value)} />
           </div>
         )}
+        {/* v0.4.4 单行 composer（对齐参考）: [+] [输入区] [模型选择器] [发送] */}
+        <div className="composer-row">
+        {!disp.hideChatToolbar && (
+          <ChatToolbar
+            extraOpen={extraOpen}
+            cmdOpen={cmdOpen}
+            permOpen={permOpen}
+            perm={perm}
+            supportsVision={supportsVision}
+            visionAssist={visionAssist}
+            fileRef={fileRef}
+            attFileRef={attFileRef}
+            onToggleExtra={() => { closeAllPanels(); setExtraOpen(!extraOpen) }}
+            onToggleCmd={() => { closeAllPanels(); setCmdOpen(!cmdOpen) }}
+            onTogglePerm={() => { closeAllPanels(); setPermOpen(!permOpen) }}
+            onPerm={setPerm}
+            onSetText={setText}
+            onSend={handleSend}
+            onImagePick={handleImagePick}
+            onFilePick={handleFilePick}
+            moreOpen={moreTools}
+            onToggleMore={() => { const next = !moreTools; if (next) closeAllPanels(); setMoreTools(next) }}
+          />
+        )}
         <textarea ref={taRef} className="chat-textarea" rows={1}
           placeholder={placeholder}
           value={text} onChange={onTextChange}
           onKeyDown={e => {
+            if (slashOpen && slashItems.length) {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setSlashSel(s => s + 1); return }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setSlashSel(s => s - 1 + slashItems.length); return }
+              if (e.key === 'Tab') { e.preventDefault(); setText(slashItems[slashIdx].cmd + ' '); return }
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                const def = slashItems[slashIdx]
+                setText('')
+                closeAllInput()
+                if (def.kind === 'local') execSlash(def.cmd)
+                else void send(def.cmd)
+                return
+              }
+              if (e.key === 'Escape') { e.preventDefault(); setText(''); return }
+            }
             if (atOpen && atItems.length) {
               if (e.key === 'ArrowDown') { e.preventDefault(); atSel.current = (atSel.current + 1) % atItems.length; return }
               if (e.key === 'ArrowUp') { e.preventDefault(); atSel.current = (atSel.current - 1 + atItems.length) % atItems.length; return }
@@ -321,6 +382,69 @@ export default function ChatInput() {
             }
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
           }} />
+
+        {/* 右簇: 模型选择器 + 发送 */}
+        <div className="composer-right">
+            {!disp.hideModelPicker && (models.length > 0 ? (
+              <div className="dropdown-wrap hq-model-picker">
+                <button type="button" className="hq-model-pill" title="切换模型" onClick={() => { closeAllInput(); setModelOpen(v => !v) }}>
+                  <span className="hq-model-name">{curModelName || currentModel}</span>
+                  <span className="hq-model-effort">· {useSettingsStore.getState().general.thinkLevel || '中'}</span>
+                  <span className="hq-model-live-dot" />
+                  <ChevronDown size={12} />
+                </button>
+                {modelOpen && (
+                  <div className="dropdown-menu hq-model-menu">
+                    <div className="hq-model-search">
+                      <Search size={13} />
+                      <input autoFocus placeholder="搜索模型" value={modelQuery} onChange={e => setModelQuery(e.target.value)} />
+                    </div>
+                    <div className="hq-model-groups">
+                      {modelGroups.map(g => {
+                        const items = g.items.filter(x => !modelQuery.trim() || x.label.toLowerCase().includes(modelQuery.trim().toLowerCase()) || g.label.toLowerCase().includes(modelQuery.trim().toLowerCase()))
+                        if (!items.length) return null
+                        return (
+                          <div key={g.key}>
+                            <div className="hq-model-group-label">{g.label}</div>
+                            {items.map(x => (
+                              <div key={x.key} className={'dropdown-item hq-model-item' + (currentModel === x.key ? ' active' : '')} onClick={() => { pickModel(x.key); setModelQuery('') }}>
+                                <span className="hq-model-item-name">{x.label}</span>
+                                {currentModel === x.key && <Check size={13} className="hq-model-check" />}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="hq-model-menu-actions">
+                      <button type="button" className="hq-model-action" disabled={refreshing} onClick={() => { void refreshModels() }}>
+                        <RefreshCw size={13} className={refreshing ? 'hq-spin' : ''} />{refreshing ? '刷新中…' : '刷新模型'}
+                      </button>
+                      <button type="button" className="hq-model-action" onClick={() => { setModelOpen(false); window.dispatchEvent(new CustomEvent('hq-open-settings', { detail: 'providers' })) }}>
+                        <Settings2 size={13} />编辑模型…
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>)}
+
+            {/* 发送/停止按钮: 忙时发送 = 排队为后续修改 */}
+            {curBusy && !text.trim() && !images.length && !attachments.length ? (
+              <button className="send-btn stop-btn" onClick={handleStop}
+                title="终止任务（会同时丢弃排队中的后续修改）"
+                style={U.stopBtn}>
+                <Square size={16} fill="currentColor" />
+              </button>
+            ) : (
+              <button className="send-btn" onClick={handleSend} disabled={!canSend}
+                title={curBusy ? '排队为后续修改（回车）' : '发送（回车）'}
+                style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', fontSize: 18 }}>
+                <ArrowUp size={18} strokeWidth={2.5} />
+              </button>
+            )}
+        </div>
+        </div>{/* /composer-row */}
         {/* @ 文件引用弹出（inline refs） */}
         {atOpen && (atItems.length > 0 ? (
           <div className="hq-at-pop">
@@ -335,104 +459,26 @@ export default function ChatInput() {
         ) : (
           <div className="hq-at-pop"><div className="hq-at-item" style={{ cursor: 'default' }}>没有匹配「{atQuery}」的文件</div></div>
         ))}
-
-        <div className="input-wrapper">
-          {!disp.hideChatToolbar && (
-            <ChatToolbar
-              extraOpen={extraOpen}
-              cmdOpen={cmdOpen}
-              memOpen={memOpen}
-              permOpen={permOpen}
-              memText={memText}
-              perm={perm}
-              supportsVision={supportsVision}
-              visionAssist={visionAssist}
-              fileRef={fileRef}
-              attFileRef={attFileRef}
-              onToggleExtra={() => { closeAllPanels(); setExtraOpen(!extraOpen) }}
-              onToggleCmd={() => { closeAllPanels(); setCmdOpen(!cmdOpen) }}
-              onToggleMem={() => { closeAllPanels(); setMemOpen(!memOpen) }}
-              onTogglePerm={() => { closeAllPanels(); setPermOpen(!permOpen) }}
-              onMemText={setMemText}
-              onSaveMemory={saveMemory}
-              onPerm={setPerm}
-              onSetText={setText}
-              onSend={handleSend}
-              onImagePick={handleImagePick}
-              onFilePick={handleFilePick}
-              moreOpen={moreTools}
-              onToggleMore={() => { const next = !moreTools; if (next) closeAllPanels(); setMoreTools(next) }}
-            />
-          )}
-
-          <div className="input-right">
-            {/* 模型选择器 */}
-            {!disp.hideModelPicker && (models.length > 0 ? (
-              <div className="dropdown-wrap hq-model-picker">
-                <button type="button" className="hq-model-pill" title="切换模型" onClick={() => { closeAllInput(); setModelOpen(v => !v) }}>
-                  <span className="model-dot" />
-                  <span className="hq-model-name">{curModelName || currentModel}</span>
-                  <ChevronDown size={12} />
-                </button>
-                {modelOpen && (
-                  <div className="dropdown-menu hq-model-menu">
-                    {(['text', 'image', 'video'] as const).filter(g => modelItems.some(x => x.group === g)).map(g => (
-                      <div key={g}>
-                        <div className="hq-model-group-label">{g === 'text' ? '文字' : g === 'image' ? '图片' : '视频'}</div>
-                        {modelItems.filter(x => x.group === g).map(x => (
-                          <div key={x.key} className={'dropdown-item' + (currentModel === x.key ? ' active' : '')} onClick={() => pickModel(x.key)}>{x.label}</div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : <span className="model-tag" style={{ height: 28, display: 'inline-flex', alignItems: 'center' }}>{curModelName || currentModel}</span>)}
-
-            {!disp.hideThinkSelector && (
-              <ChatThinkSelector
-                thinkLabel={thinkLabel}
-                effThink={effThink}
-                thinkOpen={thinkOpen}
-                ovModel={ovModel}
-                thinkOnly={thinkOnly}
-                onToggle={() => { closeAllPanels(); setThinkOpen(!thinkOpen) }}
-                onToggleThinkMode={setThinkMode}
-                onToggleThinkOnly={toggleThinkOnly}
-                onSetLevel={setThinkLevel}
-              />
-            )}
-
-            {/* 发送/停止按钮 */}
-            {curBusy && !text.trim() ? (
-              <button className="send-btn stop-btn" onClick={handleStop}
-                title="终止任务"
-                style={U.stopBtn}>
-                <Square size={16} fill="currentColor" />
+        {/* 斜杠命令补全 */}
+        {slashOpen && (slashItems.length > 0 ? (
+          <div className="hq-at-pop">
+            {slashItems.map((d, i) => (
+              <button key={d.cmd} type="button" className={'hq-at-item' + (i === slashIdx ? ' selected' : '')}
+                onMouseEnter={() => setSlashSel(i)}
+                onClick={() => {
+                  setText('')
+                  closeAllInput()
+                  if (d.kind === 'local') execSlash(d.cmd)
+                  else void send(d.cmd)
+                }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{d.cmd}</span>{d.argsHint ? ' ' + d.argsHint : ''} — {d.desc}
               </button>
-            ) : curBusy ? (
-              <>
-                <button className="send-btn stop-btn" onClick={handleStop}
-                  title="终止任务"
-                  style={U.stopBtn}>
-                  <Square size={16} fill="currentColor" />
-                </button>
-                <button className="send-btn" onClick={handleSend}
-                  title="发送（回车）·执行中发送=补充指令插话"
-                  style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', fontSize: 18, position: 'relative' }}>
-                  <ArrowUp size={18} strokeWidth={2.5} />
-                  <span style={{ position: 'absolute', top: -6, right: -6, width: 15, height: 15, borderRadius: '50%', background: 'var(--warning)', color: '#fff', fontSize: 9, lineHeight: '15px', fontWeight: 700, textAlign: 'center', pointerEvents: 'none' }}>插</span>
-                </button>
-              </>
-            ) : (
-              <button className="send-btn" onClick={handleSend} disabled={!canSend}
-                title="发送（回车）"
-                style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', fontSize: 18 }}>
-                <ArrowUp size={18} strokeWidth={2.5} />
-              </button>
-            )}
+            ))}
           </div>
-        </div>
+        ) : (
+          <div className="hq-at-pop"><div className="hq-at-item" style={{ cursor: 'default' }}>未知命令，输入 /help 查看全部</div></div>
+        ))}
+
       </div>
     </div>
   )

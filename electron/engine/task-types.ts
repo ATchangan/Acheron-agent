@@ -1,6 +1,5 @@
 // electron/engine/task-types.ts — 任务状态与运行类型(0.3.9 结构清理: 从 engine.ts 抽出)
 import type { EngineMessage, EngineProvider, EngineSettings, EngineToolCall, EngineUsage, PlanStep, ContextSnapshot } from './types'
-import type { EngineMemory } from './memory'
 import type { InstructionFile } from './project-instructions'
 import type { TaskType } from '../llm/gateway'
 
@@ -43,11 +42,9 @@ export interface TaskState {
   handoffAt: number
   toolLog: ToolLogEntry[]
   tokBase: Record<string, TokenStat>
-  memoryText: string
   projectCtx: { file: string; content: string; truncated?: boolean; dirs?: string[] } | null
   instrVisited: Set<string>
   fileSnapshots: Record<string, string | null>
-  memory: EngineMemory
   lastMidSave: number
   planSteps: PlanStep[]
   planSummary: string

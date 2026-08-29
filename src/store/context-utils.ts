@@ -26,9 +26,12 @@ export function sessionTokens(msgs: Message[]): { input: number; output: number 
   return { input, output }
 }
 
+import { useSettingsStore } from './settings'
 // 上下文窗口查询已抽至 shared/context-utils（B6-2）
 function updateContextLimit(modelName: string) {
-  const limit = sharedGetModelContextLimit(modelName)
+  // v0.4.4: 设置→记忆与上下文 的窗口覆盖(0=自动按模型检测)
+  const override = useSettingsStore.getState().general?.contextLimitOverride || 0
+  const limit = override > 0 ? override * 1000 : sharedGetModelContextLimit(modelName)
   const s = useChatStore.getState()
   if (s.cl !== limit) useChatStore.setState({ cl: limit })
 }

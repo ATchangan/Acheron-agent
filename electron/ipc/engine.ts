@@ -10,7 +10,6 @@ import { clearApprovedForSid } from './risk-confirm'
 export function registerEngineIpc(deps: {
   settingsPath: string
   userDataPath: string
-  memoryPath: string
   tracePath: string
   resourcesDir: string
   netFetch: typeof fetch
@@ -18,7 +17,7 @@ export function registerEngineIpc(deps: {
   getSender: () => Electron.WebContents | null
   onEngineEvent?: (ev: unknown) => void
 }): void {
-  const { settingsPath, userDataPath, memoryPath, tracePath, resourcesDir, netFetch, decProviders, getSender, onEngineEvent } = deps
+  const { settingsPath, userDataPath, tracePath, resourcesDir, netFetch, decProviders, getSender, onEngineEvent } = deps
 
   const loadSettings = (): { providers: EngineProvider[]; general: EngineSettings } => {
     try {
@@ -52,9 +51,15 @@ export function registerEngineIpc(deps: {
   const engine = new AgentEngine({
     settingsPath,
     userDataPath,
-    memoryPath,
     tracePath,
     skillsDirs: [join(resourcesDir, 'skills'), join(userDataPath, 'skills')],
+    memoryHubUrl: ((): string | undefined => {
+      try {
+        const g = (JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { general?: { memoryCoreEnabled?: boolean; memoryCorePort?: number } }).general || {}
+        if (g.memoryCoreEnabled === false) return undefined
+        return 'http://127.0.0.1:' + (Number(g.memoryCorePort) || 8420)
+      } catch { return 'http://127.0.0.1:8420' }
+    })(),
     netFetch,
     loadSettings,
     loadIshiki: () => {

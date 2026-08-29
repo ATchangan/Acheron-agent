@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { outputLimit, sessionTokens, buildTaskArchives, estimateTokens, calibrateTokens, getCalibrationScale, slimToolResult } from './context'
-import { scanMemoryText } from './memory'
+import { scanMemoryText } from '../../electron/shared/memory-utils'
 import type { Message } from '../global'
 import type { GeneralSettings } from '../types'
 

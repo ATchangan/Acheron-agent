@@ -6,17 +6,17 @@ import { Notification } from 'electron'
 import { invokeHandler } from './registry'
 import { WORKFLOWS } from './constants'
 import type { ToolHandler, ToolRunCtx } from './tool-types'
-import { scanMemoryText, recallFromMemory, upsertFactDb, recallMemoryDb } from './memory'
+import { scanMemoryText } from '../shared/memory-utils'
 import { errMsg } from './errmsg'
 import { applyPatchToContent } from '../shared/patch-utils'
 import { getMcpToolSpecs } from './tool-specs'
 import { checkFilePermission } from './tool-permission'
 import { resolveSkillFile, safeSkillName, writableSkillDir, listSkills } from './skill-files'
 import { getPowerShellCmd, getPowerShellIsPwsh } from '../shared/pwsh'
-import { getToolOutput, queryAudit, setMemoryEmbedding } from '../db'
-import { formatFusedHits } from '../memory/searcher'
-import { embedText } from '../memory/embeddings'
+import { getToolOutput } from '../db'
 import { searchSessions } from '../memory/session-index'
+import { memSearchMemories, memSearchConversations, memSkillSearch } from '../memory-core'
+import { addCronJob, addWatchJob } from '../cron'
 import { requestRiskConfirm } from '../ipc/risk-confirm'
 import { validatePluginCode, validatePluginSettings, installPlugin, removePlugin, readPluginSource, listPluginDetails, invalidatePluginToolSpecCache, bustAllPluginCaches, isPluginDisabled } from '../plugins/author'
 import type { UiDisplayConfig } from '../shared/settings-types'
@@ -336,41 +336,37 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     if (!A.pid) return 'E:need pid'
     return String(await invokeHandler('computer:killProcess', [A.pid], ctx.sender))
   } },
-  { name: 'save_memory', run: (A, ctx) => {
-    const m = ctx.getMemory()
-    const fact = String(A.fact || '').trim()
-    if (!fact) return 'E:need fact'
-    const scan = scanMemoryText(fact)
-    if (!scan.ok) return 'E:' + scan.reason
-    // 自省整改 #7: 约定/规则/偏好类事实自动置顶, 避免关键约定沉底丢失
-    const autoPin = !A.pinned && /约定|规则|偏好|以后|必须|每次/.test(fact)
-    // 同任务内存快照同步(dispatch 子代理与同任务召回可见)
-    if (A.pinned || autoPin) {
-      const pf = m.pinnedFacts || []
-      if (pf.some(f => String(f).trim() === fact)) return 'ok:already saved'
-      m.pinnedFacts = [...pf, fact]
-    } else {
-      if (m.facts.some(f => String(f).trim() === fact)) return 'ok:already saved'
-      m.facts = [...m.facts, fact]
-    }
-    const agent = ctx.agent || '助手'
-    const scope: 'global' | 'private' = ctx.agent && ctx.agents[ctx.agent] && ctx.agents[ctx.agent].memoryScope === 'private' ? 'private' : 'global'
-    const id = upsertFactDb(agent, scope, fact, !!(A.pinned || autoPin), String(ctx.latestUserText || fact))
-    if (id > 0) {
-      void embedText(fact).then(vec => { if (vec && vec.length) setMemoryEmbedding(id, vec) }).catch(() => {})
-    }
-    ctx.saveMemory(m) // db 可用时 saveMemory 只同步快照(事实已落库), 不可用时走 JSON 降级
-    return 'ok:saved' + (autoPin ? '（已自动置顶：约定/规则类）' : '')
+    { name: 'memory_search', run: async (A, ctx) => {
+    const q = String(A.query || '').trim()
+    if (!q) return 'E:need query'
+    if (!ctx.memoryHubUrl) return 'E:记忆系统未启用'
+    return memSearchMemories(ctx.memoryHubUrl, q, A.limit ? Number(A.limit) : 5)
   } },
-  { name: 'recall_memory', run: async (A, ctx) => {
-    const query = (A.query || '').trim()
-    const agent = ctx.agent || '助手'
-    const scope: 'global' | 'private' = ctx.agent && ctx.agents[ctx.agent] && ctx.agents[ctx.agent].memoryScope === 'private' ? 'private' : 'global'
+  { name: 'conversation_search', run: async (A, ctx) => {
+    const q = String(A.query || '').trim()
+    if (!q) return 'E:need query'
+    let hub = ''
+    if (ctx.memoryHubUrl) {
+      hub = await memSearchConversations(ctx.memoryHubUrl, q, A.limit ? Number(A.limit) : 5)
+      if (hub && hub !== '(无相关对话)') return hub
+    }
+    // 回退: 本地会话全文检索(FTS5) —— 网关 L0 未覆盖的会话也可查
     try {
-      const fused = await recallMemoryDb(agent, scope, query, 5)
-      if (fused) return formatFusedHits(fused)
-    } catch { /* db 不可用时回退 JSON 关键词通道 */ }
-    return recallFromMemory(ctx.getMemory(), query, [])
+      if (ctx.userDataPath) {
+        const hits = searchSessions(join(ctx.userDataPath, 'sessions'), q, A.limit ? Number(A.limit) : 5)
+        if (hits.length) {
+          const sep = String.fromCharCode(10) + '---' + String.fromCharCode(10)
+          return hits.map(function (x, i2) { return (i2 + 1) + '. [' + x.sid + '](' + x.role + ') ' + new Date(x.ts).toLocaleDateString('zh-CN') + ' ' + x.snippet.slice(0, 160) }).join(sep)
+        }
+      }
+    } catch { /* 回退失败忽略 */ }
+    return '(无相关对话)'
+  } },
+  { name: 'skill_search', run: async (A, ctx) => {
+    const q = String(A.query || '').trim()
+    if (!q) return 'E:need query'
+    if (!ctx.memoryHubUrl) return 'E:记忆系统未启用'
+    return memSkillSearch(ctx.memoryHubUrl, q, A.top_k ? Number(A.top_k) : 5)
   } },
   { name: 'session_search', run: async (A, ctx) => {
     const q = String(A.query || '').trim()
@@ -386,15 +382,6 @@ export const TOOL_HANDLERS: ToolHandler[] = [
     } catch { /* 回退旧实现 */ }
     const r = await invokeHandler('sessions:search', [q, A.limit ? Number(A.limit) : 5], ctx.sender) as { title: string; role: string; snippet: string; ts: number }[]
     return Array.isArray(r) && r.length ? r.map((x, i) => `${i + 1}. [${x.title}](${x.role}) ${new Date(x.ts).toLocaleDateString('zh-CN')} ${x.snippet}`).join('\n---\n') : '(no matches)'
-  } },
-  { name: 'recall_events', run: (A, ctx) => {
-    // v0.4.0 M3: 情景记忆时间线(从审计表按 Agent + 时间范围取回)
-    const range = String(A.timeRange || 'week')
-    const days = range === 'day' ? 1 : range === 'month' ? 30 : 7
-    const from = Date.now() - days * 86400000
-    const rows = queryAudit({ agent: ctx.agent || undefined, from, limit: 50 })
-    if (!rows.length) return '(该时间段无操作记录)'
-    return rows.map((r, i) => `${i + 1}. [${new Date(r.ts).toLocaleString('zh-CN')}] ${r.agent || '助手'} ${r.tool || ''} → ${r.resultSummary || r.argsSummary || ''}`.slice(0, 200)).join('\n')
   } },
   { name: 'recall_tool_output', run: (A, ctx) => {
     // v0.4.0 M7: side-channel 取回(每次会话最多 5 次, 返回截断 1.5KB)
@@ -417,15 +404,15 @@ export const TOOL_HANDLERS: ToolHandler[] = [
   { name: 'desktop_scroll', run: async (A, ctx) => String(await invokeHandler('computer:desktopScroll', [Number(A.x) || 0, Number(A.y) || 0, Number(A.delta) || 0, ctx.sid, ctx.taskId], ctx.sender)) },
   { name: 'desktop_type', run: async (A, ctx) => String(await invokeHandler('computer:desktopType', [String(A.text || ''), ctx.sid, ctx.taskId], ctx.sender)) },
   { name: 'desktop_key', run: async (A, ctx) => String(await invokeHandler('computer:desktopKey', [String(A.key || ''), ctx.sid, ctx.taskId], ctx.sender)) },
-  { name: 'import_doc', run: async (A, ctx) => {
-    if (!A.path) return 'E:need path'
-    const ok = await invokeHandler('memory:importFile', [A.path], ctx.sender)
-    return ok === true ? 'ok:imported' : 'E:import failed'
-  } },
-  { name: 'schedule_task', run: async (A, ctx) => {
-    if (!A.expression || !A.prompt) return 'E:need expression+prompt'
-    const cr = await invokeHandler('cron:add', [A.expression, A.prompt], ctx.sender)
-    return JSON.stringify(cr)
+  { name: 'schedule_task', run: async (A) => {
+    if (!A.prompt) return 'E:need prompt'
+    if (A.watch_path) {
+      const w = addWatchJob(String(A.watch_path), String(A.prompt))
+      return w.ok ? 'ok:watching ' + A.watch_path + ' (id ' + (w.id || '') + ')' : 'E:' + (w.error || '创建失败')
+    }
+    if (!A.expression) return 'E:need expression 或 watch_path'
+    const cr = addCronJob(String(A.expression), String(A.prompt))
+    return cr.ok ? 'ok:scheduled (id ' + (cr.id || '') + ')' : 'E:' + (cr.error || '创建失败')
   } },
   { name: 'list_schedules', run: async (_A, ctx) => {
     const items = await invokeHandler('cron:list', [], ctx.sender) as { enabled?: boolean; expression: string; prompt: string }[]
@@ -641,11 +628,6 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       } catch (e) { finish('E:workflow error: ' + errMsg(e)) }
     })
   } },
-  { name: 'audit_log', run: (A, ctx) => {
-    const mem = ctx.getMemory()
-    const log = (mem.episodic || []).slice(-(Number(A.limit || 20)))
-    return log.length ? log.map((e, i) => `${i + 1}. [${new Date(e.ts).toLocaleString('zh-CN')}] ${e.op} ${e.path || ''} → ${e.status}`).join('\n') : '(无操作记录)'
-  } },
   { name: 'watch_file', run: async (A, ctx) => {
     if (!A.path) return 'E:need path'
     try {
@@ -663,19 +645,6 @@ export const TOOL_HANDLERS: ToolHandler[] = [
       watchState[A.path] = hash
       return `WATCHING: ${A.path} (${content.length} bytes). Call again to detect changes.`
     } catch (e: unknown) { return 'E:watch failed: ' + errMsg(e) }
-  } },
-  { name: 'save_goal', run: (A, ctx) => {
-    const mem = ctx.getMemory()
-    const goals = mem.goals || []
-    goals.push({ goal: A.goal, steps: A.steps ? JSON.parse(A.steps) : [], created: Date.now(), status: 'active' })
-    mem.goals = goals
-    ctx.saveMemory(mem)
-    if (ctx.onGoalUpdate) ctx.onGoalUpdate(String(A.goal || '').slice(0, 500))
-    return 'ok:goal_saved (' + goals.length + ' goals total)'
-  } },
-  { name: 'list_goals', run: (_A, ctx) => {
-    const goals = ctx.getMemory().goals || []
-    return goals.length ? goals.map((g, i) => `${i + 1}. [${g.status}] ${g.goal} (${(g.steps || []).length} steps, ${new Date(g.created || 0).toLocaleDateString('zh-CN')})`).join('\n') : '(无持久化目标)'
   } },
   { name: 'install_plugin', writeOp: true, run: async (A, ctx) => {
     const name = String(A.name || '').trim()

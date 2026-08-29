@@ -183,6 +183,14 @@ export default function PluginsView() {
         pluginName = srcDir.split('/').pop() || srcDir.split('\\').pop() || ''
       }
 
+      // 安全: 插件名来自第三方 manifest, 校验为安全目录名单字符, 防路径穿越(../ ..\)
+      pluginName = String(pluginName || '').trim()
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(pluginName) || pluginName.includes('..')) {
+        setInstallMsg('[X] 插件名不合法（仅允许字母数字 . _ -，且不以分隔符开头）')
+        setInstalling(false)
+        return
+      }
+
       const destDir = `${pluginsDir}/${pluginName}`
       const platform = sysInfo.platform
       const isWindows = platform === 'win32'

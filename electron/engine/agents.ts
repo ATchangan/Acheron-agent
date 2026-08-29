@@ -11,7 +11,6 @@ export interface AgentDef {
   handoff_to: string[]
   icon: string
   model?: string
-  memoryScope: string
   capabilities: string[]
 }
 
@@ -44,7 +43,7 @@ export function getAgents(overrides?: Record<string, Partial<AgentDef>>): Record
   for (const [name, o] of Object.entries({ ...custom, ...(overrides || {}) })) {
     if (!o || typeof o !== 'object') continue
     const key = normalizeAgentName(name)
-    const base = out[key] || { role: '自定义子代理', prompt: '你是自定义子代理 ' + key + '，按用户配置执行任务。', tools: ['*'], handoff_to: [], icon: '客', memoryScope: 'private', capabilities: [] }
+    const base = out[key] || { role: '自定义子代理', prompt: '你是自定义子代理 ' + key + '，按用户配置执行任务。', tools: ['*'], handoff_to: [], icon: '客', capabilities: [] }
     out[key] = {
       ...base,
       ...o,

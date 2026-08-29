@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSubSummary, buildSubSystemPrompt, parseSubResult } from './sub-result'
 import type { AgentDef } from './agents'
 
-const AG: AgentDef = { role: '测试', prompt: '执行任务', tools: ['*'], handoff_to: [], icon: '测', memoryScope: 'private', capabilities: [] }
+const AG: AgentDef = { role: '测试', prompt: '执行任务', tools: ['*'], handoff_to: [], icon: '测', capabilities: [] }
 
 describe('sub-result 结构化结果', () => {
   it('解析 ```json 代码块并提取字段', () => {
@@ -33,11 +33,11 @@ describe('sub-result 结构化结果', () => {
     expect(s).toContain('report.md')
   })
 
-  it('子代理提示词包含交付格式与私有记忆', () => {
-    const p = buildSubSystemPrompt(AG, '安全', '检查配置', '## 私有记忆\n- 之前发现过配置泄漏')
+  it('子代理提示词包含交付格式(且不再注入私有记忆)', () => {
+    const p = buildSubSystemPrompt(AG, '安全', '检查配置')
     expect(p).toContain('交付格式')
     expect(p).toContain('```json')
-    expect(p).toContain('配置泄漏')
     expect(p).toContain('不要询问')
+    expect(p).not.toContain('私有记忆')
   })
 })

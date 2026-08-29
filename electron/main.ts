@@ -1,4 +1,4 @@
-import { app, net } from 'electron'
+import { app, ipcMain, net } from 'electron'
 import { registerSessionIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerPluginsIpc } from './ipc/plugins'
@@ -24,12 +24,14 @@ import { registerEngineIpc } from './ipc/engine'
 import { registerRiskConfirm } from './ipc/risk-confirm'
 import { getBrowserSession, getBrowserSessionIfExists, closeBrowserSession, layoutLiveView, showLiveView, hideLiveView, isEmbeddedOpen, initBrowserViews } from './browser-session'
 import { decKey, encProviders, decProviders, dirSize, fmtSize, startServer } from './main-utils'
+import { startMemoryCore, stopMemoryCore, registerMemoryCoreIpc } from './memory-core'
+import { registerCronIpc } from './cron'
+import { registerMessagingIpc } from './messaging/qqbot'
+import { registerSkillsIpc } from './ipc/skills'
 import { join } from 'path'
 import { AppShell } from './app-shell'
 import { initDb, closeDb } from './db'
-import { importLegacyMemory } from './memory/migrate-legacy'
 import { refreshSessionIndex } from './memory/session-index'
-import { maybeRunDailyDecay } from './memory/decay'
 import { stopLocalVisionProcesses } from './llm/vision'
 import * as fs from 'fs'
 
@@ -145,6 +147,8 @@ const appShell = new AppShell({
 registerSettingsIpc({ settingsPath, userDataPath, decProviders: decProviders as unknown as (d: unknown) => Record<string, unknown>, encProviders: encProviders as unknown as (d: unknown) => Record<string, unknown> })
 registerTaskIpc({
   tasksPath,
+  onActivate: () => { try { appShell.getWindow()?.show() } catch { /* 忽略 */ } },
+  getSender: () => appShell.getWindow()?.webContents || null,
   // v0.4.2: 桌面通知开关 —— 设置→引擎→桌面通知(notifyEnabled), 默认开
   getNotifyEnabled: () => {
     try {
@@ -154,25 +158,35 @@ registerTaskIpc({
   },
 })
 registerTraceIpc({ tracePath })
-const memoryPath = join(userDataPath, 'memory.json')
-// v0.4.0 M1: SQLite 存储基座(记忆/审计/会话索引/工具输出), 启动即初始化 + 旧 JSON 一次性迁移
+registerMemoryCoreIpc()
+// v0.4.5 回归: 定时任务调度器 + 技能中心 IPC
+registerCronIpc({ dataFile: join(userDataPath, 'cron.json'), getSender: () => appShell.getWindow()?.webContents || null })
+// v0.4.4 消息平台: QQ 官方机器人(WebSocket 网关 + 被动回复), 配置存独立 JSON
+registerMessagingIpc({ dataFile: join(userDataPath, 'msg-qq.json'), getSender: () => appShell.getWindow()?.webContents || null })
+// v0.4.4 HUD 模式: 迷你常驻输入条小窗
+ipcMain.handle('hud:toggle', () => { appShell.toggleHud(); return true })
+// v0.4.5: 会话内查找(Ctrl+F) —— Electron 原生 findInPage, 命中计数回传渲染层
+ipcMain.handle('find:start', (e, text: string, forward?: boolean) => {
+  const wc = e.sender
+  if (!text) { wc.stopFindInPage('clearSelection'); return null }
+  wc.removeAllListeners('found-in-page')
+  wc.on('found-in-page', (_ev, r: { matches: number; activeMatchOrdinal: number }) => {
+    try { if (!wc.isDestroyed()) wc.send('find:result', { matches: r.matches, active: r.activeMatchOrdinal }) } catch { /* 忽略 */ }
+  })
+  wc.findInPage(String(text), { findNext: forward === true })
+  return true
+})
+ipcMain.handle('find:stop', e => { e.sender.stopFindInPage('clearSelection'); return true })
+// v0.4.0 M1: SQLite 存储基座(审计/会话索引/工具输出) —— 旧记忆系统已移除, 数据文件保留待新系统迁移
 const dbInit = initDb(join(userDataPath, 'agent.db'))
-if (dbInit.ok) {
-  if (dbInit.inMemory) {
-    safeLog('[db] 内存模式: 跳过旧记忆迁移, 旧 JSON 文件保留待下次可用时再迁移')
-  } else {
-    try {
-      const imported = importLegacyMemory({ vectorPath: join(userDataPath, 'memory-vector.json'), jsonPath: memoryPath })
-      if (imported.imported > 0) safeLog('[db] 旧记忆已迁移 ' + imported.imported + ' 条')
-    } catch (e) { console.debug('[swallow]', e) }
-  }
-}
-// v0.4.4 精简: 记忆/技能/定时/监视等用户界面已收敛, 对应 IPC 不再注册(引擎内部记忆基座保留)
+if (dbInit.ok && dbInit.inMemory) safeLog('[db] 内存模式')
+// v0.4.5: 旧记忆系统已整体移除(渲染层/引擎/IPC); 新记忆系统(MemoryCore)另行接入
 const workspaceDir = join(userDataPath, 'workspace')
 // v0.3.8: 自定义子代理目录(用户放 *.json 即注册自定义角色)
 setCustomAgentsDir(join(userDataPath, 'agents'))
 // skillsDir 保留: resources/skills 只读目录探测 + misc:openSkillsDir 兼容
 const skillsDir = join(userDataPath, 'skills')
+registerSkillsIpc({ skillsDir, resourcesDir })
 
 // mkdir 循环全部 try-catch —— resources/skills 在 asar 内只读, 失败不能崩溃
 for (const d of [sessionsDir, workspaceDir, skillsDir, join(resourcesDir, 'skills')]) {
@@ -209,7 +223,6 @@ registerLlmIpc({ netFetch })
 registerEngineIpc({
   settingsPath,
   userDataPath,
-  memoryPath,
   tracePath,
   resourcesDir,
   netFetch,
@@ -357,15 +370,35 @@ app.whenReady().then(async () => {
   } catch (e: unknown) { safeLog('[settings] 监听启动失败: ' + (e instanceof Error ? e.message : String(e))) }
   // v0.4.1: MCP 配置持久化后, 启动时按开关自动连接已保存的服务器(失败不阻塞启动)
   import('./mcp/auto').then(m => m.autoConnectMcp(settingsPath)).catch(() => {})
-  // v0.4.0 定稿: 会话索引与每日记忆维护延后到窗口显示后执行, 避免大记忆库阻塞首屏
+  // v0.4.5: MemoryCore 记忆网关 sidecar —— 数据写 userData, LLM 复用主供应商配置(key 不落盘)
+  try {
+    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+    const dec = decProviders(raw) as { providers?: { apiKey?: string; baseUrl?: string; selectedModel?: string }[]; general?: { mainModel?: string; memoryCoreEnabled?: boolean; memoryCorePort?: number } }
+    const g0 = dec.general || {}
+    const provider = (dec.providers || []).find(p => p.apiKey && p.baseUrl)
+    startMemoryCore({
+      enabled: g0.memoryCoreEnabled !== false,
+      vendorDir: ((): string => {
+        const devDir = join(ROOT, 'vendor', 'memory-core')
+        if (fs.existsSync(devDir)) return devDir
+        return join(process.resourcesPath || ROOT, 'vendor', 'memory-core')
+      })(),
+      dataDir: join(userDataPath, 'memory-core'),
+      port: Number(g0.memoryCorePort) || 8420,
+      llm: {
+        baseUrl: provider?.baseUrl || 'https://api.openai.com/v1',
+        apiKey: provider?.apiKey || '',
+        model: g0.mainModel || provider?.selectedModel || 'gpt-4o-mini',
+      },
+    })
+  } catch (e) { console.debug('[swallow]', e) }
+  // v0.4.0 定稿: 会话索引延后到窗口显示后执行, 避免大会话库阻塞首屏
   if (dbInit.ok) {
     setTimeout(() => {
       try { refreshSessionIndex(sessionsDir, true) } catch (e) { console.debug('[swallow]', e) }
-      try { maybeRunDailyDecay() } catch (e) { console.debug('[swallow]', e) }
     }, 800)
-    setInterval(() => { try { maybeRunDailyDecay() } catch { /* 忽略 */ } }, 3600 * 1000)
   }
   app.on('activate', () => appShell.getWindow()?.show())
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin' && !isQuitting) { isQuitting = true; app.quit() } })
-app.on('before-quit', () => { isQuitting = true; stopLocalVisionProcesses() })
+app.on('before-quit', () => { isQuitting = true; stopMemoryCore(); stopLocalVisionProcesses() })

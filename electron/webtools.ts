@@ -64,7 +64,7 @@ function extractPage(): { title: string; text: string } {
       || document.querySelector('[role="main"]') || document.querySelector('.article') || document.body
     let text = (main ? main.innerText : document.body.innerText) || ''
     text = text.replace(new RegExp('[\t\r]+', 'g'), '').replace(new RegExp('\n{3,}', 'g'), '\n\n').trim()
-    if (text.length > 80000) text = text.slice(0, 80000)
+    if (text.length > 80000) text = text.slice(0, 60000) + String.fromCharCode(10) + '…[中间省略 ' + (text.length - 75000) + ' 字符，两端已保留]…' + text.slice(-15000)
     return { title: title, text: text }
   } catch (e: unknown) {
     return { title: '', text: 'extract-error: ' + String(e && (e instanceof Error ? e.message : String(e)) || e) }

@@ -15,6 +15,7 @@ import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './styles/global.css'
 import './styles/ui-polish.css'
+import './styles/archeron.css'
 
 try {
   ReactDOM.createRoot(document.getElementById('root')!).render(

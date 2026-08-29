@@ -1,7 +1,7 @@
 appId: com.huangquan.agent
 productName: Acheron-Agent
 directories:
-  output: release
+  output: release-build
   buildResources: resources
 artifactName: Acheron-Agent-${version}.exe
 publish:
@@ -12,6 +12,15 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - resources/**/*        # 必须含 resources/**: 人设 ishiki.md 与图标
+# v0.4.5: MemoryCore 记忆网关 sidecar —— 以 extraResources 带出(不进 asar, 供 ELECTRON_RUN_AS_NODE 拉起)
+extraResources:
+  - from: vendor/memory-core
+    to: vendor/memory-core
+    filter:
+      - "**/*"
+      - "!__tests__/**"
+      - "!coverage/**"
+      - "!*.test.ts"
 electronLanguages:
   - zh-CN
 win:

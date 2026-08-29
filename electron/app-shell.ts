@@ -21,6 +21,7 @@ export interface AppShellDeps {
 
 export class AppShell {
   private mainWindow: BrowserWindow | null = null
+  private hudWindow: BrowserWindow | null = null
   private tray: Tray | null = null
   private floatHideTimer: ReturnType<typeof setTimeout> | null = null
   private reloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -31,6 +32,23 @@ export class AppShell {
   constructor(private deps: AppShellDeps) {}
 
   getWindow(): BrowserWindow | null { return this.mainWindow }
+
+  /** v0.4.4 HUD 模式: 常驻顶部的迷你输入条(独立小窗, 路由 #hud), 再点一次关闭 */
+  toggleHud(): void {
+    if (this.hudWindow && !this.hudWindow.isDestroyed()) { this.hudWindow.close(); this.hudWindow = null; return }
+    const devUrl = process.env.HQ_DEV_URL ? String(process.env.HQ_DEV_URL) : ''
+    const origin = devUrl || ('http://127.0.0.1:' + this.deps.serverPort())
+    const w = new BrowserWindow({
+      width: 500, height: 84, minWidth: 340, frame: false,
+      alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#17171f',
+      webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+    })
+    w.setAlwaysOnTop(true, 'screen-saver')
+    this.hudWindow = w
+    w.loadURL(origin + '/index.html#hud')
+    w.once('ready-to-show', () => w.show())
+    w.on('closed', () => { if (this.hudWindow === w) this.hudWindow = null })
+  }
 
   trayEnabled(): boolean {
     try {

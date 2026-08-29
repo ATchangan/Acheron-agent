@@ -1,5 +1,5 @@
-// Sidebar.tsx —— v0.4.2 会话侧栏：品牌区 / 新对话 / 模式分段 / 搜索 / 日期分组列表 / 底部导航
-// 对齐参考 chat/sidebar：置顶区 + 今天/昨天/更早 分区，每区可折叠，行内 hover 操作(置顶/删除)
+// Sidebar.tsx —— v0.5.0 侧栏改版：页签(聊天/工作) + 菜单行(新建会话/技能与工具/产物/定时任务) + 会话列表 + 底部图标排
+// 保留: 置顶/归档/搜索/拖拽排序/日期分组/项目区; 对齐参考: 深色工作台侧栏
 import React, { useEffect, useRef, useState } from 'react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
@@ -7,22 +7,11 @@ import { resolveDisplay } from '../store/display'
 import type { View } from '../App'
 import ResizeBar from './ResizeBar'
 import { U } from './ui-styles'
-import { Search, SquarePen, ChevronRight, Pin, Archive, ArrowDownUp, Activity, LayoutList } from 'lucide-react'
+import { Search, SquarePen, ChevronRight, Pin, Archive, ArrowDownUp, Activity, LayoutList, Wrench, FileOutput, Timer, Home, MessageSquare, Globe, Folder, Settings as SettingsIcon, FolderPlus, MoreHorizontal, ListTodo, Store, MessagesSquare } from 'lucide-react'
+import BotsList from './BotsList'
+import ProfileStrip from './ProfileStrip'
 
 interface Props { currentView: View; onNavigate: (v: View) => void }
-
-const ChatIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-const SettingsIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-const BrowserIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>
-const FolderIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-
-// v0.4.4 精简: 导航仅保留 会话/浏览器/文件/设置(技能/记忆/编队/定时/命令中心/配置档案/API Keys 已收敛)
-const NAV_ITEMS: { id: View; icon: React.ReactNode; label: string }[] = [
-  { id: 'chat', icon: <ChatIcon />, label: '对话' },
-  { id: 'browser', icon: <BrowserIcon />, label: '浏览器' },
-  { id: 'files', icon: <FolderIcon />, label: '文件' },
-  { id: 'settings', icon: <SettingsIcon />, label: '设置' },
-]
 
 type GroupKey = 'pinned' | 'today' | 'yesterday' | 'earlier'
 
@@ -83,7 +72,10 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
         for (const d of dirs.slice(0, 10)) {
           const sub = await window.huangquan.computer.readDir(workDir + '\\' + d).then(l => l || []).catch(() => [])
           if (!sub.some(i => i.name === '.git')) continue
-          const branch = await window.huangquan.computer.exec('git -C "' + workDir + '\\' + d + '" branch --show-current').then(r => String(r || '').trim()).catch(() => '')
+          // 安全: 目录名拼进 shell 前检查元字符, 含命令字符的目录名直接跳过(不显示分支)
+          const full = workDir + '\\' + d
+          if (/[&|<>^"%!]/.test(full)) continue
+          const branch = await window.huangquan.computer.exec('git -C "' + full + '" branch --show-current').then(r => String(r || '').trim()).catch(() => '')
           repos.push({ name: d, branch })
         }
         if (alive) setProjects(repos)
@@ -92,6 +84,17 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
     void run()
     return () => { alive = false }
   }, [workDir])
+
+  // v0.5.0: 新建项目 —— 选择一个文件夹作为工作目录
+  const newProject = async () => {
+    try {
+      const dir = await window.huangquan.computer.selectDir()
+      if (dir) await setWorkDir(dir)
+    } catch { /* 用户取消或失败可忽略 */ }
+  }
+
+  // v0.4.4 BOTS 页签: 与聊天/工作并排的第三页签, 展示预设角色助手
+  const [botTab, setBotTab] = useState(false)
 
   const tokOf = (id: string) => {
     const m = sessTokMap[id] || {}
@@ -205,34 +208,55 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
     )
   }
 
+  const menuBtn = (label: string, icon: React.ReactNode, onClick: () => void, active?: boolean, right?: React.ReactNode, title?: string) => (
+    <button type="button" className={'sb-menu-item' + (active ? ' active' : '')} title={title || label} onClick={onClick}>
+      <span className="sm-icon">{icon}</span>
+      <span className="sm-label">{label}</span>
+      {right && <span className="sm-label-right">{right}</span>}
+    </button>
+  )
+
   return (
     <aside className="sidebar" style={{ position: 'relative' }}>
-      {/* 品牌区(: logo + 名称 + 在线状态) */}
-      <div className="sidebar-top-bar">
-        <div className="sidebar-brand">
-          <img className="sidebar-brand-logo" src="huangquan.png" alt="黄泉" style={{ background: 'var(--bg-elevated)', objectFit: 'cover', objectPosition: 'center 28%' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-          <div className="sidebar-brand-text">
-            <div className="sidebar-brand-row">
-              <span className="sidebar-brand-name">Acheron-Agent</span>
-              <span className="sidebar-status-dot" title="在线" />
-            </div>
-          </div>
-        </div>
+      {/* 顶部页签（对齐参考: SESSIONS / BOTS 两页签; 聊天/工作模式段落在会话列表内部） */}
+      <div className="sb-mode-tabs">
+        <button
+          type="button"
+          className={'sb-mode-tab' + (!botTab ? ' active' : '')}
+          onClick={() => setBotTab(false)}
+        >
+          会话
+          {!botTab && <span className="sb-mode-count">{filtered.length}</span>}
+        </button>
+        <button
+          type="button"
+          className={'sb-mode-tab' + (botTab ? ' active' : '')}
+          title="预设角色助手"
+          onClick={() => setBotTab(true)}
+        >
+          BOTS
+        </button>
       </div>
 
-      {/* 新对话按钮 */}
-      <button className="hq-sb-newchat" onClick={create} title="新对话 (Ctrl+N)" aria-label="新对话">
-        <SquarePen size={14} />
-        <span>新对话</span>
-      </button>
+      {/* 菜单区 */}
+      <div className="sb-menu">
+        {menuBtn('新建会话', <SquarePen size={15} />, create, false,
+          <span style={{ display: 'inline-flex', gap: 3 }}><span className="sb-kbd">Ctrl</span><span className="sb-kbd">N</span></span>,
+          '新建会话 (Ctrl+N)')}
+        {menuBtn('技能与工具', <Wrench size={15} />, () => onNavigate('capability'), currentView === 'capability')}
+        {menuBtn('插件市场', <Store size={15} />, () => onNavigate('plugins'), currentView === 'plugins')}
+        {menuBtn('消息平台', <MessagesSquare size={15} />, () => onNavigate('messages'), currentView === 'messages', undefined, 'QQ 官方机器人接入')}
+        {menuBtn('产物', <FileOutput size={15} />, () => onNavigate('artifact'), currentView === 'artifact', undefined, '工作目录产物浏览')}
+        {menuBtn('定时任务', <Timer size={15} />, () => onNavigate('cron'), currentView === 'cron')}
+        {menuBtn('任务', <ListTodo size={15} />, () => onNavigate('tasks'), currentView === 'tasks', undefined, '进行中任务与历史')}
+      </div>
 
       {/* 项目区(projects: git 仓库 + 分支) */}
       {projects.length > 0 && (
         <div className="hq-sb-projects">
-          <div className="hq-sb-projects-label">项目</div>
           {projects.map(p => (
             <button key={p.name} type="button" className="hq-nav-item hq-sb-page hq-sb-project" title={'切换到 ' + p.name} onClick={() => setWorkDir(workDir + '\\' + p.name)}>
-              <span className="nav-icon"><FolderIcon /></span>
+              <span className="nav-icon"><Folder size={14} /></span>
               <span className="hq-sb-page-label">{p.name}</span>
               {p.branch && <span className="hq-sb-branch" title="当前分支">{p.branch}</span>}
             </button>
@@ -240,66 +264,41 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
         </div>
       )}
 
-      {currentView === 'chat' && !disp.hideSessionList ? (
+      {botTab ? (
+        /* v0.4.4 BOTS: 聊天式 Bot 会话列表（对齐参考） */
+        <BotsList onNavigate={onNavigate} />
+      ) : currentView === 'chat' && !disp.hideSessionList ? (
         <>
-          {/* 聊天/工作模式分段 */}
-          <div className="sidebar-section-label" style={{ ...U.mt6, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <div className="hq-seg">
-              {(['chat', 'work'] as const).map(m => (
-                <span
-                  key={m}
-                  onClick={() => { if (m !== mode) void setMode(m) }}
-                  role="button" tabIndex={0}
-                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && m !== mode && void setMode(m)}
-                  className={'hq-seg-item' + (mode === m ? ' active' : '')}
-                >
-                  {m === 'chat' ? '聊天' : '工作'}
-                </span>
-              ))}
-            </div>
-            <span className="hq-sb-count">{filtered.length}</span>
-            <span className="hq-sb-spacer" />
-            <span className="sb-session-tools">
-            <button
-              type="button"
-              className={'hq-sb-mini' + (showArchived ? ' active' : '')}
-              title={showArchived ? '隐藏归档会话' : '显示归档会话'}
-              aria-label="归档筛选"
-              onClick={() => setShowArchived(v => !v)}
-            >
-              <Archive size={12} />
-              {archivedCount > 0 && <span className="hq-sb-mini-badge">{archivedCount}</span>}
-            </button>
-            <button
-              type="button"
-              className={'hq-sb-mini' + (sortKey === 'tokens' ? ' active' : '')}
-              title={sortKey === 'tokens' ? '按更新时间排序' : '按 Token 用量排序'}
-              aria-label="会话排序"
-              onClick={() => setSortKey(k => (k === 'updated' ? 'tokens' : 'updated'))}
-            >
-              <ArrowDownUp size={12} />
-            </button>
-            <button
-              type="button"
-              className={'hq-sb-mini' + (busyOnly ? ' active' : '')}
-              title={busyOnly ? '显示全部会话' : '只看进行中'}
-              aria-label="进行中筛选"
-              onClick={() => setBusyOnly(v => !v)}
-            >
-              <Activity size={12} />
-            </button>
-            <button
-              type="button"
-              className={'hq-sb-mini' + (cardRows ? ' active' : '')}
-              title={cardRows ? '单行紧凑' : '双行卡片'}
-              aria-label="卡片行"
-              onClick={() => setCardRows(v => !v)}
-            >
-              <LayoutList size={12} />
-            </button>
+          {/* 聊天/工作模式段落 + 会话筛选工具 */}
+          <div className="sb-mode-tabs" style={{ paddingTop: 2 }}>
+            {(['chat', 'work'] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                className={'sb-mode-tab sb-mode-sub' + (mode === m ? ' active' : '')}
+                onClick={() => { if (m !== mode) void setMode(m) }}
+              >
+                {m === 'chat' ? '聊天' : '工作'}
+                {mode === m && <span className="sb-mode-count">{filtered.length}</span>}
+              </button>
+            ))}
+            <span style={{ flex: 1 }} />
+            <span className="sb-session-tools" style={{ opacity: 1, pointerEvents: 'auto' }}>
+              <button type="button" className={'hq-sb-mini' + (showArchived ? ' active' : '')} title={showArchived ? '隐藏归档会话' : '显示归档会话'} aria-label="归档筛选" onClick={() => setShowArchived(v => !v)}>
+                <Archive size={12} />
+                {archivedCount > 0 && <span className="hq-sb-mini-badge">{archivedCount}</span>}
+              </button>
+              <button type="button" className={'hq-sb-mini' + (sortKey === 'tokens' ? ' active' : '')} title={sortKey === 'tokens' ? '按更新时间排序' : '按 Token 用量排序'} aria-label="会话排序" onClick={() => setSortKey(k => (k === 'updated' ? 'tokens' : 'updated'))}>
+                <ArrowDownUp size={12} />
+              </button>
+              <button type="button" className={'hq-sb-mini' + (busyOnly ? ' active' : '')} title={busyOnly ? '显示全部会话' : '只看进行中'} aria-label="进行中筛选" onClick={() => setBusyOnly(v => !v)}>
+                <Activity size={12} />
+              </button>
+              <button type="button" className={'hq-sb-mini' + (cardRows ? ' active' : '')} title={cardRows ? '单行紧凑' : '双行卡片'} aria-label="卡片行" onClick={() => setCardRows(v => !v)}>
+                <LayoutList size={12} />
+              </button>
             </span>
           </div>
-
           {/* 会话搜索 */}
           {!disp.hideSessionSearch && (
             <div className="hq-sb-search">
@@ -321,7 +320,14 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
                 {searchResults.length === 0 && <div className="empty-tip">没有匹配的会话</div>}
               </>
             ) : groups.length === 0 ? (
-              <div className="empty-tip">暂无记录</div>
+              /* v0.5.0 空态: 幽灵图标 + 暂无会话 + 新建项目 */
+              <div className="sb-session-empty">
+                <div className="sse-icon"><MessageSquare size={19} /></div>
+                <span className="sse-text">暂无会话</span>
+                <button type="button" className="sb-newproject-btn" title="选择一个文件夹作为工作目录" onClick={() => { void newProject() }}>
+                  <FolderPlus size={14} />新建项目
+                </button>
+              </div>
             ) : groups.map(g => (
               <div key={g.key} className="hq-sb-group">
                 <div className="hq-sb-group-head" role="button" tabIndex={0}
@@ -345,24 +351,21 @@ export default function Sidebar({ currentView, onNavigate }: Props) {
         <div className="sidebar-nav" />
       )}
 
-      {/* 底部导航() */}
+      {/* 底部图标排: 对话 / 浏览器 / 文件 / 更多(命令面板) / 设置 */}
+      {/* v0.4.4 配置档案条（对齐参考 侧栏底部） */}
+      <ProfileStrip />
+
       <div className="sidebar-bottom-nav">
-        {NAV_ITEMS.filter(item => item.id === 'chat' || item.id === 'settings' || !disp.hiddenNav.includes(item.id)).map(item => (
-          <button
-            key={item.id}
-            className={'hq-nav-bottom' + (currentView === item.id ? ' active' : '')}
-            title={item.label}
-            onClick={() => {
-              if (item.id === 'browser') { try { window.huangquan?.web.showPanel() } catch { /* 忽略 */ } return }
-              onNavigate(item.id)
-            }}
-          >
-            {item.icon}
-          </button>
-        ))}
+        <button type="button" className={'hq-nav-bottom' + (currentView === 'chat' ? ' active' : '')} title="对话" onClick={() => onNavigate('chat')}><Home size={15} /></button>
+        <button type="button" className="hq-nav-bottom" title="浏览器" onClick={() => { try { window.huangquan?.web.showPanel() } catch { /* 忽略 */ } }}><Globe size={15} /></button>
+        <button type="button" className="hq-nav-bottom" title="文件（右栏）" onClick={() => onNavigate('files')}><Folder size={15} /></button>
+        <span className="hq-nav-bottom hq-nav-spacer" />
+        <button type="button" className="hq-nav-bottom" title="命令面板 (Ctrl+K)" onClick={() => window.dispatchEvent(new CustomEvent('hq-open-palette'))}><MoreHorizontal size={15} /></button>
+        <button type="button" className={'hq-nav-bottom' + (currentView === 'settings' ? ' active' : '')} title="设置" onClick={() => onNavigate('settings')}><SettingsIcon size={15} /></button>
       </div>
 
       <ResizeBar varName="--sidebar-w" storeKey="hq_sidebar_w" min={160} max={380} edge="right" />
     </aside>
   )
 }
+

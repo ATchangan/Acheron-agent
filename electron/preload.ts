@@ -39,8 +39,56 @@ contextBridge.exposeInMainWorld('huangquan', {
     setOpacity: (o: number) => ipcRenderer.invoke('window:setOpacity', o),
     setTitleBarOverlay: (o: { color?: string; symbolColor?: string; height?: number }) => ipcRenderer.invoke('window:setTitleBarOverlay', o),
   },
-  watch: {
-    open: (sid: string) => ipcRenderer.invoke('watch:open', sid),
+  // v0.4.5 清理: watch/skills/memory/cron 四组 IPC 的 handler 已随功能精简不再注册
+  // (main.ts 无对应 registerXxxIpc 调用), 从 preload 摘除 —— 不再暴露必然 reject 的死通道。
+  find: {
+    start: (text: string, forward?: boolean) => ipcRenderer.invoke('find:start', text, forward),
+    stop: () => ipcRenderer.invoke('find:stop'),
+    onResult: (cb: (r: { matches: number; active: number }) => void) => {
+      const h = (_: unknown, r: { matches: number; active: number }) => cb(r)
+      ipcRenderer.on('find:result', h)
+      return () => ipcRenderer.removeListener('find:result', h)
+    },
+  },
+  cron: {
+    add: (expr: string, prompt: string) => ipcRenderer.invoke('cron:add', expr, prompt),
+    addWatch: (path: string, prompt: string) => ipcRenderer.invoke('cron:addWatch', path, prompt),
+    list: () => ipcRenderer.invoke('cron:list'),
+    remove: (id: string) => ipcRenderer.invoke('cron:remove', id),
+    toggle: (id: string) => ipcRenderer.invoke('cron:toggle', id),
+    onFire: (cb: (r: { id: string; prompt: string }) => void) => {
+      const h = (_: unknown, r: { id: string; prompt: string }) => cb(r)
+      ipcRenderer.on('cron:fire', h)
+      return () => ipcRenderer.removeListener('cron:fire', h)
+    },
+  },
+  msg: {
+    getConfig: () => ipcRenderer.invoke('msg:getConfig'),
+    setConfig: (patch: Record<string, unknown>) => ipcRenderer.invoke('msg:setConfig', patch),
+    sendReply: (payload: Record<string, unknown>) => ipcRenderer.invoke('msg:sendReply', payload),
+    onIncoming: (cb: (r: { channel: string; chatType: string; openid: string; content: string; msgId: string; ts: number }) => void) => {
+      const h = (_: unknown, r: { channel: string; chatType: string; openid: string; content: string; msgId: string; ts: number }) => cb(r)
+      ipcRenderer.on('msg:incoming', h)
+      return () => ipcRenderer.removeListener('msg:incoming', h)
+    },
+    onStatus: (cb: (r: { channel: string; state: string; detail?: string }) => void) => {
+      const h = (_: unknown, r: { channel: string; state: string; detail?: string }) => cb(r)
+      ipcRenderer.on('msg:status', h)
+      return () => ipcRenderer.removeListener('msg:status', h)
+    },
+  },
+  hud: {
+    toggle: () => ipcRenderer.invoke('hud:toggle'),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    create: (name: string, content: string) => ipcRenderer.invoke('skills:create', name, content),
+    install: (url: string) => ipcRenderer.invoke('skills:install', url),
+    remove: (name: string) => ipcRenderer.invoke('skills:delete', name),
+    stats: (days?: number) => ipcRenderer.invoke('skills:stats', days),
+  },
+  memoryCore: {
+    status: () => ipcRenderer.invoke('memory:status'),
   },
   risk: {
     respond: (requestId: string, decision: 'allow' | 'deny', approveTask: boolean, taskKey?: string, always?: boolean) =>
@@ -85,30 +133,6 @@ contextBridge.exposeInMainWorld('huangquan', {
     auditTasks: (limit?: number) => ipcRenderer.invoke('diagnostics:auditTasks', limit),
   },
   ishiki: { load: () => ipcRenderer.invoke('ishiki:load') },
-  skills: {
-    list: () => ipcRenderer.invoke('skills:list'),
-    load: (path: string) => ipcRenderer.invoke('skills:load', path),
-    create: (name: string, content: string) => ipcRenderer.invoke('skills:create', name, content),
-    install: (url: string) => ipcRenderer.invoke('skills:install', url),
-    installLocal: (src: string) => ipcRenderer.invoke('skills:installLocal', src),
-    pickLocal: () => ipcRenderer.invoke('skills:pickLocal'),
-    delete: (name: string) => ipcRenderer.invoke('skills:delete', name),
-    suggest: (minCount?: number) => ipcRenderer.invoke('skills:suggest', minCount),
-    createFromWorkflow: (signature: string, name: string) => ipcRenderer.invoke('skills:createFromWorkflow', signature, name),
-    validate: (content: string) => ipcRenderer.invoke('skills:validate', content),
-    write: (name: string, content: string) => ipcRenderer.invoke('skills:write', name, content),
-    stats: (days?: number) => ipcRenderer.invoke('skills:stats', days),
-  },
-  memory: {
-    load: () => ipcRenderer.invoke('memory:load'),
-    save: (m: unknown) => ipcRenderer.invoke('memory:save', safeArg(m)),
-    search: (query: string) => ipcRenderer.invoke('memory:search', query),
-    addVector: (content: string) => ipcRenderer.invoke('memory:addVector', content),
-    importFile: (path: string) => ipcRenderer.invoke('memory:importFile', path),
-    clearVector: () => ipcRenderer.invoke('memory:clearVector'),
-    forget: (content: string) => ipcRenderer.invoke('memory:forget', content),
-    semanticStatus: () => ipcRenderer.invoke('memory:semanticStatus'),
-  },
   hotkey: {
     set: (acc: string) => ipcRenderer.invoke('hotkey:set', acc),
     get: () => ipcRenderer.invoke('hotkey:get'),
@@ -117,12 +141,6 @@ contextBridge.exposeInMainWorld('huangquan', {
       ipcRenderer.on('hotkey:ask', h)
       return () => ipcRenderer.removeListener('hotkey:ask', h)
     },
-  },
-  cron: {
-    add: (expr: string, prompt: string) => ipcRenderer.invoke('cron:add', expr, prompt),
-    list: () => ipcRenderer.invoke('cron:list'),
-    remove: (id: string) => ipcRenderer.invoke('cron:remove', id),
-    toggle: (id: string) => ipcRenderer.invoke('cron:toggle', id),
   },
   plugins: {
     scan: () => ipcRenderer.invoke('plugins:scan'),
@@ -154,6 +172,11 @@ contextBridge.exposeInMainWorld('huangquan', {
     update: (id: string, patch: unknown) => ipcRenderer.invoke('task:update', id, patch),
     finish: (id: string, status: string, error?: string) => ipcRenderer.invoke('task:finish', id, status, error),
     clear: (id?: string) => ipcRenderer.invoke('task:clear', id),
+    onActivate: (cb: (sid: string) => void) => {
+      const h = (_: unknown, sid: string) => cb(sid)
+      ipcRenderer.on('task:activate', h)
+      return () => ipcRenderer.removeListener('task:activate', h)
+    },
   },
   trace: {
     log: (entry: unknown) => ipcRenderer.invoke('trace:log', entry),

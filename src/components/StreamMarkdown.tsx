@@ -1,4 +1,4 @@
-// StreamMarkdown.tsx —— v0.4.4 换成 DSH 自研 mdast 渲染管线(取代 @assistant-ui/react-streamdown)
+// StreamMarkdown.tsx —— v0.4.4 自研 mdast 渲染管线
 // 流式: 增量重渲染尾部(UNSTABLE_TAIL_BLOCKS=2); 定稿: 一次解析(带 KaTeX 数学 + shiki 高亮)
 import { memo } from 'react'
 import { StreamingMarkdown, SettledMarkdown, type MarkdownOpts } from './markdown/markdown'

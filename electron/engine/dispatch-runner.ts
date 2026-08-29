@@ -3,7 +3,6 @@
 import { getAgents, type AgentDef } from './agents'
 import { filterToolsByAgent } from './context'
 import { getActiveTools, type ToolRunCtx } from './tools'
-import { memoryPathFor, loadMemory, saveMemory, memoryBlockText, type EngineMemory } from './memory'
 import { streamChat } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { buildSubSystemPrompt, parseSubResult, buildSubSummary } from './sub-result'
@@ -14,7 +13,6 @@ import type { TaskState } from './task-types'
 
 export interface DispatchDeps {
   netFetch: typeof fetch
-  memoryPath: string
   curGen: (sid: string) => number
   emit: (ev: EngineEvent) => void
   trace: (level: 'debug' | 'info' | 'warn' | 'error', event: string, detail?: string, sid?: string, requestId?: string) => void
@@ -48,11 +46,7 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
       const ag = agents[t.agent]
       if (!ag) return { agent: t.agent, task: t.task, result: 'E:未知角色' }
       if (disabledAgents.includes(t.agent)) return { agent: t.agent, task: t.task, result: 'E:该角色已被禁用: ' + t.agent }
-      // 私有记忆命名空间 —— memoryScope=private 的角色读写独立 memory-<角色>.json
-      const subMemPath = memoryPathFor(deps.memoryPath, ag.memoryScope, t.agent)
-      const subScope: 'global' | 'private' = ag.memoryScope === 'private' ? 'private' : 'global'
-      let subMem = loadMemory(subMemPath, { agent: t.agent, scope: subScope })
-      const sp = buildSubSystemPrompt(ag, t.agent, t.task, memoryBlockText(subMem, t.task))
+      const sp = buildSubSystemPrompt(ag, t.agent, t.task)
       const COLLAB_TOOLS = ['handoff', 'dispatch', 'list_agents']
       // 子任务用子角色构建工具上下文, 避免父角色白名单误伤子角色工具
       const subCtx = {
@@ -60,8 +54,6 @@ export async function runDispatch(deps: DispatchDeps, task: TaskState, tasks: { 
         agent: t.agent,
         isSubtask: true,
         activeAgents: [...task.activeAgents, t.agent],
-        getMemory: () => subMem,
-        saveMemory: (m: EngineMemory) => { subMem = m; saveMemory(subMemPath, m, { agent: t.agent, scope: subScope }) },
       }
       const agTools = filterToolsByAgent(getActiveTools(subCtx), t.agent, agents).filter(tt => !COLLAB_TOOLS.includes(tt.function.name))
       // 子任务使用角色专属模型(如设计 vision), 未配置则继承当前模型

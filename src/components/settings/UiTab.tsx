@@ -54,10 +54,10 @@ export default function UiTab() {
           {(['compact', 'comfortable', 'spacious'] as const).map(k => (
             <button key={k} onClick={() => set({ density: k })} style={{
               flex: 1, padding: '8px 12px', borderRadius: 7, cursor: 'pointer',
-              border: '1px solid ' + ((d.density || 'comfortable') === k ? C.accent : C.border),
-              background: (d.density || 'comfortable') === k ? C.accentBg : 'transparent',
-              color: (d.density || 'comfortable') === k ? C.text : C.muted,
-              fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: (d.density || 'comfortable') === k ? 700 : 400,
+              border: '1px solid ' + ((d.density || 'compact') === k ? C.accent : C.border),
+              background: (d.density || 'compact') === k ? C.accentBg : 'transparent',
+              color: (d.density || 'compact') === k ? C.text : C.muted,
+              fontSize: 'calc(var(--ui-font-size) - 2px)', fontWeight: (d.density || 'compact') === k ? 700 : 400,
             }}>
               {k === 'compact' ? '紧凑' : k === 'comfortable' ? '舒适' : '宽松'}
             </button>

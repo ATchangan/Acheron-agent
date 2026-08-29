@@ -1,13 +1,15 @@
 // OverlayView.tsx —— v0.4.2 路由浮层：无标题栏，拖拽条 + 悬浮关闭按钮，
 // 内容区自行滚动（对齐参考 OverlayView：backdrop blur + rounded-xl 卡片 + floating close）
+// v0.4.4: 支持 full 模式 —— 设置弹窗全屏化（对齐参考 的整窗设置）
 import React, { useEffect } from 'react'
 import { X } from 'lucide-react'
 
-export default function OverlayView({ title, onClose, children, width = 900 }: {
+export default function OverlayView({ title, onClose, children, width = 900, full = false }: {
   title: string
   onClose: () => void
   children: React.ReactNode
   width?: number
+  full?: boolean
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -18,7 +20,7 @@ export default function OverlayView({ title, onClose, children, width = 900 }: {
   return (
     <div className="hq-overlay-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div
-        className="hq-overlay-card"
+        className={'hq-overlay-card' + (full ? ' hq-overlay-full' : '')}
         style={{ width: `min(${width}px, calc(100vw - 96px))`, height: 'min(720px, calc(100vh - 88px))' } as React.CSSProperties}
         data-overlay-surface=""
       >

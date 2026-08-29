@@ -73,7 +73,6 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const engine = new AgentEngine({
       settingsPath: join(tmp, 'settings.json'),
       userDataPath: tmp,
-      memoryPath: join(tmp, 'memory.json'),
       tracePath: join(tmp, 'trace.jsonl'),
       netFetch,
       loadSettings: () => ({
@@ -101,7 +100,6 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const engine = new AgentEngine({
       settingsPath: join(tmp, 'settings.json'),
       userDataPath: tmp,
-      memoryPath: join(tmp, 'memory.json'),
       tracePath: join(tmp, 'trace.jsonl'),
       netFetch,
       loadSettings: () => ({
@@ -130,7 +128,6 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const engine = new AgentEngine({
       settingsPath: join(tmp, 'settings.json'),
       userDataPath: tmp,
-      memoryPath: join(tmp, 'memory.json'),
       tracePath: join(tmp, 'trace.jsonl'),
       netFetch,
       loadSettings: () => ({
@@ -159,7 +156,6 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const engine = new AgentEngine({
       settingsPath: join(tmp, 'settings.json'),
       userDataPath: tmp,
-      memoryPath: join(tmp, 'memory.json'),
       tracePath: join(tmp, 'trace.jsonl'),
       netFetch,
       loadSettings: () => ({
@@ -193,7 +189,6 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const engine = new AgentEngine({
       settingsPath: join(tmp, 'settings.json'),
       userDataPath: tmp,
-      memoryPath: join(tmp, 'memory.json'),
       tracePath: join(tmp, 'trace.jsonl'),
       netFetch,
       loadSettings: () => ({
@@ -222,7 +217,6 @@ describe('AgentEngine 主循环(mock LLM)', () => {
     const engine = new AgentEngine({
       settingsPath: join(tmp, 'settings.json'),
       userDataPath: tmp,
-      memoryPath: join(tmp, 'memory.json'),
       tracePath: join(tmp, 'trace.jsonl'),
       netFetch,
       loadSettings: () => ({

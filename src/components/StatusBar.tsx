@@ -1,5 +1,6 @@
 // StatusBar.tsx —— v0.4.2 底部状态栏：左簇(模式/模型/会话/工作目录) + 上下文用量 + 右簇(版本/命令面板)
 import React, { useEffect, useRef, useState } from 'react'
+import { Monitor } from 'lucide-react'
 import { useChatStore } from '../store/chat'
 import { useSettingsStore } from '../store/settings'
 import { useModelItems } from './useModelItems'
@@ -9,7 +10,6 @@ import type { ContextSnapshot } from '../global'
 
 export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean; onToggleHidden: () => void }) {
   const { curModelName } = useModelItems()
-  const mode = useSettingsStore(s => s.general.mode || 'work')
   const workDir = useSettingsStore(s => s.general.workDir)
   const sessionCount = useChatStore(s => s.sessions.length)
   const contextUsed = useChatStore(s => s.cu)
@@ -25,6 +25,7 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
   const continueStalled = useChatStore(s => s.continueStalled)
   const disp = resolveDisplay(useSettingsStore(s => s.general.uiDisplay))
   const [ver, setVer] = useState('')
+  const [host, setHost] = useState('')
   const [ctxOpen, setCtxOpen] = useState(false)
   const ctxRef = useRef<HTMLDivElement>(null)
   const [ctxSnap, setCtxSnap] = useState<ContextSnapshot | null>(null)
@@ -36,6 +37,8 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
   useEffect(() => {
     try {
       window.huangquan?.appInfo?.().then(i => setVer(i.version)).catch(() => {})
+      // v0.4.4: 状态栏左侧显示设备名（对齐参考）
+      window.huangquan?.computer?.systemInfo?.().then(i => setHost(String(i.hostname || ''))).catch(() => {})
     } catch { /* 非 Electron 环境忽略 */ }
   }, [])
 
@@ -150,15 +153,19 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
         setCtxMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      {/* 左簇 */}
+      {/* 左簇: 设备名 + 引擎状态（对齐参考: [icon] ROG / 网关 就绪） */}
       <div className="hq-sb-cluster">
-        {statusLine && vis('statusline') && <span className="sb-item" title="自定义状态行">{statusLine}</span>}
         {vis('mode') && (
-          <span className="sb-item" title="当前模式（可在侧边栏切换）">
-            <span className="sb-dot" />
-            {mode === 'work' ? '工作模式' : '聊天模式'}
+          <span className="sb-item" title="本机设备">
+            <Monitor size={11} />
+            {host || '本机'}
           </span>
         )}
+        <span className="sb-item" title="引擎状态">
+          <span className="sb-dot" />
+          引擎 就绪
+        </span>
+        {statusLine && vis('statusline') && <span className="sb-item" title="自定义状态行">{statusLine}</span>}
         {vis('sessions') && (
           <span className="sb-item" title="会话数量">
             会话 {sessionCount}
@@ -240,7 +247,6 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
                     {ctxSnap.sections.map((s, i) => (
                       <div key={i} className="hq-ctx-pop-row"><span>{s.label}</span><b>{fmtK(s.tokens)} tok</b></div>
                     ))}
-                    <div className="hq-ctx-pop-row"><span>记忆</span><b>{fmtK(ctxSnap.memory.tokens)} tok · {ctxSnap.memory.items} 条</b></div>
                     <div className="hq-ctx-pop-row"><span>历史</span><b>{ctxSnap.history.count} 条 · {fmtK(ctxSnap.history.tokens)} tok</b></div>
                     <div className="hq-ctx-pop-row"><span>合计</span><b style={{ color: ctxColor }}>{fmtK(ctxSnap.totalTokens)} tok</b></div>
                   </div>
@@ -254,7 +260,7 @@ export default function StatusBar({ hidden, onToggleHidden }: { hidden: boolean;
             <Command size={11} />K
           </span>
         )}
-        {vis('version') && <span className="sb-item sb-ver" title="当前版本">v{ver || '0.4.2'}</span>}
+        {vis('version') && <span className="sb-item sb-ver" title="当前版本"># v{ver || '0.4.4'}</span>}
         <button type="button" className="sb-item hq-sb-hide" title="隐藏状态栏" aria-label="隐藏状态栏" onClick={onToggleHidden}>
           <X size={11} />
         </button>

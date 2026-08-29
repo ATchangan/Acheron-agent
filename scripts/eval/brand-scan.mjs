@@ -1,6 +1,6 @@
 // scripts/eval/brand-scan.mjs — 品牌词扫描(发布门禁)
 // 对外发布内容不得出现竞品/参考产品品牌词(Hermes / Codex / Nous 独立词)。
-// 排除第三方依赖(node_modules)、构建产物(dist/dist-electron/release)、锁文件、评估历史与旧备份。
+// 排除第三方依赖(node_modules)、内嵌第三方内核(vendor)、构建产物(dist/dist-electron/release)、锁文件、评估历史与旧备份。
 // 纯 node 实现, 不依赖 rg, 可在任意环境直接运行。
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
@@ -8,11 +8,13 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-electron', 'release', '.git', '.vite', '_archive'])
+// vendor/memory-core/node_modules 是第三方依赖, 整体跳过; vendor 源码仍参与品牌扫描
+const SKIP_SUBPATHS = ['vendor/memory-core/node_modules/']
 const SKIP_FILES = new Set(['package-lock.json', 'eval-history.jsonl', 'brand-scan.mjs'])
-// 模式由两部分拼接, 避免扫描器命中自身; nous 用词边界避免命中 synchronous 等
+// 用词边界精确匹配, 避免误命中 (如 further message / synchronous 等)
 const PATTERNS = [
-  { re: /her\s*mes/gi, label: 'Hermes' },
-  { re: /co\s*dex/gi, label: 'Codex' },
+  { re: /hermes/gi, label: 'Hermes' },
+  { re: /codex/gi, label: 'Codex' },
   { re: /\bnous\b/gi, label: 'Nous' },
 ]
 
@@ -25,6 +27,7 @@ function walk(dir) {
     if (SKIP_FILES.has(name)) continue
     if (statSync(full).isDirectory()) { walk(full); continue }
     if (!/\.(ts|tsx|js|mjs|cjs|css|html|md|json|yml|yaml|txt)$/i.test(name)) continue
+    if (SKIP_SUBPATHS.some(sp => rel.startsWith(sp))) continue
     const text = readFileSync(full, 'utf8')
     for (const { re, label } of PATTERNS) {
       const m = text.match(re)

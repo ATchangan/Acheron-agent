@@ -1,7 +1,7 @@
 // electron/main-utils.ts —— 主进程纯工具函数（从 main.ts 拆出，行为不变）
 import { safeStorage } from 'electron'
 import * as fs from 'fs'
-import { join, extname } from 'path'
+import { join, extname, sep } from 'path'
 import * as http from 'http'
 
 export interface MainProvider { id: string; type: string; name: string; apiKey?: string; baseUrl?: string; models?: string[]; selectedModel?: string; customHeaders?: string }
@@ -96,7 +96,9 @@ function startServer(distDir: string): Promise<number> {
     const s = http.createServer((req, res) => {
       const reqPath = (req.url || '/').split('?')[0].replace(/\/$/, '') || '/index.html'
       const fp = join(distDir, reqPath)
-      if (!fp.startsWith(distDir)) { res.writeHead(403); res.end('403'); return }
+      // 安全: 前缀必须带尾分隔符, 防 /dist-evil 同前缀兄弟目录绕过
+      const rootWithSep = distDir.endsWith(sep) ? distDir : distDir + sep
+      if (!fp.startsWith(rootWithSep) && fp !== distDir) { res.writeHead(403); res.end('403'); return }
       fs.readFile(fp, (err, data) => {
         if (err) { res.writeHead(404); res.end('404'); return }
         // 静态资源一律不缓存: 桌面本地服务, 避免端口复用/热重启时浏览器命中旧 JS 导致界面显示旧版

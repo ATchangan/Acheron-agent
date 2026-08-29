@@ -32,6 +32,11 @@ export interface S {
   plans: Record<string, PlanState>
   clarifyReq: { sid: string; requestId: string; question: string; choices: string[]; multiSelect: boolean } | null
   askDraft: string // 系统级全局热键带进来的"选中即问"草稿(由 ChatInput 消费后清空)
+  // v0.6.0 排队输入: 任务运行中发送的消息排队为后续修改, 回合结束后依次执行(参考风格)
+  queued: Record<string, { id: string; text: string; images?: string[]; attachments?: Message['attachments'] }[]>
+  enqueueQueued: (sid: string, item: { text: string; images?: string[]; attachments?: Message['attachments'] }) => void
+  removeQueued: (sid: string, id: string) => void
+  clearQueued: (sid: string) => void
   // v0.4.4 长任务感知性: 按 sid 键控的进度与停滞态(多会话并发时不互相覆盖)
   progress: Record<string, { round: number; stepsDone: number; stepsTotal: number; tokensUsed: number; elapsedMs: number; currentTool?: string; stalled?: boolean }>
   stall: Record<string, { active: boolean; elapsedMs: number }>
@@ -64,20 +69,24 @@ export async function clientSend(
   if (!sid) { get().create(); sid = get().cid! }
   const thisBusy = get().sessions.find(x => x.id === sid)?.busy
   if (thisBusy) {
+    // v0.6.0 排队输入: 忙时默认排队为后续修改, 回合结束后依次执行;
+    // 仅「改向指令」(别做/停止/换一个等)仍走即时插话打断 —— 那是安全语义, 不该排队
+    const isRetarget = detectInterjectKind(content) === 'retarget'
+    if (!isRetarget) {
+      get().enqueueQueued(sid, { text: content, images, attachments })
+      return
+    }
     const cur = get().sessions.find(x => x.id === sid)
     const recentMsgs = cur?.messages.slice(-6) || []
     const hasToolCall = recentMsgs.some(m => m.tool_calls)
     const lastRole = recentMsgs.slice(-1)[0]?.role
     const inToolWork = lastRole === 'tool' || hasToolCall
     const partialReply = recentMsgs.filter(m => m.role === 'assistant' && m.content).slice(-1)[0]?.content?.slice(0, 200) || ''
-    const isRetarget = detectInterjectKind(content) === 'retarget'
     const prefix = inToolWork
-      ? (isRetarget
-        ? `（用户在工作执行中发出改向指令，请停止当前操作，按新指令调整方向。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。）\n`
-        : `（用户在工作执行中插话补充。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。请结合当前进度理解用户意图并调整后续操作。）\n`)
+      ? `（用户在工作执行中发出改向指令，请停止当前操作，按新指令调整方向。当前正在执行工具操作${partialReply ? '，已完成部分回复：' + partialReply : ''}。）\n`
       : `（用户在回复中插话补充。以下是补充指令。）\n`
     // 消息由引擎 interject 事件统一上屏, 避免本地先加 + 事件再加导致双写
-    await window.huangquan.engine.interject(sid, content, images, attachments, isRetarget ? 'retarget' : 'supplement', prefix).catch(() => {})
+    await window.huangquan.engine.interject(sid, content, images, attachments, 'retarget', prefix).catch(() => {})
     return
   }
   set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: true } : x) }))
@@ -104,5 +113,22 @@ export async function clientSend(
   } catch (e) {
     set(s => ({ sessions: s.sessions.map(x => x.id === sid ? { ...x, busy: false, streaming: false } : x) }))
     set(s => ({ streaming: s.cid === sid ? false : s.streaming, executing: s.cid === sid ? false : s.executing, error: errMsg(e) }))
+  }
+}
+
+// ── v0.6.0 排队输入 ──────────────────────────────────────────
+// 忙时入队(每会话上限 10 条); 会话由忙转闲时由 chat.ts 的订阅者取出队首重新走完整发送流程。
+// 排队项复用用户消息构建与引擎启动管线, 与普通发送无差别。
+export const MAX_QUEUED_PER_SID = 10
+
+export function makeQueueActions(set: (partial: Partial<S> | ((state: S) => Partial<S>)) => void): Pick<S, 'enqueueQueued' | 'removeQueued' | 'clearQueued'> {
+  return {
+    enqueueQueued: (sid, item) => set(s => {
+      const list = s.queued[sid] || []
+      if (list.length >= MAX_QUEUED_PER_SID) return {}
+      return { queued: { ...s.queued, [sid]: [...list, { id: uuidv4(), text: item.text, images: item.images, attachments: item.attachments }] } }
+    }),
+    removeQueued: (sid, id) => set(s => ({ queued: { ...s.queued, [sid]: (s.queued[sid] || []).filter(x => x.id !== id) } })),
+    clearQueued: (sid) => set(s => ({ queued: { ...s.queued, [sid]: [] } })),
   }
 }

@@ -4,8 +4,8 @@
 const PLAN_READONLY_TOOLS = [
   'read', 'ls', 'grep', 'find',
   'web_search', 'web_fetch', 'web_read',
-  'session_search', 'recall_memory',
-  'list_agents', 'list_workflows', 'list_goals', 'list_schedules',
+  'session_search', 'memory_search', 'conversation_search', 'skill_search',
+  'list_agents', 'list_workflows', 'list_schedules',
   'system_info', 'update_plan', 'read_skill',
 ]
 

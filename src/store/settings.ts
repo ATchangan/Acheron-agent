@@ -3,6 +3,9 @@ import type { SettingsData, ProviderConfig, MediaProvider } from '../global'
 import type { GeneralSettings } from '../types'
 import { setDebugLogging } from '../utils/safe'
 
+// 主题白名单(唯一权威来源, App.tsx 引用同一份; 校验非法主题名)
+export const THEME_WHITELIST = ['auto', 'archeron', 'black', 'huangquan', 'ocean', 'dark', 'light', 'violet', 'bloodmoon', 'dawn', 'deepblue', 'forest', 'amber', 'pastel', 'graphite', 'aurora', 'midnight', 'ember', 'mono', 'cyberpunk', 'slate']
+
 interface SettingsStore extends SettingsData {
   loaded: boolean
   load: () => Promise<void>
@@ -332,8 +335,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => {
   addProvider: (p) => { set((s) => ({ providers: [...s.providers, p] })); debouncedSave() },
   removeProvider: (id) => { set((s) => ({ providers: s.providers.filter((p) => p.id !== id) })); debouncedSave() },
   updateProvider: (id, data) => { set((s) => ({ providers: s.providers.map((p) => (p.id === id ? { ...p, ...data } : p)) })); debouncedSave() },
-  // 主题白名单(与 App.tsx THEME_WHITELIST 一致, 校验非法主题名)
-  setTheme: (theme) => { if (!['auto', 'dark', 'light', 'black', 'violet', 'bloodmoon', 'dawn', 'custom'].includes(theme)) return; set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
+  // 主题白名单(与 App.tsx 共用 THEME_WHITELIST, 校验非法主题名)
+  setTheme: (theme) => { if (!THEME_WHITELIST.includes(theme)) return; set((s) => ({ general: { ...s.general, theme } })); debouncedSave() },
   setMode: (mode) => { set((s) => ({ general: { ...s.general, mode } })); debouncedSave() },
   setWorkDir: (dir) => { set((s) => ({ general: { ...s.general, workDir: dir } })); debouncedSave() },
   setOpacity: (v) => { set((s) => ({ general: { ...s.general, opacity: v } })); debouncedSave(); window.huangquan?.window?.setOpacity?.(v) },

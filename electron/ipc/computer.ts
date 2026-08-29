@@ -22,8 +22,21 @@ export function registerComputerIpc(deps: {
   userDataPath: string
 }): void {
   const { assertInsideWorkDir, assessRisk, getEffectiveWorkDir, setWorkDirOverride, workspaceDir, userDataPath } = deps
-  // 运行中的命令注册表(sid → 子进程), 供引擎停止时立即打断超长命令
-  const runningExecs = new Map<string, { proc: ChildProcess; timer: ReturnType<typeof setTimeout> }>()
+  // 安全: sid/taskId 会拼进 shell 命令(PowerShell 标记/CIM 查询), 只允许安全字符, 防命令注入
+  const safeId = (v: unknown): string => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)
+  // 运行中的命令注册表(sid → 同会话并发命令集合), 供引擎停止时立即打断超长命令
+  const runningExecs = new Map<string, Set<{ proc: ChildProcess; timer: ReturnType<typeof setTimeout> }>>()
+  const regExec = (key: string, rec: { proc: ChildProcess; timer: ReturnType<typeof setTimeout> }) => {
+    let set = runningExecs.get(key)
+    if (!set) { set = new Set(); runningExecs.set(key, set) }
+    set.add(rec)
+  }
+  const unregExec = (key: string, rec: { proc: ChildProcess; timer: ReturnType<typeof setTimeout> }) => {
+    const set = runningExecs.get(key)
+    if (!set) return
+    set.delete(rec)
+    if (!set.size) runningExecs.delete(key)
+  }
   // Windows 上 exec 只拿到外层 cmd.exe, kill 不会终止 powershell 子进程树 → 用 taskkill /T /F
   const killTree = (pid: number | undefined) => {
     if (!pid) return
@@ -32,7 +45,9 @@ export function registerComputerIpc(deps: {
   }
   // 按 sid 标记杀整棵树(外层 pid 可能已脱管, 用命令行标记兜底)
   const killBySid = (sid: string) => {
-    const ps = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*HQ_SID=*" + sid + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    const sidSafe = safeId(sid)
+    if (!sidSafe) return
+    const ps = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*HQ_SID=*" + sidSafe + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
     try { exec(getPowerShellCmdQuoted() + ' -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"', { timeout: 8000, windowsHide: true }, () => {}) } catch { /* 忽略 */ }
   }
   // 按根 PID 递归杀全部后代(cmd 外层可能提前退出, 孙进程仍挂在已死 PID 下)
@@ -87,9 +102,12 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
     return 'E:permission denied: ' + (cr === 'timeout' ? '确认超时（60 秒未操作，已自动拒绝）' : '用户拒绝了风险操作确认')
   }
   return new Promise<string>((resolve) => {
-    const key = sid || ('m' + Date.now() + '_' + Math.random().toString(36).slice(2, 6))
+    const sidSafe = safeId(sid)
+    const key = sidSafe || ('m' + Date.now() + '_' + Math.random().toString(36).slice(2, 6))
     let settled = false
-    const finish = (out: string) => { if (settled) return; settled = true; runningExecs.delete(key); resolve(out) }
+    type ExecRec = { proc: ChildProcess; timer: ReturnType<typeof setTimeout> }
+    const rec: { value: ExecRec | null } = { value: null }
+    const finish = (out: string) => { if (settled) return; settled = true; if (rec.value) unregExec(key, rec.value); resolve(out) }
     // 更可靠的 PowerShell 检测——检查 powershell 关键字和常见 cmdlet 模式
     const trimmed = cmd.trim()
     const isPS = /^(powershell|pwsh)\b/i.test(trimmed) ||
@@ -98,7 +116,7 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
       // v0.3.7: 含非 ASCII(中文路径/中文输出)的命令一律走 PowerShell —— cmd 在部分系统(OEM 437)会把中文输出成 '?'
       /[^\x00-\x7F]/.test(cmd)
     // v0.3.3: sid 标记写入环境变量赋值(命令行为可见), 中止时按标记杀整个进程树
-    const marker = sid ? (isPS ? "$env:HQ_SID='" + sid + "'; " : 'set HQ_SID=' + sid + '&& ') : ''
+    const marker = sidSafe ? (isPS ? "$env:HQ_SID='" + sidSafe + "'; " : 'set HQ_SID=' + sidSafe + '&& ') : ''
     let finalCmd
     if (isPS) {
       finalCmd = `${getPowerShellCmdQuoted()} -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${marker}${cmd.replace(/"/g, '\\"')}"`
@@ -121,28 +139,30 @@ ipcMain.handle('computer:exec', async (_e, cmd: string, sid?: string, taskId?: s
         ? (isPS ? raw.toString('utf-8') : (() => { const u = raw.toString('utf-8'); return u.includes('\uFFFD') ? iconv.decode(raw, 'gbk') : u })())
         : String(raw)
       const out = text
-      const truncated = out.length > 8000 ? out.slice(0, 8000) + '\n...(已截断，共' + out.length + '字符)' : out
+      const truncated = out.length > 8000
+        ? out.slice(0, 6000) + '\n…[中间省略 ' + (out.length - 7500) + ' 字符，两端已保留]' + out.slice(-1500)
+        : out
       finish(truncated)
     })
-    const timer = setTimeout(() => { killTree(child.pid); killTreeByRoot(child.pid); if (sid) killBySid(sid) }, 300000)
-    runningExecs.set(key, { proc: child, timer })
+    const timer = setTimeout(() => { killTree(child.pid); killTreeByRoot(child.pid); if (sidSafe) killBySid(sidSafe) }, 300000)
+    rec.value = { proc: child, timer }
+    regExec(key, rec.value)
   })
 })
 // v0.3.3: 中止运行中的命令 —— 引擎 stop 时调用, 超长 exec 立即打断
 ipcMain.handle('computer:abort', (_e, sid?: string) => {
-  if (!sid) {
-    for (const [, r] of runningExecs) { clearTimeout(r.timer); killTree(r.proc.pid) }
+  const sidSafe = safeId(sid)
+  if (!sidSafe) {
+    for (const [, set] of runningExecs) { for (const r of set) { clearTimeout(r.timer); killTree(r.proc.pid) } }
     runningExecs.clear()
     return true
   }
-  const rec = runningExecs.get(sid)
-  if (rec) {
-    clearTimeout(rec.timer)
-    killTree(rec.proc.pid)
-    killTreeByRoot(rec.proc.pid)
-    runningExecs.delete(sid)
+  const set = runningExecs.get(sidSafe)
+  if (set) {
+    for (const r of set) { clearTimeout(r.timer); killTree(r.proc.pid); killTreeByRoot(r.proc.pid) }
+    runningExecs.delete(sidSafe)
   }
-  killBySid(sid)
+  killBySid(sidSafe)
   return true
 })
 
@@ -245,15 +265,18 @@ ipcMain.handle('computer:clipboardWrite', (_e,text:string) => { try{require('ele
 
 // ─── 代码沙箱 ───────────────────────────────────
 ipcMain.handle('computer:codebox', async (_e, lang:string, code:string) => {
+  // 安全: lang 白名单(不再拼进 shell), 只支持 python/node 两种运行时
+  const l = String(lang || '').toLowerCase()
+  if (l !== 'python' && l !== 'node') return 'E:unsupported lang: 仅支持 python / node'
   return new Promise<string>(resolve => {
     const tmpDir = join(userDataPath, 'codebox')
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-    const ext = lang === 'python' ? '.py' : lang === 'node' ? '.js' : '.txt'
+    const ext = l === 'python' ? '.py' : '.js'
     // 随机后缀防并发冲突; 顺带清理 60s 前残留的临时文件
     const fp = join(tmpDir, 'codebox_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + ext)
     try { for (const f of fs.readdirSync(tmpDir)) { if (f.startsWith('codebox_') && Date.now() - fs.statSync(join(tmpDir, f)).mtimeMs > 60000) { try { fs.unlinkSync(join(tmpDir, f)) } catch (e) { console.debug('[swallow]', e) } } } } catch (e) { /* 忽略 */ console.debug('[swallow]', e) }
     fs.writeFileSync(fp, code, 'utf-8')
-    const cmd = lang === 'python' ? `python -X utf8 -u "${fp}"` : lang === 'node' ? `node "${fp}"` : `echo "unsupported: ${lang}"`
+    const cmd = l === 'python' ? `python -X utf8 -u "${fp}"` : `node "${fp}"`
     exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024, encoding: 'utf-8', env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' } }, (err, stdout, stderr) => {
       resolve(err ? (stderr || err.message) : stdout)
       try { fs.unlinkSync(fp) } catch (e) { console.debug('[swallow]', e) }
@@ -345,7 +368,10 @@ ipcMain.handle('computer:processList', async () => {
   return new Promise<string>(resolve=>{ exec('tasklist /FO CSV /NH',{timeout:5000},(_e,o)=>resolve(o||'')) })
 })
 ipcMain.handle('computer:killProcess', async (_e,pid:string) => {
-  return new Promise<string>(resolve=>{ exec(`taskkill /PID ${pid} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
+  // 安全: pid 必须是纯数字, 防止拼接进 taskkill 命令造成注入(绕过风险确认链)
+  const p = String(pid || '').trim()
+  if (!/^\d{1,10}$/.test(p)) return 'E:invalid pid'
+  return new Promise<string>(resolve=>{ exec(`taskkill /PID ${p} /F`,{timeout:5000},(e,o)=>resolve(o||e?.message||'')) })
 })
 
 // v0.3.1 C3: abort 双语义 —— 参数为 requestId 时中止该请求; 为 sid 时中止该会话全部请求; 空则全部

@@ -25,6 +25,7 @@ const CORE_TOOLS = new Set([
   'screenshot', 'clipboard_read', 'clipboard_write', 'process_list', 'kill_process',
   'codebox', 'desktop_screenshot', 'desktop_click', 'desktop_move', 'desktop_scroll', 'desktop_type', 'desktop_key',
   'read_image', 'system_info', 'init_project_docs', 'update_plan', 'clarify', 'show_card',
+  'memory_search', 'conversation_search', 'skill_search',
   'install_plugin', 'list_plugins', 'read_plugin', 'remove_plugin', 'reload_plugins',
   'mcp_connect', 'mcp_call',
   'set_workdir', 'set_theme',
@@ -70,7 +71,7 @@ export function getActiveTools(ctx: ToolRunCtx): EngineToolSpec[] {
 function filterTools(tools: EngineToolSpec[], agentName: string, agents: Record<string, AgentDef>, autoMcp: boolean): EngineToolSpec[] {
   const ag = agents[agentName]
   if (!ag || ag.tools.includes('*')) return tools
-  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'clarify', 'session_search', 'update_plan', 'read_skill'])
+  const allowed = new Set([...ag.tools, 'handoff', 'dispatch', 'list_agents', 'clarify', 'session_search', 'memory_search', 'conversation_search', 'skill_search', 'update_plan', 'read_skill'])
   return tools.filter(t => allowed.has(t.function.name) || t.function.name.startsWith('plugin_') || (autoMcp && t.function.name.startsWith('mcp__')))
 }
 

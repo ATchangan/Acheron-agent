@@ -6,10 +6,11 @@ import type { ProviderConfig } from '../../global'
 import { U } from '../ui-styles'
 
 
-// v0.4.4 精简: 供应商页 —— 仅保留对话模型供应商(多媒体供应商已收敛)
+// v0.6.0: 顶部加「默认模型」(应用于新会话) —— 与输入框模型选择器写入同一 mainModel 设置
 export default function ModelsTab(props: { showToast: (msg: string) => void }) {
   const { showToast } = props
   const providers = useSettingsStore(s => s.providers || [])
+  const generalMainModel = useSettingsStore(s => (s.general).mainModel || '')
   const updateProvider = useSettingsStore(s => s.updateProvider)
   const removeProvider = useSettingsStore(s => s.removeProvider)
   const addProvider = useSettingsStore(s => s.addProvider)
@@ -85,7 +86,27 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
     return () => clearTimeout(t)
   }, [p?.id, p?.apiKey, p?.baseUrl, p?.models?.length])
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+      {/* v0.6.0 默认模型(应用于新会话) —— 与输入框模型选择器写同一 mainModel; 当前会话可在输入框临时切换 */}
+      <div className="aux-row" style={{ flex: 'none', paddingTop: 4 }}>
+        <div className="aux-row-main">
+          <div className="aux-row-name">默认模型<span className="aux-row-badge">应用于新会话</span></div>
+          <div className="aux-row-sub">可在输入框的模型选择器中临时切换当前会话；留空 = 自动（第一个可用供应商）</div>
+        </div>
+        <div className="aux-row-actions">
+          <select
+            style={{ ...S.sel, height: 30, fontSize: 'calc(var(--ui-font-size) - 2px)', minWidth: 220, maxWidth: 320 }}
+            value={generalMainModel}
+            onChange={e => save({ mainModel: e.target.value })}
+          >
+            <option value="">auto · 自动</option>
+            {providers.filter(pp => (pp.models || []).length).flatMap(pp => (pp.models || []).map(m => (
+              <option key={pp.id + '::' + m} value={pp.id + '::' + m}>{pp.name} · {m}</option>
+            )))}
+          </select>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
       <div style={{ width: 160, borderRight: '1px solid ' + C.border, padding: '14px 10px', overflowY: 'auto' }}>
         {(() => {
           const allNames = Object.values(GROUPS).flat()
@@ -231,6 +252,7 @@ export default function ModelsTab(props: { showToast: (msg: string) => void }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

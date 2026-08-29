@@ -46,10 +46,11 @@ let hits = 0
 let misses = 0
 
 const TTL: Record<string, number> = {
+  memory_search: 0, conversation_search: 0, skill_search: 0,
   read: 30_000, ls: 30_000, grep: 30_000, find: 30_000,
   web_search: 120_000, web_fetch: 120_000, browse: 120_000, browse_screenshot: 120_000,
   system_info: 60_000, process_list: 60_000, screenshot: 10_000, clipboard_read: 5_000,
-  recall_memory: 0, default: 10_000,
+ default: 10_000,
 }
 
 const CACHEABLE = new Set([

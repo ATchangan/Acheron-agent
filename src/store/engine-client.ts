@@ -4,7 +4,6 @@ import type { Message, SessionData, UsageData } from '../global'
 import type { UiDisplayConfig } from '../types'
 import { useChatStore } from './chat'
 import { useSettingsStore } from './settings'
-import { autoExtractMemory } from './memory'
 import type { PlanStepView, PlanState } from '../global'
 
 interface EngineEventMsg {
@@ -119,27 +118,69 @@ function applyEngineEvent(raw: unknown): void {
   }
 }
 
+// v0.4.5 流式批处理: delta/推理按 60ms 合并后再落 store。
+// flash 档模型 40-70 chunk/s, 逐条 setState+patchSession 会打满渲染主线程导致掉帧卡顿。
+let bufId = ''
+let bufText = ''
+let bufHasText = false
+let bufReason: { sid: string; id: string; reasoning: string } | null = null
+let bufHasReason = false
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+function flushStreamBuffer(): void {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+  if (bufHasText) {
+    const id = bufId
+    useChatStore.setState(s => ({
+      streamId: id,
+      streamText: s.streamId === id ? s.streamText + bufText : bufText,
+    }))
+    bufText = ''
+    bufHasText = false
+  }
+  if (bufHasReason && bufReason) {
+    const { sid, id, reasoning } = bufReason
+    patchSession(sid, s => ({ ...s, messages: (s.messages || []).map(m => (m.id === id ? { ...m, reasoning_content: reasoning } : m)) }))
+    bufHasReason = false
+    bufReason = null
+  }
+}
+
+function scheduleFlush(): void {
+  if (flushTimer) return
+  flushTimer = setTimeout(() => { flushTimer = null; flushStreamBuffer() }, 60)
+}
+
 function applyEngineEventInner(raw: unknown): void {
   const ev = raw as EngineEvent
   if (!ev || typeof ev !== 'object' || !ev.type || !ev.sid) return
+  if (ev.type !== 'assistant-chunk') flushStreamBuffer()
   const st = useChatStore.getState()
   switch (ev.type) {
     case 'assistant-chunk': {
       if (!ev.id) return
       // 临时流式通道(stream- 前缀): 只更新 streamText, 不落消息; 最终内容由 step/final 事件承载
       // v0.3.6 P1-5: delta 增量 append; 旧格式 content 全量覆盖兜底
-      useChatStore.setState(s => ({
-        // 按消息 id 隔离: 同一路增量追加; 新的一路(并行/插话)自动重置, 防止串文
-        streamId: ev.id,
-        streamText: ev.delta !== undefined ? (ev.id === s.streamId ? s.streamText + ev.delta : ev.delta) : (ev.content ?? ''),
-      }))
+      if (ev.delta !== undefined) {
+        // 增量进缓冲; 新的一路(并行/插话)先把旧缓冲落盘再重置, 防止串文
+        if (bufId !== ev.id) { flushStreamBuffer(); bufId = ev.id }
+        bufText += ev.delta
+        bufHasText = true
+        scheduleFlush()
+      } else {
+        flushStreamBuffer()
+        useChatStore.setState({ streamId: ev.id, streamText: ev.content ?? '' })
+      }
       if (!String(ev.id).startsWith('stream-')) {
+        flushStreamBuffer()
         patchSession(ev.sid, s => ensureStreamingMessage(s, ev))
       }
       if (ev.reasoning !== undefined) {
-        patchSession(ev.sid, s => ({ ...s, messages: (s.messages || []).map(m => m.id === ev.id ? { ...m, reasoning_content: ev.reasoning } : m) }))
+        bufReason = { sid: ev.sid, id: ev.id, reasoning: ev.reasoning }
+        bufHasReason = true
+        scheduleFlush()
       }
-      if (ev.streaming !== undefined) setGlobal(ev)
+      if (ev.streaming !== undefined) { flushStreamBuffer(); setGlobal(ev) }
       break
     }
     case 'assistant-usage': {
@@ -361,7 +402,7 @@ function applyEngineEventInner(raw: unknown): void {
         useChatStore.setState({ streaming: false, executing: false, stage: null, error: errText || null, errorStep: ev.failedStep?.messageId ? { messageId: ev.failedStep.messageId } : null, fileChanges: ev.fileChanges || 0, lastTaskId: ev.taskId || '' })
       }
       throttledSessionSave(ev.sid, 200)
-      autoExtractMemory(ev.sid, useChatStore.getState().sessions).catch(() => {})
+      // v0.4.5: 渲染侧自动记忆提取已随 memory IPC 精简移除(记忆沉淀由引擎侧接管)
       // v0.3.3: 任务结束关闭该任务的独立浏览器会话(隔离, 不串页面)
       try { window.huangquan?.web?.closeBrowserSession?.(ev.sid, ev.taskId || '') } catch { /* 忽略 */ }
       break
@@ -377,6 +418,13 @@ function applyEngineEventInner(raw: unknown): void {
 }
 
 export function bindEngineEvents(): () => void {
+  // v0.4.5: 点击任务完成通知 → 跳转到任务所属会话
+  try {
+    window.huangquan.tasks.onActivate(function (sid: string) {
+      const cur = useChatStore.getState()
+      if (sid && cur.sessions.some(s => s.id === sid)) void cur.switchS(sid)
+    })
+  } catch { /* 忽略 */ }
   // v0.3.6 P1-6: 向主进程注册事件订阅, 引擎只向本窗口广播
   try { window.huangquan.engine.subscribe().catch(() => {}) } catch { /* 忽略 */ }
   return window.huangquan.engine.onEvent(applyEngineEvent)

@@ -123,17 +123,20 @@ export function registerSkillsIpc(deps: {
   })
   ipcMain.handle('skills:delete', (_e, name: string) => {
     try {
+      // 安全: 目录名白名单(与 create/write 同规格), 防 name="..\.." 路径穿越删除任意目录
+      const safeName = String(name || '')
+      if (!/^[A-Za-z0-9-]{1,80}$/.test(safeName)) return 'Error: 非法的技能目录名'
       // 自省整改: 资源包内置技能不可删除(只读), 只能通过设置→技能「隐藏」
-      if (fs.existsSync(join(resourcesDir, 'skills', String(name || ''), 'SKILL.md'))) {
+      if (fs.existsSync(join(resourcesDir, 'skills', safeName, 'SKILL.md'))) {
         return '内置技能不能删除，可在 设置→技能 中点击「隐藏」'
       }
-      const dir = join(skillsDir, name)
+      const dir = join(skillsDir, safeName)
       if (fs.existsSync(dir)) {
         fs.rmSync(dir, { recursive: true, force: true })
         return true
       }
       // 也尝试删除 resources/skills 下的
-      const altDir = join(resourcesDir, 'skills', name)
+      const altDir = join(resourcesDir, 'skills', safeName)
       if (fs.existsSync(altDir)) {
         fs.rmSync(altDir, { recursive: true, force: true })
         return true

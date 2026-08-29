@@ -26,7 +26,6 @@ import type { ToolRunCtx } from './tool-types'
 import { invalidatePluginToolSpecCache } from '../plugins/author'
 
 function makeCtx(over: Partial<ToolRunCtx> = {}): ToolRunCtx {
-  const memory = { facts: [], pinnedFacts: [], goals: [], episodic: [], summaries: [] }
   return {
     sid: 's1',
     taskId: 't1',
@@ -34,10 +33,7 @@ function makeCtx(over: Partial<ToolRunCtx> = {}): ToolRunCtx {
     agents: {},
     activeAgents: ['main'],
     workDir: os.tmpdir(),
-    memoryPath: '',
     userDataPath: '',
-    getMemory: () => memory,
-    saveMemory: () => { /* noop */ },
     onAgentChange: () => { /* noop */ },
     runDispatch: async () => 'ok',
     logTrace: () => { /* noop */ },

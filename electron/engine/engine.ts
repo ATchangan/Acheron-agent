@@ -10,7 +10,6 @@ import { getAgents, type AgentDef } from './agents'
 import { normalizeAgentName } from '../shared/agents-data'
 import { buildContextualMessages, buildPrompt, getModelContextLimit, isVisionModel, outputLimit, slimToolResult, extractKeyInfo, summarizeContext } from './context'
 import { runTool, getActiveTools, getMcpToolSpecs, closeTerminalSessions, type ToolRunCtx } from './tools'
-import { loadMemory, saveMemory, type EngineMemory } from './memory'
 import { streamChat, abortLLM, visionOnce } from './llm-core'
 import type { LlmMsg } from './llm-core'
 import { planNeedsVerify as planNeedsVerifyCore, type PlanStepData } from './plan-core'
@@ -32,17 +31,12 @@ import { saveToolOutput, insertAudit } from '../db'
 import { detectTaskType, routeProfile } from '../llm/gateway'
 import { enqueueLocalVision } from '../llm/vision'
 import { recordSkillHit, recordSkillStat } from '../db'
-
-function agentMemoryScope(general: EngineSettings, agent?: string): 'global' | 'private' {
-  if (!agent) return 'global'
-  const ag = getAgents(general.agentOverrides as Record<string, Partial<AgentDef>> | undefined)[agent]
-  return ag?.memoryScope === 'private' ? 'private' : 'global'
-}
+import { memCapture } from '../memory-core'
 
 export interface EngineDeps {
   settingsPath: string
   userDataPath: string
-  memoryPath: string
+  memoryHubUrl?: string
   tracePath: string
   skillsDirs?: string[]
   netFetch: typeof fetch
@@ -200,12 +194,9 @@ export class AgentEngine {
       handoffAt: -1,
       toolLog: [],
       tokBase: this.snapshotTok(params.sid),
-      memoryText: '',
-      projectCtx: null,
+      projectCtx: null,
       instrVisited: new Set<string>(),
-      fileSnapshots: {},
-      memory: loadMemory(this.deps.memoryPath, { agent: reqAgent, scope: agentMemoryScope(general, reqAgent) }),
-      lastMidSave: 0,
+      fileSnapshots: {},      lastMidSave: 0,
       planSteps: [],
       planSummary: '',
       planGateChecked: false,
@@ -299,12 +290,9 @@ export class AgentEngine {
       handoffAt: typeof cp.handoffAt === 'number' ? cp.handoffAt : -1,
       toolLog: [],
       tokBase: this.snapshotTok(rec.sid),
-      memoryText: '',
-      projectCtx: null,
+      projectCtx: null,
       instrVisited: new Set<string>(),
-      fileSnapshots: {},
-      memory: loadMemory(this.deps.memoryPath, { agent: resAgent, scope: agentMemoryScope(general, resAgent) }),
-      lastMidSave: 0,
+      fileSnapshots: {},      lastMidSave: 0,
       planSteps: restoredSteps,
       planSummary: String(cp.planSummary || ''),
       planGateChecked: !hasPendingSteps,
@@ -435,7 +423,6 @@ export class AgentEngine {
   private planAddDecision(task: TaskState, text: string): void { this.plans.planAddDecision(task, text) }
   private planAddSurprise(task: TaskState, text: string): void { this.plans.planAddSurprise(task, text) }
   private writePlanDoc(task: TaskState): void { this.plans.writePlanDoc(task) }
-  private schedulePlanDoc(task: TaskState): void { this.plans.schedulePlanDoc(task) }
   private flushPlanDoc(task: TaskState): void { this.plans.flushPlanDoc(task) }
   private applyPlanUpdate(task: TaskState, steps: { label?: string; status?: string; expected?: string; id?: string; tool?: string }[]): string { return this.plans.applyPlanUpdate(task, steps) }
   private snapshotTok(sid: string): Record<string, TokenStat> { return this.usage.snapshotTok(sid) }
@@ -445,8 +432,6 @@ export class AgentEngine {
     let stallWatchdog: ReturnType<typeof setInterval> | null = null
     try {
       const g = task.g
-      // v0.4.4 精简: 长效记忆(回忆/事实/教训)已从产品收敛 —— 不再向上下文注入记忆块
-      task.memoryText = ''
       // 自省整改: 内置技能隐藏名单 —— 隐藏的技能不注入系统提示, 但仍可 read_skill 读取
       const hiddenSkills = new Set((task.g.hiddenSkills || []).map(String))
       task.skillsCache = listSkills(this.deps.skillsDirs || []).filter(s => !hiddenSkills.has(s.name))
@@ -697,6 +682,9 @@ export class AgentEngine {
             ms = Date.now() - t0
             this.touch(task)
             if (!r2.startsWith('E:')) break
+            // 确定性失败(用户拒绝/确认超时/参数校验不通过/危险命令拦截)重试必然同结果,
+            // 立即终止 —— 否则风险确认卡会被连弹 maxRetry+1 次
+            if (/^E:permission denied|^E:invalid |^E:need |^E:非法|^E:已取消|^E:危险命令|^E:仅支持/.test(r2)) break
             if (a < maxRetry) await new Promise(r => setTimeout(r, backoffDelay(a, 500, 8000)))
           }
         } finally {
@@ -747,7 +735,7 @@ export class AgentEngine {
       if (toolNames.some(n => ['write', 'edit', 'apply_patch', 'exec_command', 'mkdir', 'codebox', 'grep', 'read'].includes(n))) {
         const cm = resolveModelOf(task.g, task.providers, task.curP, 'codeModel')
         if (cm) { task.curP = cm.p; task.model = cm.model }
-      } else if (toolNames.some(n => ['save_memory', 'recall_memory', 'web_search', 'web_fetch', 'import_doc'].includes(n))) {
+      } else if (toolNames.some(n => ['web_search', 'web_fetch', 'import_doc'].includes(n))) {
         const lm = resolveModelOf(task.g, task.providers, task.curP, 'longTextModel')
         if (lm) { task.curP = lm.p; task.model = lm.model }
       }
@@ -813,6 +801,10 @@ export class AgentEngine {
     const taskTokens = this.taskTokensUsed(task)
     const taskMs = Date.now() - (task.userMsg.timestamp || Date.now())
     this.emit({ type: 'final', sid, id: finalId, content: finalText, reasoning: res.reasoning || undefined, toolLog: task.toolLog, taskTokens, taskMs })
+    // v0.4.5 新记忆系统: 任务结束捕获本轮对话(L0), 服务端异步抽取归纳; 失败静默
+    if (this.deps.memoryHubUrl && task.userMsg?.content && finalText) {
+      void memCapture(this.deps.memoryHubUrl, String(task.userMsg.content).slice(0, 8000), String(finalText).slice(0, 8000), 'hq:' + sid).catch(() => {})
+    }
     if (res.usage) this.emit({ type: 'assistant-usage', sid, id: finalId, usage: res.usage })
     this.planAddDecision(task, '任务结束，生成复盘')
     this.flushPlanDoc(task)
@@ -1125,9 +1117,7 @@ export class AgentEngine {
       spIshiki: String(task.g.ishiki || ''),
       sp,
       agent: task.agent,
-      handoffFrom: task.handoffAt,
-      memoryText: task.memoryText,
-      projectCtx: task.projectCtx || undefined,
+      handoffFrom: task.handoffAt,      projectCtx: task.projectCtx || undefined,
       model: task.model,
       workflowsFull: (task.g.perf?.workflowLazy === false),
       agents,
@@ -1137,7 +1127,7 @@ export class AgentEngine {
       skillBodies: task.matchedSkills,
     })
     // v0.4.3 上下文内容可见: 记录本次请求"心里装着什么", 供前端回看
-    task.contextSnapshot = summarizeContext(sp, task.memoryText, task.messages)
+    task.contextSnapshot = summarizeContext(sp, task.messages)
     return messages as unknown[]
   }
 
@@ -1149,15 +1139,11 @@ export class AgentEngine {
       agents: getAgents(task.g.agentOverrides as Record<string, Partial<AgentDef>> | undefined),
       agent: task.agent,
       activeAgents: task.activeAgents,
-      workDir: task.g.workDir || '',
-      memoryPath: this.deps.memoryPath,
-      userDataPath: this.deps.userDataPath,
+      workDir: task.g.workDir || '',      userDataPath: this.deps.userDataPath,
+      memoryHubUrl: this.deps.memoryHubUrl,
       skillsDirs: this.deps.skillsDirs,
       sender: this.deps.getSender(),
-      latestUserText: String(task.userMsg?.content || ''),
-      getMemory: () => task.memory,
-      saveMemory: (m: EngineMemory) => { task.memory = m; saveMemory(this.deps.memoryPath, m, { agent: task.agent ?? '助手', scope: agentMemoryScope(task.g, task.agent) }) },
-      onAgentChange: (agent: string) => {
+      latestUserText: String(task.userMsg?.content || ''),      onAgentChange: (agent: string) => {
         task.agent = agent
         if (!task.activeAgents.includes(agent)) task.activeAgents = [...task.activeAgents, agent]
         this.emit({ type: 'agent', sid: task.sid, agent, activeAgents: task.activeAgents })
@@ -1174,10 +1160,6 @@ export class AgentEngine {
         this.emit({ type: 'ui', sid: task.sid, uiDisplay: d })
       },
       onPlanUpdate: (steps) => this.applyPlanUpdate(task, steps),
-      onGoalUpdate: (goalText) => {
-        task.goal = { objective: String(goalText).slice(0, 500), status: 'active', startedAt: task.goal.startedAt }
-        this.schedulePlanDoc(task)
-      },
       runDispatch: (dTasks) => this.runDispatch(task, dTasks),
       getHandoffCounts: () => ({ ...task.handoffCounts }),
       onHandoffRecord: (agent: string) => {
@@ -1341,9 +1323,7 @@ export class AgentEngine {
   // dispatch: 子任务在主进程并行执行(上下文隔离 + 工具白名单 + 并发上限)
   private async runDispatch(task: TaskState, tasks: { agent: string; task: string }[]): Promise<string> {
     return runDispatchFn({
-      netFetch: this.deps.netFetch,
-      memoryPath: this.deps.memoryPath,
-      curGen: sid => this.curGen(sid),
+      netFetch: this.deps.netFetch,      curGen: sid => this.curGen(sid),
       emit: ev => this.emit(ev),
       trace: (level, event, detail, sid, requestId) => this.trace(level, event, detail, sid, requestId),
       buildToolCtx: t => this.buildToolCtx(t),

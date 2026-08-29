@@ -41,7 +41,7 @@ export class CompactionRunner {
         baseUrl: task.curP.baseUrl,
         messages: [
           { role: 'system', content: '你是Acheron-Agent。请把下面的早期对话压缩成 200 字以内的要点总结，保留事实、路径、结论。只输出总结。' },
-          { role: 'user', content: text.slice(0, 12000) },
+          { role: 'user', content: text.length > 12000 ? text.slice(0, 10000) + String.fromCharCode(10) + '…[中间省略部分早期对话，尾部最近内容如下]…' + String.fromCharCode(10) + text.slice(-2000) : text },
         ],
       }))
       return r.startsWith('E:') ? '' : r

@@ -1,4 +1,4 @@
-// src/components/markdown/shiki.ts —— 轻量 shiki 高亮(对齐 DSH: css-variables 主题 + 增量语言)
+// src/components/markdown/shiki.ts —— 轻量 shiki 高亮(css-variables 主题 + 增量语言)
 // 同步创建 highlighter; 只 boot 常用语言(避免主包体积暴涨), 不认识的 lang 返回 null(降级纯文本)。
 import { createHighlighterCoreSync, createCssVariablesTheme } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
