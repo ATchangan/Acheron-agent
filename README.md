@@ -1,84 +1,87 @@
 # Acheron-Agent
 
-开源仓库：[ATchangan/Acheron-agent](https://github.com/ATchangan/Acheron-agent)
+![Acheron-Agent](docs/screenshot-home.png)
 
-Acheron-Agent 是一个**本地优先的 Windows 桌面 AI 助手**：能读写文件、执行命令、搜索网页，并调度一整套工具与插件生态完成任务。所有会话与数据均保存在本地，不上传。
+**本地优先的 Windows 桌面 AI 助手** —— 读写文件、执行命令、搜索网页、管理记忆，所有数据保存在本地，不上传。
 
-![主界面](docs/screenshot-home.png)
+[![GitHub Release](https://img.shields.io/github/v/release/ATchangan/Acheron-agent?style=flat-square)](https://github.com/ATchangan/Acheron-agent/releases/latest)
+[![License](https://img.shields.io/badge/license-private-red?style=flat-square)]()
 
-## 核心能力（v0.4.4）
+## 功能
 
-- **深色工作台界面**：黄泉立绘欢迎页、Archeron 默认主题（墨蓝底 + 雾紫字 + 近白强调）、侧栏会话/BOTS 双页签 + 功能菜单、配置档案条、右缘当日总结、状态栏设备与引擎状态
-- **会话流式回复**：流式 Markdown 渲染（代码高亮 / KaTeX 公式 / 交互卡片）、推理过程展示、活动行栈（工具调用按类别折叠）、变更摘要卡（+增/-删）、多轮上下文压缩、断点续跑、排队输入
-- **工具调用**：内置工具生态（文件 / 命令 / Git / 终端 / 网络 / 浏览器 / 桌面 / 沙箱代码）、风险确认与权限分级（只读/操作前询问/自动审核/完整权限）、长任务进度与停滞兜底、失败归因与文件回滚
-- **BOTS**：预设角色助手，聊天式列表（彩色头像 + 状态点 + 最后消息预览），一键发起会话，自建 Bot 人设
-- **消息平台**：QQ 官方机器人接入（WebSocket 网关 + 被动回复），每个联系人/群一个专属会话
-- **定时任务**：5 段 cron / @daily 快捷式 / 文件监控触发；到点后自动创建消息并执行
-- **产物**：跨会话产物表格（文件/链接筛选 + 搜索 + 分页）
-- **当日总结**：右缘竖排页签，今日活跃会话/完成任务/输出 token 一目了然
-- **配置档案**：设置快照/切换/导入，不同工作模式一键切换
-- **插件生态**：给助手说"给自己写一个 XXX 插件"即自动生成 manifest 并热加载；支持 MCP 服务器（stdio / SSE，自动注入工具 schema）
-- **设置**：全屏弹窗 + 17 项平铺导航（模型 / 对话 / 外观 / 工作区 / 安全 / Browser / 记忆与上下文 / 高级 / 通知 / 账单 / 提供方 / 网关 / 键盘快捷键 / 工具与密钥 / 插件 / 已归档对话 / 关于），全部真实可用
-- **HUD 模式**：迷你常驻输入条小窗，随时呼出快速指令
-- **安全与可靠性**：L0–L4 风险分级、危险命令拦截、模型密钥 DPAPI 加密、上下文压缩、渲染崩溃自动重建
+**界面**
+- 深色工作台风格，Archeron 主题（墨蓝底 + 雾紫字 + 近白强调）
+- 单行输入框，模型选择器（搜索 / 供应商分组 / 刷新 / 编辑）
+- 权限档盾牌下拉（只读 / 操作前询问 / 自动审核 / 完整权限）
+- 配置档案条：设置快照/切换/导入
+- 布局编辑器：侧边栏/右栏/状态栏/当日总结 显隐开关
+- HUD 模式：迷你常驻输入条小窗
+
+**会话**
+- 流式 Markdown 渲染（代码高亮 / KaTeX / 交互卡片）
+- 排队输入：任务运行中发送的消息排队为后续修改
+- 活动行栈：工具调用按类别合并折叠
+- 变更摘要卡：文件更改统计 + 文件清单 + 回滚
+- 问题跳转编号时间线
+- 会话置顶 / 归档 / 搜索 / 拖拽排序
+
+**功能页**
+- BOTS：预设角色助手（聊天式列表 + 一键发起会话）
+- 消息平台：QQ 官方机器人（WebSocket + 被动回复）
+- 任务：并行任务进度 + 历史记录
+- 产物：跨会话文件/链接表格（筛选 + 搜索 + 分页）
+- 定时任务：cron 表达式 / 文件监控触发
+- 当日总结：今日活跃会话/完成任务/token 指标
+
+**设置**（全屏弹窗 + 17 项平铺导航）
+- 模型：默认模型 + 辅助模型行式配置 + 默认值推理
+- 通知：任务完成 / 消息平台来信系统通知
+- 记忆与上下文：持久记忆 / 压缩阈值 / 压缩目标 / 窗口覆盖
+- 账单：按模型用量统计表 + 缓存命中率
+- 已归档对话：归档列表 + 恢复/删除
+- 网关：QQ 消息网关状态 + 重启
+- 安全：默认权限档
+- 外观：主题 / 皮肤 / 字号 / 信息密度 / 自定义 CSS
+
+**其他**
+- 记忆内核（MemoryCore sidecar）：自动沉淀对话记忆，按需检索
+- 插件生态：对话生成插件 + 热加载 + MCP 服务器（stdio / SSE）
+- 安全：L0-L4 风险分级 / 危险命令拦截 / DPAPI 密钥加密
 
 ## 技术栈
 
-Electron 43 · React 19 · TypeScript 5.9 · Vite 7 · Zustand · node:sqlite · Playwright-core（浏览器自动化）· electron-updater
+Electron 43 · React 19 · TypeScript 5.9 · Vite 7 · Zustand · node:sqlite · Playwright-core
 
 ## 快速开始
 
 ```powershell
-npm install          # 安装依赖
-npm run dev          # 开发运行
-npm test             # 单测
-npm run release:check  # 发布门禁（typecheck / test / brand 扫描）
-npm run package:win  # 打包 Windows 安装程序
+npm install
+npm run dev              # 开发运行
+npm test                 # 单测（331 项）
+npm run release:check    # 发布门禁
+npm run package:win      # 打包 Windows 安装程序
 ```
-
-> 打包前请先关闭正在运行的 Acheron-Agent（应用会锁定 `release/win-unpacked` 下的文件）。
-
-下载安装：[GitHub Releases](https://github.com/ATchangan/Acheron-agent/releases/latest)
 
 ## 目录结构
 
 ```
-electron/    主进程与独立内核（engine / ipc / shared / memory / messaging / plugins / scheduler）
+electron/    主进程（engine / ipc / shared / messaging / scheduler）
 src/         渲染层（store / components / styles）
 resources/   内置资源（图标 / 人设）
-scripts/     构建 / 测试 / 发布脚本
 vendor/      内置依赖（memory-core 记忆内核）
-docs/        文档与截图
+scripts/     构建 / 测试 / 发布脚本
 ```
 
-## 更新日志（重点）
+## 更新日志
 
-### v0.4.4 界面全面改版（2026-08-29）
+见 [CHANGELOG.md](CHANGELOG.md)。
 
-- **深色工作台风格**：黄泉立绘欢迎页（原创设计）、Archeron 主题、侧栏双页签 + 功能菜单、单行输入框（模型选择器带搜索/分组/刷新/编辑）、标题栏五图标
-- **会话体验**：排队输入、活动行栈（工具调用折叠）、变更摘要卡（+增/-删）、问题跳转编号时间线、权限档盾牌下拉
-- **新功能**：BOTS 预设角色助手、消息平台（QQ 官方 Bot）、任务管理、产物表格、当日总结、配置档案条、已归档对话
-- **设置**：全屏弹窗 + 17 项平铺导航，模型/通知/记忆/账单/网关/Browser 真实设置页
-- **品牌**：应用图标换为黄泉立绘多尺寸渲染，品牌词全项目扫描通过
+## 下载
 
-### v0.4.4 自主闭环 + 会话体验重构（2026-08-29）
+[GitHub Releases](https://github.com/ATchangan/Acheron-agent/releases/latest)
 
-- 记忆系统回归（MemoryCore 网关 sidecar + 自动沉淀 + 按需检索）
-- 定时任务回归 + 文件监控触发器
-- 技能中心回归
-- 会话精修：思考行计时 / 工具输出渐隐展开 / 用户气泡粘性吸附 / 会话内查找
-- 流式批处理 + 渲染预算分页 + 省 token 结构化压缩
+## 隐私
 
-### v0.4.4（2026-08-26）精简回归
-
-- 能力收敛：仅保留工具调用 / 插件 / 会话流式回复
-- 界面按开发版重写：左侧会话 + 底部导航
-- 稳定性与性能：主 bundle 分页加载、`tsc` 0 报错、全量单测通过
-
-> 更早版本见 Git 历史。
-
-## 隐私与安全
-
-- 模型密钥经 Windows DPAPI 加密后存储于用户目录，源码与安装包不含任何用户数据
-- 会话与数据全部保存在本地，不上传
-- 发布前自动执行内容合规与密钥扫描（`npm run release:check`）
+- 所有数据存储在本地，不上传
+- 模型密钥经 Windows DPAPI 加密
+- 发布前自动执行内容合规与密钥扫描
